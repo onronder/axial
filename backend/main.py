@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from api.v1.ingest import router as ingest_router
 from api.v1.search import router as search_router
+from api.v1.chat import router as chat_router
 from core.db import check_connection
 import logging
 
@@ -49,6 +50,7 @@ app.add_middleware(
 # Include Routers
 app.include_router(ingest_router, prefix="/api/v1", tags=["ingestion"])
 app.include_router(search_router, prefix="/api/v1", tags=["search"])
+app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 
 @app.get("/health")
 async def health_check():

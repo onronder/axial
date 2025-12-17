@@ -32,6 +32,9 @@ async def ingest_document(
         parser = get_parser(file.filename)
         content = await parser.parse(file)
     except Exception as e:
+        import traceback
+        print(f"CRITICAL PARSING ERROR: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to parse file: {str(e)}"

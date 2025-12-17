@@ -10,6 +10,6 @@ langchain-openai
 langchain-text-splitters
 langchain-community
 tiktoken
-unstructured
+unstructured[pdf]
 python-magic
 python-multipart

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     API_KEY: str = "default-insecure-key"
 
     class Config:
-        env_file = ".env"
+        env_file = [".env", "../.env"]
+        extra = "ignore" # Ignore extra fields in .env
 
 settings = Settings()
