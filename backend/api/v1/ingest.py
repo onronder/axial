@@ -1,23 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from models import IngestResponse
-from core.security import get_api_key
+from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
-from core.parsers import get_parser
+from connectors.factory import get_connector
 import uuid
 import datetime
 import json
 from langchain_openai import OpenAIEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
 
 router = APIRouter()
 
+from typing import Optional
+
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_document(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    url: Optional[str] = Form(None),
     metadata: str = Form(...),
-    api_key: str = Depends(get_api_key)
+    user_id: str = Depends(get_current_user)
 ):
     supabase = get_supabase()
     
@@ -27,34 +28,36 @@ async def ingest_document(
     except Exception:
         meta_dict = {}
 
-    # 1. Parse File Content (Universal Parser)
+    # 1. Process via Connector (Parsing & Chunking)
     try:
-        parser = get_parser(file.filename)
-        content = await parser.parse(file)
+        source_type = "file"
+        
+        if url:
+             connector = get_connector("web")
+             source_type = "web"
+             docs = await connector.process(url, metadata=meta_dict)
+        elif file:
+            connector = get_connector("file")
+            docs = await connector.process(file, metadata=meta_dict)
+        else:
+             raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either 'file' or 'url' must be provided."
+            )
+            
     except Exception as e:
         import traceback
-        print(f"CRITICAL PARSING ERROR: {str(e)}")
+        print(f"CRITICAL PROCESSING ERROR: {str(e)}")
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to parse file: {str(e)}"
+            detail=f"Failed to process file: {str(e)}"
         )
 
-    if not content:
+    if not docs:
         return IngestResponse(status="skipped", doc_id="empty")
-
-    # 2. Chunking
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
     
-    docs = text_splitter.create_documents(
-        texts=[content],
-        metadatas=[{"filename": file.filename, **meta_dict}]
-    )
-    
-    # 3. Embedding
+    # 2. Embedding (Remains in Router/Service Layer for now)
     embeddings_model = OpenAIEmbeddings(
         model="text-embedding-3-small",
         api_key=settings.OPENAI_API_KEY
@@ -69,25 +72,57 @@ async def ingest_document(
             detail=f"Failed to generate embeddings: {str(e)}"
         )
         
-    records = []
-    parent_doc_id = str(uuid.uuid4())
+    # 3. DB Insertion (Relational)
+    
+    # 3.1. Insert Parent Document
+    doc_title = url if url else (file.filename if file else "Untitled")
+    source_url = url if url else None
+    
+    parent_doc_data = {
+        "user_id": user_id,
+        "title": doc_title,
+        "source_type": source_type,
+        "source_url": source_url,
+        "metadata": meta_dict,
+        "created_at": datetime.datetime.now().isoformat()
+    }
+    
+    try:
+        # Insert and return ID
+        parent_res = supabase.table("documents").insert(parent_doc_data).execute()
+        if not parent_res.data:
+             raise Exception("Failed to create parent document")
+        parent_id = parent_res.data[0]['id']
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Database Insertion Error (Parent): {str(e)}")
+
+    # 3.2. Insert Chunks
+    chunk_records = []
     
     for i, doc in enumerate(docs):
-        records.append({
-            "id": str(uuid.uuid4()),
-            "client_id": meta_dict.get("client_id", "unknown"),
+        chunk_records.append({
+            "document_id": parent_id,
             "content": doc.page_content,
-            "metadata": doc.metadata,
+            # Embedding is already computed
             "embedding": chunk_embeddings[i],
+            "chunk_index": i,
             "created_at": datetime.datetime.now().isoformat()
         })
         
     try:
-        response = supabase.table("documents").insert(records).execute()
+        # Batch insert chunks
+        supabase.table("document_chunks").insert(chunk_records).execute()
     except Exception as e:
+        # Rollback parent if chunks fail? 
+        # Ideally yes, but Supabase-py doesn't strictly support multi-step transactions easily in this client mode without RPC.
+        # We will attempt to delete parent.
+        print(f"Chunk insertion failed: {e}")
+        supabase.table("documents").delete().eq("id", parent_id).execute()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to insert into DB: {str(e)}"
+            detail=f"Failed to insert document chunks: {str(e)}"
         )
 
-    return IngestResponse(status="queued", doc_id=parent_doc_id)
+    return IngestResponse(status="queued", doc_id=parent_id)

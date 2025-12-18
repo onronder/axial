@@ -13,3 +13,6 @@ tiktoken
 unstructured[pdf]
 python-magic
 python-multipart
+pyjwt
+beautifulsoup4
+requests

@@ -32,7 +32,10 @@ def send_to_backend(filepath):
             files = {'file': (filename, f, 'application/octet-stream')}
             data = {'metadata': json.dumps(meta)}
             
-            response = requests.post(Config.BACKEND_URL, files=files, data=data, headers=headers, timeout=30)
+            response = requests.post(Config.BACKEND_URL, files=files, data=data, headers=headers, timeout=300)
+            if response.status_code != 200:
+                logger.error(f"Failed to send {filename}. Status: {response.status_code}")
+                logger.error(f"Server Response: {response.text}")
             response.raise_for_status()
             logger.info(f"Successfully sent {filename}. Response: {response.json()}")
     except Exception as e:

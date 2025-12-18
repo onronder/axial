@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-from core.security import get_api_key
+from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
 from langchain_openai import OpenAIEmbeddings
@@ -19,7 +19,7 @@ class SearchResponse(BaseModel):
 @router.post("/search", response_model=SearchResponse)
 async def search_documents(
     payload: SearchRequest,
-    api_key: str = Depends(get_api_key)
+    user_id: str = Depends(get_current_user)
 ):
     supabase = get_supabase()
     
@@ -42,7 +42,8 @@ async def search_documents(
         response = supabase.rpc("match_documents", {
             "query_embedding": query_vector,
             "match_threshold": payload.threshold,
-            "match_count": payload.limit
+            "match_count": payload.limit,
+            "filter_user_id": user_id
         }).execute()
         
         # response.data contains the list of documents

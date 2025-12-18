@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-from core.security import get_api_key
+from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -22,7 +22,7 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(
     payload: ChatRequest,
-    api_key: str = Depends(get_api_key)
+    user_id: str = Depends(get_current_user)
 ):
     supabase = get_supabase()
     
@@ -45,7 +45,8 @@ async def chat_endpoint(
         response = supabase.rpc("match_documents", {
             "query_embedding": query_vector,
             "match_threshold": 0.3, 
-            "match_count": 5
+            "match_count": 5,
+            "filter_user_id": user_id
         }).execute()
         
         docs = response.data
@@ -57,8 +58,32 @@ async def chat_endpoint(
         return ChatResponse(answer="I don't have enough information in the provided documents to answer that.", sources=[])
 
     # 3. Construct Context
-    context_text = "\n\n".join([d['content'] for d in docs])
-    sources = list(set([d['metadata'].get('filename', 'unknown') for d in docs]))
+    # 3. Construct Context
+    context_text = ""
+    sources = []
+    
+    for d in docs:
+        context_text += d['content'] + "\n\n"
+        
+        # EXTRACT SOURCE LOGIC
+        metadata = d.get('metadata', {})
+        source_type = d.get('source_type', metadata.get("source", "unknown"))
+        
+        if source_type == "web":
+            # For web, the valid source is the URL
+            source_label = metadata.get("url", "Unknown URL")
+        elif source_type == "file":
+             # For files, it's usually the filename
+            source_label = metadata.get("filename", metadata.get("file_name", "Unknown File"))
+        elif source_type == "drive":
+            # For drive, use the title
+            source_label = metadata.get("title", "Google Drive Doc")
+        else:
+            # Fallback - try generic fields
+            source_label = metadata.get("filename", metadata.get("url", "Unknown Source"))
+        
+        if source_label not in sources:
+            sources.append(source_label)
 
     # 4. Generate Answer
     system_prompt = """You are Axial, an expert AI assistant. 
