@@ -36,8 +36,8 @@ app = FastAPI(
 # CORS Configuration
 origins = [
     "http://localhost",
-    "http://localhost:3000",  # Common frontend port
-    # Add other origins as needed
+    "http://localhost:3000",
+    "*", # Allow all origins for Railway production ease initially
 ]
 
 app.add_middleware(

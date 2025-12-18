@@ -17,6 +17,7 @@ from typing import Optional
 async def ingest_document(
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
+    drive_id: Optional[str] = Form(None),
     metadata: str = Form(...),
     user_id: str = Depends(get_current_user)
 ):
@@ -36,13 +37,17 @@ async def ingest_document(
              connector = get_connector("web")
              source_type = "web"
              docs = await connector.process(url, metadata=meta_dict)
+        elif drive_id:
+             connector = get_connector("drive")
+             source_type = "drive"
+             docs = await connector.process(drive_id, metadata=meta_dict)
         elif file:
             connector = get_connector("file")
             docs = await connector.process(file, metadata=meta_dict)
         else:
              raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Either 'file' or 'url' must be provided."
+                detail="Either 'file', 'url', or 'drive_id' must be provided."
             )
             
     except Exception as e:
@@ -51,7 +56,7 @@ async def ingest_document(
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process file: {str(e)}"
+            detail=f"Failed to process content: {str(e)}"
         )
 
     if not docs:
@@ -75,8 +80,17 @@ async def ingest_document(
     # 3. DB Insertion (Relational)
     
     # 3.1. Insert Parent Document
-    doc_title = url if url else (file.filename if file else "Untitled")
-    source_url = url if url else None
+    # Determine title based on source
+    if url:
+        doc_title = url
+    elif drive_id:
+        doc_title = docs[0].metadata.get('title', f"Drive: {drive_id}") if docs else drive_id
+    elif file:
+        doc_title = file.filename
+    else:
+        doc_title = "Untitled"
+        
+    source_url = url if url else (docs[0].metadata.get('source_url') if drive_id and docs else None)
     
     parent_doc_data = {
         "user_id": user_id,

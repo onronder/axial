@@ -11,6 +11,7 @@ venv/
 # IDEs
 .idea/
 .vscode/
+credentials/
 
 # Local Testing
 watched_folder/
