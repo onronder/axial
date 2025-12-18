@@ -24,8 +24,17 @@ export default function DashboardPage() {
     const [inputValue, setInputValue] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [activeView, setActiveView] = useState<'chat' | 'knowledge'>('chat')
+    const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+
+    // Clear notification after 5s
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 5000)
+            return () => clearTimeout(timer)
+        }
+    }, [notification])
 
     // OAuth Callback Handling
     useEffect(() => {
@@ -39,10 +48,10 @@ export default function DashboardPage() {
                     })
                     // Remove code from URL
                     window.history.replaceState({}, '', window.location.pathname)
-                    alert("Google Drive Connected Successfully!")
-                } catch (err) {
+                    setNotification({ message: "Google Drive Connected Successfully!", type: 'success' })
+                } catch (err: any) {
                     console.error("OAuth Exchange Error", err)
-                    alert("Failed to connect Google Drive.")
+                    setNotification({ message: `Failed to connect Google Drive: ${err.message || "Unknown Error"}`, type: 'error' })
                 }
             }
             handleExchange()
@@ -95,7 +104,15 @@ export default function DashboardPage() {
     }
 
     return (
-        <div className="flex flex-col h-full bg-slate-50/50">
+        <div className="flex flex-col h-full bg-slate-50/50 relative">
+            {/* Notification Banner */}
+            {notification && (
+                <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-md shadow-md text-sm font-medium z-50 transition-all ${notification.type === 'success' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'
+                    }`}>
+                    {notification.message}
+                </div>
+            )}
+
             {/* View Toggle */}
             <div className="flex justify-center pt-4 pb-2">
                 <div className="bg-slate-200/50 p-1 rounded-lg flex items-center space-x-1">
