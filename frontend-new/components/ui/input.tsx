@@ -15,8 +15,6 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
                 )}
                 ref={ref}
                 {...props}
-                {...props}
-                value={props.value === undefined || props.value === null ? '' : props.value}
             />
         )
     }

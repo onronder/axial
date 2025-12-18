@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/api"
 import { format } from "date-fns"
 import { FileText, Link as LinkIcon, Trash2, HardDrive } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +18,8 @@ interface Document {
 }
 
 export function KnowledgeBase() {
+    const [searchQuery, setSearchQuery] = useState("")
+
     const [documents, setDocuments] = useState<Document[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -59,6 +62,11 @@ export function KnowledgeBase() {
         }
     }
 
+    const filteredDocuments = documents.filter(doc =>
+        doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (doc.source_url && doc.source_url.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
+
     return (
         <Card className="w-full">
             <CardHeader>
@@ -66,19 +74,32 @@ export function KnowledgeBase() {
                 <CardDescription>Manage the documents and links your AI has learned from.</CardDescription>
             </CardHeader>
             <CardContent>
-                {/* Refresh / Actions Bar could go here */}
+                {/* Search Bar */}
+                <div className="mb-4">
+                    <div className="relative">
+                        <FileText className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                        <Input
+                            placeholder="Search documents..."
+                            className="pl-9"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                </div>
 
                 {loading ? (
                     <div className="p-8 text-center text-slate-500 text-sm">Loading documents...</div>
                 ) : error ? (
                     <div className="p-8 text-center text-red-500 text-sm">Error: {error}</div>
-                ) : documents.length === 0 ? (
+                ) : filteredDocuments.length === 0 ? (
                     <div className="p-12 text-center border-2 border-dashed rounded-lg">
                         <div className="mx-auto h-12 w-12 text-slate-300 mb-3 flex items-center justify-center rounded-full bg-slate-50">
                             <FileText className="h-6 w-6" />
                         </div>
                         <h3 className="text-lg font-medium text-slate-900">No documents found</h3>
-                        <p className="text-sm text-slate-500 mt-1">Upload files or add URLs to populate your knowledge base.</p>
+                        <p className="text-sm text-slate-500 mt-1">
+                            {searchQuery ? "Try a different search query." : "Upload files or add URLs to populate your knowledge base."}
+                        </p>
                     </div>
                 ) : (
                     <div className="rounded-md border">
@@ -92,7 +113,7 @@ export function KnowledgeBase() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
-                                {documents.map((doc) => (
+                                {filteredDocuments.map((doc) => (
                                     <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-4 py-3">
                                             {getIcon(doc.source_type)}
