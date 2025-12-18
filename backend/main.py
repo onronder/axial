@@ -53,6 +53,8 @@ app.include_router(ingest_router, prefix="/api/v1", tags=["ingestion"])
 app.include_router(search_router, prefix="/api/v1", tags=["search"])
 app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(documents_router, prefix="/api/v1", tags=["documents"])
+from api.v1.integrations import router as integrations_router
+app.include_router(integrations_router, prefix="/api/v1", tags=["integrations"])
 
 @app.get("/health")
 async def health_check():

@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     
     OPENAI_API_KEY: str
     API_KEY: str = "default-insecure-key"
+    
+    # Google OAuth
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_REDIRECT_URI: Optional[str] = None
 
     class Config:
         env_file = [".env", "../.env"]

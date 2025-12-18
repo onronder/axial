@@ -1,48 +1,62 @@
 import os
 from typing import List
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from .base import BaseConnector, ConnectorDocument
+from core.db import get_supabase
+from core.config import settings
 
 class DriveConnector(BaseConnector):
     def __init__(self):
-        self.creds_path = "credentials/service_account.json"
-        if not os.path.exists(self.creds_path):
-            print(f"WARNING: Service Account JSON not found at {self.creds_path}")
-            self.creds = None
-        else:
-            self.creds = service_account.Credentials.from_service_account_file(
-                self.creds_path, scopes=['https://www.googleapis.com/auth/drive.readonly']
-            )
+        pass
 
     async def process(self, source: str, **kwargs) -> List[ConnectorDocument]:
-        if not self.creds:
-            raise ValueError("Service Account credentials missing in backend/credentials/service_account.json")
+        user_id = kwargs.get('user_id')
+        if not user_id:
+            raise ValueError("user_id is required for Drive Connector")
 
-        service = build('drive', 'v3', credentials=self.creds)
+        # 1. Fetch Credentials from DB
+        supabase = get_supabase()
+        res = supabase.table("user_integrations").select("*").eq("user_id", user_id).eq("provider", "google_drive").execute()
+        
+        if not res.data:
+             raise ValueError("Google Drive not connected for this user. Please connect in settings.")
+             
+        integration = res.data[0]
+        
+        # 2. Build Credentials Object
+        creds = Credentials(
+            token=integration['access_token'],
+            refresh_token=integration.get('refresh_token'),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=settings.GOOGLE_CLIENT_ID,
+            client_secret=settings.GOOGLE_CLIENT_SECRET,
+            scopes=['https://www.googleapis.com/auth/drive.readonly']
+        )
+
+        service = build('drive', 'v3', credentials=creds)
         documents = []
 
         try:
-            # 1. Get File Metadata (check if exists and get type)
+            # 3. Get File Metadata
             try:
+                # Support both file_id and folder_id logic remains similar
                 file_meta = service.files().get(fileId=source, fields="id, name, mimeType, webViewLink").execute()
             except Exception:
-                raise ValueError(f"Drive ID not found or not shared with Service Account: {source}")
+                raise ValueError(f"Drive ID not found or access denied: {source}")
 
-            # 2. Determine items to process
+            # 4. Determine items to process
             items_to_process = []
             if file_meta['mimeType'] == 'application/vnd.google-apps.folder':
-                # List files in folder
                 results = service.files().list(
                     q=f"'{source}' in parents and trashed=false",
                     fields="files(id, name, mimeType, webViewLink)"
                 ).execute()
                 items_to_process = results.get('files', [])
             else:
-                # It's a single file
                 items_to_process = [file_meta]
 
-            # 3. Process Items
+            # 5. Process Items
             for item in items_to_process:
                 content = ""
                 try:
@@ -50,6 +64,11 @@ class DriveConnector(BaseConnector):
                         content = service.files().export_media(fileId=item['id'], mimeType='text/plain').execute().decode('utf-8')
                     elif 'text' in item['mimeType']:
                         content = service.files().get_media(fileId=item['id']).execute().decode('utf-8')
+                    elif item['mimeType'] == 'application/pdf':
+                         # MVP: Skip PDF binary download for now unless we add pdf parsing
+                         # Typically unrelated to OAuth change, but good to note.
+                         print(f"Skipping PDF for MVP: {item['name']}")
+                         continue
                     else:
                         print(f"Skipping unsupported type: {item['mimeType']} ({item['name']})")
                         continue

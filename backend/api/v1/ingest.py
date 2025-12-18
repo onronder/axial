@@ -36,14 +36,14 @@ async def ingest_document(
         if url:
              connector = get_connector("web")
              source_type = "web"
-             docs = await connector.process(url, metadata=meta_dict)
+             docs = await connector.process(url, metadata=meta_dict, user_id=user_id)
         elif drive_id:
              connector = get_connector("drive")
              source_type = "drive"
-             docs = await connector.process(drive_id, metadata=meta_dict)
+             docs = await connector.process(drive_id, metadata=meta_dict, user_id=user_id)
         elif file:
             connector = get_connector("file")
-            docs = await connector.process(file, metadata=meta_dict)
+            docs = await connector.process(file, metadata=meta_dict, user_id=user_id)
         else:
              raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

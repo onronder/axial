@@ -17,6 +17,7 @@ type Message = {
 
 import { KnowledgeBase } from "@/components/knowledge-base"
 import { MessageSquare, Database } from "lucide-react"
+import { GoogleConnectButton } from "@/components/google-connect-button"
 
 export default function DashboardPage() {
     const [messages, setMessages] = useState<Message[]>([])
@@ -24,6 +25,29 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(false)
     const [activeView, setActiveView] = useState<'chat' | 'knowledge'>('chat')
     const messagesEndRef = useRef<HTMLDivElement>(null)
+    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+
+    // OAuth Callback Handling
+    useEffect(() => {
+        const code = searchParams?.get('code')
+        if (code) {
+            const handleExchange = async () => {
+                try {
+                    await authFetch('/integrations/google/exchange', {
+                        method: 'POST',
+                        body: JSON.stringify({ code })
+                    })
+                    // Remove code from URL
+                    window.history.replaceState({}, '', window.location.pathname)
+                    alert("Google Drive Connected Successfully!")
+                } catch (err) {
+                    console.error("OAuth Exchange Error", err)
+                    alert("Failed to connect Google Drive.")
+                }
+            }
+            handleExchange()
+        }
+    }, [])
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -216,6 +240,9 @@ export default function DashboardPage() {
                 </>
             ) : (
                 <div className="flex-1 overflow-y-scroll min-h-0 p-8 max-w-5xl mx-auto w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div className="mb-4 flex justify-end">
+                        <GoogleConnectButton />
+                    </div>
                     <KnowledgeBase />
                 </div>
             )}
