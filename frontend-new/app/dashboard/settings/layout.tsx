@@ -6,12 +6,12 @@ import { User, Database, FileText, Bell, CreditCard, Users } from "lucide-react"
 import { cn } from "@/lib/utils";
 
 const settingsNav = [
-    { name: "General", path: "/dashboard/settings", icon: User },
+    { name: "General", path: "/dashboard/settings/general", icon: User },
     { name: "Data Sources", path: "/dashboard/settings/data-sources", icon: Database },
     { name: "Knowledge Base", path: "/dashboard/settings/knowledge-base", icon: FileText },
-    //   { name: "Team Members", path: "/dashboard/settings/team", icon: Users },
-    //   { name: "Notifications", path: "/dashboard/settings/notifications", icon: Bell },
-    //   { name: "Billing", path: "/dashboard/settings/billing", icon: CreditCard },
+    { name: "Team Members", path: "/dashboard/settings/team", icon: Users },
+    { name: "Notifications", path: "/dashboard/settings/notifications", icon: Bell },
+    { name: "Billing", path: "/dashboard/settings/billing", icon: CreditCard },
 ];
 
 export default function SettingsLayout({

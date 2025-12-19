@@ -8,12 +8,14 @@ security = HTTPBearer()
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
     token = credentials.credentials
     try:
-        # In a real production env, verify signature using settings.SUPABASE_JWT_SECRET
-        # For now, we decode unverified to extract 'sub' (user_id) assuming internal trusted network or verify later.
-        # Ideally: payload = jwt.decode(token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
-        
-        # Simple decoding to get user_id (sub)
-        payload = jwt.decode(token, options={"verify_signature": False})
+        # Verify signature using SUPABASE_JWT_SECRET
+        # Algorithms should be explicitly set to HS256 for Supabase default
+        payload = jwt.decode(
+            token, 
+            settings.SUPABASE_JWT_SECRET, 
+            algorithms=["HS256"], 
+            audience="authenticated"
+        )
         user_id = payload.get("sub")
         
         if not user_id:
