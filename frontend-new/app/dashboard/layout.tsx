@@ -28,7 +28,7 @@ export default function DashboardLayout({
 
     const navItems = [
         { href: "/dashboard", icon: MessageSquare, label: "Chat" },
-        { href: "/dashboard/settings/data-sources", icon: Database, label: "Data Sources" },
+        { href: "/dashboard/settings", icon: Settings, label: "Settings" },
     ]
 
     return (

@@ -12,6 +12,7 @@ class DocumentDTO(BaseModel):
     source_type: str
     source_url: Optional[str] = None
     created_at: str
+    status: str = "indexed"  # Default to indexed for synchronous ingestion
     metadata: Dict[str, Any]
 
 @router.get("/documents", response_model=List[DocumentDTO])
@@ -32,7 +33,13 @@ async def list_documents(
             .range(offset, offset + limit - 1)\
             .execute()
             
-        return response.data
+        # Enrich with status if not present in DB
+        docs = []
+        for d in response.data:
+            d['status'] = d.get('status', 'indexed')
+            docs.append(d)
+            
+        return docs
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch documents: {str(e)}")
 

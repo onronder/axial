@@ -90,6 +90,45 @@ async def get_provider_status(
     except Exception:
         return {"connected": False}
 
+@router.get("/integrations/status")
+async def get_all_status(
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        supabase = get_supabase()
+        response = supabase.table("user_integrations").select("provider").eq("user_id", user_id).execute()
+        
+        connected_providers = {item['provider']: True for item in response.data}
+        
+        # Ensure we return false for known providers if not in DB
+        # List of known providers could be dynamic, but hardcoding known ones for now
+        all_providers = ["google_drive", "web"]
+        
+        status = {}
+        for p in all_providers:
+            status[p] = connected_providers.get(p, False)
+            
+        return status
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=f"Failed to fetch statuses: {str(e)}")
+
+@router.delete("/integrations/{provider}")
+async def disconnect_provider(
+    provider: str,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        supabase = get_supabase()
+        response = supabase.table("user_integrations").delete().eq("user_id", user_id).eq("provider", provider).execute()
+        
+        # In a real app, we might also want to call provider revocation endpoint here.
+        # e.g. https://accounts.google.com/o/oauth2/revoke?token={token}
+        
+        return {"status": "success", "provider": provider}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to disconnect: {str(e)}")
+
+
 @router.get("/integrations/{provider}/items")
 async def list_provider_items(
     provider: str,
