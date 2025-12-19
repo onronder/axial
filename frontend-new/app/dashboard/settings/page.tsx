@@ -25,8 +25,8 @@ export default function SettingsPage() {
 
     const fetchStatus = async () => {
         try {
-            const res = await authFetch('/integrations/status')
-            setIntegrations(res)
+            const res = await authFetch.get('/integrations/status')
+            setIntegrations(res.data)
         } catch (e) {
             console.error("Failed to fetch statuses", e)
         } finally {
@@ -41,7 +41,7 @@ export default function SettingsPage() {
     const handleDisconnect = async (provider: string) => {
         if (!confirm(`Are you sure you want to disconnect ${provider}?`)) return
         try {
-            await authFetch(`/integrations/${provider}`, { method: 'DELETE' })
+            await authFetch.delete(`/integrations/${provider}`)
             fetchStatus() // Refresh status
         } catch (e) {
             console.error("Disconnect failed", e)
@@ -162,11 +162,7 @@ function WebIngest() {
         if (!url) return
         setLoading(true)
         try {
-            await authFetch('/integrations/web/ingest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ item_ids: [url] })
-            })
+            await authFetch.post('/integrations/web/ingest', { item_ids: [url] })
             alert("URL Ingested Successfully!")
             setUrl("")
         } catch (e) {
@@ -203,8 +199,8 @@ function KnowledgeBaseTable() {
     const fetchDocs = async () => {
         setIsLoading(true)
         try {
-            const res = await authFetch('/documents')
-            setDocs(res)
+            const res = await authFetch.get('/documents')
+            setDocs(res.data)
         } catch (e) {
             console.error("Fetch docs failed", e)
         } finally {
@@ -219,7 +215,7 @@ function KnowledgeBaseTable() {
     const handleDelete = async (id: string, title: string) => {
         if (!confirm(`Delete "${title}"? This cannot be undone.`)) return
         try {
-            await authFetch(`/documents/${id}`, { method: 'DELETE' })
+            await authFetch.delete(`/documents/${id}`)
             setDocs(prev => prev.filter(d => d.id !== id))
         } catch (e) {
             console.error("Delete failed", e)

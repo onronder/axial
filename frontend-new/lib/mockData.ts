@@ -128,3 +128,19 @@ export const DATA_SOURCES: DataSource[] = [
         category: "files",
     },
 ];
+
+export interface Document {
+    id: string;
+    name: string;
+    source: string;
+    sourceType: 'drive' | 'web' | 'upload' | 'notion' | 'slack';
+    status: 'indexed' | 'processing' | 'error';
+    addedAt: string;
+    size?: number;
+}
+
+export const mockDocuments: Document[] = [
+    { id: '1', name: 'Project Requirements.pdf', source: 'Google Drive', sourceType: 'drive', status: 'indexed', addedAt: new Date().toISOString(), size: 1024 * 1024 * 2.5 },
+    { id: '2', name: 'Competitor Analysis', source: 'Notion', sourceType: 'notion', status: 'processing', addedAt: new Date().toISOString() },
+    { id: '3', name: 'Q4 Marketing Plan', source: 'Slack', sourceType: 'slack', status: 'indexed', addedAt: new Date(Date.now() - 86400000).toISOString(), size: 1024 * 500 }
+];

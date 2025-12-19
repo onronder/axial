@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 const settingsNav = [
     { name: "General", path: "/dashboard/settings", icon: User },
     { name: "Data Sources", path: "/dashboard/settings/data-sources", icon: Database },
-    //   { name: "Knowledge Base", path: "/dashboard/settings/knowledge-base", icon: FileText },
+    { name: "Knowledge Base", path: "/dashboard/settings/knowledge-base", icon: FileText },
     //   { name: "Team Members", path: "/dashboard/settings/team", icon: Users },
     //   { name: "Notifications", path: "/dashboard/settings/notifications", icon: Bell },
     //   { name: "Billing", path: "/dashboard/settings/billing", icon: CreditCard },

@@ -28,8 +28,8 @@ export function KnowledgeBase() {
         setLoading(true)
         setError(null)
         try {
-            const data = await authFetch('/documents')
-            setDocuments(data)
+            const response = await authFetch.get('/documents')
+            setDocuments(response.data)
         } catch (err: any) {
             console.error(err)
             setError(err.message || "Failed to load documents")
@@ -42,7 +42,7 @@ export function KnowledgeBase() {
         if (!confirm("Are you sure you want to delete this document? This action implies deleting all learned knowledge from this source.")) return
 
         try {
-            await authFetch(`/documents/${id}`, { method: 'DELETE' })
+            await authFetch.delete(`/documents/${id}`)
             // Optimistic update or refetch
             setDocuments(prev => prev.filter(d => d.id !== id))
         } catch (err: any) {

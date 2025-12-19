@@ -73,10 +73,7 @@ export function IngestModal({ isOpen, onClose }: IngestModalProps) {
                 formData.append("url", url)
                 formData.append("metadata", JSON.stringify({ client_id: "frontend_user", source: "web_crawl" }))
 
-                await authFetch('/ingest', {
-                    method: 'POST',
-                    body: formData
-                })
+                await authFetch.post('/ingest', formData)
             } else if (activeTab === 'drive') {
                 if (!driveId) {
                     setLoading(false)
@@ -86,10 +83,7 @@ export function IngestModal({ isOpen, onClose }: IngestModalProps) {
                 formData.append("drive_id", driveId)
                 formData.append("metadata", JSON.stringify({ client_id: "frontend_user", source: "drive" }))
 
-                await authFetch('/ingest', {
-                    method: 'POST',
-                    body: formData
-                })
+                await authFetch.post('/ingest', formData)
             }
 
             setStatus({ type: 'success', message: "Ingestion queued successfully!" })

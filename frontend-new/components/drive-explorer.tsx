@@ -32,7 +32,8 @@ export function DriveExplorer() {
                 const query = currentFolder.id ? `?parent_id=${currentFolder.id}` : ''
                 console.log(`[DriveExplorer] Fetching items for current folder: ${currentFolder.name} (${currentFolder.id || 'root'})`)
 
-                const res = await authFetch(`/integrations/google_drive/items${query}`)
+                const response = await authFetch.get(`/integrations/google_drive/items${query}`)
+                const res = response.data
 
                 console.log("[DriveExplorer] API Response:", res)
 
@@ -77,11 +78,7 @@ export function DriveExplorer() {
         if (selection.size === 0) return
         setIngesting(true)
         try {
-            await authFetch('/integrations/google_drive/ingest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ item_ids: Array.from(selection) })
-            })
+            await authFetch.post('/integrations/google_drive/ingest', { item_ids: Array.from(selection) })
             alert("Ingestion Queued Successfully!")
             setSelection(new Set())
         } catch (e) {
