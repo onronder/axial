@@ -3,6 +3,7 @@
 import { ReactNode, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { AuthLoading } from "@/components/ui/auth-loading";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 
@@ -11,17 +12,21 @@ interface DashboardLayoutProps {
 }
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, loading } = useAuth();
     const router = useRouter();
 
     useEffect(() => {
-        if (!isAuthenticated) {
-            router.push("/auth/login");
+        if (!loading && !isAuthenticated) {
+            router.push("/login"); // Updated path to match expected route
         }
-    }, [isAuthenticated, router]);
+    }, [isAuthenticated, loading, router]);
+
+    if (loading) {
+        return <AuthLoading />;
+    }
 
     if (!isAuthenticated) {
-        return null; // or a loading spinner while redirecting
+        return null;
     }
 
     return (
