@@ -1,15 +1,32 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
 class ConnectorDocument(BaseModel):
     page_content: str
     metadata: Dict[str, Any]
 
+class ConnectorItem(BaseModel):
+    id: str
+    name: str
+    type: str # 'file' or 'folder'
+    mime_type: Optional[str] = None
+    icon: Optional[str] = None
+    parent_id: Optional[str] = None
+
 class BaseConnector(ABC):
     @abstractmethod
-    async def process(self, source: Any, **kwargs) -> List[ConnectorDocument]:
-        """
-        Process the input source (File, URL, API) and return a list of standard documents.
-        """
+    async def authorize(self, user_id: str) -> bool:
+        """Check if the user has valid credentials for this provider."""
         pass
+
+    @abstractmethod
+    async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
+        """List files/folders from the provider."""
+        pass
+
+    @abstractmethod
+    async def ingest(self, user_id: str, item_ids: List[str]) -> List[ConnectorDocument]:
+        """Process specific items (by ID) and return documents."""
+        pass
+

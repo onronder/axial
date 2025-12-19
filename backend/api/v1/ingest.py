@@ -36,13 +36,16 @@ async def ingest_document(
         if url:
              connector = get_connector("web")
              source_type = "web"
-             docs = await connector.process(url, metadata=meta_dict, user_id=user_id)
+             # New BaseConnector Interface
+             docs = await connector.ingest(user_id, [url])
         elif drive_id:
              connector = get_connector("drive")
              source_type = "drive"
-             docs = await connector.process(drive_id, metadata=meta_dict, user_id=user_id)
+             # New BaseConnector Interface
+             docs = await connector.ingest(user_id, [drive_id])
         elif file:
             connector = get_connector("file")
+            # FileConnector specific method
             docs = await connector.process(file, metadata=meta_dict, user_id=user_id)
         else:
              raise HTTPException(

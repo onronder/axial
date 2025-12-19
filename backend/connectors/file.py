@@ -8,6 +8,15 @@ import shutil
 from unstructured.partition.auto import partition
 
 class FileConnector(BaseConnector):
+    async def authorize(self, user_id: str) -> bool:
+        return True
+
+    async def list_items(self, user_id: str, parent_id: Any = None) -> List[Any]:
+        return []
+
+    async def ingest(self, user_id: str, item_ids: List[str]) -> List[ConnectorDocument]:
+        raise NotImplementedError("FileConnector uses process() with UploadFile, not ingest() with IDs.")
+
     async def process(self, source: UploadFile, **kwargs) -> List[ConnectorDocument]:
         """
         Process an UploadFile: Parse content and chunk it.

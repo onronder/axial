@@ -71,3 +71,126 @@ async def exchange_google_token(
          raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
     return {"status": "success", "provider": "google_drive"}
+
+
+# --- Generic Integration Endpoints ---
+
+from connectors.factory import get_connector
+from typing import Optional, List
+
+@router.get("/integrations/{provider}/status")
+async def get_provider_status(
+    provider: str,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        connector = get_connector(provider)
+        is_connected = await connector.authorize(user_id)
+        return {"connected": is_connected}
+    except Exception:
+        return {"connected": False}
+
+@router.get("/integrations/{provider}/items")
+async def list_provider_items(
+    provider: str,
+    parent_id: Optional[str] = None,
+    user_id: str = Depends(get_current_user)
+):
+    try:
+        connector = get_connector(provider)
+        items = await connector.list_items(user_id, parent_id)
+        return items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
+
+class IngestRequest(BaseModel):
+    item_ids: List[str]
+
+@router.post("/integrations/{provider}/ingest")
+async def ingest_provider_items(
+    provider: str,
+    request: IngestRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Generic ingestion endpoint for Source-based connectors (Drive, Web).
+    Not used for direct File uploads.
+    """
+    try:
+        connector = get_connector(provider)
+        
+        # 1. Ingest (Download & Parse)
+        docs = await connector.ingest(user_id, request.item_ids)
+        
+        if not docs:
+             return {"status": "skipped", "message": "No content processed"}
+
+        supabase = get_supabase()
+        
+        # 2. Embed & Store (Should ideally be a shared Service - reusing logic from ingest.py roughly here)
+        # For DRY, we duplicate simplified logic here or import.
+        # Let's simple duplicate for MVP speed, then refactor to service.
+        
+        from langchain_openai import OpenAIEmbeddings
+        embeddings_model = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            api_key=settings.OPENAI_API_KEY
+        )
+        
+        chunk_texts = [d.page_content for d in docs]
+        chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+        
+        # Group docs by source item? Or just stream all chunks?
+        # Current Schema: One Parent Document -> Many Chunks.
+        # Here we might have multiple source items (Multiple Files).
+        # We should create ONE Parent Document per source item.
+        
+        # Regroup by file_id?
+        # Our ConnectorDocument metadata has 'file_id' or 'source_url'.
+        
+        # Group by unique source identifier
+        from collections import defaultdict
+        grouped = defaultdict(list)
+        for i, doc in enumerate(docs):
+            key = doc.metadata.get('source_url') or doc.metadata.get('file_id') or "unknown"
+            grouped[key].append((doc, chunk_embeddings[i]))
+            
+        results = []
+        
+        for key, pairs in grouped.items():
+            first_doc = pairs[0][0]
+            
+            # Create Parent
+            parent_doc_data = {
+                "user_id": user_id,
+                "title": first_doc.metadata.get('title', 'Untitled'),
+                "source_type": provider,
+                "source_url": first_doc.metadata.get('source_url'),
+                "metadata": first_doc.metadata,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            p_res = supabase.table("documents").insert(parent_doc_data).execute()
+            if not p_res.data: continue
+            parent_id = p_res.data[0]['id']
+            
+            # Create Chunks
+            chunk_records = []
+            for idx, (doc, emb) in enumerate(pairs):
+                 chunk_records.append({
+                    "document_id": parent_id,
+                    "content": doc.page_content,
+                    "embedding": emb,
+                    "chunk_index": idx,
+                    "created_at": datetime.utcnow().isoformat()
+                })
+            
+            supabase.table("document_chunks").insert(chunk_records).execute()
+            results.append(parent_id)
+
+        return {"status": "success", "ingested_ids": results}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")

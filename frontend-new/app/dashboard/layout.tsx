@@ -9,7 +9,8 @@ import {
     Settings,
     Menu,
     LogOut,
-    PlusCircle
+    PlusCircle,
+    Database
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -27,7 +28,7 @@ export default function DashboardLayout({
 
     const navItems = [
         { href: "/dashboard", icon: MessageSquare, label: "Chat" },
-        { href: "/dashboard/settings", icon: Settings, label: "Settings" },
+        { href: "/dashboard/settings/data-sources", icon: Database, label: "Data Sources" },
     ]
 
     return (
