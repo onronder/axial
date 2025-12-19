@@ -3,20 +3,12 @@
 import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/api"
 import { GoogleConnectButton } from "@/components/google-connect-button"
+import { DriveExplorer } from "@/components/drive-explorer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, Folder, FileText, ChevronRight, Home, Globe, Upload, Trash2, RefreshCw, Eye, Database, Link as LinkIcon, HardDrive } from "lucide-react"
-
-type ConnectorItem = {
-    id: string
-    name: string
-    type: 'file' | 'folder'
-    mime_type?: string
-    icon?: string
-    parent_id?: string
-}
+import { Loader2, Globe, Upload, Trash2, RefreshCw, Database, Link as LinkIcon, HardDrive, FileText } from "lucide-react"
 
 type DocumentDTO = {
     id: string
@@ -160,164 +152,6 @@ export default function SettingsPage() {
         </div>
     )
 }
-
-// --- Sub-Components ---
-
-function DriveExplorer() {
-    const [isLoading, setIsLoading] = useState(true)
-    const [items, setItems] = useState<ConnectorItem[]>([])
-    const [currentPath, setCurrentPath] = useState<{ id: string | null, name: string }[]>([{ id: null, name: 'Home' }])
-    const [selection, setSelection] = useState<Set<string>>(new Set())
-    const [ingesting, setIngesting] = useState(false)
-
-    // Load Items for Current Folder
-    useEffect(() => {
-        const fetchItems = async () => {
-            setIsLoading(true)
-            try {
-                const currentFolder = currentPath[currentPath.length - 1]
-                const query = currentFolder.id ? `?parent_id=${currentFolder.id}` : ''
-                const res = await authFetch(`/integrations/google_drive/items${query}`)
-                setItems(res)
-            } catch (e) {
-                console.error("Failed to list items", e)
-            } finally {
-                setIsLoading(false)
-            }
-        }
-        fetchItems()
-    }, [currentPath])
-
-    const handleNavigate = (folderId: string, folderName: string) => {
-        setCurrentPath(prev => [...prev, { id: folderId, name: folderName }])
-        setSelection(new Set())
-    }
-
-    const handleBreadcrumbClick = (index: number) => {
-        setCurrentPath(prev => prev.slice(0, index + 1))
-        setSelection(new Set())
-    }
-
-    const toggleSelection = (id: string) => {
-        const next = new Set(selection)
-        if (next.has(id)) next.delete(id)
-        else next.add(id)
-        setSelection(next)
-    }
-
-    const handleIngest = async () => {
-        if (selection.size === 0) return
-        setIngesting(true)
-        try {
-            await authFetch('/integrations/google_drive/ingest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ item_ids: Array.from(selection) })
-            })
-            alert("Ingestion Queued Successfully!")
-            setSelection(new Set())
-        } catch (e) {
-            console.error("Ingest failed", e)
-            alert("Ingestion failed")
-        } finally {
-            setIngesting(false)
-        }
-    }
-
-    return (
-        <div className="flex flex-col h-[500px]">
-            {/* Toolbar */}
-            <div className="flex items-center justify-between p-4 border-b bg-white">
-                {/* Breadcrumbs */}
-                <div className="flex items-center gap-1 text-sm text-slate-500 overflow-x-auto no-scrollbar">
-                    {currentPath.map((item, idx) => (
-                        <div key={idx} className="flex items-center whitespace-nowrap">
-                            {idx > 0 && <ChevronRight className="h-4 w-4 mx-1 flex-shrink-0" />}
-                            <button
-                                onClick={() => handleBreadcrumbClick(idx)}
-                                className={`hover:text-blue-600 font-medium transition-colors ${idx === currentPath.length - 1 ? "text-slate-900" : ""}`}
-                            >
-                                {item.id === null ? <div className="flex items-center gap-1"><Home className="h-4 w-4" /> Drive</div> : item.name}
-                            </button>
-                        </div>
-                    ))}
-                </div>
-
-                {/* Actions */}
-                {selection.size > 0 && (
-                    <Button onClick={handleIngest} disabled={ingesting} size="sm" className="ml-4 animate-in fade-in zoom-in-95">
-                        {ingesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                        Ingest {selection.size} Items
-                    </Button>
-                )}
-            </div>
-
-            {/* File List */}
-            <div className="flex-1 overflow-y-auto bg-white p-2">
-                {isLoading ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                        <Loader2 className="h-8 w-8 animate-spin mb-2" />
-                        <span className="text-sm">Loading contents...</span>
-                    </div>
-                ) : items.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                        <Folder className="h-12 w-12 opacity-20 mb-2" />
-                        <span className="text-sm">This folder is empty</span>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 gap-1">
-                        {items.map((item) => (
-                            <div key={item.id} className={`flex items-center justify-between p-3 rounded-lg transition-all group ${selection.has(item.id) ? "bg-blue-50 border border-blue-100" : "hover:bg-slate-50 border border-transparent"}`}>
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                    {/* Icon */}
-                                    {item.type === 'folder' ? (
-                                        <div className="bg-blue-100 p-2 rounded-md">
-                                            <Folder className="h-5 w-5 text-blue-600" />
-                                        </div>
-                                    ) : (
-                                        <div className="bg-slate-100 p-2 rounded-md">
-                                            <FileText className="h-5 w-5 text-slate-500" />
-                                        </div>
-                                    )}
-
-                                    {/* Name */}
-                                    <div className="flex flex-col min-w-0">
-                                        {item.type === 'folder' ? (
-                                            <button
-                                                onClick={() => handleNavigate(item.id, item.name)}
-                                                className="font-medium text-slate-700 hover:text-blue-600 truncate text-left"
-                                            >
-                                                {item.name}
-                                            </button>
-                                        ) : (
-                                            <span className="text-slate-700 truncate font-medium">{item.name}</span>
-                                        )}
-                                        {item.mime_type && <span className="text-xs text-slate-400 truncate">{item.mime_type}</span>}
-                                    </div>
-                                </div>
-
-                                {/* Checkbox / Action */}
-                                {item.type !== 'folder' && (
-                                    <div onClick={() => toggleSelection(item.id)} className="p-2 cursor-pointer">
-                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selection.has(item.id) ? "bg-blue-600 border-blue-600" : "border-slate-300 bg-white group-hover:border-blue-400"}`}>
-                                            {selection.has(item.id) && <div className="w-2.5 h-1.5 border-b-2 border-l-2 border-white -rotate-45 mb-0.5" />}
-                                        </div>
-                                    </div>
-                                )}
-                                {item.type === 'folder' && (
-                                    <Button variant="ghost" size="icon" onClick={() => handleNavigate(item.id, item.name)} className="text-slate-400 hover:text-blue-600">
-                                        <ChevronRight className="h-4 w-4" />
-                                    </Button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-    )
-}
-
 
 function WebIngest() {
     const [url, setUrl] = useState("")
