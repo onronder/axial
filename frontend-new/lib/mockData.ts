@@ -75,50 +75,75 @@ export interface DataSource {
     lastSync: string;
     icon: string;
     description: string;
-    category: "files" | "cloud" | "web" | "database" | "apps";
+    category: "files" | "cloud" | "web" | "database" | "apps" | "productivity";
+    comingSoon?: boolean;
 }
 
 export const CATEGORY_LABELS: Record<string, string> = {
-    files: "Files",
     cloud: "Cloud Storage",
+    files: "Files",
     web: "Web Resources",
     database: "Databases",
+    productivity: "Productivity Tools",
     apps: "Applications",
 };
 
 export const DATA_SOURCES: DataSource[] = [
+    // Cloud Storage
     {
-        id: "ds1",
+        id: "google-drive",
         name: "Google Drive",
         type: "google_drive",
         status: "connected",
         lastSync: "2 mins ago",
-        icon: "https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg",
+        icon: "google-drive",
         description: "Connect your Google Drive to sync documents.",
         category: "cloud",
     },
     {
-        id: "ds2",
-        name: "Notion",
-        type: "notion",
+        id: "onedrive",
+        name: "OneDrive",
+        type: "onedrive",
         status: "disconnected",
         lastSync: "-",
-        icon: "https://upload.wikimedia.org/wikipedia/commons/e/e9/Notion-logo.svg",
-        description: "Import pages and databases from Notion.",
-        category: "apps",
+        icon: "onedrive",
+        description: "Connect your Microsoft OneDrive",
+        category: "cloud",
     },
     {
-        id: "ds3",
-        name: "Website Crawler",
-        type: "crawler",
-        status: "active",
-        lastSync: "1 hour ago",
-        icon: "globe",
-        description: "Crawl and index your company website.",
-        category: "web",
+        id: "dropbox",
+        name: "Dropbox",
+        type: "dropbox",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "dropbox",
+        description: "Access your Dropbox files",
+        category: "cloud",
     },
     {
-        id: "ds4",
+        id: "box",
+        name: "Box",
+        type: "box",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "box",
+        description: "Connect your Box account",
+        category: "cloud",
+        comingSoon: true,
+    },
+    // Files
+    {
+        id: "sftp",
+        name: "SFTP",
+        type: "sftp",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "sftp",
+        description: "Connect via secure FTP",
+        category: "files",
+    },
+    {
+        id: "file-upload",
         name: "Local Upload",
         type: "local",
         status: "active",
@@ -126,6 +151,59 @@ export const DATA_SOURCES: DataSource[] = [
         icon: "upload",
         description: "Upload PDF, DOCX, and TXT files manually.",
         category: "files",
+    },
+    // Productivity Tools
+    {
+        id: "notion",
+        name: "Notion",
+        type: "notion",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "notion",
+        description: "Import pages and databases",
+        category: "productivity",
+    },
+    {
+        id: "confluence",
+        name: "Confluence",
+        type: "confluence",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "confluence",
+        description: "Connect Atlassian Confluence",
+        category: "productivity",
+    },
+    {
+        id: "coda",
+        name: "Coda",
+        type: "coda",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "coda",
+        description: "Import Coda documents",
+        category: "productivity",
+        comingSoon: true,
+    },
+    {
+        id: "airtable",
+        name: "Airtable",
+        type: "airtable",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "airtable",
+        description: "Connect your Airtable bases",
+        category: "productivity",
+    },
+    // Web Resources
+    {
+        id: "url-crawler",
+        name: "Website Crawler",
+        type: "crawler",
+        status: "active",
+        lastSync: "1 hour ago",
+        icon: "globe",
+        description: "Crawl and index your company website.",
+        category: "web",
     },
 ];
 

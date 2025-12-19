@@ -72,8 +72,8 @@ export function DataSourceCard({ source, onBrowse }: DataSourceCardProps) {
     }
   };
 
-  // Mocking comingSoon property since it's not in the base interface but might be useful
-  const comingSoon = false;
+  // Use comingSoon from source data
+  const comingSoon = source.comingSoon ?? false;
 
   if (comingSoon) {
     return (
@@ -103,8 +103,8 @@ export function DataSourceCard({ source, onBrowse }: DataSourceCardProps) {
     <>
       <div
         className={`relative rounded-xl border bg-card p-5 transition-all ${connected
-            ? "border-primary shadow-brand"
-            : "border-border hover:border-primary/30 hover:shadow-sm"
+          ? "border-primary shadow-brand"
+          : "border-border hover:border-primary/30 hover:shadow-sm"
           }`}
       >
         {connected && (

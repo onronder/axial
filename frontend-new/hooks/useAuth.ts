@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { User } from "@supabase/supabase-js";
+import { User, AuthError } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 
 export interface CustomUser {
@@ -12,71 +12,126 @@ export interface CustomUser {
     plan?: string;
 }
 
+/**
+ * Production-grade authentication hook using Supabase SSR client.
+ * 
+ * This hook:
+ * - Uses the SSR-compatible browser client that manages cookies
+ * - Properly handles loading states to prevent flash of unauthenticated content
+ * - Listens to auth state changes for real-time session updates
+ * - Provides typed error handling for auth operations
+ */
 export const useAuth = () => {
     const [user, setUser] = useState<CustomUser | null>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
-    const mapUser = (sessionUser: User | undefined): CustomUser | null => {
-        if (!sessionUser) return null;
+    /**
+     * Maps Supabase User to CustomUser with app-specific fields
+     */
+    const mapUser = useCallback((supabaseUser: User | null | undefined): CustomUser | null => {
+        if (!supabaseUser) return null;
         return {
-            id: sessionUser.id,
-            email: sessionUser.email,
-            name: sessionUser.user_metadata?.full_name || sessionUser.email?.split('@')[0],
-            plan: 'Free' // Default plan
+            id: supabaseUser.id,
+            email: supabaseUser.email,
+            name: supabaseUser.user_metadata?.full_name || supabaseUser.email?.split('@')[0],
+            plan: 'Free' // Default plan - can be fetched from profiles table later
         };
-    };
+    }, []);
 
     useEffect(() => {
-        // Initial session check
+        let mounted = true;
+
+        /**
+         * Initialize auth state from existing session
+         */
         const initAuth = async () => {
             try {
-                const { data: { session } } = await supabase.auth.getSession();
-                setUser(mapUser(session?.user));
+                const { data: { session }, error } = await supabase.auth.getSession();
+
+                if (error) {
+                    console.error("Session fetch error:", error.message);
+                }
+
+                if (mounted) {
+                    setUser(mapUser(session?.user));
+                    setLoading(false);
+                }
             } catch (error) {
                 console.error("Auth init error:", error);
-                setUser(null);
-            } finally {
-                setLoading(false);
+                if (mounted) {
+                    setUser(null);
+                    setLoading(false);
+                }
             }
         };
 
         initAuth();
 
-        // Listen for auth changes
+        /**
+         * Subscribe to auth state changes (login, logout, token refresh)
+         */
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (_event, session) => {
-                setUser(mapUser(session?.user));
-                setLoading(false);
+            async (event, session) => {
+                if (mounted) {
+                    setUser(mapUser(session?.user));
+                    setLoading(false);
+
+                    // Optional: Handle specific auth events
+                    if (event === 'SIGNED_OUT') {
+                        router.push('/login');
+                    }
+                }
             }
         );
 
-        return () => subscription.unsubscribe();
-    }, []);
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
+    }, [mapUser, router]);
 
-    const login = async (email: string, pass: string) => {
+    /**
+     * Sign in with email and password
+     */
+    const login = async (email: string, password: string): Promise<void> => {
         const { error } = await supabase.auth.signInWithPassword({
             email,
-            password: pass,
+            password,
         });
-        if (error) throw error;
-        return true;
+
+        if (error) {
+            throw new Error(getAuthErrorMessage(error));
+        }
     };
 
-    const register = async (name: string, email: string, pass: string) => {
+    /**
+     * Register a new user
+     */
+    const register = async (name: string, email: string, password: string): Promise<void> => {
         const { error } = await supabase.auth.signUp({
             email,
-            password: pass,
+            password,
             options: {
                 data: { full_name: name },
             },
         });
-        if (error) throw error;
-        return true;
+
+        if (error) {
+            throw new Error(getAuthErrorMessage(error));
+        }
     };
 
-    const logout = async () => {
-        await supabase.auth.signOut();
+    /**
+     * Sign out the current user
+     */
+    const logout = async (): Promise<void> => {
+        const { error } = await supabase.auth.signOut();
+
+        if (error) {
+            console.error("Logout error:", error.message);
+        }
+
         setUser(null);
         router.push("/login");
     };
@@ -90,3 +145,19 @@ export const useAuth = () => {
         logout
     };
 };
+
+/**
+ * Convert Supabase AuthError to user-friendly message
+ */
+function getAuthErrorMessage(error: AuthError): string {
+    const errorMap: Record<string, string> = {
+        'Invalid login credentials': 'Invalid email or password. Please try again.',
+        'Email not confirmed': 'Please verify your email before logging in.',
+        'User already registered': 'An account with this email already exists.',
+        'Password should be at least 6 characters': 'Password must be at least 6 characters long.',
+        'Signup requires a valid password': 'Please provide a valid password.',
+        'Email rate limit exceeded': 'Too many attempts. Please try again later.',
+    };
+
+    return errorMap[error.message] || error.message;
+}

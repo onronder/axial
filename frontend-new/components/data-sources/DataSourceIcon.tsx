@@ -21,7 +21,7 @@ interface DataSourceIconProps {
 }
 
 const iconConfig: Record<string, { icon: typeof HardDrive; color: string }> = {
-  "google_drive": { icon: HardDrive, color: "text-yellow-500" }, // Updated ID key
+  "google-drive": { icon: HardDrive, color: "text-yellow-500" },
   "onedrive": { icon: Cloud, color: "text-blue-500" },
   "dropbox": { icon: FolderSync, color: "text-blue-400" },
   "box": { icon: Box, color: "text-blue-600" },
@@ -33,8 +33,8 @@ const iconConfig: Record<string, { icon: typeof HardDrive; color: string }> = {
   "slack": { icon: MessageSquare, color: "text-purple-500" },
   "teams": { icon: Users, color: "text-blue-600" },
   "discord": { icon: MessageSquare, color: "text-indigo-500" },
-  "crawler": { icon: Globe, color: "text-green-500" }, // Updated ID key
-  "local": { icon: Upload, color: "text-primary" }, // Updated ID key
+  "url-crawler": { icon: Globe, color: "text-green-500" },
+  "file-upload": { icon: Upload, color: "text-primary" },
 };
 
 export function DataSourceIcon({ sourceId, className }: DataSourceIconProps) {
