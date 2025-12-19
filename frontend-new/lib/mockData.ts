@@ -64,3 +64,67 @@ export const mockMessages: Record<string, Message[]> = {
     "1": mockConversations[0].messages,
     "2": []
 };
+
+// --- DATA SOURCES MOCK DATA ---
+
+export interface DataSource {
+    id: string;
+    name: string;
+    type: string;
+    status: "active" | "error" | "disconnected" | "connected";
+    lastSync: string;
+    icon: string;
+    description: string;
+    category: "files" | "cloud" | "web" | "database" | "apps";
+}
+
+export const CATEGORY_LABELS: Record<string, string> = {
+    files: "Files",
+    cloud: "Cloud Storage",
+    web: "Web Resources",
+    database: "Databases",
+    apps: "Applications",
+};
+
+export const DATA_SOURCES: DataSource[] = [
+    {
+        id: "ds1",
+        name: "Google Drive",
+        type: "google_drive",
+        status: "connected",
+        lastSync: "2 mins ago",
+        icon: "https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg",
+        description: "Connect your Google Drive to sync documents.",
+        category: "cloud",
+    },
+    {
+        id: "ds2",
+        name: "Notion",
+        type: "notion",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "https://upload.wikimedia.org/wikipedia/commons/e/e9/Notion-logo.svg",
+        description: "Import pages and databases from Notion.",
+        category: "apps",
+    },
+    {
+        id: "ds3",
+        name: "Website Crawler",
+        type: "crawler",
+        status: "active",
+        lastSync: "1 hour ago",
+        icon: "globe",
+        description: "Crawl and index your company website.",
+        category: "web",
+    },
+    {
+        id: "ds4",
+        name: "Local Upload",
+        type: "local",
+        status: "active",
+        lastSync: "Just now",
+        icon: "upload",
+        description: "Upload PDF, DOCX, and TXT files manually.",
+        category: "files",
+    },
+];
