@@ -1,11 +1,10 @@
 "use client";
 
-import { LayoutDashboard } from "lucide-react"
-import Link from "next/link" // Keep imports if needed, though Link is unused in snippet
+import { LayoutDashboard, Loader2 } from "lucide-react"
+import Link from "next/link"
 import { useAuth } from "@/hooks/useAuth"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
-import { AuthLoading } from "@/components/ui/auth-loading" // Assuming we can use it here too for consistency or a smaller spinner
 
 export default function AuthLayout({
     children,
@@ -22,7 +21,11 @@ export default function AuthLayout({
     }, [isAuthenticated, loading, router])
 
     if (loading) {
-        return <AuthLoading />
+        return (
+            <div className="flex h-screen items-center justify-center bg-background">
+                <Loader2 className="animate-spin h-8 w-8 text-primary" />
+            </div>
+        )
     }
 
     // Only render children (login/register forms) if NOT authenticated

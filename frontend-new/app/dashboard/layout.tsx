@@ -3,9 +3,9 @@
 import { ReactNode, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { AuthLoading } from "@/components/ui/auth-loading";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { Loader2 } from "lucide-react";
 
 interface DashboardLayoutProps {
     children: ReactNode;
@@ -17,12 +17,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     useEffect(() => {
         if (!loading && !isAuthenticated) {
-            router.push("/login"); // Updated path to match expected route
+            router.push("/login");
         }
     }, [isAuthenticated, loading, router]);
 
     if (loading) {
-        return <AuthLoading />;
+        return (
+            <div className="flex h-screen items-center justify-center bg-background">
+                <Loader2 className="animate-spin h-8 w-8 text-primary" />
+            </div>
+        );
     }
 
     if (!isAuthenticated) {

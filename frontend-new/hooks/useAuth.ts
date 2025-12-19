@@ -2,48 +2,54 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { useToast } from "@/hooks/use-toast";
+import { User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 
+export interface CustomUser {
+    id: string;
+    email?: string;
+    name?: string;
+    plan?: string;
+}
+
 export const useAuth = () => {
-    const [user, setUser] = useState<{ id: string; email?: string; name?: string; plan?: string } | null>(null);
+    const [user, setUser] = useState<CustomUser | null>(null);
     const [loading, setLoading] = useState(true);
-    const { toast } = useToast();
     const router = useRouter();
 
+    const mapUser = (sessionUser: User | undefined): CustomUser | null => {
+        if (!sessionUser) return null;
+        return {
+            id: sessionUser.id,
+            email: sessionUser.email,
+            name: sessionUser.user_metadata?.full_name || sessionUser.email?.split('@')[0],
+            plan: 'Free' // Default plan
+        };
+    };
+
     useEffect(() => {
-        // Check active session
-        const getSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-                setUser({
-                    id: session.user.id,
-                    email: session.user.email,
-                    name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
-                    plan: 'Free' // Default plan for now, can be fetched from DB profile later
-                });
-            } else {
+        // Initial session check
+        const initAuth = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                setUser(mapUser(session?.user));
+            } catch (error) {
+                console.error("Auth init error:", error);
                 setUser(null);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         };
 
-        getSession();
+        initAuth();
 
-        // Listen for changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (session?.user) {
-                setUser({
-                    id: session.user.id,
-                    email: session.user.email,
-                    name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
-                    plan: 'Free'
-                });
-            } else {
-                setUser(null);
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+            async (_event, session) => {
+                setUser(mapUser(session?.user));
+                setLoading(false);
             }
-            setLoading(false);
-        });
+        );
 
         return () => subscription.unsubscribe();
     }, []);
@@ -53,12 +59,7 @@ export const useAuth = () => {
             email,
             password: pass,
         });
-
-        if (error) {
-            console.error("Login error:", error.message);
-            throw error;
-        }
-
+        if (error) throw error;
         return true;
     };
 
@@ -67,33 +68,18 @@ export const useAuth = () => {
             email,
             password: pass,
             options: {
-                data: {
-                    full_name: name,
-                },
+                data: { full_name: name },
             },
         });
-
-        if (error) {
-            console.error("Register error:", error.message);
-            throw error;
-        }
-
+        if (error) throw error;
         return true;
     };
 
     const logout = async () => {
-        const { error } = await supabase.auth.signOut();
-        if (error) {
-            console.error("Logout error:", error.message);
-            toast({
-                title: "Error signing out",
-                description: error.message,
-                variant: "destructive"
-            });
-        }
+        await supabase.auth.signOut();
         setUser(null);
-        router.push("/login"); // Redirect to login after logout
-    }
+        router.push("/login");
+    };
 
     return {
         user,
