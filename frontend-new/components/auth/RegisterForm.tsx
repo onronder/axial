@@ -54,11 +54,12 @@ export function RegisterForm() {
         title: "Account created!",
         description: "Welcome to Axio Hub.",
       });
-      router.push("/chat");
-    } catch {
+      router.push("/dashboard");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Please try again later.";
       toast({
         title: "Registration failed",
-        description: "Please try again later.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

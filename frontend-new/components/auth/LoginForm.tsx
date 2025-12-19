@@ -50,11 +50,12 @@ export function LoginForm() {
         title: "Welcome back!",
         description: "You've successfully logged in.",
       });
-      router.push("/chat");
-    } catch {
+      router.push("/dashboard");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Please check your credentials and try again.";
       toast({
         title: "Login failed",
-        description: "Please check your credentials and try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
