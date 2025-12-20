@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from typing import Optional
 from models import IngestResponse
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
+from core.embeddings import EmbeddingFactory, EmbeddingTier
 from connectors.factory import get_connector
 import uuid
 import datetime
 import json
-from langchain_openai import OpenAIEmbeddings
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
-
-from typing import Optional
 
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_document(
@@ -65,17 +66,44 @@ async def ingest_document(
     if not docs:
         return IngestResponse(status="skipped", doc_id="empty")
     
-    # 2. Embedding (Remains in Router/Service Layer for now)
-    embeddings_model = OpenAIEmbeddings(
-        model="text-embedding-3-small",
-        api_key=settings.OPENAI_API_KEY
+    # 2. Semantic Chunking - Split documents into optimal chunks for embedding
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,       # Optimal for embedding models
+        chunk_overlap=100,     # Preserve context at boundaries
+        separators=["\n\n", "\n", ". ", " ", ""],
+        length_function=len
     )
     
-    chunk_texts = [d.page_content for d in docs]
+    # Apply chunking to all documents
+    chunked_docs = []
+    for doc in docs:
+        chunks = splitter.split_text(doc.page_content)
+        for chunk in chunks:
+            chunked_docs.append({
+                "page_content": chunk,
+                "metadata": doc.metadata
+            })
+    
+    if not chunked_docs:
+        return IngestResponse(status="skipped", doc_id="empty")
+    
+    logger.info(f"📄 [Ingest] Split {len(docs)} documents into {len(chunked_docs)} chunks")
+    
+    # 3. Embedding with cost-optimized tier selection
+    # Auto-select tier based on chunk count (large batches use cheaper models)
+    tier = EmbeddingFactory.auto_select(doc_count=len(chunked_docs), priority="normal")
+    embeddings_model = EmbeddingFactory.get_embeddings(tier)
+    
+    chunk_texts = [d["page_content"] for d in chunked_docs]
     try:
+        logger.info(f"🔢 [Ingest] Embedding {len(chunk_texts)} chunks with {tier.value} tier")
         chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+        logger.info(f"🔢 [Ingest] ✅ Embedding complete")
     except Exception as e:
-         raise HTTPException(
+        logger.error(f"🔢 [Ingest] ❌ Embedding failed: {e}")
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate embeddings: {str(e)}"
         )
@@ -115,13 +143,13 @@ async def ingest_document(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Database Insertion Error (Parent): {str(e)}")
 
-    # 3.2. Insert Chunks
+    # 4.2. Insert Chunks (using the chunked documents)
     chunk_records = []
     
-    for i, doc in enumerate(docs):
+    for i, chunk_doc in enumerate(chunked_docs):
         chunk_records.append({
             "document_id": parent_id,
-            "content": doc.page_content,
+            "content": chunk_doc["page_content"],
             # Embedding is already computed
             "embedding": chunk_embeddings[i],
             "chunk_index": i,

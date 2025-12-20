@@ -1,10 +1,15 @@
 import os
+import logging
 from typing import List, Optional
+from datetime import datetime
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
+
+logger = logging.getLogger(__name__)
 
 class DriveConnector(BaseConnector):
     async def authorize(self, user_id: str) -> bool:
@@ -13,14 +18,23 @@ class DriveConnector(BaseConnector):
         return len(res.data) > 0
 
     def _get_credentials(self, user_id: str) -> Credentials:
+        """
+        Get Google credentials for a user, with automatic token refresh.
+        
+        If the access token is expired, this will:
+        1. Refresh the token using the refresh_token
+        2. Update the database with the new access_token and expiry
+        """
         supabase = get_supabase()
         res = supabase.table("user_integrations").select("*").eq("user_id", user_id).eq("provider", "google_drive").execute()
         
         if not res.data:
-             raise ValueError("Google Drive not connected for this user.")
+            raise ValueError("Google Drive not connected for this user.")
              
         integration = res.data[0]
-        return Credentials(
+        
+        # Build credentials object
+        creds = Credentials(
             token=integration['access_token'],
             refresh_token=integration.get('refresh_token'),
             token_uri="https://oauth2.googleapis.com/token",
@@ -28,6 +42,31 @@ class DriveConnector(BaseConnector):
             client_secret=settings.GOOGLE_CLIENT_SECRET,
             scopes=['https://www.googleapis.com/auth/drive.readonly']
         )
+        
+        # Proactive token refresh if expired or about to expire
+        if creds.expired or not creds.valid:
+            if creds.refresh_token:
+                logger.info(f"🔄 [DriveConnector] Token expired for user {user_id}, refreshing...")
+                try:
+                    creds.refresh(Request())
+                    logger.info(f"🔄 [DriveConnector] ✅ Token refreshed successfully")
+                    
+                    # Atomically update the database with new credentials
+                    supabase.table("user_integrations").update({
+                        "access_token": creds.token,
+                        "expires_at": creds.expiry.isoformat() if creds.expiry else None,
+                        "updated_at": datetime.utcnow().isoformat()
+                    }).eq("user_id", user_id).eq("provider", "google_drive").execute()
+                    
+                    logger.info(f"🔄 [DriveConnector] ✅ Database updated with new token")
+                except Exception as e:
+                    logger.error(f"🔄 [DriveConnector] ❌ Token refresh failed: {e}")
+                    raise ValueError(f"Failed to refresh Google Drive token: {e}")
+            else:
+                logger.error(f"🔄 [DriveConnector] ❌ No refresh token available for user {user_id}")
+                raise ValueError("Google Drive token expired and no refresh token available. Please reconnect.")
+        
+        return creds
 
     async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
         creds = self._get_credentials(user_id)
