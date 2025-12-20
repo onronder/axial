@@ -7,21 +7,19 @@ import { api } from "@/lib/api";
 export const useDataSources = () => {
     const [dataSources, setDataSources] = useState<DataSource[]>(DATA_SOURCES);
     const [connectedSources, setConnectedSources] = useState<string[]>([]);
-    // const [connectedSources, setConnectedSources] = useState<string[]>(
-    //     DATA_SOURCES.filter((ds) => ds.status === "connected" || ds.status === "active").map((ds) => ds.id)
-    // );
 
     // Fetch real status
     useEffect(() => {
         const fetchStatus = async () => {
+            console.log('📦 [useDataSources] Fetching integration status...');
             try {
-                // api.get returns AxiosResponse, so we await it and get .data
                 const { data: statusMap } = await api.get('/api/v1/integrations/status');
-                // statusMap: { [key: string]: boolean } e.g., { "google_drive": true }
+                console.log('📦 [useDataSources] ✅ Status fetched:', statusMap);
 
                 const newConnectedSources: string[] = [];
                 const updatedDataSources = dataSources.map(ds => {
-                    const isConnected = statusMap[ds.type]; // ds.type matches "google_drive", "notion", etc.
+                    const isConnected = statusMap[ds.type];
+                    console.log(`📦 [useDataSources] Source ${ds.id} (${ds.type}): ${isConnected ? 'connected' : 'disconnected'}`);
 
                     if (isConnected) {
                         newConnectedSources.push(ds.id);
@@ -32,27 +30,43 @@ export const useDataSources = () => {
 
                 setConnectedSources(newConnectedSources);
                 setDataSources(updatedDataSources);
-            } catch (error) {
-                console.error("Failed to fetch integration status:", error);
+                console.log('📦 [useDataSources] Connected sources:', newConnectedSources);
+            } catch (error: any) {
+                console.error("📦 [useDataSources] ❌ Failed to fetch integration status:", error);
+                console.error("📦 [useDataSources] Error response:", error.response?.data);
+                console.error("📦 [useDataSources] Error status:", error.response?.status);
             }
         };
 
+        console.log('📦 [useDataSources] Hook mounted, fetching status');
         fetchStatus();
     }, []); // Run once on mount
 
     const connect = (id: string) => {
+        console.log('📦 [useDataSources] Connect called for:', id);
         const source = dataSources.find(ds => ds.id === id);
-        if (!source) return;
+        if (!source) {
+            console.error('📦 [useDataSources] ❌ Source not found:', id);
+            return;
+        }
 
         // Handle different source types
         if (source.id === "google-drive") {
-            // Redirect to Google OAuth
+            console.log('📦 [useDataSources] Initiating Google OAuth flow...');
             const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
             const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
                 || (typeof window !== 'undefined' ? `${window.location.origin}/dashboard/oauth/callback` : undefined);
 
+            console.log('📦 [useDataSources] OAuth config:', {
+                clientId: clientId ? `${clientId.substring(0, 20)}...` : 'MISSING',
+                redirectUri
+            });
+
             if (!clientId || !redirectUri) {
-                console.error('Google OAuth not configured');
+                console.error('📦 [useDataSources] ❌ Google OAuth not configured! Missing:', {
+                    clientId: !clientId ? 'NEXT_PUBLIC_GOOGLE_CLIENT_ID' : 'present',
+                    redirectUri: !redirectUri ? 'NEXT_PUBLIC_GOOGLE_REDIRECT_URI' : 'present'
+                });
                 return;
             }
 
@@ -67,24 +81,33 @@ export const useDataSources = () => {
                 include_granted_scopes: 'true'
             });
 
-            window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+            const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+            console.log('📦 [useDataSources] Redirecting to:', oauthUrl);
+            window.location.href = oauthUrl;
+        } else {
+            console.log('📦 [useDataSources] Source type not handled:', source.id);
         }
-        // For other sources like sftp, onedrive, etc. - would be handled differently
-        // These might open modals or redirect to other OAuth flows
     };
 
     const disconnect = async (id: string) => {
+        console.log('📦 [useDataSources] Disconnect called for:', id);
         const source = dataSources.find(ds => ds.id === id);
-        if (!source) return;
+        if (!source) {
+            console.error('📦 [useDataSources] ❌ Source not found:', id);
+            return;
+        }
 
         try {
+            console.log(`📦 [useDataSources] Making DELETE request to /api/v1/integrations/${source.type}`);
             await api.delete(`/api/v1/integrations/${source.type}`);
+            console.log('📦 [useDataSources] ✅ Disconnected successfully');
             setConnectedSources((prev) => prev.filter((sourceId) => sourceId !== id));
             setDataSources((prev) =>
                 prev.map((ds) => (ds.id === id ? { ...ds, status: "disconnected" } : ds))
             );
-        } catch (error) {
-            // Re-throw error for callers to handle with their own toast/UI
+        } catch (error: any) {
+            console.error('📦 [useDataSources] ❌ Failed to disconnect:', error);
+            console.error('📦 [useDataSources] Error response:', error.response?.data);
             throw new Error("Failed to disconnect source");
         }
     };
@@ -93,19 +116,23 @@ export const useDataSources = () => {
      * Fetch files/folders from a connected data source
      */
     const getFiles = async (sourceId: string, path: string = "") => {
+        console.log('📦 [useDataSources] getFiles called:', { sourceId, path });
         const source = dataSources.find(ds => ds.id === sourceId);
         if (!source) {
-            console.error("Source not found:", sourceId);
+            console.error("📦 [useDataSources] ❌ Source not found:", sourceId);
             return [];
         }
 
         try {
+            console.log(`📦 [useDataSources] Making GET request to /api/v1/integrations/${source.type}/items`);
             const { data } = await api.get(`/api/v1/integrations/${source.type}/items`, {
                 params: path ? { parent_id: path } : undefined
             });
+            console.log('📦 [useDataSources] ✅ Files fetched:', data?.length || 0, 'items');
             return data;
-        } catch (error) {
-            console.error(`Failed to fetch files for ${sourceId}:`, error);
+        } catch (error: any) {
+            console.error(`📦 [useDataSources] ❌ Failed to fetch files for ${sourceId}:`, error);
+            console.error('📦 [useDataSources] Error response:', error.response?.data);
             return [];
         }
     };
@@ -114,22 +141,33 @@ export const useDataSources = () => {
      * Ingest selected files from a data source
      */
     const ingestFiles = async (sourceId: string, fileIds: string[]) => {
+        console.log('📦 [useDataSources] ingestFiles called:', { sourceId, fileIds });
         const source = dataSources.find(ds => ds.id === sourceId);
         if (!source) {
-            console.error("Source not found:", sourceId);
+            console.error("📦 [useDataSources] ❌ Source not found:", sourceId);
             return false;
         }
 
         try {
+            console.log(`📦 [useDataSources] Making POST request to /api/v1/integrations/${source.type}/ingest`);
             await api.post(`/api/v1/integrations/${source.type}/ingest`, {
                 item_ids: fileIds
             });
+            console.log('📦 [useDataSources] ✅ Files ingested successfully');
             return true;
-        } catch (error) {
-            console.error(`Failed to ingest files from ${sourceId}:`, error);
+        } catch (error: any) {
+            console.error(`📦 [useDataSources] ❌ Failed to ingest files from ${sourceId}:`, error);
+            console.error('📦 [useDataSources] Error response:', error.response?.data);
             return false;
         }
     };
+
+    // Log current state
+    console.log('📦 [useDataSources] Current state:', {
+        dataSourcesCount: dataSources.length,
+        connectedCount: connectedSources.length,
+        connectedSources
+    });
 
     return {
         dataSources,

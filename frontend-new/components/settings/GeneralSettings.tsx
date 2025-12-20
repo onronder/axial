@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Moon, Sun, Monitor, Loader2 } from "lucide-react";
+import { Moon, Sun, Monitor, Loader2, User, Palette, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,92 +39,112 @@ export function GeneralSettings() {
   };
 
   const themeOptions = [
-    { value: "light", label: "Light", icon: Sun },
-    { value: "dark", label: "Dark", icon: Moon },
-    { value: "system", label: "System", icon: Monitor },
+    { value: "light", label: "Light", icon: Sun, description: "Bright and clean" },
+    { value: "dark", label: "Dark", icon: Moon, description: "Easy on the eyes" },
+    { value: "system", label: "System", icon: Monitor, description: "Match your device" },
   ] as const;
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading your settings...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-foreground">General</h1>
-        <p className="mt-1 text-muted-foreground">Manage your profile and preferences</p>
-      </div>
-
-      {/* Personal Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Personal Information</CardTitle>
-          <CardDescription>Update your profile details</CardDescription>
+    <div className="space-y-6 animate-fade-in">
+      {/* Personal Information Card */}
+      <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
+        <CardHeader className="border-b border-border/50 bg-muted/30">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-lg shadow-primary/20">
+              <User className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Personal Information</CardTitle>
+              <CardDescription>Update your profile details</CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6 p-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="firstName">First Name</Label>
+              <Label htmlFor="firstName" className="text-sm font-medium">First Name</Label>
               <Input
                 id="firstName"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 placeholder="John"
+                className="transition-all focus:ring-2 focus:ring-primary/20"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name</Label>
+              <Label htmlFor="lastName" className="text-sm font-medium">Last Name</Label>
               <Input
                 id="lastName"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 placeholder="Doe"
+                className="transition-all focus:ring-2 focus:ring-primary/20"
               />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email" className="text-sm font-medium">Email</Label>
             <Input
               id="email"
               type="email"
               value={user?.email || ""}
               disabled
-              placeholder="Loading..."
-              className="bg-muted"
+              className="bg-muted/50 cursor-not-allowed"
             />
-            <p className="text-xs text-muted-foreground">
-              Email is managed through your authentication provider
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/60" />
+              Managed through your authentication provider
             </p>
           </div>
-          <Button
-            variant="gradient"
-            onClick={handleSaveProfile}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              "Save Changes"
-            )}
-          </Button>
+          <div className="pt-2">
+            <Button
+              variant="gradient"
+              onClick={handleSaveProfile}
+              disabled={isSaving}
+              className="w-full sm:w-auto"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Appearance */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Appearance</CardTitle>
-          <CardDescription>Choose how Axio Hub looks for you</CardDescription>
+      {/* Appearance Card */}
+      <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
+        <CardHeader className="border-b border-border/50 bg-muted/30">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-white shadow-lg shadow-accent/20">
+              <Palette className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Appearance</CardTitle>
+              <CardDescription>Choose how Axio Hub looks for you</CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-3">
+        <CardContent className="p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {themeOptions.map((option) => {
               const Icon = option.icon;
               const isActive = theme === option.value;
@@ -133,16 +153,37 @@ export function GeneralSettings() {
                   key={option.value}
                   onClick={() => setTheme(option.value)}
                   className={cn(
-                    "flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all",
+                    "relative flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition-all duration-300",
                     isActive
-                      ? "border-primary bg-primary/5 shadow-brand"
-                      : "border-border hover:border-primary/50"
+                      ? "border-primary bg-gradient-to-br from-primary/10 to-accent/5 shadow-lg shadow-primary/10"
+                      : "border-border hover:border-primary/50 hover:bg-muted/30 hover:shadow-md"
                   )}
                 >
-                  <Icon className={cn("h-6 w-6", isActive ? "text-primary" : "text-muted-foreground")} />
-                  <span className={cn("text-sm font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
-                    {option.label}
-                  </span>
+                  {/* Active indicator */}
+                  {isActive && (
+                    <div className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-white shadow-lg">
+                      <Check className="h-3 w-3" />
+                    </div>
+                  )}
+                  <div className={cn(
+                    "flex h-12 w-12 items-center justify-center rounded-xl transition-all",
+                    isActive
+                      ? "bg-gradient-to-br from-primary to-accent text-white shadow-lg"
+                      : "bg-muted text-muted-foreground"
+                  )}>
+                    <Icon className="h-6 w-6" />
+                  </div>
+                  <div className="text-center">
+                    <span className={cn(
+                      "block font-semibold transition-colors",
+                      isActive ? "text-primary" : "text-foreground"
+                    )}>
+                      {option.label}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {option.description}
+                    </span>
+                  </div>
                 </button>
               );
             })}

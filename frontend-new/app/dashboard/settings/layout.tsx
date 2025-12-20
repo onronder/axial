@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { User, Database, FileText, Bell, CreditCard, Users } from "lucide-react";
+import { User, Database, FileText, Bell, CreditCard, Users, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
@@ -24,20 +24,27 @@ export default function SettingsLayout({
 
     return (
         <div className="flex flex-col h-full">
-            {/* Settings Header with Tab Navigation */}
-            <div className="sticky top-0 z-10 bg-background border-b border-border">
+            {/* Settings Header with Premium Styling */}
+            <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-xl border-b border-border">
                 <div className="px-4 lg:px-8 pt-6 pb-0">
-                    <h1 className="font-display text-2xl font-bold text-foreground mb-1">
-                        Settings
-                    </h1>
-                    <p className="text-sm text-muted-foreground mb-4">
-                        Manage your account and preferences
-                    </p>
+                    <div className="flex items-center gap-3 mb-1">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-lg shadow-primary/20">
+                            <Settings className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h1 className="font-display text-2xl font-bold text-foreground">
+                                Settings
+                            </h1>
+                            <p className="text-sm text-muted-foreground">
+                                Manage your account and preferences
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
-                {/* Horizontal Tab Navigation */}
+                {/* Premium Tab Navigation */}
                 <ScrollArea className="w-full">
-                    <nav className="flex px-4 lg:px-8 gap-1">
+                    <nav className="flex px-4 lg:px-8 gap-1 mt-4">
                         {settingsNav.map((item) => {
                             const Icon = item.icon;
                             const isActive = pathname === item.path ||
@@ -48,14 +55,22 @@ export default function SettingsLayout({
                                     key={item.path}
                                     href={item.path}
                                     className={cn(
-                                        "flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all border-b-2 -mb-px",
+                                        "relative flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-all duration-300 rounded-t-lg -mb-px",
                                         isActive
-                                            ? "border-primary text-primary"
-                                            : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
+                                            ? "text-primary bg-primary/5"
+                                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                     )}
                                 >
-                                    <Icon className="h-4 w-4" />
+                                    <Icon className={cn(
+                                        "h-4 w-4 transition-colors",
+                                        isActive ? "text-primary" : ""
+                                    )} />
                                     <span className="hidden sm:inline">{item.name}</span>
+
+                                    {/* Active indicator bar */}
+                                    {isActive && (
+                                        <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-primary to-accent rounded-full" />
+                                    )}
                                 </Link>
                             );
                         })}
@@ -64,9 +79,9 @@ export default function SettingsLayout({
                 </ScrollArea>
             </div>
 
-            {/* Main Content */}
+            {/* Main Content with subtle animation */}
             <main className="flex-1 overflow-auto p-4 lg:p-8">
-                <div className="mx-auto max-w-4xl">
+                <div className="mx-auto max-w-4xl animate-fade-in">
                     {children}
                 </div>
             </main>

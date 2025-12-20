@@ -34,19 +34,18 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
 
     return (
-        <SidebarProvider>
+        <SidebarProvider defaultOpen={true}>
             <AppSidebar />
-            <SidebarInset className="flex flex-col min-h-screen bg-background">
+            <SidebarInset>
                 {/* Mobile header with sidebar trigger */}
                 <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:hidden">
                     <SidebarTrigger className="-ml-1" />
                 </header>
                 {/* Main content area */}
-                <main className="flex-1 overflow-auto">
+                <div className="flex flex-1 flex-col overflow-auto">
                     {children}
-                </main>
+                </div>
             </SidebarInset>
         </SidebarProvider>
     );
 }
-

@@ -37,19 +37,27 @@ export const useChatHistory = () => {
      * Fetch all conversations for the current user
      */
     const fetchConversations = useCallback(async () => {
+        console.log('💬 [useChatHistory] Starting fetchConversations...');
         setIsLoading(true);
         try {
+            console.log('💬 [useChatHistory] Making GET request to /api/v1/conversations');
             const { data } = await api.get('/api/v1/conversations');
+            console.log('💬 [useChatHistory] ✅ Conversations fetched:', data?.length || 0, 'items');
+            console.log('💬 [useChatHistory] Data:', data);
             setConversations(data);
-        } catch (error) {
-            console.error('Failed to fetch conversations:', error);
+        } catch (error: any) {
+            console.error('💬 [useChatHistory] ❌ Failed to fetch conversations:', error);
+            console.error('💬 [useChatHistory] Error response:', error.response?.data);
+            console.error('💬 [useChatHistory] Error status:', error.response?.status);
             // Don't show toast on initial load failure - might just be empty
         } finally {
             setIsLoading(false);
+            console.log('💬 [useChatHistory] fetchConversations complete');
         }
     }, []);
 
     useEffect(() => {
+        console.log('💬 [useChatHistory] Hook mounted, calling fetchConversations');
         fetchConversations();
     }, [fetchConversations]);
 
@@ -57,15 +65,20 @@ export const useChatHistory = () => {
      * Create a new conversation
      */
     const createNewChat = async (title: string = 'New Chat'): Promise<string> => {
+        console.log('💬 [useChatHistory] Creating new chat with title:', title);
         try {
+            console.log('💬 [useChatHistory] Making POST request to /api/v1/conversations');
             const { data } = await api.post('/api/v1/conversations', { title });
+            console.log('💬 [useChatHistory] ✅ Chat created successfully:', data);
             setConversations(prev => [data, ...prev]);
             return data.id;
-        } catch (error) {
-            console.error('Failed to create conversation:', error);
+        } catch (error: any) {
+            console.error('💬 [useChatHistory] ❌ Failed to create conversation:', error);
+            console.error('💬 [useChatHistory] Error response:', error.response?.data);
+            console.error('💬 [useChatHistory] Error status:', error.response?.status);
             toast({
                 title: 'Error',
-                description: 'Failed to create new chat.',
+                description: error.response?.data?.detail || 'Failed to create new chat.',
                 variant: 'destructive',
             });
             throw error;
@@ -76,18 +89,21 @@ export const useChatHistory = () => {
      * Delete a conversation
      */
     const deleteChat = async (id: string): Promise<void> => {
+        console.log('💬 [useChatHistory] Deleting chat:', id);
         try {
             await api.delete(`/api/v1/conversations/${id}`);
+            console.log('💬 [useChatHistory] ✅ Chat deleted successfully');
             setConversations(prev => prev.filter(c => c.id !== id));
             toast({
                 title: 'Chat deleted',
                 description: 'The conversation has been removed.',
             });
-        } catch (error) {
-            console.error('Failed to delete conversation:', error);
+        } catch (error: any) {
+            console.error('💬 [useChatHistory] ❌ Failed to delete conversation:', error);
+            console.error('💬 [useChatHistory] Error response:', error.response?.data);
             toast({
                 title: 'Error',
-                description: 'Failed to delete chat.',
+                description: error.response?.data?.detail || 'Failed to delete chat.',
                 variant: 'destructive',
             });
         }
@@ -97,16 +113,19 @@ export const useChatHistory = () => {
      * Rename a conversation
      */
     const renameChat = async (id: string, title: string): Promise<void> => {
+        console.log('💬 [useChatHistory] Renaming chat:', id, 'to:', title);
         try {
             const { data } = await api.patch(`/api/v1/conversations/${id}`, { title });
+            console.log('💬 [useChatHistory] ✅ Chat renamed successfully:', data);
             setConversations(prev =>
                 prev.map(c => (c.id === id ? { ...c, title: data.title } : c))
             );
-        } catch (error) {
-            console.error('Failed to rename conversation:', error);
+        } catch (error: any) {
+            console.error('💬 [useChatHistory] ❌ Failed to rename conversation:', error);
+            console.error('💬 [useChatHistory] Error response:', error.response?.data);
             toast({
                 title: 'Error',
-                description: 'Failed to rename chat.',
+                description: error.response?.data?.detail || 'Failed to rename chat.',
                 variant: 'destructive',
             });
         }
@@ -116,14 +135,24 @@ export const useChatHistory = () => {
      * Get messages for a specific conversation
      */
     const getMessagesById = async (conversationId: string): Promise<Message[]> => {
+        console.log('💬 [useChatHistory] Fetching messages for conversation:', conversationId);
         try {
             const { data } = await api.get(`/api/v1/conversations/${conversationId}/messages`);
+            console.log('💬 [useChatHistory] ✅ Messages fetched:', data?.length || 0, 'items');
             return data;
-        } catch (error) {
-            console.error('Failed to fetch messages:', error);
+        } catch (error: any) {
+            console.error('💬 [useChatHistory] ❌ Failed to fetch messages:', error);
+            console.error('💬 [useChatHistory] Error response:', error.response?.data);
+            console.error('💬 [useChatHistory] Error status:', error.response?.status);
             return [];
         }
     };
+
+    // Log current state
+    console.log('💬 [useChatHistory] Current state:', {
+        conversationCount: conversations.length,
+        isLoading
+    });
 
     return {
         conversations,
