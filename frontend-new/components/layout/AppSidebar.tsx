@@ -110,12 +110,12 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={isSettingsActive}
-                  className="transition-colors"
+                  className="transition-colors cursor-pointer"
                 >
-                  <Link href="/dashboard/settings" className="flex w-full items-center gap-2">
+                  <a href="/dashboard/settings" className="flex w-full items-center gap-2">
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
-                  </Link>
+                  </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
