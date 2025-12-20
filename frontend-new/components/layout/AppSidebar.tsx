@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Settings,
@@ -111,13 +112,10 @@ export function AppSidebar() {
                   isActive={isSettingsActive}
                   className="transition-colors"
                 >
-                  <button
-                    onClick={() => router.push("/dashboard/settings")}
-                    className="flex w-full items-center gap-2"
-                  >
+                  <Link href="/dashboard/settings" className="flex w-full items-center gap-2">
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
-                  </button>
+                  </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
