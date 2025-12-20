@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { AxioLogo } from "@/components/branding/AxioLogo";
+import { supabase } from "@/lib/supabase";
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Please enter a valid email"),
@@ -40,17 +41,31 @@ export function ForgotPasswordForm() {
   const onSubmit = async (data: ForgotPasswordFormData) => {
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Get the redirect URL from environment or use current origin
+      const redirectTo = typeof window !== 'undefined'
+        ? `${window.location.origin}/auth/reset-password`
+        : process.env.NEXT_PUBLIC_SITE_URL
+          ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/reset-password`
+          : undefined;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+        redirectTo,
+      });
+
+      if (error) {
+        throw error;
+      }
+
       setIsSubmitted(true);
       toast({
         title: "Check your email",
         description: "We've sent a password reset link to your email.",
       });
-    } catch {
+    } catch (error: any) {
+      console.error("Password reset error:", error);
       toast({
         title: "Something went wrong",
-        description: "Please try again later.",
+        description: error.message || "Please try again later.",
         variant: "destructive",
       });
     } finally {

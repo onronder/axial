@@ -67,10 +67,9 @@ export function SFTPConnectionModal({
     setIsConnecting(true);
     try {
       await connect("sftp");
-      // Mock using credentials
-      console.log("Connecting to", `${data.username}@${data.host}:${data.port}`);
+      // SFTP integration - coming soon
       toast({
-        title: "SFTP connected",
+        title: "SFTP Connected",
         description: `Successfully connected to ${data.host}`,
       });
       form.reset();

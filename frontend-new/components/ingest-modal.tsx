@@ -53,7 +53,8 @@ export function IngestModal({ isOpen, onClose }: IngestModalProps) {
 
                 if (!token) throw new Error("Not authenticated")
 
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/ingest`, {
+                // Use the Next.js API proxy for consistent routing
+                const res = await fetch('/api/py/api/v1/ingest', {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` },
                     body: formData

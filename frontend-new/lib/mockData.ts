@@ -1,85 +1,21 @@
-export interface User {
-    id: string;
-    name: string;
-    avatar?: string;
-}
+/**
+ * Application Configuration Data
+ * 
+ * This file contains static configuration for data sources and UI elements.
+ * These are not mock data - they define the available data source types
+ * that can be connected and their metadata.
+ */
 
-export interface Message {
-    id: string;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    timestamp: string;
-}
+import type { DataSource, DataSourceCategory } from '@/types';
 
-export interface ChatConversation {
-    id: string;
-    title: string;
-    date: string;
-    messages: Message[];
-}
+// =============================================================================
+// DATA SOURCE CONFIGURATION
+// =============================================================================
 
-// Starter Queries for Empty State
-export const starterQueries = [
-    {
-        title: "Summarize this document",
-        description: "Get a quick overview of the key points",
-        icon: "file-text",
-    },
-    {
-        title: "Analyze risks",
-        description: "Identify potential issues and concerns",
-        icon: "alert-triangle",
-    },
-    {
-        title: "Compare versions",
-        description: "See what changed between document versions",
-        icon: "git-compare",
-    },
-    {
-        title: "Extract data",
-        description: "Pull specific data points into a table",
-        icon: "file-bar-chart",
-    },
-];
-
-// Dummy Data
-export const mockUsers: User[] = [
-    { id: '1', name: 'John Doe', avatar: '' }
-];
-
-export const mockConversations: ChatConversation[] = [
-    {
-        id: '1',
-        title: 'Project Analysis',
-        date: new Date().toISOString(),
-        messages: [
-            { id: 'm1', role: 'user', content: 'Analyze this data.', timestamp: new Date().toISOString() },
-            { id: 'm2', role: 'assistant', content: 'Sure, here is the summary...', timestamp: new Date().toISOString() }
-        ]
-    }
-];
-
-// Map for easier path/id lookup if legacy code needs it
-export const mockMessages: Record<string, Message[]> = {
-    "1": mockConversations[0].messages,
-    "2": []
-};
-
-// --- DATA SOURCES MOCK DATA ---
-
-export interface DataSource {
-    id: string;
-    name: string;
-    type: string;
-    status: "active" | "error" | "disconnected" | "connected";
-    lastSync: string;
-    icon: string;
-    description: string;
-    category: "files" | "cloud" | "web" | "database" | "apps" | "productivity";
-    comingSoon?: boolean;
-}
-
-export const CATEGORY_LABELS: Record<string, string> = {
+/**
+ * Human-readable labels for data source categories
+ */
+export const CATEGORY_LABELS: Record<DataSourceCategory, string> = {
     cloud: "Cloud Storage",
     files: "Files",
     web: "Web Resources",
@@ -88,14 +24,20 @@ export const CATEGORY_LABELS: Record<string, string> = {
     apps: "Applications",
 };
 
+/**
+ * Available data sources configuration.
+ * 
+ * Note: The 'status' and 'lastSync' fields are default values.
+ * Actual connection status should be fetched from the backend API.
+ */
 export const DATA_SOURCES: DataSource[] = [
     // Cloud Storage
     {
         id: "google-drive",
         name: "Google Drive",
         type: "google_drive",
-        status: "connected",
-        lastSync: "2 mins ago",
+        status: "disconnected",
+        lastSync: "-",
         icon: "google-drive",
         description: "Connect your Google Drive to sync documents.",
         category: "cloud",
@@ -147,7 +89,7 @@ export const DATA_SOURCES: DataSource[] = [
         name: "Local Upload",
         type: "local",
         status: "active",
-        lastSync: "Just now",
+        lastSync: "-",
         icon: "upload",
         description: "Upload PDF, DOCX, and TXT files manually.",
         category: "files",
@@ -199,26 +141,59 @@ export const DATA_SOURCES: DataSource[] = [
         id: "url-crawler",
         name: "Website Crawler",
         type: "crawler",
-        status: "active",
-        lastSync: "1 hour ago",
+        status: "disconnected",
+        lastSync: "-",
         icon: "globe",
         description: "Crawl and index your company website.",
         category: "web",
     },
 ];
 
-export interface Document {
-    id: string;
-    name: string;
-    source: string;
-    sourceType: 'drive' | 'web' | 'upload' | 'notion' | 'slack';
-    status: 'indexed' | 'processing' | 'error';
-    addedAt: string;
-    size?: number;
-}
+// =============================================================================
+// CHAT UI CONFIGURATION
+// =============================================================================
 
-export const mockDocuments: Document[] = [
-    { id: '1', name: 'Project Requirements.pdf', source: 'Google Drive', sourceType: 'drive', status: 'indexed', addedAt: new Date().toISOString(), size: 1024 * 1024 * 2.5 },
-    { id: '2', name: 'Competitor Analysis', source: 'Notion', sourceType: 'notion', status: 'processing', addedAt: new Date().toISOString() },
-    { id: '3', name: 'Q4 Marketing Plan', source: 'Slack', sourceType: 'slack', status: 'indexed', addedAt: new Date(Date.now() - 86400000).toISOString(), size: 1024 * 500 }
+/**
+ * Starter queries shown in the chat empty state.
+ * These help users understand what they can do with the AI.
+ */
+export const starterQueries = [
+    {
+        title: "Summarize this document",
+        description: "Get a quick overview of the key points",
+        icon: "file-text",
+    },
+    {
+        title: "Analyze risks",
+        description: "Identify potential issues and concerns",
+        icon: "alert-triangle",
+    },
+    {
+        title: "Compare versions",
+        description: "See what changed between document versions",
+        icon: "git-compare",
+    },
+    {
+        title: "Extract data",
+        description: "Pull specific data points into a table",
+        icon: "file-bar-chart",
+    },
 ];
+
+// =============================================================================
+// RE-EXPORT TYPES FOR BACKWARD COMPATIBILITY
+// =============================================================================
+// These re-exports maintain backward compatibility with existing imports
+// from '@/lib/mockData'. New code should import directly from '@/types'.
+
+export type {
+    User,
+    Message,
+    ChatConversation,
+    DataSource,
+    Document,
+    DataSourceCategory,
+    DataSourceStatus,
+    DocumentSourceType,
+    DocumentStatus,
+} from '@/types';

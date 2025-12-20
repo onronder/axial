@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { useToast } from "@/hooks/use-toast"
 import { Loader2, Folder, FileText, ChevronRight, Home, Upload, CheckSquare, Square } from "lucide-react"
 
 type ConnectorItem = {
@@ -21,6 +22,7 @@ export function DriveExplorer() {
     const [selection, setSelection] = useState<Set<string>>(new Set())
     const [ingesting, setIngesting] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const { toast } = useToast()
 
     // Load Items for Current Folder
     useEffect(() => {
@@ -30,12 +32,9 @@ export function DriveExplorer() {
             try {
                 const currentFolder = currentPath[currentPath.length - 1]
                 const query = currentFolder.id ? `?parent_id=${currentFolder.id}` : ''
-                console.log(`[DriveExplorer] Fetching items for current folder: ${currentFolder.name} (${currentFolder.id || 'root'})`)
 
                 const response = await authFetch.get(`/integrations/google_drive/items${query}`)
                 const res = response.data
-
-                console.log("[DriveExplorer] API Response:", res)
 
                 if (Array.isArray(res)) {
                     setItems(res)
@@ -48,7 +47,6 @@ export function DriveExplorer() {
                 }
 
             } catch (e) {
-                console.error("[DriveExplorer] Failed to list items", e)
                 setError("Failed to load files. Please try again.")
             } finally {
                 setIsLoading(false)
@@ -79,11 +77,17 @@ export function DriveExplorer() {
         setIngesting(true)
         try {
             await authFetch.post('/integrations/google_drive/ingest', { item_ids: Array.from(selection) })
-            alert("Ingestion Queued Successfully!")
+            toast({
+                title: "Ingestion Queued",
+                description: `${selection.size} item(s) queued for processing.`,
+            })
             setSelection(new Set())
-        } catch (e) {
-            console.error("Ingest failed", e)
-            alert("Ingestion failed")
+        } catch {
+            toast({
+                title: "Ingestion Failed",
+                description: "Could not queue items for ingestion. Please try again.",
+                variant: "destructive",
+            })
         } finally {
             setIngesting(false)
         }

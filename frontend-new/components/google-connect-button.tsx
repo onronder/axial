@@ -6,7 +6,14 @@ import { HardDrive } from "lucide-react"
 export function GoogleConnectButton() {
     const handleConnect = () => {
         const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-        const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI || "http://localhost:3000/dashboard"
+        // Use dynamic origin detection for Vercel/production compatibility
+        const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
+            || (typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined)
+
+        if (!clientId || !redirectUri) {
+            console.error('Google OAuth not configured: missing NEXT_PUBLIC_GOOGLE_CLIENT_ID or NEXT_PUBLIC_GOOGLE_REDIRECT_URI')
+            return
+        }
         const scope = 'https://www.googleapis.com/auth/drive.readonly'
 
         if (!clientId) {

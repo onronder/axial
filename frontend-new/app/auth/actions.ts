@@ -31,9 +31,13 @@ export async function signup(formData: FormData) {
     const password = formData.get('password') as string
 
     // Use PKCE flow by building redirect URL
-    // We assume NEXT_PUBLIC_SITE_URL or request headers can provide origin, 
-    // but simpler to assume localhost or configured site url for now.
-    const origin = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    // Priority: NEXT_PUBLIC_SITE_URL > VERCEL_URL > error in production
+    const origin = process.env.NEXT_PUBLIC_SITE_URL
+        || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+
+    if (!origin) {
+        return { error: 'Site URL not configured. Please set NEXT_PUBLIC_SITE_URL environment variable.' }
+    }
 
     const { error } = await supabase.auth.signUp({
         email,
@@ -61,7 +65,12 @@ export async function signout() {
 export async function resetPassword(formData: FormData) {
     const supabase = await createClient()
     const email = formData.get('email') as string
-    const origin = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const origin = process.env.NEXT_PUBLIC_SITE_URL
+        || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+
+    if (!origin) {
+        return { error: 'Site URL not configured. Please set NEXT_PUBLIC_SITE_URL environment variable.' }
+    }
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${origin}/auth/callback?next=/dashboard/settings/password`,

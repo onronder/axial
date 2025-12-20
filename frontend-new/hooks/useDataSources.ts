@@ -41,13 +41,11 @@ export const useDataSources = () => {
     }, []); // Run once on mount
 
     const connect = (id: string) => {
-        console.log("Connecting source:", id);
         // For now, these buttons might redirect to auth flow or show modal
         // We just optimistically update for UI feedback if implemented
     };
 
     const disconnect = async (id: string) => {
-        console.log("Disconnecting source:", id);
         const source = dataSources.find(ds => ds.id === id);
         if (!source) return;
 
@@ -58,8 +56,8 @@ export const useDataSources = () => {
                 prev.map((ds) => (ds.id === id ? { ...ds, status: "disconnected" } : ds))
             );
         } catch (error) {
-            console.error("Failed to disconnect:", error);
-            alert("Failed to disconnect source.");
+            // Re-throw error for callers to handle with their own toast/UI
+            throw new Error("Failed to disconnect source");
         }
     };
 
