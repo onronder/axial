@@ -1,30 +1,41 @@
 "use client";
 
-import { useState } from "react";
-import { Moon, Sun, Monitor } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Moon, Sun, Monitor, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useProfile";
 import { useTheme } from "@/hooks/useTheme";
-import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 export function GeneralSettings() {
-  const { user } = useAuth();
+  const { profile, isLoading, updateProfile } = useProfile();
   const { theme, setTheme } = useTheme();
-  const { toast } = useToast();
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [firstName, setFirstName] = useState(user?.name?.split(" ")[0] || "");
-  const [lastName, setLastName] = useState(user?.name?.split(" ").slice(1).join(" ") || "");
-  const [email, setEmail] = useState(user?.email || "");
+  // Local state for form fields
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
 
-  const handleSaveProfile = () => {
-    toast({
-      title: "Profile updated",
-      description: "Your profile information has been saved.",
+  // Populate form when profile loads
+  useEffect(() => {
+    if (profile) {
+      setFirstName(profile.first_name || "");
+      setLastName(profile.last_name || "");
+      // Email comes from auth, not profile - we could get it from useAuth if needed
+    }
+  }, [profile]);
+
+  const handleSaveProfile = async () => {
+    setIsSaving(true);
+    await updateProfile({
+      first_name: firstName,
+      last_name: lastName,
     });
+    setIsSaving(false);
   };
 
   const themeOptions = [
@@ -32,6 +43,14 @@ export function GeneralSettings() {
     { value: "dark", label: "Dark", icon: Moon },
     { value: "system", label: "System", icon: Monitor },
   ] as const;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -73,11 +92,28 @@ export function GeneralSettings() {
               id="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="john@example.com"
+              disabled
+              placeholder="Your email is managed through authentication"
+              className="bg-muted"
             />
+            <p className="text-xs text-muted-foreground">
+              Email is managed through your authentication provider
+            </p>
           </div>
-          <Button variant="gradient" onClick={handleSaveProfile}>Save Changes</Button>
+          <Button
+            variant="gradient"
+            onClick={handleSaveProfile}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Save Changes"
+            )}
+          </Button>
         </CardContent>
       </Card>
 

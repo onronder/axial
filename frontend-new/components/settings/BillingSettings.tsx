@@ -1,14 +1,40 @@
 "use client";
 
-import { CreditCard, Zap } from "lucide-react";
+import { CreditCard, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useProfile";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 
+const planDetails: Record<string, { name: string; description: string }> = {
+  free: {
+    name: "Free",
+    description: "Basic features with limited queries",
+  },
+  pro: {
+    name: "Pro",
+    description: "Unlimited queries, priority support, advanced integrations",
+  },
+  enterprise: {
+    name: "Enterprise",
+    description: "Custom limits, dedicated support, SSO, and more",
+  },
+};
+
 export function BillingSettings() {
-  const { user } = useAuth();
+  const { profile, isLoading } = useProfile();
+
+  const currentPlan = profile?.plan || "free";
+  const planInfo = planDetails[currentPlan] || planDetails.free;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -23,7 +49,7 @@ export function BillingSettings() {
           <CardTitle className="flex items-center gap-2">
             Current Plan
             <Badge variant="ai" className="ml-2">
-              {user?.plan || "Free"}
+              {planInfo.name}
             </Badge>
           </CardTitle>
           <CardDescription>Your current subscription tier</CardDescription>
@@ -34,14 +60,17 @@ export function BillingSettings() {
               <AxioLogo variant="icon" size="lg" />
             </div>
             <div className="flex-1">
-              <h3 className="font-medium text-foreground">{user?.plan || "Free"} Plan</h3>
+              <h3 className="font-medium text-foreground">{planInfo.name} Plan</h3>
               <p className="text-sm text-muted-foreground">
-                {user?.plan === "Pro"
-                  ? "Unlimited queries, priority support, advanced integrations"
-                  : "Basic features with limited queries"}
+                {planInfo.description}
               </p>
             </div>
-            <Button variant="gradient">Upgrade</Button>
+            {currentPlan === "free" && (
+              <Button variant="gradient">Upgrade</Button>
+            )}
+            {currentPlan !== "free" && (
+              <Button variant="outline">Manage</Button>
+            )}
           </div>
         </CardContent>
       </Card>

@@ -56,6 +56,12 @@ app.include_router(documents_router, prefix="/api/v1", tags=["documents"])
 from api.v1.integrations import router as integrations_router
 app.include_router(integrations_router, prefix="/api/v1", tags=["integrations"])
 
+# Settings and Team routers
+from api.v1.settings import router as settings_router
+from api.v1.team import router as team_router
+app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
+app.include_router(team_router, prefix="/api/v1", tags=["team"])
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""

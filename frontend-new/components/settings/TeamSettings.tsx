@@ -15,6 +15,7 @@ import {
   Filter,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,20 +59,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useToast } from "@/hooks/use-toast";
-
-type Role = "admin" | "editor" | "viewer";
-type MemberStatus = "active" | "pending" | "suspended";
-
-interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  role: Role;
-  status: MemberStatus;
-  lastActive: string | null;
-  avatarInitials: string;
-}
+import { useTeamMembers, Role, MemberStatus, TeamMember } from "@/hooks/useTeamMembers";
 
 const roleStyles: Record<Role, string> = {
   admin: "bg-accent/10 text-accent border-accent/20",
@@ -86,11 +74,20 @@ const statusStyles: Record<MemberStatus, { label: string; className: string }> =
 };
 
 export function TeamSettings() {
-  const { toast } = useToast();
-  const [members, setMembers] = useState<TeamMember[]>([]);
+  const {
+    members,
+    stats,
+    isLoading,
+    inviteMember,
+    updateMemberRole,
+    removeMember,
+    resendInvite
+  } = useTeamMembers();
+
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("viewer");
+  const [isInviting, setIsInviting] = useState(false);
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -107,16 +104,11 @@ export function TeamSettings() {
   const [pageSize, setPageSize] = useState(10);
   const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
 
-  // Stats
-  const totalSeats = 20;
-  const activeMembers = members.filter((m) => m.status === "active").length;
-  const pendingInvites = members.filter((m) => m.status === "pending").length;
-
-  // Filtered members
+  // Filtered members (client-side filtering for immediate responsiveness)
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
       const matchesSearch =
-        member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (member.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
         member.email.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesRole = roleFilter === "all" || member.role === roleFilter;
       const matchesStatus = statusFilter === "all" || member.status === statusFilter;
@@ -131,42 +123,23 @@ export function TeamSettings() {
     return filteredMembers.slice(start, start + pageSize);
   }, [filteredMembers, currentPage, pageSize]);
 
-  const handleInvite = () => {
-    if (!inviteEmail.trim()) {
-      toast({
-        title: "Email required",
-        description: "Please enter an email address.",
-        variant: "destructive",
-      });
-      return;
+  const handleInvite = async () => {
+    if (!inviteEmail.trim()) return;
+
+    setIsInviting(true);
+    const success = await inviteMember(inviteEmail, inviteRole);
+    setIsInviting(false);
+
+    if (success) {
+      setInviteEmail("");
+      setInviteRole("viewer");
+      setInviteDialogOpen(false);
     }
-
-    const newMember: TeamMember = {
-      id: crypto.randomUUID(),
-      name: inviteEmail.split("@")[0],
-      email: inviteEmail,
-      role: inviteRole,
-      status: "pending",
-      lastActive: null,
-      avatarInitials: inviteEmail.slice(0, 2).toUpperCase(),
-    };
-
-    setMembers((prev) => [...prev, newMember]);
-    setInviteEmail("");
-    setInviteRole("viewer");
-    setInviteDialogOpen(false);
-
-    toast({
-      title: "Invitation sent",
-      description: `Invitation sent to ${inviteEmail}`,
-    });
   };
 
   const handleBulkImport = () => {
-    toast({
-      title: "Bulk Import",
-      description: "CSV upload dialog would open here. Feature coming soon.",
-    });
+    // TODO: Implement CSV upload modal
+    alert("CSV upload feature coming soon.");
   };
 
   const openEditRoleDialog = (member: TeamMember) => {
@@ -175,33 +148,20 @@ export function TeamSettings() {
     setEditRoleDialogOpen(true);
   };
 
-  const handleSaveRole = () => {
+  const handleSaveRole = async () => {
     if (editingMember) {
-      setMembers((prev) =>
-        prev.map((m) => (m.id === editingMember.id ? { ...m, role: selectedRole } : m))
-      );
-      toast({
-        title: "Role updated",
-        description: `${editingMember.name}'s role has been changed to ${selectedRole}.`,
-      });
+      await updateMemberRole(editingMember.id, selectedRole);
     }
     setEditRoleDialogOpen(false);
     setEditingMember(null);
   };
 
-  const handleRevokeAccess = (memberId: string) => {
-    setMembers((prev) => prev.filter((m) => m.id !== memberId));
-    toast({
-      title: "Access revoked",
-      description: "Team member has been removed.",
-    });
+  const handleRevokeAccess = async (memberId: string) => {
+    await removeMember(memberId);
   };
 
-  const handleResendInvite = (memberEmail: string) => {
-    toast({
-      title: "Invitation resent",
-      description: `Invitation resent to ${memberEmail}`,
-    });
+  const handleResendInvite = async (member: TeamMember) => {
+    await resendInvite(member.id, member.email);
   };
 
   const formatDate = (dateString: string | null) => {
@@ -220,7 +180,6 @@ export function TeamSettings() {
     setCurrentPage(1);
   };
 
-  // Reset to page 1 when filters change
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     setCurrentPage(1);
@@ -237,6 +196,21 @@ export function TeamSettings() {
   };
 
   const hasActiveFilters = searchQuery || roleFilter !== "all" || statusFilter !== "all";
+
+  const getAvatarInitials = (member: TeamMember) => {
+    if (member.name) {
+      return member.name.slice(0, 2).toUpperCase();
+    }
+    return member.email.slice(0, 2).toUpperCase();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -258,8 +232,8 @@ export function TeamSettings() {
             <div>
               <p className="text-sm text-muted-foreground">Total Seats</p>
               <p className="text-2xl font-semibold">
-                {activeMembers + pendingInvites}
-                <span className="text-muted-foreground text-lg">/{totalSeats}</span>
+                {stats.active_members + stats.pending_invites}
+                <span className="text-muted-foreground text-lg">/{stats.total_seats}</span>
               </p>
             </div>
           </CardContent>
@@ -272,7 +246,7 @@ export function TeamSettings() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Pending Invites</p>
-              <p className="text-2xl font-semibold">{pendingInvites}</p>
+              <p className="text-2xl font-semibold">{stats.pending_invites}</p>
             </div>
           </CardContent>
         </Card>
@@ -284,7 +258,7 @@ export function TeamSettings() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Active Members</p>
-              <p className="text-2xl font-semibold">{activeMembers}</p>
+              <p className="text-2xl font-semibold">{stats.active_members}</p>
             </div>
           </CardContent>
         </Card>
@@ -335,8 +309,12 @@ export function TeamSettings() {
               <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleInvite} className="gap-2">
-                <Send className="h-4 w-4" />
+              <Button onClick={handleInvite} className="gap-2" disabled={isInviting}>
+                {isInviting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
                 Send Invitation
               </Button>
             </DialogFooter>
@@ -444,11 +422,11 @@ export function TeamSettings() {
                       <div className="flex items-center gap-3">
                         <Avatar className="h-8 w-8">
                           <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                            {member.avatarInitials}
+                            {getAvatarInitials(member)}
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium">{member.name}</p>
+                          <p className="font-medium">{member.name || member.email.split("@")[0]}</p>
                           <p className="text-sm text-muted-foreground">{member.email}</p>
                         </div>
                       </div>
@@ -464,7 +442,7 @@ export function TeamSettings() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDate(member.lastActive)}
+                      {formatDate(member.last_active)}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -479,7 +457,7 @@ export function TeamSettings() {
                             Edit Role
                           </DropdownMenuItem>
                           {member.status === "pending" && (
-                            <DropdownMenuItem onClick={() => handleResendInvite(member.email)}>
+                            <DropdownMenuItem onClick={() => handleResendInvite(member)}>
                               <Send className="mr-2 h-4 w-4" />
                               Resend Invite
                             </DropdownMenuItem>
@@ -587,18 +565,18 @@ export function TeamSettings() {
           <DialogHeader>
             <DialogTitle>Edit Role</DialogTitle>
             <DialogDescription>
-              Change the role for {editingMember?.name}
+              Change the role for {editingMember?.name || editingMember?.email}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-muted/50">
               <Avatar className="h-10 w-10">
                 <AvatarFallback className="bg-primary/10 text-primary">
-                  {editingMember?.avatarInitials}
+                  {editingMember ? getAvatarInitials(editingMember) : ""}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <p className="font-medium">{editingMember?.name}</p>
+                <p className="font-medium">{editingMember?.name || editingMember?.email?.split("@")[0]}</p>
                 <p className="text-sm text-muted-foreground">{editingMember?.email}</p>
               </div>
             </div>
