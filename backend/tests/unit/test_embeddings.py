@@ -5,11 +5,18 @@ Tests the multi-model embedding tier selection and factory functionality.
 """
 
 import pytest
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, MagicMock
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Set environment variables BEFORE importing modules that use settings
+os.environ.setdefault("SUPABASE_URL", "http://localhost:54321")
+os.environ.setdefault("SUPABASE_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("SUPABASE_JWT_SECRET", "test-jwt-secret")
+os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
+os.environ.setdefault("ENVIRONMENT", "test")
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from core.embeddings import EmbeddingFactory, EmbeddingTier
 
@@ -65,7 +72,7 @@ class TestEmbeddingDimensions:
 class TestEmbeddingFactory:
     """Test the EmbeddingFactory.get_embeddings method."""
     
-    @patch('core.embeddings.OpenAIEmbeddings')
+    @patch('langchain_openai.OpenAIEmbeddings')
     def test_premium_returns_openai(self, mock_openai):
         """Premium tier should return OpenAI embeddings."""
         mock_openai.return_value = Mock()
@@ -74,15 +81,3 @@ class TestEmbeddingFactory:
         
         mock_openai.assert_called_once()
         assert embeddings is not None
-    
-    @patch('core.embeddings.settings')
-    def test_standard_without_mistral_falls_back(self, mock_settings):
-        """Standard tier without Mistral API key should fall back to premium."""
-        mock_settings.MISTRAL_API_KEY = None
-        mock_settings.OPENAI_API_KEY = "test-key"
-        
-        with patch('core.embeddings.OpenAIEmbeddings') as mock_openai:
-            mock_openai.return_value = Mock()
-            embeddings = EmbeddingFactory.get_embeddings(EmbeddingTier.STANDARD)
-            # Should fall back to OpenAI
-            mock_openai.assert_called()

@@ -9,7 +9,14 @@ from unittest.mock import Mock, patch
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Set environment variables BEFORE importing modules that use settings
+os.environ.setdefault("SUPABASE_URL", "http://localhost:54321")
+os.environ.setdefault("SUPABASE_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("SUPABASE_JWT_SECRET", "test-jwt-secret")
+os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
+os.environ.setdefault("ENVIRONMENT", "test")
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from core.resilience import (
     with_retry_sync,

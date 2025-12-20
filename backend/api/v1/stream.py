@@ -121,7 +121,8 @@ async def stream_generator(
         yield f"event: sources\ndata: {json.dumps(sources)}\n\n"
         
         if not docs:
-            yield f"event: token\ndata: {json.dumps({'token': 'I don\\'t have enough information to answer that question based on your documents.'})}\n\n"
+            no_info_msg = "I don't have enough information to answer that question based on your documents."
+            yield f"event: token\ndata: {json.dumps({'token': no_info_msg})}\n\n"
             yield "event: done\ndata: {}\n\n"
             return
         
