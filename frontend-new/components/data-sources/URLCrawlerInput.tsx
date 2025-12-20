@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 interface URLCrawlerInputProps {
   source: DataSource;
@@ -19,12 +20,13 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
   const handleCrawl = async () => {
     if (!url.trim()) return;
 
+    // Validate URL
     try {
       new URL(url);
     } catch {
       toast({
         title: "Invalid URL",
-        description: "Please enter a valid URL.",
+        description: "Please enter a valid URL including https://",
         variant: "destructive",
       });
       return;
@@ -32,16 +34,22 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Call the backend web connector ingest endpoint
+      // For web connector, item_ids are URLs
+      await api.post("/api/v1/integrations/web/ingest", {
+        item_ids: [url]
+      });
+
       toast({
-        title: "URL crawled successfully",
+        title: "Website Ingested",
         description: "Content has been added to your knowledge base.",
       });
       setUrl("");
-    } catch {
+    } catch (error: any) {
+      console.error("Crawl failed:", error);
       toast({
-        title: "Crawl failed",
-        description: "Please try again.",
+        title: "Crawl Failed",
+        description: error.response?.data?.detail || "Could not crawl the URL. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -66,6 +74,11 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             disabled={isLoading}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && url.trim()) {
+                handleCrawl();
+              }
+            }}
           />
           <Button
             onClick={handleCrawl}

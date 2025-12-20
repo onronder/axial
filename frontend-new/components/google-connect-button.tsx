@@ -7,8 +7,9 @@ export function GoogleConnectButton() {
     const handleConnect = () => {
         const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
         // Use dynamic origin detection for Vercel/production compatibility
+        // Redirect to the OAuth callback page to handle token exchange
         const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
-            || (typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined)
+            || (typeof window !== 'undefined' ? `${window.location.origin}/dashboard/oauth/callback` : undefined)
 
         if (!clientId || !redirectUri) {
             console.error('Google OAuth not configured: missing NEXT_PUBLIC_GOOGLE_CLIENT_ID or NEXT_PUBLIC_GOOGLE_REDIRECT_URI')
