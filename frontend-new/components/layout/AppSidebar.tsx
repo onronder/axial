@@ -70,7 +70,7 @@ export function AppSidebar() {
   const isSettingsActive = pathname?.startsWith("/dashboard/settings");
 
   return (
-    <Sidebar className="border-r border-sidebar-border">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
           <AxioLogo variant="icon" size="md" forceDark />

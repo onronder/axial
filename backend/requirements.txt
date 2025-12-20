@@ -6,9 +6,11 @@ redis
 celery
 openai
 pydantic-settings
+langchain
 langchain-openai
 langchain-text-splitters
 langchain-community
+langchain-core
 tiktoken
 unstructured[pdf]
 python-magic

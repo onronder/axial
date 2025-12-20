@@ -36,8 +36,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     return (
         <SidebarProvider defaultOpen={true}>
             <AppSidebar />
-            {/* SidebarInset with explicit left margin on desktop to avoid overlap with fixed sidebar */}
-            <SidebarInset className="overflow-x-hidden md:ml-64">
+            <SidebarInset className="overflow-x-hidden">
                 {/* Mobile header with sidebar trigger */}
                 <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:hidden">
                     <SidebarTrigger className="-ml-1" />
