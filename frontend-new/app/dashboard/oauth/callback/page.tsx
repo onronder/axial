@@ -17,6 +17,10 @@ export default function OAuthCallbackPage() {
         const code = searchParams.get("code");
         const errorParam = searchParams.get("error");
 
+        console.log("🔐 [OAuth Callback] Starting...");
+        console.log("🔐 [OAuth Callback] Code:", code ? `${code.substring(0, 20)}...` : null);
+        console.log("🔐 [OAuth Callback] Error:", errorParam);
+
         if (errorParam) {
             setStatus("error");
             setError(errorParam === "access_denied" ? "Access was denied" : errorParam);
@@ -32,14 +36,16 @@ export default function OAuthCallbackPage() {
         // Exchange the code for tokens
         const exchangeCode = async () => {
             try {
-                await api.post("/api/v1/integrations/google/exchange", { code });
+                console.log("🔐 [OAuth Callback] Sending code to backend...");
+                const response = await api.post("/api/v1/integrations/google/exchange", { code });
+                console.log("🔐 [OAuth Callback] ✅ Success:", response.data);
                 setStatus("success");
                 // Redirect to data sources after short delay
                 setTimeout(() => {
                     router.push("/dashboard/settings/data-sources");
                 }, 2000);
             } catch (err: any) {
-                console.error("Token exchange failed:", err);
+                console.error("🔐 [OAuth Callback] ❌ Token exchange failed:", err.response?.data || err.message);
                 setStatus("error");
                 setError(err.response?.data?.detail || "Failed to connect Google Drive");
             }

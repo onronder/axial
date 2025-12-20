@@ -22,7 +22,7 @@ from api.v1.documents import router as documents_router
 async def lifespan(app: FastAPI):
     """Application lifecycle management."""
     # Startup: verify database connection
-    check_connection()
+    await check_connection()
     yield
     # Shutdown: cleanup if needed
     pass

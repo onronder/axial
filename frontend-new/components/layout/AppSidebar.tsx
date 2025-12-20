@@ -60,13 +60,9 @@ export function AppSidebar() {
     setTheme(resolvedTheme === "dark" ? "light" : "dark");
   };
 
-  const handleNewChat = async () => {
-    try {
-      const chatId = await createNewChat();
-      router.push(`/dashboard/chat/${chatId}`);
-    } catch {
-      // Error handled in hook with toast
-    }
+  const handleNewChat = () => {
+    // Just navigate to dashboard - chat will be created when user sends first message
+    router.push('/dashboard');
   };
 
   // Check against /dashboard/settings

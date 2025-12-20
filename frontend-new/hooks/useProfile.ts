@@ -32,36 +32,32 @@ export const useProfile = () => {
     const [error, setError] = useState<string | null>(null);
 
     const fetchProfile = useCallback(async () => {
-        console.log('📋 [useProfile] Starting profile fetch...');
+        console.log('📋 [useProfile] Fetching profile...');
         setIsLoading(true);
         setError(null);
         try {
-            console.log('📋 [useProfile] Making API request to /api/v1/settings/profile');
             const { data } = await api.get('/api/v1/settings/profile');
-            console.log('📋 [useProfile] ✅ Profile fetched successfully:', data);
+            console.log('📋 [useProfile] ✅ Profile fetched:', data?.first_name, data?.last_name);
             setProfile(data);
         } catch (err: any) {
-            console.error('📋 [useProfile] ❌ Failed to fetch profile:', err);
-            console.error('📋 [useProfile] Error response:', err.response?.data);
-            console.error('📋 [useProfile] Error status:', err.response?.status);
+            console.error('📋 [useProfile] ❌ Failed:', err.response?.status, err.message);
             setError(err.message || 'Failed to fetch profile');
         } finally {
             setIsLoading(false);
-            console.log('📋 [useProfile] Fetch complete. isLoading:', false);
         }
     }, []);
 
+    // Only fetch on mount - empty dependency array
     useEffect(() => {
-        console.log('📋 [useProfile] Hook mounted, triggering fetchProfile');
         fetchProfile();
-    }, [fetchProfile]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const updateProfile = async (payload: ProfileUpdatePayload): Promise<boolean> => {
-        console.log('📋 [useProfile] Starting profile update with payload:', payload);
+        console.log('📋 [useProfile] Updating with:', payload);
         try {
-            console.log('📋 [useProfile] Making PATCH request to /api/v1/settings/profile');
             const { data } = await api.patch('/api/v1/settings/profile', payload);
-            console.log('📋 [useProfile] ✅ Profile updated successfully:', data);
+            console.log('📋 [useProfile] ✅ Updated');
             setProfile(data);
             toast({
                 title: 'Profile updated',
@@ -69,9 +65,7 @@ export const useProfile = () => {
             });
             return true;
         } catch (err: any) {
-            console.error('📋 [useProfile] ❌ Failed to update profile:', err);
-            console.error('📋 [useProfile] Error response:', err.response?.data);
-            console.error('📋 [useProfile] Error status:', err.response?.status);
+            console.error('📋 [useProfile] ❌ Update failed:', err.message);
             toast({
                 title: 'Error',
                 description: err.response?.data?.detail || 'Failed to update profile.',
@@ -80,13 +74,6 @@ export const useProfile = () => {
             return false;
         }
     };
-
-    // Log current state on each render (helpful for debugging)
-    console.log('📋 [useProfile] Current state:', {
-        hasProfile: !!profile,
-        isLoading,
-        hasError: !!error
-    });
 
     return {
         profile,

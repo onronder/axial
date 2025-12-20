@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
@@ -32,50 +32,45 @@ export const useChatHistory = () => {
     const { toast } = useToast();
     const [conversations, setConversations] = useState<ChatConversation[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const hasFetched = useRef(false);
 
     /**
      * Fetch all conversations for the current user
      */
     const fetchConversations = useCallback(async () => {
-        console.log('💬 [useChatHistory] Starting fetchConversations...');
+        console.log('💬 [useChatHistory] Fetching conversations...');
         setIsLoading(true);
         try {
-            console.log('💬 [useChatHistory] Making GET request to /api/v1/conversations');
             const { data } = await api.get('/api/v1/conversations');
-            console.log('💬 [useChatHistory] ✅ Conversations fetched:', data?.length || 0, 'items');
-            console.log('💬 [useChatHistory] Data:', data);
+            console.log('💬 [useChatHistory] ✅ Got', data?.length || 0, 'conversations');
             setConversations(data);
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Failed to fetch conversations:', error);
-            console.error('💬 [useChatHistory] Error response:', error.response?.data);
-            console.error('💬 [useChatHistory] Error status:', error.response?.status);
-            // Don't show toast on initial load failure - might just be empty
+            console.error('💬 [useChatHistory] ❌ Fetch failed:', error.message);
         } finally {
             setIsLoading(false);
-            console.log('💬 [useChatHistory] fetchConversations complete');
         }
     }, []);
 
+    // Only fetch once on mount
     useEffect(() => {
-        console.log('💬 [useChatHistory] Hook mounted, calling fetchConversations');
-        fetchConversations();
+        if (!hasFetched.current) {
+            hasFetched.current = true;
+            fetchConversations();
+        }
     }, [fetchConversations]);
 
     /**
      * Create a new conversation
      */
     const createNewChat = async (title: string = 'New Chat'): Promise<string> => {
-        console.log('💬 [useChatHistory] Creating new chat with title:', title);
+        console.log('💬 [useChatHistory] Creating chat:', title);
         try {
-            console.log('💬 [useChatHistory] Making POST request to /api/v1/conversations');
             const { data } = await api.post('/api/v1/conversations', { title });
-            console.log('💬 [useChatHistory] ✅ Chat created successfully:', data);
+            console.log('💬 [useChatHistory] ✅ Created:', data.id);
             setConversations(prev => [data, ...prev]);
             return data.id;
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Failed to create conversation:', error);
-            console.error('💬 [useChatHistory] Error response:', error.response?.data);
-            console.error('💬 [useChatHistory] Error status:', error.response?.status);
+            console.error('💬 [useChatHistory] ❌ Create failed:', error.message);
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to create new chat.',
@@ -92,15 +87,14 @@ export const useChatHistory = () => {
         console.log('💬 [useChatHistory] Deleting chat:', id);
         try {
             await api.delete(`/api/v1/conversations/${id}`);
-            console.log('💬 [useChatHistory] ✅ Chat deleted successfully');
+            console.log('💬 [useChatHistory] ✅ Deleted');
             setConversations(prev => prev.filter(c => c.id !== id));
             toast({
                 title: 'Chat deleted',
                 description: 'The conversation has been removed.',
             });
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Failed to delete conversation:', error);
-            console.error('💬 [useChatHistory] Error response:', error.response?.data);
+            console.error('💬 [useChatHistory] ❌ Delete failed:', error.message);
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to delete chat.',
@@ -113,16 +107,15 @@ export const useChatHistory = () => {
      * Rename a conversation
      */
     const renameChat = async (id: string, title: string): Promise<void> => {
-        console.log('💬 [useChatHistory] Renaming chat:', id, 'to:', title);
+        console.log('💬 [useChatHistory] Renaming chat:', id);
         try {
             const { data } = await api.patch(`/api/v1/conversations/${id}`, { title });
-            console.log('💬 [useChatHistory] ✅ Chat renamed successfully:', data);
+            console.log('💬 [useChatHistory] ✅ Renamed');
             setConversations(prev =>
                 prev.map(c => (c.id === id ? { ...c, title: data.title } : c))
             );
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Failed to rename conversation:', error);
-            console.error('💬 [useChatHistory] Error response:', error.response?.data);
+            console.error('💬 [useChatHistory] ❌ Rename failed:', error.message);
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to rename chat.',
@@ -135,24 +128,16 @@ export const useChatHistory = () => {
      * Get messages for a specific conversation
      */
     const getMessagesById = async (conversationId: string): Promise<Message[]> => {
-        console.log('💬 [useChatHistory] Fetching messages for conversation:', conversationId);
+        console.log('💬 [useChatHistory] Getting messages for:', conversationId);
         try {
             const { data } = await api.get(`/api/v1/conversations/${conversationId}/messages`);
-            console.log('💬 [useChatHistory] ✅ Messages fetched:', data?.length || 0, 'items');
+            console.log('💬 [useChatHistory] ✅ Got', data?.length || 0, 'messages');
             return data;
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Failed to fetch messages:', error);
-            console.error('💬 [useChatHistory] Error response:', error.response?.data);
-            console.error('💬 [useChatHistory] Error status:', error.response?.status);
+            console.error('💬 [useChatHistory] ❌ Get messages failed:', error.message);
             return [];
         }
     };
-
-    // Log current state
-    console.log('💬 [useChatHistory] Current state:', {
-        conversationCount: conversations.length,
-        isLoading
-    });
 
     return {
         conversations,

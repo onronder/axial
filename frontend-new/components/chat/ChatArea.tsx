@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Message } from "@/hooks/useChatHistory";
+import { useChatHistory } from "@/hooks/useChatHistory";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
@@ -11,6 +13,7 @@ import { api } from "@/lib/api";
 interface ChatAreaProps {
   initialMessages?: Message[];
   conversationId?: string;
+  initialQuery?: string; // New: for passing message from dashboard
 }
 
 // Adapt Message to what MessageBubble expects
@@ -22,7 +25,10 @@ interface DisplayMessage {
   sources?: string[];
 }
 
-export function ChatArea({ initialMessages = [], conversationId }: ChatAreaProps) {
+export function ChatArea({ initialMessages = [], conversationId, initialQuery }: ChatAreaProps) {
+  const router = useRouter();
+  const { createNewChat } = useChatHistory();
+  const [currentConversationId, setCurrentConversationId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<DisplayMessage[]>(() =>
     initialMessages.map(m => ({
       ...m,
@@ -32,6 +38,7 @@ export function ChatArea({ initialMessages = [], conversationId }: ChatAreaProps
   const [isTyping, setIsTyping] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasProcessedInitialQuery = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -49,6 +56,14 @@ export function ChatArea({ initialMessages = [], conversationId }: ChatAreaProps
     })));
   }, [initialMessages]);
 
+  // Process initial query if provided (from dashboard)
+  useEffect(() => {
+    if (initialQuery && !hasProcessedInitialQuery.current) {
+      hasProcessedInitialQuery.current = true;
+      handleSendMessage(initialQuery);
+    }
+  }, [initialQuery]);
+
   const simulateStreaming = useCallback(async (fullText: string): Promise<string> => {
     const words = fullText.split(" ");
     let currentText = "";
@@ -56,7 +71,6 @@ export function ChatArea({ initialMessages = [], conversationId }: ChatAreaProps
     for (let i = 0; i < words.length; i++) {
       currentText += (i > 0 ? " " : "") + words[i];
       setStreamingMessage(currentText);
-      // Random delay between 20-80ms for natural feel
       await new Promise((resolve) => setTimeout(resolve, 20 + Math.random() * 60));
     }
 
@@ -64,6 +78,23 @@ export function ChatArea({ initialMessages = [], conversationId }: ChatAreaProps
   }, []);
 
   const handleSendMessage = async (content: string) => {
+    let chatId = currentConversationId;
+
+    // If no conversation exists, create one first
+    if (!chatId) {
+      try {
+        console.log('💬 Creating new chat for first message...');
+        chatId = await createNewChat(content.substring(0, 50)); // Use message as title
+        setCurrentConversationId(chatId);
+        // Update URL without full navigation
+        window.history.replaceState(null, '', `/dashboard/chat/${chatId}`);
+        console.log('💬 Chat created:', chatId);
+      } catch (error) {
+        console.error('💬 Failed to create chat:', error);
+        return; // Don't continue if chat creation failed
+      }
+    }
+
     const userMessage: DisplayMessage = {
       id: Date.now().toString(),
       role: "user",
@@ -75,10 +106,10 @@ export function ChatArea({ initialMessages = [], conversationId }: ChatAreaProps
     setIsTyping(true);
 
     try {
-      // Call real chat API
+      // Call real chat API with the conversation ID
       const { data } = await api.post('/api/v1/chat', {
         query: content,
-        conversation_id: conversationId,
+        conversation_id: chatId,
         history: messages.slice(-10).map(m => ({
           role: m.role,
           content: m.content
@@ -106,7 +137,6 @@ export function ChatArea({ initialMessages = [], conversationId }: ChatAreaProps
       setIsTyping(false);
       setStreamingMessage(null);
 
-      // Show error message
       const errorMessage: DisplayMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",

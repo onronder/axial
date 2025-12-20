@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { ChatArea } from "@/components/chat/ChatArea";
 import { useChatHistory, Message } from "@/hooks/useChatHistory";
@@ -10,25 +10,25 @@ export default function ChatPage() {
     const params = useParams();
     const chatId = params.chatId as string;
     const { getMessagesById } = useChatHistory();
+    const hasFetched = useRef(false);
 
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const loadMessages = async () => {
-            if (!chatId || chatId === 'new-chat-id') {
-                // New chat, no messages to load
-                setMessages([]);
-                setIsLoading(false);
-                return;
-            }
+        // Prevent double-fetch
+        if (hasFetched.current) return;
+        hasFetched.current = true;
 
+        const loadMessages = async () => {
             setIsLoading(true);
             try {
+                console.log('📄 [ChatPage] Loading messages for:', chatId);
                 const msgs = await getMessagesById(chatId);
+                console.log('📄 [ChatPage] Loaded', msgs.length, 'messages');
                 setMessages(msgs);
             } catch (error) {
-                console.error('Failed to load messages:', error);
+                console.error('📄 [ChatPage] Failed to load messages:', error);
                 setMessages([]);
             } finally {
                 setIsLoading(false);
@@ -50,7 +50,7 @@ export default function ChatPage() {
         <div className="h-full">
             <ChatArea
                 initialMessages={messages}
-                conversationId={chatId !== 'new-chat-id' ? chatId : undefined}
+                conversationId={chatId}
             />
         </div>
     );
