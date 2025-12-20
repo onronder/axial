@@ -150,7 +150,7 @@ export function AppSidebar() {
               <DropdownMenuContent
                 side="top"
                 align="start"
-                className="w-[--radix-dropdown-menu-trigger-width]"
+                className="w-[--radix-dropdown-menu-trigger-width] z-[100]"
               >
                 <DropdownMenuItem onClick={() => router.push("/dashboard/settings/profile")}>
                   <User className="mr-2 h-4 w-4" />
