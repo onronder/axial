@@ -178,19 +178,35 @@ async def chat_endpoint(
         print(f"ERROR: Embedding failed: {e}")
         raise HTTPException(500, f"Embedding failed: {e}")
 
-    # 2. Retrieve Context
+    # 2. Retrieve Context using Hybrid Search (Vector + Keyword)
     try:
-        response = supabase.rpc("match_documents", {
+        # Try hybrid search first (requires migration 002_hybrid_search.sql)
+        response = supabase.rpc("hybrid_search", {
+            "query_text": payload.query,
             "query_embedding": query_vector,
-            "match_threshold": 0.3, 
             "match_count": 5,
-            "filter_user_id": user_id
+            "filter_user_id": user_id,
+            "vector_weight": 0.7,
+            "keyword_weight": 0.3,
+            "similarity_threshold": 0.3
         }).execute()
         
         docs = response.data
+        print(f"📚 [Chat] Hybrid search returned {len(docs) if docs else 0} results")
     except Exception as e:
-        print(f"ERROR: Retrieval failed: {e}")
-        raise HTTPException(500, f"Retrieval failed: {e}")
+        # Fallback to vector-only search if hybrid_search not available
+        print(f"⚠️ [Chat] Hybrid search failed, falling back to vector search: {e}")
+        try:
+            response = supabase.rpc("match_documents", {
+                "query_embedding": query_vector,
+                "match_threshold": 0.3, 
+                "match_count": 5,
+                "filter_user_id": user_id
+            }).execute()
+            docs = response.data
+        except Exception as fallback_e:
+            print(f"ERROR: Retrieval failed: {fallback_e}")
+            raise HTTPException(500, f"Retrieval failed: {fallback_e}")
 
     if not docs:
         return ChatResponse(
