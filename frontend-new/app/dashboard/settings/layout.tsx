@@ -23,9 +23,9 @@ export default function SettingsLayout({
     const pathname = usePathname();
 
     return (
-        <div className="flex flex-col min-h-full">
-            {/* Settings Header - NOT sticky to avoid z-index conflicts with sidebar */}
-            <div className="bg-background border-b border-border">
+        <div className="flex flex-col min-h-full w-full overflow-hidden">
+            {/* Settings Header - proper z-index below sidebar */}
+            <div className="bg-background border-b border-border shrink-0">
                 <div className="px-4 lg:px-8 pt-6 pb-0">
                     <div className="flex items-center gap-3 mb-1">
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-lg shadow-primary/20">
@@ -42,7 +42,7 @@ export default function SettingsLayout({
                     </div>
                 </div>
 
-                {/* Premium Tab Navigation */}
+                {/* Tab Navigation */}
                 <ScrollArea className="w-full">
                     <nav className="flex px-4 lg:px-8 gap-1 mt-4">
                         {settingsNav.map((item) => {
@@ -79,12 +79,13 @@ export default function SettingsLayout({
                 </ScrollArea>
             </div>
 
-            {/* Main Content */}
-            <div className="flex-1 p-4 lg:p-8 overflow-auto">
-                <div className="mx-auto max-w-4xl animate-fade-in">
+            {/* Main Content - scrollable */}
+            <div className="flex-1 overflow-y-auto p-4 lg:p-8">
+                <div className="mx-auto max-w-4xl">
                     {children}
                 </div>
             </div>
         </div>
     );
 }
+
