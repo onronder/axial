@@ -63,34 +63,47 @@ export const useDataSources = () => {
         }
     };
 
-    // Real file operations - pass through to api? 
-    // The previous implementation was mock. 
-    // We can keep mock file operations for browsing IF the backend doesn't support browsing for all types yet.
-    // The prompt only asked to update "Integration Status" logic.
-    // So I will keep getFiles/ingestFiles as mocks OR update them if I verified endpoints.
-    // Prompt says: "Update hooks/useDataSources.ts (Integration Status)". 
-    // I will leave getFiles/ingestFiles as is (mock) to avoid breaking things I am not asked to touch, 
-    // BUT I should check if I need to update them. 
-    // The prompt says "Modify useDataSources to fetch connected status...". 
-    // It does not explicitly say to update getFiles. 
-    // I will leave them as is for now to minimize risk.
+    /**
+     * Fetch files/folders from a connected data source
+     */
+    const getFiles = async (sourceId: string, path: string = "") => {
+        const source = dataSources.find(ds => ds.id === sourceId);
+        if (!source) {
+            console.error("Source not found:", sourceId);
+            return [];
+        }
 
-    const getFiles = async (sourceId: string, path: string = "/") => {
-        console.log(`Fetching files for ${sourceId} at ${path}`);
-        // If we want real data, we would call /api/v1/integrations/{source_type}/items?parent_id={path}
-        // But for "google_drive" it might work.
-        // Let's stick to existing logic for browsing unless asked.
-        return [
-            { id: "f1", name: "Report.pdf", type: "file", size: "1.2 MB" },
-            { id: "f2", name: "Images", type: "folder", size: "-" }
-        ];
+        try {
+            const { data } = await api.get(`/api/v1/integrations/${source.type}/items`, {
+                params: path ? { parent_id: path } : undefined
+            });
+            return data;
+        } catch (error) {
+            console.error(`Failed to fetch files for ${sourceId}:`, error);
+            return [];
+        }
     };
 
+    /**
+     * Ingest selected files from a data source
+     */
     const ingestFiles = async (sourceId: string, fileIds: string[]) => {
-        console.log(`Ingesting files ${fileIds} from ${sourceId}`);
-        // Real ingestion is handled in DriveExplorer specific logic usually.
-        return true;
-    }
+        const source = dataSources.find(ds => ds.id === sourceId);
+        if (!source) {
+            console.error("Source not found:", sourceId);
+            return false;
+        }
+
+        try {
+            await api.post(`/api/v1/integrations/${source.type}/ingest`, {
+                item_ids: fileIds
+            });
+            return true;
+        } catch (error) {
+            console.error(`Failed to ingest files from ${sourceId}:`, error);
+            return false;
+        }
+    };
 
     return {
         dataSources,

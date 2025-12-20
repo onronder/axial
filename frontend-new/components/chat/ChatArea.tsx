@@ -1,18 +1,34 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Message } from "@/lib/mockData";
+import { Message } from "@/hooks/useChatHistory";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
 import { AxioLogo } from "@/components/branding/AxioLogo";
+import { api } from "@/lib/api";
 
 interface ChatAreaProps {
   initialMessages?: Message[];
+  conversationId?: string;
 }
 
-export function ChatArea({ initialMessages = [] }: ChatAreaProps) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+// Adapt Message to what MessageBubble expects
+interface DisplayMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  sources?: string[];
+}
+
+export function ChatArea({ initialMessages = [], conversationId }: ChatAreaProps) {
+  const [messages, setMessages] = useState<DisplayMessage[]>(() =>
+    initialMessages.map(m => ({
+      ...m,
+      timestamp: m.created_at
+    }))
+  );
   const [isTyping, setIsTyping] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -24,6 +40,14 @@ export function ChatArea({ initialMessages = [] }: ChatAreaProps) {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping, streamingMessage]);
+
+  // Update messages when initialMessages change (e.g., navigation)
+  useEffect(() => {
+    setMessages(initialMessages.map(m => ({
+      ...m,
+      timestamp: m.created_at
+    })));
+  }, [initialMessages]);
 
   const simulateStreaming = useCallback(async (fullText: string): Promise<string> => {
     const words = fullText.split(" ");
@@ -40,7 +64,7 @@ export function ChatArea({ initialMessages = [] }: ChatAreaProps) {
   }, []);
 
   const handleSendMessage = async (content: string) => {
-    const userMessage: Message = {
+    const userMessage: DisplayMessage = {
       id: Date.now().toString(),
       role: "user",
       content,
@@ -50,36 +74,47 @@ export function ChatArea({ initialMessages = [] }: ChatAreaProps) {
     setMessages((prev) => [...prev, userMessage]);
     setIsTyping(true);
 
-    // Simulate thinking delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setIsTyping(false);
+    try {
+      // Call real chat API
+      const { data } = await api.post('/api/v1/chat', {
+        query: content,
+        conversation_id: conversationId,
+        history: messages.slice(-10).map(m => ({
+          role: m.role,
+          content: m.content
+        }))
+      });
 
-    const fullResponse = `I've analyzed your request: "${content.slice(0, 50)}${content.length > 50 ? "..." : ""}"
+      setIsTyping(false);
 
-Based on the documents in your knowledge base, here's what I found:
+      // Stream the response for visual effect
+      await simulateStreaming(data.answer);
 
-**Key Points:**
-- Your data contains relevant information that matches this query
-- I've cross-referenced multiple sources for accuracy
-- The analysis covers the main topics you're interested in
+      const aiMessage: DisplayMessage = {
+        id: data.message_id || (Date.now() + 1).toString(),
+        role: "assistant",
+        content: data.answer,
+        timestamp: new Date().toISOString(),
+        sources: data.sources,
+      };
 
-**Details:**
-The information retrieved from your knowledge base shows several relevant connections. I've analyzed the context and can provide specific insights based on your ingested documents.
+      setStreamingMessage(null);
+      setMessages((prev) => [...prev, aiMessage]);
 
-Would you like me to dive deeper into any specific aspect?`;
+    } catch (error) {
+      console.error('Chat API error:', error);
+      setIsTyping(false);
+      setStreamingMessage(null);
 
-    // Stream the response
-    await simulateStreaming(fullResponse);
-
-    const aiMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: fullResponse,
-      timestamp: new Date().toISOString(),
-    };
-
-    setStreamingMessage(null);
-    setMessages((prev) => [...prev, aiMessage]);
+      // Show error message
+      const errorMessage: DisplayMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: "Sorry, I encountered an error processing your request. Please try again.",
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    }
   };
 
   const handleStarterQuery = (query: string) => {
