@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useProfile";
 import { useTheme } from "@/hooks/useTheme";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { ChatHistoryList } from "./ChatHistoryList";
@@ -41,8 +42,14 @@ export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { profile } = useProfile();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { createNewChat } = useChatHistory();
+
+  // Compute display name: prefer profile name, fallback to auth name
+  const displayName = profile?.first_name && profile?.last_name
+    ? `${profile.first_name} ${profile.last_name}`
+    : profile?.first_name || user?.name || user?.email?.split('@')[0] || 'User';
 
   const handleLogout = () => {
     logout();
@@ -53,9 +60,13 @@ export function AppSidebar() {
     setTheme(resolvedTheme === "dark" ? "light" : "dark");
   };
 
-  const handleNewChat = () => {
-    const chatId = createNewChat();
-    router.push(`/dashboard/chat/${chatId}`);
+  const handleNewChat = async () => {
+    try {
+      const chatId = await createNewChat();
+      router.push(`/dashboard/chat/${chatId}`);
+    } catch {
+      // Error handled in hook with toast
+    }
   };
 
   // Check against /dashboard/settings
@@ -126,7 +137,7 @@ export function AppSidebar() {
                 <SidebarMenuButton className="w-full">
                   <Avatar className="h-6 w-6">
                     <AvatarFallback className="bg-gradient-to-br from-blue-500 to-indigo-500 text-white text-xs">
-                      {user?.name
+                      {displayName
                         ?.split(" ")
                         .map((n) => n[0])
                         .join("")
@@ -135,7 +146,7 @@ export function AppSidebar() {
                   </Avatar>
                   <div className="flex flex-1 flex-col items-start text-left text-sm">
                     <span className="font-medium text-sidebar-foreground">
-                      {user?.name}
+                      {displayName}
                     </span>
                     <Badge
                       variant="secondary"
@@ -152,7 +163,7 @@ export function AppSidebar() {
                 align="start"
                 className="w-[--radix-dropdown-menu-trigger-width] z-[100]"
               >
-                <DropdownMenuItem onClick={() => router.push("/dashboard/settings/profile")}>
+                <DropdownMenuItem onClick={() => router.push("/dashboard/settings/general")}>
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>

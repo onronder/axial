@@ -10,15 +10,22 @@ export default function DashboardPage() {
     const router = useRouter();
     const { createNewChat } = useChatHistory();
 
-    const handleQuerySelect = (query: string) => {
-        // In a real app, we might pass this query to the new chat
-        const newChatId = createNewChat();
-        router.push(`/dashboard/chat/${newChatId}`);
+    const handleQuerySelect = async (query: string) => {
+        try {
+            const newChatId = await createNewChat();
+            router.push(`/dashboard/chat/${newChatId}`);
+        } catch {
+            // Error is already handled in createNewChat with toast
+        }
     };
 
-    const handleSend = (message: string) => {
-        const newChatId = createNewChat();
-        router.push(`/dashboard/chat/${newChatId}`);
+    const handleSend = async (message: string) => {
+        try {
+            const newChatId = await createNewChat();
+            router.push(`/dashboard/chat/${newChatId}`);
+        } catch {
+            // Error is already handled in createNewChat with toast
+        }
     };
 
     return (

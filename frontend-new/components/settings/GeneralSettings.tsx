@@ -8,24 +8,24 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProfile } from "@/hooks/useProfile";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
 export function GeneralSettings() {
   const { profile, isLoading, updateProfile } = useProfile();
   const { theme, setTheme } = useTheme();
+  const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
 
   // Local state for form fields
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
 
   // Populate form when profile loads
   useEffect(() => {
     if (profile) {
       setFirstName(profile.first_name || "");
       setLastName(profile.last_name || "");
-      // Email comes from auth, not profile - we could get it from useAuth if needed
     }
   }, [profile]);
 
@@ -91,9 +91,9 @@ export function GeneralSettings() {
             <Input
               id="email"
               type="email"
-              value={email}
+              value={user?.email || ""}
               disabled
-              placeholder="Your email is managed through authentication"
+              placeholder="Loading..."
               className="bg-muted"
             />
             <p className="text-xs text-muted-foreground">

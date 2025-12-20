@@ -1,10 +1,10 @@
 "use client";
 
-import { LayoutDashboard, Loader2 } from "lucide-react"
-import Link from "next/link"
+import { Loader2 } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
+import { AxioLogo } from "@/components/branding/AxioLogo"
 
 export default function AuthLayout({
     children,
@@ -34,14 +34,14 @@ export default function AuthLayout({
     }
 
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="w-full max-w-md space-y-8">
-                <div className="flex flex-col items-center justify-center text-center">
-                    <div className="flex items-center gap-2 mb-4">
-                        <LayoutDashboard className="h-8 w-8 text-slate-900" />
-                        <span className="text-xl font-bold">Axial Newton</span>
-                    </div>
+        <div className="flex min-h-screen flex-col items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
+            <div className="w-full max-w-md space-y-8 animate-fade-in">
+                {/* Centered Logo */}
+                <div className="flex flex-col items-center justify-center">
+                    <AxioLogo variant="full" size="lg" />
                 </div>
+
+                {/* Auth Form Content */}
                 {children}
             </div>
         </div>

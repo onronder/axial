@@ -41,8 +41,36 @@ export const useDataSources = () => {
     }, []); // Run once on mount
 
     const connect = (id: string) => {
-        // For now, these buttons might redirect to auth flow or show modal
-        // We just optimistically update for UI feedback if implemented
+        const source = dataSources.find(ds => ds.id === id);
+        if (!source) return;
+
+        // Handle different source types
+        if (source.id === "google-drive") {
+            // Redirect to Google OAuth
+            const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+            const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
+                || (typeof window !== 'undefined' ? `${window.location.origin}/dashboard/oauth/callback` : undefined);
+
+            if (!clientId || !redirectUri) {
+                console.error('Google OAuth not configured');
+                return;
+            }
+
+            const scope = 'https://www.googleapis.com/auth/drive.readonly';
+            const params = new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                scope: scope,
+                access_type: 'offline',
+                prompt: 'consent',
+                include_granted_scopes: 'true'
+            });
+
+            window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+        }
+        // For other sources like sftp, onedrive, etc. - would be handled differently
+        // These might open modals or redirect to other OAuth flows
     };
 
     const disconnect = async (id: string) => {
