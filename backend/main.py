@@ -141,8 +141,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
+    expose_headers=["X-Request-ID", "X-Response-Time"],
 )
+
+# Add request tracing middleware
+from core.tracing import RequestTracingMiddleware
+app.add_middleware(RequestTracingMiddleware)
 
 # =============================================================================
 # API Routers
@@ -157,8 +161,10 @@ app.include_router(integrations_router, prefix="/api/v1", tags=["integrations"])
 
 from api.v1.settings import router as settings_router
 from api.v1.team import router as team_router
+from api.v1.stream import router as stream_router
 app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
 app.include_router(team_router, prefix="/api/v1", tags=["team"])
+app.include_router(stream_router, prefix="/api/v1", tags=["streaming"])
 
 
 # =============================================================================

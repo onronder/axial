@@ -2,6 +2,7 @@ from .base import BaseConnector
 from .file import FileConnector
 from .web import WebConnector
 from .drive import DriveConnector
+from .notion import NotionConnector
 
 def get_connector(source_type: str) -> BaseConnector:
     """
@@ -16,6 +17,8 @@ def get_connector(source_type: str) -> BaseConnector:
         return WebConnector()
     elif source_type in ("drive", "google_drive"):
         return DriveConnector()
+    elif source_type == "notion":
+        return NotionConnector()
     else:
         raise ValueError(f"Unknown source type: {source_type}")
 
