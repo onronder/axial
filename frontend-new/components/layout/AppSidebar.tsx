@@ -72,7 +72,7 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-2 flex flex-col">
+      <SidebarContent className="px-2 flex flex-col overflow-hidden">
         {/* New Chat Button */}
         <SidebarGroup>
           <SidebarGroupContent>
@@ -87,15 +87,15 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Chat History List */}
-        <SidebarGroup className="flex-1 mt-4 min-h-0">
-          <SidebarGroupContent className="h-full">
+        {/* Chat History List - takes remaining space with scroll */}
+        <SidebarGroup className="flex-1 mt-4 min-h-0 overflow-hidden">
+          <SidebarGroupContent className="h-full overflow-hidden">
             <ChatHistoryList />
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Settings Link */}
-        <SidebarGroup className="mt-auto">
+        {/* Settings Link - always visible at bottom */}
+        <SidebarGroup className="flex-shrink-0 pt-2 border-t border-sidebar-border/50 mt-2">
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
