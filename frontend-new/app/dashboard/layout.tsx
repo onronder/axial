@@ -34,31 +34,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         return null;
     }
 
-    // Simple CSS Grid layout:
-    // - Mobile: single column, sidebar hidden
-    // - Desktop: 256px sidebar + flexible main area
+    // The AppSidebar uses fixed positioning internally.
+    // We simply need to add left padding to the main content area.
     return (
         <ChatHistoryProvider>
             <SidebarProvider defaultOpen={true}>
-                <div className="grid min-h-screen w-full md:grid-cols-[256px_1fr]">
-                    {/* Sidebar - fixed 256px width on desktop */}
-                    <aside className="hidden md:block">
-                        <AppSidebar />
-                    </aside>
+                {/* Fixed sidebar - renders its own fixed positioning */}
+                <AppSidebar />
 
-                    {/* Main content area */}
-                    <div className="flex flex-col">
-                        {/* Mobile header with menu */}
-                        <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
-                            <SidebarTrigger />
-                            <span className="font-semibold">Axio Hub</span>
-                        </header>
+                {/* Main content - needs left padding to not be under the fixed sidebar */}
+                <div className="min-h-screen w-full pl-0 md:pl-64">
+                    {/* Mobile header */}
+                    <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
+                        <SidebarTrigger />
+                        <span className="font-semibold">Axio Hub</span>
+                    </header>
 
-                        {/* Page content */}
-                        <main className="flex-1 overflow-auto">
-                            {children}
-                        </main>
-                    </div>
+                    {/* Page content */}
+                    <main className="min-h-[calc(100vh-56px)] md:min-h-screen">
+                        {children}
+                    </main>
                 </div>
             </SidebarProvider>
         </ChatHistoryProvider>
