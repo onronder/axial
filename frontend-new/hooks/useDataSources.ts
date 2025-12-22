@@ -85,11 +85,24 @@ export const useDataSources = () => {
 
         if (type === "google_drive") {
             const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-            const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
-                || (typeof window !== 'undefined' ? `${window.location.origin}/dashboard/oauth/callback` : undefined);
 
-            if (!clientId || !redirectUri) {
-                console.error('📦 [useDataSources] ❌ OAuth not configured');
+            // CRITICAL: Always use the correct callback path
+            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI || `${origin}/dashboard/oauth/callback`;
+
+            console.log('🔐 [OAuth] Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
+            console.log('🔐 [OAuth] Redirect URI:', redirectUri);
+            console.log('🔐 [OAuth] Origin:', origin);
+
+            if (!clientId) {
+                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID not configured');
+                alert('Google OAuth not configured. Please check environment variables.');
+                return;
+            }
+
+            if (!redirectUri || !redirectUri.includes('/dashboard/oauth/callback')) {
+                console.error('📦 [useDataSources] ❌ Redirect URI is invalid:', redirectUri);
+                alert('OAuth redirect URI is misconfigured.');
                 return;
             }
 
@@ -104,7 +117,10 @@ export const useDataSources = () => {
                 include_granted_scopes: 'true'
             });
 
-            window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+            console.log('🔐 [OAuth] Redirecting to:', authUrl);
+
+            window.location.href = authUrl;
         } else if (type === "notion") {
             // TODO: Implement Notion OAuth
             console.log('📦 [useDataSources] Notion OAuth not yet implemented');
