@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
@@ -24,34 +24,43 @@ export interface GroupedConversation {
     conversations: ChatConversation[];
 }
 
+interface ChatHistoryContextType {
+    conversations: ChatConversation[];
+    isLoading: boolean;
+    createNewChat: (title?: string) => Promise<string>;
+    deleteChat: (id: string) => Promise<void>;
+    renameChat: (id: string, title: string) => Promise<void>;
+    getMessagesById: (conversationId: string) => Promise<Message[]>;
+    refresh: () => Promise<void>;
+}
+
+const ChatHistoryContext = createContext<ChatHistoryContextType | null>(null);
+
 /**
- * Hook for managing chat conversations and messages.
- * Connects to real backend API endpoints.
+ * Provider component that wraps the app and provides chat history state.
+ * This ensures only ONE fetch happens regardless of how many components use the hook.
  */
-export const useChatHistory = () => {
+export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     const { toast } = useToast();
     const [conversations, setConversations] = useState<ChatConversation[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const hasFetched = useRef(false);
 
-    /**
-     * Fetch all conversations for the current user
-     */
     const fetchConversations = useCallback(async () => {
-        console.log('💬 [useChatHistory] Fetching conversations...');
+        console.log('💬 [ChatHistory] Fetching conversations...');
         setIsLoading(true);
         try {
             const { data } = await api.get('/api/v1/conversations');
-            console.log('💬 [useChatHistory] ✅ Got', data?.length || 0, 'conversations');
-            setConversations(data);
+            console.log('💬 [ChatHistory] ✅ Got', data?.length || 0, 'conversations');
+            setConversations(data || []);
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Fetch failed:', error.message);
+            console.error('💬 [ChatHistory] ❌ Fetch failed:', error.message);
         } finally {
             setIsLoading(false);
         }
     }, []);
 
-    // Only fetch once on mount
+    // Fetch once on mount
     useEffect(() => {
         if (!hasFetched.current) {
             hasFetched.current = true;
@@ -59,18 +68,15 @@ export const useChatHistory = () => {
         }
     }, [fetchConversations]);
 
-    /**
-     * Create a new conversation
-     */
-    const createNewChat = async (title: string = 'New Chat'): Promise<string> => {
-        console.log('💬 [useChatHistory] Creating chat:', title);
+    const createNewChat = useCallback(async (title: string = 'New Chat'): Promise<string> => {
+        console.log('💬 [ChatHistory] Creating chat:', title);
         try {
             const { data } = await api.post('/api/v1/conversations', { title });
-            console.log('💬 [useChatHistory] ✅ Created:', data.id);
+            console.log('💬 [ChatHistory] ✅ Created:', data.id);
             setConversations(prev => [data, ...prev]);
             return data.id;
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Create failed:', error.message);
+            console.error('💬 [ChatHistory] ❌ Create failed:', error.message);
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to create new chat.',
@@ -78,68 +84,59 @@ export const useChatHistory = () => {
             });
             throw error;
         }
-    };
+    }, [toast]);
 
-    /**
-     * Delete a conversation
-     */
-    const deleteChat = async (id: string): Promise<void> => {
-        console.log('💬 [useChatHistory] Deleting chat:', id);
+    const deleteChat = useCallback(async (id: string): Promise<void> => {
+        console.log('💬 [ChatHistory] Deleting chat:', id);
         try {
             await api.delete(`/api/v1/conversations/${id}`);
-            console.log('💬 [useChatHistory] ✅ Deleted');
+            console.log('💬 [ChatHistory] ✅ Deleted');
             setConversations(prev => prev.filter(c => c.id !== id));
             toast({
                 title: 'Chat deleted',
                 description: 'The conversation has been removed.',
             });
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Delete failed:', error.message);
+            console.error('💬 [ChatHistory] ❌ Delete failed:', error.message);
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to delete chat.',
                 variant: 'destructive',
             });
         }
-    };
+    }, [toast]);
 
-    /**
-     * Rename a conversation
-     */
-    const renameChat = async (id: string, title: string): Promise<void> => {
-        console.log('💬 [useChatHistory] Renaming chat:', id);
+    const renameChat = useCallback(async (id: string, title: string): Promise<void> => {
+        console.log('💬 [ChatHistory] Renaming chat:', id);
         try {
             const { data } = await api.patch(`/api/v1/conversations/${id}`, { title });
-            console.log('💬 [useChatHistory] ✅ Renamed');
+            console.log('💬 [ChatHistory] ✅ Renamed');
             setConversations(prev =>
                 prev.map(c => (c.id === id ? { ...c, title: data.title } : c))
             );
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Rename failed:', error.message);
+            console.error('💬 [ChatHistory] ❌ Rename failed:', error.message);
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to rename chat.',
                 variant: 'destructive',
             });
         }
-    };
+    }, [toast]);
 
-    /**
-     * Get messages for a specific conversation
-     */
-    const getMessagesById = async (conversationId: string): Promise<Message[]> => {
-        console.log('💬 [useChatHistory] Getting messages for:', conversationId);
+    const getMessagesById = useCallback(async (conversationId: string): Promise<Message[]> => {
+        console.log('💬 [ChatHistory] Getting messages for:', conversationId);
         try {
             const { data } = await api.get(`/api/v1/conversations/${conversationId}/messages`);
-            console.log('💬 [useChatHistory] ✅ Got', data?.length || 0, 'messages');
+            console.log('💬 [ChatHistory] ✅ Got', data?.length || 0, 'messages');
             return data;
         } catch (error: any) {
-            console.error('💬 [useChatHistory] ❌ Get messages failed:', error.message);
+            console.error('💬 [ChatHistory] ❌ Get messages failed:', error.message);
             return [];
         }
-    };
+    }, []);
 
-    return {
+    const value: ChatHistoryContextType = {
         conversations,
         isLoading,
         createNewChat,
@@ -148,6 +145,24 @@ export const useChatHistory = () => {
         getMessagesById,
         refresh: fetchConversations,
     };
+
+    return (
+        <ChatHistoryContext.Provider value={value}>
+            {children}
+        </ChatHistoryContext.Provider>
+    );
+}
+
+/**
+ * Hook for accessing chat history from anywhere in the app.
+ * All consumers share the same state - no duplicate API calls.
+ */
+export const useChatHistory = (): ChatHistoryContextType => {
+    const context = useContext(ChatHistoryContext);
+    if (!context) {
+        throw new Error('useChatHistory must be used within a ChatHistoryProvider');
+    }
+    return context;
 };
 
 /**
@@ -180,6 +195,5 @@ export const groupConversationsByDate = (conversations: ChatConversation[]): Gro
         }
     });
 
-    // Filter out empty groups
     return groups.filter(g => g.conversations.length > 0);
 };

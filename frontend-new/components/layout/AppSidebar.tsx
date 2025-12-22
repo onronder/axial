@@ -62,7 +62,9 @@ export function AppSidebar() {
   };
 
   const handleNewChat = () => {
-    // Just navigate to dashboard - chat will be created when user sends first message
+    // Navigate to dashboard for new chat
+    // Using router.push is correct but the issue is the component remounting
+    // The real fix is in the layout to not remount unnecessarily
     router.push('/dashboard');
   };
 
