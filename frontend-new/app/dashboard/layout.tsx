@@ -4,7 +4,7 @@ import { ReactNode, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { AppSidebar } from "@/components/layout/AppSidebar";
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { ChatHistoryProvider } from "@/hooks/useChatHistory";
 import { Loader2 } from "lucide-react";
 
@@ -34,15 +34,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         return null;
     }
 
-    // Use the standard shadcn sidebar pattern:
-    // SidebarProvider wraps everything
-    // AppSidebar is the fixed sidebar
-    // SidebarInset is the main content area with proper margin
+    // Exact shadcn pattern from docs:
+    // SidebarProvider (flex container) > AppSidebar (with internal spacer) > main (flex: 1)
+    // The Sidebar component includes a spacer div that pushes main content
     return (
         <ChatHistoryProvider>
             <SidebarProvider defaultOpen={true}>
                 <AppSidebar />
-                <SidebarInset>
+                <main className="flex-1 overflow-hidden">
                     {/* Mobile header with menu toggle */}
                     <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
                         <SidebarTrigger />
@@ -50,7 +49,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     </header>
                     {/* Page content */}
                     {children}
-                </SidebarInset>
+                </main>
             </SidebarProvider>
         </ChatHistoryProvider>
     );
