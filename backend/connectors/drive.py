@@ -5,7 +5,6 @@ Connects to Google Drive API to fetch and sync files.
 Supports listing, ingestion, and background sync with chunking/embedding.
 """
 
-import os
 import logging
 from typing import List, Optional
 from datetime import datetime
@@ -209,7 +208,9 @@ class DriveConnector(BaseConnector):
         """
         Full sync operation: fetch files, chunk, embed, and store.
         
-        This is designed to run as a background task after OAuth completes.
+        Uses the correct relational schema:
+        1. Insert parent document into `documents` table
+        2. Insert chunks into `document_chunks` with FK to parent
         
         Args:
             user_id: The user's ID
@@ -267,23 +268,43 @@ class DriveConnector(BaseConnector):
                 # Generate embeddings in batch
                 embeddings = generate_embeddings_batch(chunks)
                 
-                # Prepare records for insertion
+                # =====================================================
+                # STEP A: Insert Parent Document into `documents` table
+                # =====================================================
+                parent_doc_data = {
+                    "user_id": user_id,
+                    "title": file_meta['name'],
+                    "source_type": "drive",  # Matches the enum value
+                    "source_url": file_meta.get('webViewLink', ''),
+                    "metadata": {
+                        "file_id": file_meta['id'],
+                        "mime_type": file_meta.get('mimeType', 'unknown')
+                    },
+                    "created_at": datetime.utcnow().isoformat()
+                }
+                
+                doc_res = supabase.table("documents").insert(parent_doc_data).execute()
+                if not doc_res.data:
+                    logger.error(f"🔄 [DriveSync] Failed to create parent document for {file_meta['name']}")
+                    continue
+                
+                parent_doc_id = doc_res.data[0]['id']
+                logger.info(f"🔄 [DriveSync] Created parent document: {parent_doc_id}")
+                
+                # =====================================================
+                # STEP B: Insert Chunks into `document_chunks` table
+                # =====================================================
                 chunk_records = []
                 for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                     chunk_records.append({
-                        "user_id": user_id,
+                        "document_id": parent_doc_id,  # FK to documents
                         "content": chunk_text,
                         "embedding": embedding,
-                        "metadata": {
-                            "source": "google_drive",
-                            "file_id": file_meta['id'],
-                            "title": file_meta['name'],
-                            "chunk_index": i,
-                            "source_url": file_meta.get('webViewLink', '')
-                        }
+                        "chunk_index": i
+                        # Note: NO user_id or metadata here - they live on parent document
                     })
                 
-                # Insert chunks into document_chunks
+                # Insert chunks
                 if chunk_records:
                     supabase.table("document_chunks").insert(chunk_records).execute()
                     total_chunks += len(chunk_records)
@@ -291,6 +312,8 @@ class DriveConnector(BaseConnector):
                     
             except Exception as e:
                 logger.error(f"🔄 [DriveSync] Error processing {file_meta['name']}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         
         # 5. Update last_sync_at
