@@ -38,6 +38,10 @@
     --sidebar-border: 222 47% 18%;
     --sidebar-ring: 217 91% 53%;
     --sidebar-muted: 215 25% 63%;
+    
+    /* Sidebar dimensions - set here to prevent hydration flash */
+    --sidebar-width: 16rem;
+    --sidebar-width-icon: 3rem;
   }
 
   .dark {
