@@ -34,22 +34,31 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         return null;
     }
 
+    // Simple CSS Grid layout:
+    // - Mobile: single column, sidebar hidden
+    // - Desktop: 256px sidebar + flexible main area
     return (
         <ChatHistoryProvider>
             <SidebarProvider defaultOpen={true}>
-                {/* Fixed sidebar */}
-                <AppSidebar />
+                <div className="grid min-h-screen w-full md:grid-cols-[256px_1fr]">
+                    {/* Sidebar - fixed 256px width on desktop */}
+                    <aside className="hidden md:block">
+                        <AppSidebar />
+                    </aside>
 
-                {/* Main content area - simple div with left margin */}
-                <div className="flex-1 flex flex-col min-h-screen md:pl-64">
-                    {/* Mobile header */}
-                    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background/95 backdrop-blur px-4 md:hidden">
-                        <SidebarTrigger className="-ml-1" />
-                    </header>
-                    {/* Page content */}
-                    <main className="flex-1 overflow-auto">
-                        {children}
-                    </main>
+                    {/* Main content area */}
+                    <div className="flex flex-col">
+                        {/* Mobile header with menu */}
+                        <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
+                            <SidebarTrigger />
+                            <span className="font-semibold">Axio Hub</span>
+                        </header>
+
+                        {/* Page content */}
+                        <main className="flex-1 overflow-auto">
+                            {children}
+                        </main>
+                    </div>
                 </div>
             </SidebarProvider>
         </ChatHistoryProvider>
