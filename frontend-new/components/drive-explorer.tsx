@@ -170,18 +170,16 @@ export function DriveExplorer() {
                                         className={`group transition-colors ${isSelected ? "bg-blue-50/50" : "hover:bg-slate-50"}`}
                                     >
                                         <td className="p-3 text-center">
-                                            {!isFolder && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); toggleSelection(item.id) }}
-                                                    className="focus:outline-none"
-                                                >
-                                                    {isSelected ? (
-                                                        <CheckSquare className="h-5 w-5 text-blue-600" />
-                                                    ) : (
-                                                        <Square className="h-5 w-5 text-slate-300 group-hover:text-slate-400" />
-                                                    )}
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); toggleSelection(item.id) }}
+                                                className="focus:outline-none"
+                                            >
+                                                {isSelected ? (
+                                                    <CheckSquare className="h-5 w-5 text-blue-600" />
+                                                ) : (
+                                                    <Square className="h-5 w-5 text-slate-300 group-hover:text-slate-400" />
+                                                )}
+                                            </button>
                                         </td>
                                         <td className="p-3 text-slate-500">
                                             {isFolder ? (
@@ -210,14 +208,24 @@ export function DriveExplorer() {
                                         </td>
                                         <td className="p-3 text-right">
                                             {isFolder && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleNavigate(item.id, item.name)}
-                                                    className="h-8 text-slate-400 hover:text-blue-600"
-                                                >
-                                                    Open
-                                                </Button>
+                                                <div className="flex gap-1 justify-end">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => toggleSelection(item.id)}
+                                                        className={`h-8 ${isSelected ? "text-blue-600 bg-blue-100/50" : "text-slate-400 hover:text-blue-600"}`}
+                                                    >
+                                                        {isSelected ? "Selected" : "Select All"}
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => handleNavigate(item.id, item.name)}
+                                                        className="h-8 text-slate-400 hover:text-blue-600"
+                                                    >
+                                                        Open
+                                                    </Button>
+                                                </div>
                                             )}
                                             {!isFolder && (
                                                 <Button
