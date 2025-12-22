@@ -335,6 +335,17 @@ async def ingest_provider_items(
         chunk_texts = [d.page_content for d in docs]
         chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
         
+        # Mapping from connector type to database enum value
+        CONNECTOR_TYPE_TO_ENUM = {
+            "google_drive": "drive",
+            "notion": "notion",
+            "file_upload": "file",
+            "web_crawler": "web",
+            "web": "web",
+            "file": "file",
+        }
+        source_type_enum = CONNECTOR_TYPE_TO_ENUM.get(provider, "file")
+        
         # Group by source
         from collections import defaultdict
         grouped = defaultdict(list)
@@ -351,11 +362,13 @@ async def ingest_provider_items(
             parent_doc_data = {
                 "user_id": user_id,
                 "title": first_doc.metadata.get('title', 'Untitled'),
-                "source_type": provider,
+                "source_type": source_type_enum,  # Use mapped enum value
                 "source_url": first_doc.metadata.get('source_url'),
                 "metadata": first_doc.metadata,
                 "created_at": datetime.utcnow().isoformat()
             }
+            
+            logger.info(f"📄 [Ingest] Creating document: {parent_doc_data['title']} (type: {source_type_enum})")
             
             p_res = supabase.table("documents").insert(parent_doc_data).execute()
             if not p_res.data:
