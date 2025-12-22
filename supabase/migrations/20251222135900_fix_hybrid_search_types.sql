@@ -3,9 +3,15 @@
 -- =============================================================================
 -- The source_type column is an enum but needs to be returned as TEXT
 -- to avoid type mismatch errors in the API response
+-- 
+-- IMPORTANT: Must DROP functions first because return type is changing
 -- =============================================================================
 
--- Drop and recreate the function with proper type casting
+-- Drop existing functions first (required when changing return type)
+DROP FUNCTION IF EXISTS hybrid_search(TEXT, VECTOR(1536), INT, UUID, FLOAT, FLOAT, FLOAT);
+DROP FUNCTION IF EXISTS match_documents(VECTOR(1536), FLOAT, INT, UUID);
+
+-- Recreate hybrid_search with proper type casting
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_text TEXT,
     query_embedding VECTOR(1536),
@@ -115,7 +121,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- Also fix match_documents if it exists with same issue
+-- Recreate match_documents with proper type casting
 CREATE OR REPLACE FUNCTION match_documents(
     query_embedding VECTOR(1536),
     match_threshold FLOAT DEFAULT 0.5,
