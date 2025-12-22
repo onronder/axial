@@ -3,10 +3,9 @@ Google Drive Connector
 
 Connects to Google Drive API to fetch and sync files.
 Supports listing, ingestion, and background sync with chunking/embedding.
-Supports: Google Docs, Text files, Word (.docx), and PDF files.
+File parsing is delegated to the centralized DocumentParser service.
 """
 
-import io
 import logging
 from typing import List, Optional
 from datetime import datetime
@@ -17,21 +16,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
-
-# Optional imports for document parsing
-try:
-    import docx2txt
-    HAS_DOCX_SUPPORT = True
-except ImportError:
-    HAS_DOCX_SUPPORT = False
-    docx2txt = None
-
-try:
-    from pypdf import PdfReader
-    HAS_PDF_SUPPORT = True
-except ImportError:
-    HAS_PDF_SUPPORT = False
-    PdfReader = None
+from services.parsers import DocumentParser
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +29,7 @@ class DriveConnector(BaseConnector):
     - OAuth token refresh
     - File listing with folder expansion
     - Background sync with chunking and embedding
-    - Multiple file formats: Google Docs, text, DOCX, PDF
+    - Multiple file formats via DocumentParser service
     """
     
     # Text splitter for chunking documents
@@ -54,7 +39,7 @@ class DriveConnector(BaseConnector):
         separators=["\n\n", "\n", ". ", " ", ""]
     )
     
-    # Supported MIME types
+    # Supported MIME types (delegated to DocumentParser for actual extraction)
     SUPPORTED_MIME_TYPES = {
         'application/vnd.google-apps.document': 'gdoc',
         'text/plain': 'text',
@@ -212,44 +197,16 @@ class DriveConnector(BaseConnector):
 
         return documents
 
-    def _extract_docx_content(self, file_bytes: bytes) -> Optional[str]:
-        """Extract text from Word document bytes."""
-        if not HAS_DOCX_SUPPORT:
-            logger.warning("docx2txt not installed, skipping DOCX file")
-            return None
-        
-        try:
-            text = docx2txt.process(io.BytesIO(file_bytes))
-            return text if text else None
-        except Exception as e:
-            logger.error(f"Error extracting DOCX content: {e}")
-            return None
-
-    def _extract_pdf_content(self, file_bytes: bytes) -> Optional[str]:
-        """Extract text from PDF document bytes."""
-        if not HAS_PDF_SUPPORT:
-            logger.warning("pypdf not installed, skipping PDF file")
-            return None
-        
-        try:
-            reader = PdfReader(io.BytesIO(file_bytes))
-            text_parts = []
-            for page in reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text_parts.append(page_text)
-            return "\n\n".join(text_parts) if text_parts else None
-        except Exception as e:
-            logger.error(f"Error extracting PDF content: {e}")
-            return None
-
     def _download_file_content(self, service, file_meta: dict) -> Optional[str]:
-        """Download file content based on MIME type."""
+        """
+        Download file content based on MIME type.
+        Uses DocumentParser for actual text extraction.
+        """
         mime_type = file_meta['mimeType']
         file_name = file_meta.get('name', 'unknown')
         
         try:
-            # Google Docs - export as plain text
+            # Google Docs - export as plain text (special case, already text)
             if mime_type == 'application/vnd.google-apps.document':
                 content = service.files().export_media(
                     fileId=file_meta['id'], 
@@ -258,33 +215,16 @@ class DriveConnector(BaseConnector):
                 logger.info(f"📄 [DriveConnector] Extracted Google Doc: {file_name}")
                 return content
             
-            # Plain text files
-            elif mime_type.startswith('text/'):
-                content = service.files().get_media(
-                    fileId=file_meta['id']
-                ).execute().decode('utf-8')
-                logger.info(f"📄 [DriveConnector] Extracted text file: {file_name}")
-                return content
-            
-            # Word documents (.docx)
-            elif mime_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
-                              'application/msword']:
+            # For all other supported types, download bytes and use DocumentParser
+            if DocumentParser.is_supported(mime_type):
                 file_bytes = service.files().get_media(
                     fileId=file_meta['id']
                 ).execute()
-                content = self._extract_docx_content(file_bytes)
+                
+                # Delegate to centralized parser
+                content = DocumentParser.extract_text(file_bytes, mime_type)
                 if content:
-                    logger.info(f"📄 [DriveConnector] Extracted DOCX: {file_name}")
-                return content
-            
-            # PDF documents
-            elif mime_type == 'application/pdf':
-                file_bytes = service.files().get_media(
-                    fileId=file_meta['id']
-                ).execute()
-                content = self._extract_pdf_content(file_bytes)
-                if content:
-                    logger.info(f"📄 [DriveConnector] Extracted PDF: {file_name}")
+                    logger.info(f"📄 [DriveConnector] Extracted via DocumentParser: {file_name}")
                 return content
             
             # Unsupported type
@@ -358,7 +298,7 @@ class DriveConnector(BaseConnector):
             try:
                 logger.info(f"🔄 [DriveSync] Processing: {file_meta['name']} ({file_meta['mimeType']})")
                 
-                # Download content
+                # Download content (uses DocumentParser internally)
                 content = self._download_file_content(service, file_meta)
                 if not content or not content.strip():
                     logger.warning(f"⚠️ [DriveSync] No content from: {file_meta['name']}")
