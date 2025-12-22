@@ -4,3 +4,25 @@ import { twMerge } from "tailwind-merge"
 export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs))
 }
+
+/**
+ * Get the Google OAuth redirect URI.
+ * Centralized helper to ensure consistent redirect URI across the app.
+ * 
+ * Priority: Environment variable > Auto-detected window origin
+ */
+export function getGoogleRedirectUri(): string | undefined {
+    if (typeof window === 'undefined') return undefined;
+
+    const envUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI;
+    const autoUri = `${window.location.origin}/dashboard/oauth/callback`;
+
+    return envUri || autoUri;
+}
+
+/**
+ * Get the Google Client ID from environment.
+ */
+export function getGoogleClientId(): string | undefined {
+    return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+}

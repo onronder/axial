@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
+import { getGoogleRedirectUri, getGoogleClientId } from "@/lib/utils";
 import type { ConnectorDefinition, UserIntegration, MergedDataSource } from "@/types";
 
 /**
@@ -84,15 +85,11 @@ export const useDataSources = () => {
         console.log('📦 [useDataSources] Connecting:', type);
 
         if (type === "google_drive") {
-            const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+            const clientId = getGoogleClientId();
+            const redirectUri = getGoogleRedirectUri();
 
-            // CRITICAL: Always use the correct callback path
-            const origin = typeof window !== 'undefined' ? window.location.origin : '';
-            const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI || `${origin}/dashboard/oauth/callback`;
-
-            console.log('🔐 [OAuth] Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
-            console.log('🔐 [OAuth] Redirect URI:', redirectUri);
-            console.log('🔐 [OAuth] Origin:', origin);
+            console.log('🔐 [useDataSources] Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
+            console.log('🔐 [useDataSources] Redirect URI:', redirectUri);
 
             if (!clientId) {
                 console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID not configured');
@@ -100,9 +97,9 @@ export const useDataSources = () => {
                 return;
             }
 
-            if (!redirectUri || !redirectUri.includes('/dashboard/oauth/callback')) {
-                console.error('📦 [useDataSources] ❌ Redirect URI is invalid:', redirectUri);
-                alert('OAuth redirect URI is misconfigured.');
+            if (!redirectUri) {
+                console.error('📦 [useDataSources] ❌ Redirect URI not available');
+                alert('OAuth redirect URI is not configured.');
                 return;
             }
 
@@ -118,7 +115,7 @@ export const useDataSources = () => {
             });
 
             const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-            console.log('🔐 [OAuth] Redirecting to:', authUrl);
+            console.log('🔐 [useDataSources] Redirecting to:', authUrl);
 
             window.location.href = authUrl;
         } else if (type === "notion") {

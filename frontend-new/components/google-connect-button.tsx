@@ -2,37 +2,43 @@
 
 import { Button } from "@/components/ui/button"
 import { HardDrive } from "lucide-react"
+import { getGoogleRedirectUri, getGoogleClientId } from "@/lib/utils"
 
 export function GoogleConnectButton() {
     const handleConnect = () => {
-        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-        // Use dynamic origin detection for Vercel/production compatibility
-        // Redirect to the OAuth callback page to handle token exchange
-        const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
-            || (typeof window !== 'undefined' ? `${window.location.origin}/dashboard/oauth/callback` : undefined)
+        const clientId = getGoogleClientId();
+        const redirectUri = getGoogleRedirectUri();
 
-        if (!clientId || !redirectUri) {
-            console.error('Google OAuth not configured: missing NEXT_PUBLIC_GOOGLE_CLIENT_ID or NEXT_PUBLIC_GOOGLE_REDIRECT_URI')
-            return
-        }
-        const scope = 'https://www.googleapis.com/auth/drive.readonly'
+        console.log('🔐 [Connect Button] Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
+        console.log('🔐 [Connect Button] Redirect URI:', redirectUri);
 
         if (!clientId) {
-            alert("Google Client ID is not configured.")
-            return
+            console.error('🔐 [Connect Button] ❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID not configured');
+            alert("Google Client ID is not configured.");
+            return;
         }
 
+        if (!redirectUri) {
+            console.error('🔐 [Connect Button] ❌ Redirect URI not available');
+            alert("OAuth redirect URI is not configured.");
+            return;
+        }
+
+        const scope = 'https://www.googleapis.com/auth/drive.readonly';
         const params = new URLSearchParams({
             client_id: clientId,
             redirect_uri: redirectUri,
             response_type: 'code',
             scope: scope,
-            access_type: 'offline', // Critical for refresh token
-            prompt: 'consent', // Critical to force refresh token
+            access_type: 'offline',
+            prompt: 'consent',
             include_granted_scopes: 'true'
-        })
+        });
 
-        window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+        console.log('🔐 [Connect Button] Redirecting to:', authUrl);
+
+        window.location.href = authUrl;
     }
 
     return (
