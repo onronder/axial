@@ -55,6 +55,53 @@ export interface DataSource {
 }
 
 // =============================================================================
+// CONNECTOR TYPES (from Backend API)
+// =============================================================================
+
+/**
+ * Connector definition from backend - represents available connector types
+ */
+export interface ConnectorDefinition {
+    id: string;
+    type: string;
+    name: string;
+    description: string | null;
+    icon_path: string | null;
+    category: string | null;
+    is_active: boolean;
+}
+
+/**
+ * User integration from backend - represents a connected integration
+ */
+export interface UserIntegration {
+    id: string;
+    connector_definition_id: string;
+    connector_type: string;
+    connector_name: string;
+    connector_icon: string | null;
+    category: string | null;
+    connected: boolean;
+    last_sync_at: string | null;
+}
+
+/**
+ * Merged data source for UI - combines definition with user status
+ */
+export interface MergedDataSource {
+    id: string;
+    definitionId: string;
+    type: string;
+    name: string;
+    description: string;
+    iconPath: string | null;
+    category: string;
+    isConnected: boolean;
+    lastSyncAt: string | null;
+    integrationId: string | null;
+}
+
+// =============================================================================
 // DOCUMENT TYPES
 // =============================================================================
 

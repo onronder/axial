@@ -1,32 +1,148 @@
-from fastapi import APIRouter, Depends, HTTPException
+"""
+Integrations API Endpoints
+
+Provides dynamic connector discovery, OAuth handling, and integration management.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta
-import json
+from typing import Optional, List
 import logging
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
+
+
+# =============================================================================
+# Pydantic Request/Response Models
+# =============================================================================
 
 class ExchangeRequest(BaseModel):
     code: str
 
+
+class ConnectorDefinitionOut(BaseModel):
+    id: str
+    type: str
+    name: str
+    description: Optional[str] = None
+    icon_path: Optional[str] = None
+    category: Optional[str] = None
+    is_active: bool = True
+
+
+class UserIntegrationOut(BaseModel):
+    id: str
+    connector_definition_id: str
+    connector_type: str
+    connector_name: str
+    connector_icon: Optional[str] = None
+    category: Optional[str] = None
+    connected: bool = True
+    last_sync_at: Optional[datetime] = None
+
+
+class IngestRequest(BaseModel):
+    item_ids: List[str]
+
+
+# =============================================================================
+# Dynamic Connector Discovery Endpoints
+# =============================================================================
+
+@router.get("/integrations/available", response_model=List[ConnectorDefinitionOut])
+async def get_available_connectors():
+    """
+    Returns all active connector definitions.
+    Frontend uses this to dynamically render available integrations.
+    """
+    supabase = get_supabase()
+    
+    try:
+        response = supabase.table("connector_definitions").select("*").eq("is_active", True).execute()
+        return response.data or []
+    except Exception as e:
+        logger.error(f"Failed to fetch connector definitions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch available connectors")
+
+
+@router.get("/integrations/status", response_model=List[UserIntegrationOut])
+async def get_user_integrations(
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Returns all of the user's connected integrations with definition details.
+    Joins user_integrations with connector_definitions for rich response.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Join user_integrations with connector_definitions
+        response = supabase.table("user_integrations").select(
+            "id, connector_definition_id, last_sync_at, "
+            "connector_definitions(type, name, icon_path, category)"
+        ).eq("user_id", user_id).execute()
+        
+        # Transform the joined response
+        result = []
+        for item in response.data or []:
+            definition = item.get("connector_definitions", {}) or {}
+            result.append({
+                "id": item["id"],
+                "connector_definition_id": item["connector_definition_id"],
+                "connector_type": definition.get("type", "unknown"),
+                "connector_name": definition.get("name", "Unknown"),
+                "connector_icon": definition.get("icon_path"),
+                "category": definition.get("category"),
+                "connected": True,
+                "last_sync_at": item.get("last_sync_at")
+            })
+        
+        return result
+    except Exception as e:
+        logger.error(f"Failed to fetch user integrations: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch integrations")
+
+
+# =============================================================================
+# OAuth Token Exchange (Fixed Persistence)
+# =============================================================================
+
 @router.post("/integrations/google/exchange")
 async def exchange_google_token(
     request: ExchangeRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
+    """
+    Exchange Google OAuth code for tokens and persist to user_integrations.
+    Uses proper upsert with connector_definition_id FK.
+    """
     logger.info(f"🔐 [OAuth] Starting Google token exchange for user: {user_id}")
     
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         logger.error("🔐 [OAuth] Google credentials not configured!")
         raise HTTPException(status_code=500, detail="Google credentials not configured")
 
-    # 1. Exchange Code for Tokens
+    supabase = get_supabase()
+
+    # 1. Look up connector_definition_id for google_drive
+    try:
+        def_response = supabase.table("connector_definitions").select("id").eq("type", "google_drive").single().execute()
+        if not def_response.data:
+            raise HTTPException(status_code=500, detail="google_drive connector not found in definitions")
+        connector_definition_id = def_response.data["id"]
+        logger.info(f"🔐 [OAuth] Found connector_definition_id: {connector_definition_id}")
+    except Exception as e:
+        logger.error(f"🔐 [OAuth] Failed to lookup connector definition: {e}")
+        raise HTTPException(status_code=500, detail="Failed to lookup connector definition")
+
+    # 2. Exchange Code for Tokens
     try:
         logger.info(f"🔐 [OAuth] Redirect URI: {settings.GOOGLE_REDIRECT_URI}")
         flow = Flow.from_client_config(
@@ -52,11 +168,8 @@ async def exchange_google_token(
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
 
-    # 2. Store in Supabase
-    supabase = get_supabase()
-    
+    # 3. Calculate expiry
     try:
-        expires_at = None
         if creds.expiry:
             expires_at = creds.expiry.isoformat()
         else:
@@ -64,31 +177,31 @@ async def exchange_google_token(
     except Exception as e:
         logger.warning(f"🔐 [OAuth] Could not set expiry: {e}")
         expires_at = (datetime.utcnow() + timedelta(hours=1)).isoformat()
-    
+
+    # 4. Upsert to user_integrations using the unique constraint
     data = {
         "user_id": user_id,
-        "provider": "google_drive",
+        "connector_definition_id": connector_definition_id,
         "access_token": creds.token,
         "refresh_token": creds.refresh_token,
         "expires_at": expires_at,
         "updated_at": datetime.utcnow().isoformat()
     }
     
-    logger.info(f"🔐 [OAuth] Saving to user_integrations: user_id={user_id}, provider=google_drive")
-    logger.info(f"🔐 [OAuth] Data (tokens redacted): expires_at={expires_at}, has_refresh={creds.refresh_token is not None}")
+    logger.info(f"🔐 [OAuth] Upserting to user_integrations: user_id={user_id}, connector_def={connector_definition_id}")
     
     try:
-        # Delete existing record first (if any)
-        del_res = supabase.table("user_integrations").delete().eq("user_id", user_id).eq("provider", "google_drive").execute()
-        logger.info(f"🔐 [OAuth] Delete old record result: {del_res.data}")
+        # Upsert: insert or update on conflict
+        upsert_res = supabase.table("user_integrations").upsert(
+            data,
+            on_conflict="user_id,connector_definition_id"
+        ).execute()
         
-        # Insert new record
-        ins_res = supabase.table("user_integrations").insert(data).execute()
-        logger.info(f"🔐 [OAuth] ✅ Insert result: {ins_res.data}")
+        logger.info(f"🔐 [OAuth] ✅ Upsert result: {upsert_res.data}")
         
-        if not ins_res.data:
-            logger.error("🔐 [OAuth] ❌ Insert returned no data!")
-            raise HTTPException(status_code=500, detail="Database insert returned no data")
+        if not upsert_res.data:
+            logger.error("🔐 [OAuth] ❌ Upsert returned no data!")
+            raise HTTPException(status_code=500, detail="Database upsert returned no data")
         
     except HTTPException:
         raise
@@ -98,63 +211,83 @@ async def exchange_google_token(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    return {"status": "success", "provider": "google_drive"}
+    # 5. Schedule background sync
+    integration_id = upsert_res.data[0]["id"]
+    try:
+        from connectors.drive import DriveConnector
+        connector = DriveConnector()
+        background_tasks.add_task(connector.sync, user_id, integration_id)
+        logger.info(f"🔐 [OAuth] Scheduled background sync for integration {integration_id}")
+    except Exception as e:
+        logger.warning(f"🔐 [OAuth] Failed to schedule sync: {e}")
+        # Don't fail the OAuth just because sync scheduling failed
+
+    return {"status": "success", "provider": "google_drive", "integration_id": integration_id}
 
 
-# --- Generic Integration Endpoints ---
-
-from connectors.factory import get_connector
-from typing import Optional, List
+# =============================================================================
+# Integration Management Endpoints
+# =============================================================================
 
 @router.get("/integrations/{provider}/status")
 async def get_provider_status(
     provider: str,
     user_id: str = Depends(get_current_user)
 ):
+    """Check if a specific provider is connected for the user."""
+    supabase = get_supabase()
+    
     try:
-        connector = get_connector(provider)
-        is_connected = await connector.authorize(user_id)
-        return {"connected": is_connected}
+        # Lookup connector definition by type
+        def_res = supabase.table("connector_definitions").select("id").eq("type", provider).single().execute()
+        if not def_res.data:
+            return {"connected": False, "error": "Unknown provider"}
+        
+        connector_def_id = def_res.data["id"]
+        
+        # Check if user has this integration
+        int_res = supabase.table("user_integrations").select("id").eq(
+            "user_id", user_id
+        ).eq("connector_definition_id", connector_def_id).execute()
+        
+        return {"connected": len(int_res.data or []) > 0}
     except Exception:
         return {"connected": False}
 
-@router.get("/integrations/status")
-async def get_all_status(
-    user_id: str = Depends(get_current_user)
-):
-    try:
-        supabase = get_supabase()
-        response = supabase.table("user_integrations").select("provider").eq("user_id", user_id).execute()
-        
-        connected_providers = {item['provider']: True for item in response.data}
-        
-        # Ensure we return false for known providers if not in DB
-        # List of known providers could be dynamic, but hardcoding known ones for now
-        all_providers = ["google_drive", "web"]
-        
-        status = {}
-        for p in all_providers:
-            status[p] = connected_providers.get(p, False)
-            
-        return status
-    except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Failed to fetch statuses: {str(e)}")
 
 @router.delete("/integrations/{provider}")
 async def disconnect_provider(
     provider: str,
     user_id: str = Depends(get_current_user)
 ):
+    """Disconnect a provider integration."""
+    supabase = get_supabase()
+    
     try:
-        supabase = get_supabase()
-        response = supabase.table("user_integrations").delete().eq("user_id", user_id).eq("provider", provider).execute()
+        # Lookup connector definition by type
+        def_res = supabase.table("connector_definitions").select("id").eq("type", provider).single().execute()
+        if not def_res.data:
+            raise HTTPException(status_code=404, detail="Unknown provider")
         
-        # In a real app, we might also want to call provider revocation endpoint here.
-        # e.g. https://accounts.google.com/o/oauth2/revoke?token={token}
+        connector_def_id = def_res.data["id"]
+        
+        # Delete the user integration
+        supabase.table("user_integrations").delete().eq(
+            "user_id", user_id
+        ).eq("connector_definition_id", connector_def_id).execute()
         
         return {"status": "success", "provider": provider}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to disconnect: {str(e)}")
+
+
+# =============================================================================
+# Provider Items & Ingestion
+# =============================================================================
+
+from connectors.factory import get_connector
 
 
 @router.get("/integrations/{provider}/items")
@@ -163,6 +296,7 @@ async def list_provider_items(
     parent_id: Optional[str] = None,
     user_id: str = Depends(get_current_user)
 ):
+    """List items from a connected provider (folders, files, etc.)."""
     try:
         connector = get_connector(provider)
         items = await connector.list_items(user_id, parent_id)
@@ -170,8 +304,6 @@ async def list_provider_items(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
 
-class IngestRequest(BaseModel):
-    item_ids: List[str]
 
 @router.post("/integrations/{provider}/ingest")
 async def ingest_provider_items(
@@ -180,8 +312,7 @@ async def ingest_provider_items(
     user_id: str = Depends(get_current_user)
 ):
     """
-    Generic ingestion endpoint for Source-based connectors (Drive, Web).
-    Not used for direct File uploads.
+    Ingest items from a provider (Download, Parse, Embed, Store).
     """
     try:
         connector = get_connector(provider)
@@ -190,14 +321,11 @@ async def ingest_provider_items(
         docs = await connector.ingest(user_id, request.item_ids)
         
         if not docs:
-             return {"status": "skipped", "message": "No content processed"}
+            return {"status": "skipped", "message": "No content processed"}
 
         supabase = get_supabase()
         
-        # 2. Embed & Store (Should ideally be a shared Service - reusing logic from ingest.py roughly here)
-        # For DRY, we duplicate simplified logic here or import.
-        # Let's simple duplicate for MVP speed, then refactor to service.
-        
+        # 2. Embed & Store
         from langchain_openai import OpenAIEmbeddings
         embeddings_model = OpenAIEmbeddings(
             model="text-embedding-3-small",
@@ -207,27 +335,19 @@ async def ingest_provider_items(
         chunk_texts = [d.page_content for d in docs]
         chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
         
-        # Group docs by source item? Or just stream all chunks?
-        # Current Schema: One Parent Document -> Many Chunks.
-        # Here we might have multiple source items (Multiple Files).
-        # We should create ONE Parent Document per source item.
-        
-        # Regroup by file_id?
-        # Our ConnectorDocument metadata has 'file_id' or 'source_url'.
-        
-        # Group by unique source identifier
+        # Group by source
         from collections import defaultdict
         grouped = defaultdict(list)
         for i, doc in enumerate(docs):
             key = doc.metadata.get('source_url') or doc.metadata.get('file_id') or "unknown"
             grouped[key].append((doc, chunk_embeddings[i]))
-            
+        
         results = []
         
         for key, pairs in grouped.items():
             first_doc = pairs[0][0]
             
-            # Create Parent
+            # Create Parent Document
             parent_doc_data = {
                 "user_id": user_id,
                 "title": first_doc.metadata.get('title', 'Untitled'),
@@ -238,13 +358,14 @@ async def ingest_provider_items(
             }
             
             p_res = supabase.table("documents").insert(parent_doc_data).execute()
-            if not p_res.data: continue
+            if not p_res.data:
+                continue
             parent_id = p_res.data[0]['id']
             
             # Create Chunks
             chunk_records = []
             for idx, (doc, emb) in enumerate(pairs):
-                 chunk_records.append({
+                chunk_records.append({
                     "document_id": parent_id,
                     "content": doc.page_content,
                     "embedding": emb,

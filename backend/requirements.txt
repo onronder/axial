@@ -6,6 +6,7 @@ redis
 celery
 openai
 pydantic-settings
+sqlmodel
 langchain
 langchain-openai
 langchain-text-splitters
