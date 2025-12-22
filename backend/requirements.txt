@@ -14,6 +14,8 @@ langchain-community
 langchain-core
 tiktoken
 unstructured[pdf]
+docx2txt
+pypdf
 python-magic
 python-multipart
 pyjwt

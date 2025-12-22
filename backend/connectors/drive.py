@@ -3,8 +3,10 @@ Google Drive Connector
 
 Connects to Google Drive API to fetch and sync files.
 Supports listing, ingestion, and background sync with chunking/embedding.
+Supports: Google Docs, Text files, Word (.docx), and PDF files.
 """
 
+import io
 import logging
 from typing import List, Optional
 from datetime import datetime
@@ -15,6 +17,21 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
+
+# Optional imports for document parsing
+try:
+    import docx2txt
+    HAS_DOCX_SUPPORT = True
+except ImportError:
+    HAS_DOCX_SUPPORT = False
+    docx2txt = None
+
+try:
+    from pypdf import PdfReader
+    HAS_PDF_SUPPORT = True
+except ImportError:
+    HAS_PDF_SUPPORT = False
+    PdfReader = None
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +44,7 @@ class DriveConnector(BaseConnector):
     - OAuth token refresh
     - File listing with folder expansion
     - Background sync with chunking and embedding
+    - Multiple file formats: Google Docs, text, DOCX, PDF
     """
     
     # Text splitter for chunking documents
@@ -35,6 +53,17 @@ class DriveConnector(BaseConnector):
         chunk_overlap=200,
         separators=["\n\n", "\n", ". ", " ", ""]
     )
+    
+    # Supported MIME types
+    SUPPORTED_MIME_TYPES = {
+        'application/vnd.google-apps.document': 'gdoc',
+        'text/plain': 'text',
+        'text/markdown': 'text',
+        'text/csv': 'text',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'application/msword': 'docx',
+        'application/pdf': 'pdf',
+    }
     
     async def authorize(self, user_id: str) -> bool:
         """Check if user has connected Google Drive."""
@@ -173,35 +202,100 @@ class DriveConnector(BaseConnector):
                                 "file_id": item['id']
                             }
                         ))
+                        logger.info(f"✅ Successfully processed file: {item['name']}")
+                    else:
+                        logger.warning(f"⚠️ No content extracted from: {item['name']}")
 
             except Exception as e:
-                logger.error(f"Error processing item {item_id}: {e}")
+                logger.error(f"❌ Error processing item {item_id}: {e}")
                 continue
 
         return documents
 
+    def _extract_docx_content(self, file_bytes: bytes) -> Optional[str]:
+        """Extract text from Word document bytes."""
+        if not HAS_DOCX_SUPPORT:
+            logger.warning("docx2txt not installed, skipping DOCX file")
+            return None
+        
+        try:
+            text = docx2txt.process(io.BytesIO(file_bytes))
+            return text if text else None
+        except Exception as e:
+            logger.error(f"Error extracting DOCX content: {e}")
+            return None
+
+    def _extract_pdf_content(self, file_bytes: bytes) -> Optional[str]:
+        """Extract text from PDF document bytes."""
+        if not HAS_PDF_SUPPORT:
+            logger.warning("pypdf not installed, skipping PDF file")
+            return None
+        
+        try:
+            reader = PdfReader(io.BytesIO(file_bytes))
+            text_parts = []
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text_parts.append(page_text)
+            return "\n\n".join(text_parts) if text_parts else None
+        except Exception as e:
+            logger.error(f"Error extracting PDF content: {e}")
+            return None
+
     def _download_file_content(self, service, file_meta: dict) -> Optional[str]:
         """Download file content based on MIME type."""
         mime_type = file_meta['mimeType']
+        file_name = file_meta.get('name', 'unknown')
         
         try:
+            # Google Docs - export as plain text
             if mime_type == 'application/vnd.google-apps.document':
-                return service.files().export_media(
+                content = service.files().export_media(
                     fileId=file_meta['id'], 
                     mimeType='text/plain'
                 ).execute().decode('utf-8')
-            elif 'text' in mime_type:
-                return service.files().get_media(
+                logger.info(f"📄 [DriveConnector] Extracted Google Doc: {file_name}")
+                return content
+            
+            # Plain text files
+            elif mime_type.startswith('text/'):
+                content = service.files().get_media(
                     fileId=file_meta['id']
                 ).execute().decode('utf-8')
+                logger.info(f"📄 [DriveConnector] Extracted text file: {file_name}")
+                return content
+            
+            # Word documents (.docx)
+            elif mime_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                              'application/msword']:
+                file_bytes = service.files().get_media(
+                    fileId=file_meta['id']
+                ).execute()
+                content = self._extract_docx_content(file_bytes)
+                if content:
+                    logger.info(f"📄 [DriveConnector] Extracted DOCX: {file_name}")
+                return content
+            
+            # PDF documents
             elif mime_type == 'application/pdf':
-                logger.info(f"Skipping PDF: {file_meta['name']}")
-                return None
+                file_bytes = service.files().get_media(
+                    fileId=file_meta['id']
+                ).execute()
+                content = self._extract_pdf_content(file_bytes)
+                if content:
+                    logger.info(f"📄 [DriveConnector] Extracted PDF: {file_name}")
+                return content
+            
+            # Unsupported type
             else:
-                logger.info(f"Skipping unsupported type: {mime_type}")
+                logger.info(f"⏭️ Skipping unsupported type '{mime_type}': {file_name}")
                 return None
+                
         except Exception as e:
-            logger.error(f"Error downloading {file_meta['name']}: {e}")
+            logger.error(f"❌ Error downloading {file_name}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     async def sync(self, user_id: str, integration_id: str) -> dict:
@@ -234,11 +328,19 @@ class DriveConnector(BaseConnector):
         creds = self._get_credentials_by_integration(integration)
         service = build('drive', 'v3', credentials=creds)
         
-        # 3. List files (limit to 10 text/gdoc files for safety)
+        # 3. List files - include DOCX and PDF in query
+        supported_mimes = [
+            "mimeType='application/vnd.google-apps.document'",
+            "mimeType contains 'text/'",
+            "mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'",
+            "mimeType='application/pdf'"
+        ]
+        query = f"({' or '.join(supported_mimes)}) and trashed=false"
+        
         results = service.files().list(
-            q="(mimeType='application/vnd.google-apps.document' or mimeType contains 'text/') and trashed=false",
+            q=query,
             fields="files(id, name, mimeType, webViewLink)",
-            pageSize=10
+            pageSize=20  # Increased limit to get more files
         ).execute()
         
         files = results.get('files', [])
@@ -249,18 +351,23 @@ class DriveConnector(BaseConnector):
         
         total_chunks = 0
         processed_files = 0
+        errors = []
         
         # 4. Process each file
         for file_meta in files:
             try:
+                logger.info(f"🔄 [DriveSync] Processing: {file_meta['name']} ({file_meta['mimeType']})")
+                
                 # Download content
                 content = self._download_file_content(service, file_meta)
                 if not content or not content.strip():
+                    logger.warning(f"⚠️ [DriveSync] No content from: {file_meta['name']}")
                     continue
                 
                 # Chunk the content
                 chunks = self.text_splitter.split_text(content)
                 if not chunks:
+                    logger.warning(f"⚠️ [DriveSync] No chunks from: {file_meta['name']}")
                     continue
                 
                 logger.info(f"🔄 [DriveSync] File '{file_meta['name']}': {len(chunks)} chunks")
@@ -285,11 +392,12 @@ class DriveConnector(BaseConnector):
                 
                 doc_res = supabase.table("documents").insert(parent_doc_data).execute()
                 if not doc_res.data:
-                    logger.error(f"🔄 [DriveSync] Failed to create parent document for {file_meta['name']}")
+                    logger.error(f"❌ [DriveSync] Failed to create parent document for {file_meta['name']}")
+                    errors.append(f"DB insert failed: {file_meta['name']}")
                     continue
                 
                 parent_doc_id = doc_res.data[0]['id']
-                logger.info(f"🔄 [DriveSync] Created parent document: {parent_doc_id}")
+                logger.info(f"✅ [DriveSync] Created parent document: {parent_doc_id}")
                 
                 # =====================================================
                 # STEP B: Insert Chunks into `document_chunks` table
@@ -306,12 +414,18 @@ class DriveConnector(BaseConnector):
                 
                 # Insert chunks
                 if chunk_records:
-                    supabase.table("document_chunks").insert(chunk_records).execute()
-                    total_chunks += len(chunk_records)
-                    processed_files += 1
+                    chunk_res = supabase.table("document_chunks").insert(chunk_records).execute()
+                    if chunk_res.data:
+                        total_chunks += len(chunk_records)
+                        processed_files += 1
+                        logger.info(f"✅ [DriveSync] Inserted {len(chunk_records)} chunks for {file_meta['name']}")
+                    else:
+                        logger.error(f"❌ [DriveSync] Failed to insert chunks for {file_meta['name']}")
+                        errors.append(f"Chunk insert failed: {file_meta['name']}")
                     
             except Exception as e:
-                logger.error(f"🔄 [DriveSync] Error processing {file_meta['name']}: {e}")
+                logger.error(f"❌ [DriveSync] Error processing {file_meta['name']}: {e}")
+                errors.append(f"{file_meta['name']}: {str(e)}")
                 import traceback
                 traceback.print_exc()
                 continue
@@ -323,9 +437,12 @@ class DriveConnector(BaseConnector):
         }).eq("id", integration_id).execute()
         
         logger.info(f"🔄 [DriveSync] ✅ Sync complete: {processed_files} files, {total_chunks} chunks")
+        if errors:
+            logger.warning(f"🔄 [DriveSync] ⚠️ {len(errors)} errors: {errors}")
         
         return {
             "status": "success",
             "files_processed": processed_files,
-            "chunks_created": total_chunks
+            "chunks_created": total_chunks,
+            "errors": errors
         }
