@@ -275,6 +275,9 @@ const SidebarInset = React.forwardRef<HTMLDivElement, React.ComponentProps<"main
       ref={ref}
       className={cn(
         "relative flex min-h-svh flex-1 flex-col bg-background",
+        // Add explicit left margin for sidebar: 256px when expanded, 48px when collapsed (icon mode)
+        "md:ml-[--sidebar-width] md:peer-data-[state=collapsed]:ml-[--sidebar-width-icon]",
+        "transition-[margin-left] duration-200 ease-linear",
         "peer-data-[variant=inset]:min-h-[calc(100svh-theme(spacing.4))] md:peer-data-[variant=inset]:m-2 md:peer-data-[state=collapsed]:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow",
         className,
       )}
