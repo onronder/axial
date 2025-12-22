@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.callbacks.base import BaseCallbackHandler
-from langchain.schema import LLMResult
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.outputs import LLMResult
 import asyncio
 
 from core.security import get_current_user
