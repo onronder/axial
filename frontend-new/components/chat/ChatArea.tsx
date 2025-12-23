@@ -139,9 +139,10 @@ export function ChatArea({ initialMessages = [], conversationId, initialQuery }:
         const smartTitle = generateSmartTitle(content);
         chatId = await createNewChat(smartTitle);
         setCurrentConversationId(chatId);
-        // Update URL without full navigation
-        window.history.replaceState(null, '', `/dashboard/chat/${chatId}`);
-        console.log('💬 Chat created with title:', smartTitle);
+        // NOTE: We intentionally don't update the URL here to prevent
+        // component remounts during the chat response. The chat works
+        // fine without URL change, and user can navigate after finishing.
+        console.log('💬 Chat created with title:', smartTitle, 'ID:', chatId);
       } catch (error) {
         console.error('💬 Failed to create chat:', error);
         return; // Don't continue if chat creation failed
