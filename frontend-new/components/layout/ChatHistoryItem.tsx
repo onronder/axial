@@ -72,13 +72,18 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
         onClick={handleClick}
       >
         <span className="flex-1 truncate min-w-0">{conversation.title}</span>
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <button className="flex-shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded hover:bg-sidebar-border transition-opacity">
-              <MoreHorizontal className="h-4 w-4 text-sidebar-foreground/70" />
+            <button className="flex-shrink-0 p-1 rounded hover:bg-sidebar-border/50 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors">
+              <MoreHorizontal className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40 z-50">
+          <DropdownMenuContent
+            align="end"
+            side="right"
+            sideOffset={5}
+            className="w-40 z-[100]"
+          >
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();

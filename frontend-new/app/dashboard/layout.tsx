@@ -75,8 +75,8 @@ function SimpleSidebar() {
                 </Button>
             </div>
 
-            {/* Chat History - scrollable */}
-            <div className="flex-1 overflow-y-auto px-2">
+            {/* Chat History - scrollable but allows dropdown to escape */}
+            <div className="flex-1 overflow-y-auto overflow-x-visible px-2">
                 <ChatHistoryList />
             </div>
 
@@ -207,8 +207,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                             <span className="font-semibold">Axio Hub</span>
                         </header>
 
-                        {/* Page content */}
-                        <main>
+                        {/* Page content - full height minus mobile header */}
+                        <main className="h-[calc(100vh-56px)] md:h-screen">
                             {children}
                         </main>
                     </div>
