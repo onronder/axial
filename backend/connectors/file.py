@@ -1,80 +1,79 @@
+"""
+File Connector
+
+Handles direct file uploads via FastAPI UploadFile.
+Uses the centralized DocumentParser service for text extraction.
+"""
+
 from typing import List, Any
 from fastapi import UploadFile
 from .base import BaseConnector, ConnectorDocument
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-import tempfile
-import os
-import shutil
-from unstructured.partition.auto import partition
+from services.parsers import DocumentParser
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class FileConnector(BaseConnector):
+    """
+    Connector for direct file uploads.
+    
+    Delegates text extraction to the centralized DocumentParser service
+    to ensure consistent parsing across all ingestion methods.
+    """
+    
     async def authorize(self, user_id: str) -> bool:
+        """File uploads don't require authorization."""
         return True
 
     async def list_items(self, user_id: str, parent_id: Any = None) -> List[Any]:
+        """File uploads don't have a list operation."""
         return []
 
     async def ingest(self, user_id: str, item_ids: List[str]) -> List[ConnectorDocument]:
+        """Not used for file uploads - use process() instead."""
         raise NotImplementedError("FileConnector uses process() with UploadFile, not ingest() with IDs.")
 
     async def process(self, source: UploadFile, **kwargs) -> List[ConnectorDocument]:
         """
-        Process an UploadFile: Parse content and chunk it.
-        kwargs can contain 'metadata' dict to merge.
-        """
-        # 1. Parse File
-        content = await self._parse_file(source)
+        Process an UploadFile: Read bytes and extract text via DocumentParser.
         
-        if not content:
-            return []
-
-        # 2. Chunk Content
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
-        )
-        
-        # Prepare metadata
-        base_metadata = kwargs.get("metadata", {})
-        base_metadata["filename"] = source.filename
-        
-        docs = text_splitter.create_documents(
-            texts=[content],
-            metadatas=[base_metadata]
-        )
-        
-        # 3. Convert to ConnectorDocument
-        connector_docs = []
-        for doc in docs:
-            connector_docs.append(ConnectorDocument(
-                page_content=doc.page_content,
-                metadata=doc.metadata
-            ))
+        Args:
+            source: FastAPI UploadFile object
+            **kwargs: Additional options, including 'metadata' dict to merge
             
-        return connector_docs
-
-    async def _parse_file(self, file: UploadFile) -> str:
+        Returns:
+            List of ConnectorDocument with extracted text
         """
-        Internal method to parse file using unstructured.
-        Logic moved from core/parsers.py
-        """
-        # Save to a temporary file because unstructured needs a file path
-        suffix = os.path.splitext(file.filename)[1]
+        filename = source.filename or "unknown"
+        content_type = source.content_type or "application/octet-stream"
         
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            shutil.copyfileobj(file.file, tmp_file)
-            tmp_path = tmp_file.name
-
+        logger.info(f"📄 [FileConnector] Processing file: {filename} ({content_type})")
+        
+        # 1. Read file bytes
         try:
-            # Partition the file (auto-detects format)
-            elements = partition(filename=tmp_path)
-            # Join element text
-            text = "\n\n".join([str(el) for el in elements])
-            return text
+            file_bytes = await source.read()
+            logger.info(f"📄 [FileConnector] Read {len(file_bytes)} bytes from {filename}")
         except Exception as e:
-            print(f"Error parsing file {file.filename}: {e}")
-            raise e
-        finally:
-            # Clean up temp file
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            logger.error(f"❌ [FileConnector] Failed to read file {filename}: {e}")
+            return []
+        
+        # 2. Extract text using centralized DocumentParser
+        text_content = DocumentParser.extract_text(file_bytes, content_type)
+        
+        if not text_content or not text_content.strip():
+            logger.warning(f"⚠️ [FileConnector] No text extracted from {filename}")
+            return []
+        
+        logger.info(f"📄 [FileConnector] Extracted {len(text_content)} chars from {filename}")
+        
+        # 3. Build metadata
+        base_metadata = kwargs.get("metadata", {})
+        base_metadata["filename"] = filename
+        base_metadata["content_type"] = content_type
+        
+        # 4. Return as single document (chunking happens in ingest.py)
+        return [ConnectorDocument(
+            page_content=text_content,
+            metadata=base_metadata
+        )]
