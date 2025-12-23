@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import {
@@ -44,10 +45,6 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [newTitle, setNewTitle] = useState(conversation.title);
 
-  const handleClick = () => {
-    router.push(`/dashboard/chat/${conversation.id}`);
-  };
-
   const handleRename = () => {
     renameChat(conversation.id, newTitle);
     setShowRenameDialog(false);
@@ -62,14 +59,14 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
 
   return (
     <>
-      <div
+      <Link
+        href={`/dashboard/chat/${conversation.id}`}
         className={cn(
-          "group relative flex items-center rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors",
+          "group relative flex items-center rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors block",
           isActive
             ? "bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-sidebar-foreground hover:bg-sidebar-accent/50"
         )}
-        onClick={handleClick}
       >
         {/* Title with max-width to leave room for button */}
         <span className="truncate pr-6" style={{ maxWidth: 'calc(100% - 24px)' }}>
@@ -115,7 +112,7 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
+      </Link>
 
       {/* Rename Dialog */}
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
