@@ -50,7 +50,7 @@ function SimpleSidebar() {
     };
 
     const handleNewChat = () => {
-        router.push('/dashboard');
+        router.push('/dashboard/chat/new');
     };
 
     const isSettingsActive = pathname?.startsWith("/dashboard/settings");
