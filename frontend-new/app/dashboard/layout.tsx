@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { ChatHistoryProvider } from "@/hooks/useChatHistory";
 import { Loader2, Settings, LogOut, User, Moon, Sun, ChevronUp, MessageSquarePlus, Menu, X } from "lucide-react";
-import { useProfile } from "@/hooks/useProfile";
+import { useProfile, ProfileProvider } from "@/hooks/useProfile";
 import { useTheme } from "@/hooks/useTheme";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { ChatHistoryList } from "@/components/layout/ChatHistoryList";
@@ -160,60 +160,62 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     // - Main content fills remaining space with left margin on desktop
     // - Mobile: full width with hamburger menu
     return (
-        <ChatHistoryProvider>
-            <div className="min-h-screen bg-background">
-                {/* DESKTOP SIDEBAR - Fixed position, always visible on md+ */}
-                <aside
-                    className="fixed inset-y-0 left-0 z-40 hidden md:block border-r border-sidebar-border"
-                    style={{ width: `${SIDEBAR_WIDTH}px` }}
-                >
-                    <SimpleSidebar />
-                </aside>
+        <ProfileProvider>
+            <ChatHistoryProvider>
+                <div className="min-h-screen bg-background">
+                    {/* DESKTOP SIDEBAR - Fixed position, always visible on md+ */}
+                    <aside
+                        className="fixed inset-y-0 left-0 z-40 hidden md:block border-r border-sidebar-border"
+                        style={{ width: `${SIDEBAR_WIDTH}px` }}
+                    >
+                        <SimpleSidebar />
+                    </aside>
 
-                {/* MOBILE SIDEBAR - Overlay when open */}
-                {mobileMenuOpen && (
-                    <div className="fixed inset-0 z-50 md:hidden">
-                        {/* Backdrop */}
-                        <div
-                            className="absolute inset-0 bg-black/50"
-                            onClick={() => setMobileMenuOpen(false)}
-                        />
-                        {/* Sidebar */}
-                        <aside className="absolute inset-y-0 left-0 w-72 border-r border-sidebar-border">
-                            <SimpleSidebar />
-                        </aside>
-                    </div>
-                )}
+                    {/* MOBILE SIDEBAR - Overlay when open */}
+                    {mobileMenuOpen && (
+                        <div className="fixed inset-0 z-50 md:hidden">
+                            {/* Backdrop */}
+                            <div
+                                className="absolute inset-0 bg-black/50"
+                                onClick={() => setMobileMenuOpen(false)}
+                            />
+                            {/* Sidebar */}
+                            <aside className="absolute inset-y-0 left-0 w-72 border-r border-sidebar-border">
+                                <SimpleSidebar />
+                            </aside>
+                        </div>
+                    )}
 
-                {/* MAIN CONTENT AREA */}
-                <div
-                    className="min-h-screen"
-                    style={{
-                        // On desktop (md+), add left margin equal to sidebar width
-                        // Using CSS media query via style prop
-                        marginLeft: 0
-                    }}
-                >
-                    {/* We need CSS for responsive margin, so use a wrapper with classes */}
-                    <div className="md:ml-64 min-h-screen">
-                        {/* Mobile header */}
-                        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
-                            <button
-                                onClick={() => setMobileMenuOpen(true)}
-                                className="p-2 -ml-2 rounded-md hover:bg-muted"
-                            >
-                                <Menu className="h-5 w-5" />
-                            </button>
-                            <span className="font-semibold">Axio Hub</span>
-                        </header>
+                    {/* MAIN CONTENT AREA */}
+                    <div
+                        className="min-h-screen"
+                        style={{
+                            // On desktop (md+), add left margin equal to sidebar width
+                            // Using CSS media query via style prop
+                            marginLeft: 0
+                        }}
+                    >
+                        {/* We need CSS for responsive margin, so use a wrapper with classes */}
+                        <div className="md:ml-64 min-h-screen">
+                            {/* Mobile header */}
+                            <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
+                                <button
+                                    onClick={() => setMobileMenuOpen(true)}
+                                    className="p-2 -ml-2 rounded-md hover:bg-muted"
+                                >
+                                    <Menu className="h-5 w-5" />
+                                </button>
+                                <span className="font-semibold">Axio Hub</span>
+                            </header>
 
-                        {/* Page content - full height minus mobile header */}
-                        <main className="h-[calc(100vh-56px)] md:h-screen">
-                            {children}
-                        </main>
+                            {/* Page content - full height minus mobile header */}
+                            <main className="h-[calc(100vh-56px)] md:h-screen">
+                                {children}
+                            </main>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </ChatHistoryProvider>
+            </ChatHistoryProvider>
+        </ProfileProvider>
     );
 }

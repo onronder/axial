@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
@@ -21,15 +21,26 @@ export interface ProfileUpdatePayload {
     theme?: 'light' | 'dark' | 'system';
 }
 
+interface ProfileContextType {
+    profile: UserProfile | null;
+    isLoading: boolean;
+    error: string | null;
+    updateProfile: (payload: ProfileUpdatePayload) => Promise<boolean>;
+    refresh: () => Promise<void>;
+}
+
+const ProfileContext = createContext<ProfileContextType | null>(null);
+
 /**
- * Hook for managing user profile data.
- * Fetches profile on mount and provides update functionality.
+ * Provider component that wraps the app and provides profile state.
+ * This ensures only ONE fetch happens regardless of how many components use the hook.
  */
-export const useProfile = () => {
+export function ProfileProvider({ children }: { children: ReactNode }) {
     const { toast } = useToast();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const hasFetched = useRef(false);
 
     const fetchProfile = useCallback(async () => {
         console.log('📋 [useProfile] Fetching profile...');
@@ -47,13 +58,15 @@ export const useProfile = () => {
         }
     }, []);
 
-    // Only fetch on mount - empty dependency array
+    // Fetch once on mount - prevents duplicate fetches
     useEffect(() => {
-        fetchProfile();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        if (!hasFetched.current) {
+            hasFetched.current = true;
+            fetchProfile();
+        }
+    }, [fetchProfile]);
 
-    const updateProfile = async (payload: ProfileUpdatePayload): Promise<boolean> => {
+    const updateProfile = useCallback(async (payload: ProfileUpdatePayload): Promise<boolean> => {
         console.log('📋 [useProfile] Updating with:', payload);
         try {
             const { data } = await api.patch('/api/v1/settings/profile', payload);
@@ -73,13 +86,40 @@ export const useProfile = () => {
             });
             return false;
         }
-    };
+    }, [toast]);
 
-    return {
+    const value: ProfileContextType = {
         profile,
         isLoading,
         error,
         updateProfile,
         refresh: fetchProfile,
     };
+
+    return (
+        <ProfileContext.Provider value= { value } >
+        { children }
+        </ProfileContext.Provider>
+    );
+}
+
+/**
+ * Hook for accessing profile from anywhere in the app.
+ * All consumers share the same state - no duplicate API calls.
+ */
+export const useProfile = (): ProfileContextType => {
+    const context = useContext(ProfileContext);
+    if (!context) {
+        // Fallback for when used outside provider (e.g., in settings pages)
+        // Return a minimal non-error state to prevent crashes
+        console.warn('[useProfile] Used outside ProfileProvider - returning default state');
+        return {
+            profile: null,
+            isLoading: false,
+            error: null,
+            updateProfile: async () => false,
+            refresh: async () => { },
+        };
+    }
+    return context;
 };
