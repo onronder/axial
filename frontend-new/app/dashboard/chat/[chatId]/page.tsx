@@ -10,15 +10,15 @@ export default function ChatPage() {
     const params = useParams();
     const chatId = params.chatId as string;
     const { getMessagesById } = useChatHistory();
-    const hasFetched = useRef(false);
+    const lastFetchedChatId = useRef<string | null>(null);
 
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Prevent double-fetch
-        if (hasFetched.current) return;
-        hasFetched.current = true;
+        // Prevent re-fetching same chat, but allow fetching different chats
+        if (lastFetchedChatId.current === chatId) return;
+        lastFetchedChatId.current = chatId;
 
         const loadMessages = async () => {
             setIsLoading(true);
