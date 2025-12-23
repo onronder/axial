@@ -159,11 +159,13 @@ class DriveConnector(BaseConnector):
         return items
 
     async def ingest(self, user_id: str, item_ids: List[str]) -> List[ConnectorDocument]:
-        """Download and parse selected files from Drive."""
+        """Download and parse selected files from Drive, recursively handling folders."""
         creds = self._get_credentials(user_id)
         service = build('drive', 'v3', credentials=creds)
         documents = []
 
+        # Collect all files (recursively expanding folders)
+        all_files = []
         for item_id in item_ids:
             try:
                 file_meta = service.files().get(
@@ -171,37 +173,95 @@ class DriveConnector(BaseConnector):
                     fields="id, name, mimeType, webViewLink"
                 ).execute()
                 
-                items_to_process = []
                 if file_meta['mimeType'] == 'application/vnd.google-apps.folder':
-                    results = service.files().list(
-                        q=f"'{item_id}' in parents and trashed=false",
-                        fields="files(id, name, mimeType, webViewLink)"
-                    ).execute()
-                    items_to_process = results.get('files', [])
+                    # Recursively get all files in folder
+                    folder_files = self._get_all_files_recursive(service, item_id)
+                    all_files.extend(folder_files)
+                    logger.info(f"📁 [DriveConnector] Found {len(folder_files)} files in folder: {file_meta['name']}")
                 else:
-                    items_to_process = [file_meta]
-
-                for item in items_to_process:
-                    content = self._download_file_content(service, item)
-                    if content and content.strip():
-                        documents.append(ConnectorDocument(
-                            page_content=content,
-                            metadata={
-                                "source": "google_drive",
-                                "title": item['name'],
-                                "source_url": item.get('webViewLink', ''),
-                                "file_id": item['id']
-                            }
-                        ))
-                        logger.info(f"✅ Successfully processed file: {item['name']}")
-                    else:
-                        logger.warning(f"⚠️ No content extracted from: {item['name']}")
-
+                    all_files.append(file_meta)
+                    
             except Exception as e:
-                logger.error(f"❌ Error processing item {item_id}: {e}")
+                logger.error(f"❌ Error getting item {item_id}: {e}")
+                continue
+        
+        logger.info(f"📥 [DriveConnector] Processing {len(all_files)} total files")
+        
+        # Process each file
+        for item in all_files:
+            try:
+                content = self._download_file_content(service, item)
+                if content and content.strip():
+                    documents.append(ConnectorDocument(
+                        page_content=content,
+                        metadata={
+                            "source": "google_drive",
+                            "title": item['name'],
+                            "source_url": item.get('webViewLink', ''),
+                            "file_id": item['id']
+                        }
+                    ))
+                    logger.info(f"✅ Successfully processed file: {item['name']}")
+                else:
+                    logger.warning(f"⚠️ No content extracted from: {item['name']}")
+            except Exception as e:
+                logger.error(f"❌ Error processing {item.get('name', 'unknown')}: {e}")
                 continue
 
         return documents
+
+    def _get_all_files_recursive(self, service, folder_id: str, max_depth: int = 10) -> List[dict]:
+        """
+        Recursively get all files within a folder and its subfolders.
+        
+        Args:
+            service: Google Drive API service
+            folder_id: The folder ID to search
+            max_depth: Maximum recursion depth (prevents infinite loops)
+            
+        Returns:
+            List of file metadata dicts (excludes folders)
+        """
+        if max_depth <= 0:
+            logger.warning(f"⚠️ Max depth reached for folder {folder_id}")
+            return []
+            
+        files = []
+        page_token = None
+        
+        while True:
+            try:
+                results = service.files().list(
+                    q=f"'{folder_id}' in parents and trashed=false",
+                    fields="nextPageToken, files(id, name, mimeType, webViewLink)",
+                    pageSize=100,
+                    pageToken=page_token
+                ).execute()
+                
+                items = results.get('files', [])
+                
+                for item in items:
+                    if item['mimeType'] == 'application/vnd.google-apps.folder':
+                        # Recurse into subfolder
+                        subfolder_files = self._get_all_files_recursive(
+                            service, item['id'], max_depth - 1
+                        )
+                        files.extend(subfolder_files)
+                    else:
+                        # It's a file, add if supported
+                        if DocumentParser.is_supported(item['mimeType']) or \
+                           item['mimeType'] == 'application/vnd.google-apps.document':
+                            files.append(item)
+                
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+                    
+            except Exception as e:
+                logger.error(f"❌ Error listing folder {folder_id}: {e}")
+                break
+        
+        return files
 
     def _download_file_content(self, service, file_meta: dict) -> Optional[str]:
         """
