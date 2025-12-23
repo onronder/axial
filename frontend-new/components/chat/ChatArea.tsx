@@ -1,22 +1,20 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { Message } from "@/hooks/useChatHistory";
-import { useChatHistory } from "@/hooks/useChatHistory";
+import { Message, useChatHistory } from "@/hooks/useChatHistory";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { api } from "@/lib/api";
+import { generateSmartTitle } from "@/lib/chat-utils";
 
 interface ChatAreaProps {
   initialMessages?: Message[];
   conversationId?: string;
-  initialQuery?: string; // New: for passing message from dashboard
+  initialQuery?: string;
 }
 
-// Adapt Message to what MessageBubble expects
 interface DisplayMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -25,57 +23,7 @@ interface DisplayMessage {
   sources?: string[];
 }
 
-/**
- * Generate a smart, concise title from the user's first message.
- * Similar to how Claude, Gemini, and ChatGPT auto-name conversations.
- */
-function generateSmartTitle(message: string): string {
-  // Clean up the message
-  let title = message.trim();
-
-  // Remove common question starters for cleaner titles
-  const questionPrefixes = [
-    /^(what is|what's|what are|whats)\s+/i,
-    /^(how do i|how can i|how to)\s+/i,
-    /^(can you|could you|would you)\s+/i,
-    /^(tell me about|explain|describe)\s+/i,
-    /^(i want to|i need to|i'm trying to)\s+/i,
-    /^(help me|please help)\s+/i,
-    /^(hi,?\s*|hello,?\s*|hey,?\s*)/i,
-  ];
-
-  for (const prefix of questionPrefixes) {
-    title = title.replace(prefix, '');
-  }
-
-  // Capitalize first letter
-  title = title.charAt(0).toUpperCase() + title.slice(1);
-
-  // Truncate to reasonable length (max 50 chars)
-  if (title.length > 50) {
-    // Try to cut at a word boundary
-    const truncated = title.substring(0, 50);
-    const lastSpace = truncated.lastIndexOf(' ');
-    if (lastSpace > 30) {
-      title = truncated.substring(0, lastSpace) + '...';
-    } else {
-      title = truncated + '...';
-    }
-  }
-
-  // Remove trailing punctuation for cleaner look
-  title = title.replace(/[?.!,;:]+$/, '');
-
-  // If title is too short or empty, use a fallback
-  if (title.length < 3) {
-    title = 'New conversation';
-  }
-
-  return title;
-}
-
 export function ChatArea({ initialMessages = [], conversationId, initialQuery }: ChatAreaProps) {
-  const router = useRouter();
   const { createNewChat } = useChatHistory();
   const [currentConversationId, setCurrentConversationId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<DisplayMessage[]>(() =>
