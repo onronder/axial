@@ -88,6 +88,7 @@ export function ChatArea({ initialMessages = [], conversationId, initialQuery }:
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasProcessedInitialQuery = useRef(false);
+  const lastConversationId = useRef<string | undefined>(conversationId);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -97,13 +98,19 @@ export function ChatArea({ initialMessages = [], conversationId, initialQuery }:
     scrollToBottom();
   }, [messages, isTyping, streamingMessage]);
 
-  // Update messages when initialMessages change (e.g., navigation)
+  // Update messages when navigating to a DIFFERENT chat
+  // Don't reset if this is just a re-render from context updates
   useEffect(() => {
+    if (conversationId === lastConversationId.current && messages.length > 0) {
+      return; // Skip reset - same chat, already has messages
+    }
+    lastConversationId.current = conversationId;
+
     setMessages(initialMessages.map(m => ({
       ...m,
       timestamp: m.created_at
     })));
-  }, [initialMessages]);
+  }, [initialMessages, conversationId]);
 
   // Process initial query if provided (from dashboard)
   useEffect(() => {
