@@ -2,7 +2,6 @@
 
 import { MessageSquare } from "lucide-react";
 import { useParams } from "next/navigation";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useChatHistory, groupConversationsByDate } from "@/hooks/useChatHistory";
 import { ChatHistoryItem } from "./ChatHistoryItem";
 
@@ -23,25 +22,24 @@ export function ChatHistoryList() {
   }
 
   return (
-    <ScrollArea className="flex-1 [&_[data-radix-scroll-area-viewport]]:overflow-visible">
-      <div className="space-y-4 px-2 pr-1">
-        {groupedConversations.map((group) => (
-          <div key={group.label}>
-            <p className="px-2 py-1 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
-              {group.label}
-            </p>
-            <div className="space-y-0.5">
-              {group.conversations.map((conversation) => (
-                <ChatHistoryItem
-                  key={conversation.id}
-                  conversation={conversation}
-                  isActive={chatId === conversation.id}
-                />
-              ))}
-            </div>
+    <div className="space-y-4 px-2 pr-1">
+      {groupedConversations.map((group) => (
+        <div key={group.label}>
+          <p className="px-2 py-1 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
+            {group.label}
+          </p>
+          <div className="space-y-0.5">
+            {group.conversations.map((conversation) => (
+              <ChatHistoryItem
+                key={conversation.id}
+                conversation={conversation}
+                isActive={chatId === conversation.id}
+              />
+            ))}
           </div>
-        ))}
-      </div>
-    </ScrollArea>
+        </div>
+      ))}
+    </div>
   );
 }
+
