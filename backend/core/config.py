@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
     GOOGLE_REDIRECT_URI: Optional[str] = None
+    
+    # Redis (Celery broker/backend)
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     class Config:
         env_file = [".env", "../.env"]

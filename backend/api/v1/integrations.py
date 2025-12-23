@@ -313,7 +313,7 @@ async def list_provider_items(
         raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
 
 
-@router.post("/integrations/{provider}/ingest")
+@router.post("/integrations/{provider}/ingest", status_code=202)
 async def ingest_provider_items(
     provider: str,
     request: IngestRequest,
@@ -321,85 +321,49 @@ async def ingest_provider_items(
 ):
     """
     Ingest items from a provider (Download, Parse, Embed, Store).
+    
+    This endpoint now returns 202 Accepted immediately and processes
+    files asynchronously via Celery worker.
     """
     try:
-        connector = get_connector(provider)
-        
-        # 1. Ingest (Download & Parse)
-        docs = await connector.ingest(user_id, request.item_ids)
-        
-        if not docs:
-            return {"status": "skipped", "message": "No content processed"}
-
+        # 1. Get user's credentials for this provider
         supabase = get_supabase()
         
-        # 2. Embed & Store
-        from langchain_openai import OpenAIEmbeddings
-        embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=settings.OPENAI_API_KEY
+        # Find connector definition
+        conn_def = supabase.table("connector_definitions").select("id").eq("type", provider).single().execute()
+        if not conn_def.data:
+            raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+        
+        # Get user's integration with credentials
+        integration = supabase.table("user_integrations").select("credentials").eq("user_id", user_id).eq("connector_definition_id", conn_def.data['id']).single().execute()
+        
+        if not integration.data or not integration.data.get('credentials'):
+            raise HTTPException(status_code=401, detail=f"Not connected to {provider}")
+        
+        credentials = integration.data['credentials']
+        
+        # 2. Queue the ingestion task
+        from worker.tasks import ingest_file_task
+        
+        task = ingest_file_task.delay(
+            user_id=user_id,
+            provider=provider,
+            item_ids=request.item_ids,
+            credentials=credentials
         )
         
-        chunk_texts = [d.page_content for d in docs]
-        chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+        logger.info(f"📥 [Ingest] Queued task {task.id} for {len(request.item_ids)} items")
         
-        # Mapping from connector type to database enum value
-        CONNECTOR_TYPE_TO_ENUM = {
-            "google_drive": "drive",
-            "notion": "notion",
-            "file_upload": "file",
-            "web_crawler": "web",
-            "web": "web",
-            "file": "file",
+        # 3. Return 202 Accepted with task info
+        return {
+            "status": "accepted",
+            "message": f"Ingestion queued for {len(request.item_ids)} items",
+            "task_id": task.id
         }
-        source_type_enum = CONNECTOR_TYPE_TO_ENUM.get(provider, "file")
-        
-        # Group by source
-        from collections import defaultdict
-        grouped = defaultdict(list)
-        for i, doc in enumerate(docs):
-            key = doc.metadata.get('source_url') or doc.metadata.get('file_id') or "unknown"
-            grouped[key].append((doc, chunk_embeddings[i]))
-        
-        results = []
-        
-        for key, pairs in grouped.items():
-            first_doc = pairs[0][0]
-            
-            # Create Parent Document
-            parent_doc_data = {
-                "user_id": user_id,
-                "title": first_doc.metadata.get('title', 'Untitled'),
-                "source_type": source_type_enum,  # Use mapped enum value
-                "source_url": first_doc.metadata.get('source_url'),
-                "metadata": first_doc.metadata,
-                "created_at": datetime.utcnow().isoformat()
-            }
-            
-            logger.info(f"📄 [Ingest] Creating document: {parent_doc_data['title']} (type: {source_type_enum})")
-            
-            p_res = supabase.table("documents").insert(parent_doc_data).execute()
-            if not p_res.data:
-                continue
-            parent_id = p_res.data[0]['id']
-            
-            # Create Chunks
-            chunk_records = []
-            for idx, (doc, emb) in enumerate(pairs):
-                chunk_records.append({
-                    "document_id": parent_id,
-                    "content": doc.page_content,
-                    "embedding": emb,
-                    "chunk_index": idx,
-                    "created_at": datetime.utcnow().isoformat()
-                })
-            
-            supabase.table("document_chunks").insert(chunk_records).execute()
-            results.append(parent_id)
 
-        return {"status": "success", "ingested_ids": results}
-
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
+        logger.error(f"❌ [Ingest] Failed to queue task: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue ingestion: {str(e)}")
+

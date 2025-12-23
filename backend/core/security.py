@@ -103,10 +103,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
             
         return user_id
     except Exception as e:
-        print(f"DEBUG: Auth Error: {e}")
+        logger.warning(f"Auth error: {type(e).__name__}")  # Don't log token details
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {str(e)}",
+            detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
