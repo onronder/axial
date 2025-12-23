@@ -41,19 +41,19 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
       </div>
 
       <div className="max-w-2xl space-y-8 text-center animate-fade-in">
-        {/* Logo with subtle float animation */}
-        <div className="space-y-6">
-          <div className="mx-auto animate-float">
-            <AxioLogo variant="icon" size="xl" />
-          </div>
-          <div className="space-y-2">
+        {/* Greeting with inline logo */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-center gap-3">
+            <div className="animate-float">
+              <AxioLogo variant="icon" size="lg" />
+            </div>
             <h1 className="font-display text-3xl font-bold text-foreground">
               {greeting}, <span className="gradient-text">{displayName}</span>
             </h1>
-            <p className="text-lg text-muted-foreground">
-              What would you like to explore today?
-            </p>
           </div>
+          <p className="text-lg text-muted-foreground">
+            What would you like to explore today?
+          </p>
         </div>
 
         {/* Starter query cards with premium styling */}

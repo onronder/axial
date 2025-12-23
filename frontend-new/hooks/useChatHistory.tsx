@@ -114,6 +114,10 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
             setConversations(prev =>
                 prev.map(c => (c.id === id ? { ...c, title: data.title } : c))
             );
+            toast({
+                title: 'Chat renamed',
+                description: 'The conversation has been updated.',
+            });
         } catch (error: any) {
             console.error('💬 [ChatHistory] ❌ Rename failed:', error.message);
             toast({
