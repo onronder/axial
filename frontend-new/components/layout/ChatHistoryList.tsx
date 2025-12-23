@@ -23,8 +23,8 @@ export function ChatHistoryList() {
   }
 
   return (
-    <ScrollArea className="flex-1">
-      <div className="space-y-4 px-2">
+    <ScrollArea className="flex-1 [&_[data-radix-scroll-area-viewport]]:overflow-visible">
+      <div className="space-y-4 px-2 pr-1">
         {groupedConversations.map((group) => (
           <div key={group.label}>
             <p className="px-2 py-1 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">

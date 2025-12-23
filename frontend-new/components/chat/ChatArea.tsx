@@ -25,6 +25,55 @@ interface DisplayMessage {
   sources?: string[];
 }
 
+/**
+ * Generate a smart, concise title from the user's first message.
+ * Similar to how Claude, Gemini, and ChatGPT auto-name conversations.
+ */
+function generateSmartTitle(message: string): string {
+  // Clean up the message
+  let title = message.trim();
+
+  // Remove common question starters for cleaner titles
+  const questionPrefixes = [
+    /^(what is|what's|what are|whats)\s+/i,
+    /^(how do i|how can i|how to)\s+/i,
+    /^(can you|could you|would you)\s+/i,
+    /^(tell me about|explain|describe)\s+/i,
+    /^(i want to|i need to|i'm trying to)\s+/i,
+    /^(help me|please help)\s+/i,
+    /^(hi,?\s*|hello,?\s*|hey,?\s*)/i,
+  ];
+
+  for (const prefix of questionPrefixes) {
+    title = title.replace(prefix, '');
+  }
+
+  // Capitalize first letter
+  title = title.charAt(0).toUpperCase() + title.slice(1);
+
+  // Truncate to reasonable length (max 50 chars)
+  if (title.length > 50) {
+    // Try to cut at a word boundary
+    const truncated = title.substring(0, 50);
+    const lastSpace = truncated.lastIndexOf(' ');
+    if (lastSpace > 30) {
+      title = truncated.substring(0, lastSpace) + '...';
+    } else {
+      title = truncated + '...';
+    }
+  }
+
+  // Remove trailing punctuation for cleaner look
+  title = title.replace(/[?.!,;:]+$/, '');
+
+  // If title is too short or empty, use a fallback
+  if (title.length < 3) {
+    title = 'New conversation';
+  }
+
+  return title;
+}
+
 export function ChatArea({ initialMessages = [], conversationId, initialQuery }: ChatAreaProps) {
   const router = useRouter();
   const { createNewChat } = useChatHistory();
@@ -79,16 +128,20 @@ export function ChatArea({ initialMessages = [], conversationId, initialQuery }:
 
   const handleSendMessage = async (content: string) => {
     let chatId = currentConversationId;
+    let isNewChat = false;
 
-    // If no conversation exists, create one first
+    // If no conversation exists, create one first with a smart title
     if (!chatId) {
+      isNewChat = true;
       try {
         console.log('💬 Creating new chat for first message...');
-        chatId = await createNewChat(content.substring(0, 50)); // Use message as title
+        // Generate a smart title from the user's message
+        const smartTitle = generateSmartTitle(content);
+        chatId = await createNewChat(smartTitle);
         setCurrentConversationId(chatId);
         // Update URL without full navigation
         window.history.replaceState(null, '', `/dashboard/chat/${chatId}`);
-        console.log('💬 Chat created:', chatId);
+        console.log('💬 Chat created with title:', smartTitle);
       } catch (error) {
         console.error('💬 Failed to create chat:', error);
         return; // Don't continue if chat creation failed
