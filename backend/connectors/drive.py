@@ -17,6 +17,7 @@ from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
 from services.parsers import DocumentParser
+from core.security import decrypt_token, encrypt_token
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +73,15 @@ class DriveConnector(BaseConnector):
         """
         Build Google credentials from an integration record.
         Handles token refresh if needed.
+        Decrypts tokens before use (supports legacy plain-text tokens).
         """
+        # Decrypt tokens (handles both encrypted and legacy plain-text)
+        access_token = decrypt_token(integration['access_token']) if integration.get('access_token') else None
+        refresh_token = decrypt_token(integration.get('refresh_token')) if integration.get('refresh_token') else None
+        
         creds = Credentials(
-            token=integration['access_token'],
-            refresh_token=integration.get('refresh_token'),
+            token=access_token,
+            refresh_token=refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
             client_id=settings.GOOGLE_CLIENT_ID,
             client_secret=settings.GOOGLE_CLIENT_SECRET,
@@ -88,10 +94,10 @@ class DriveConnector(BaseConnector):
                 logger.info(f"🔄 [DriveConnector] Token expired, refreshing...")
                 creds.refresh(Request())
                 
-                # Update database with new token
+                # Update database with new encrypted token
                 supabase = get_supabase()
                 supabase.table("user_integrations").update({
-                    "access_token": creds.token,
+                    "access_token": encrypt_token(creds.token),
                     "expires_at": creds.expiry.isoformat() if creds.expiry else None,
                     "updated_at": datetime.utcnow().isoformat()
                 }).eq("id", integration["id"]).execute()

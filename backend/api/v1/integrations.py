@@ -6,7 +6,7 @@ Provides dynamic connector discovery, OAuth handling, and integration management
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from core.security import get_current_user
+from core.security import get_current_user, encrypt_token
 from core.db import get_supabase
 from core.config import settings
 from google_auth_oauthlib.flow import Flow
@@ -179,14 +179,20 @@ async def exchange_google_token(
         expires_at = (datetime.utcnow() + timedelta(hours=1)).isoformat()
 
     # 4. Upsert to user_integrations using the unique constraint
+    # Encrypt tokens before storage for security
+    encrypted_access_token = encrypt_token(creds.token) if creds.token else None
+    encrypted_refresh_token = encrypt_token(creds.refresh_token) if creds.refresh_token else None
+    
     data = {
         "user_id": user_id,
         "connector_definition_id": connector_definition_id,
-        "access_token": creds.token,
-        "refresh_token": creds.refresh_token,
+        "access_token": encrypted_access_token,
+        "refresh_token": encrypted_refresh_token,
         "expires_at": expires_at,
         "updated_at": datetime.utcnow().isoformat()
     }
+    
+    logger.info(f"🔐 [OAuth] Tokens encrypted before storage")
     
     logger.info(f"🔐 [OAuth] Upserting to user_integrations: user_id={user_id}, connector_def={connector_definition_id}")
     

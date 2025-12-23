@@ -28,3 +28,4 @@ tenacity
 pytest
 pytest-asyncio
 httpx
+cryptography
