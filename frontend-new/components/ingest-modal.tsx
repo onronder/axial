@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { X, Upload, Link as LinkIcon, FileText, CheckCircle, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,15 +11,21 @@ import { cn } from "@/lib/utils"
 interface IngestModalProps {
     isOpen: boolean
     onClose: () => void
+    initialTab?: 'file' | 'url' | 'drive'
 }
 
-export function IngestModal({ isOpen, onClose }: IngestModalProps) {
-    const [activeTab, setActiveTab] = useState<'file' | 'url' | 'drive'>('file')
+export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModalProps) {
+    const [activeTab, setActiveTab] = useState<'file' | 'url' | 'drive'>(initialTab)
     const [file, setFile] = useState<File | null>(null)
     const [url, setUrl] = useState<string>("")
     const [driveId, setDriveId] = useState<string>("")
     const [loading, setLoading] = useState(false)
     const [status, setStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: "" })
+
+    // Sync activeTab when initialTab changes
+    useEffect(() => {
+        setActiveTab(initialTab)
+    }, [initialTab])
 
     if (!isOpen) return null
 

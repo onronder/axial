@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useChatHistory, Message } from "@/hooks/useChatHistory";
+import { useDocumentCount } from "@/hooks/useDocumentCount";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { EmptyState } from "@/components/chat/EmptyState";
+import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -25,12 +27,21 @@ export default function ChatPage() {
     const isNewChat = chatId === "new";
 
     const { getMessagesById, createNewChat } = useChatHistory();
+    const { isEmpty: hasNoDocuments, isLoading: docCountLoading } = useDocumentCount();
 
     // State
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(!isNewChat);
     const [isTyping, setIsTyping] = useState(false);
     const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
+    const [showOnboarding, setShowOnboarding] = useState(false);
+
+    // Show onboarding modal when user has no documents and this is a new chat
+    useEffect(() => {
+        if (isNewChat && hasNoDocuments && !docCountLoading) {
+            setShowOnboarding(true);
+        }
+    }, [isNewChat, hasNoDocuments, docCountLoading]);
 
     // Load messages for existing chats
     useEffect(() => {
@@ -199,6 +210,12 @@ export default function ChatPage() {
                 )}
             </div>
             <ChatInput onSend={handleSendMessage} disabled={isDisabled} />
+
+            {/* Onboarding Modal for new users */}
+            <OnboardingModal
+                open={showOnboarding}
+                onOpenChange={setShowOnboarding}
+            />
         </div>
     );
 }
