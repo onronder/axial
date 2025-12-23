@@ -53,8 +53,8 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
   const handleDelete = () => {
     deleteChat(conversation.id);
     setShowDeleteDialog(false);
-    // Navigate to dashboard home after deletion
-    router.push("/dashboard");
+    // Navigate to new chat after deletion
+    router.push("/dashboard/chat/new");
   };
 
   return (
