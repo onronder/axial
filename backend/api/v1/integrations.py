@@ -5,7 +5,7 @@ Provides dynamic connector discovery, OAuth handling, and integration management
 """
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from core.security import get_current_user, encrypt_token
 from core.db import get_supabase
 from core.config import settings
@@ -23,7 +23,8 @@ router = APIRouter()
 # =============================================================================
 
 class ExchangeRequest(BaseModel):
-    code: str
+    """OAuth code exchange request with validation."""
+    code: str = Field(..., min_length=1, max_length=2048)  # OAuth codes can be long
 
 
 class ConnectorDefinitionOut(BaseModel):
@@ -48,7 +49,8 @@ class UserIntegrationOut(BaseModel):
 
 
 class IngestRequest(BaseModel):
-    item_ids: List[str]
+    """Ingestion request with validation."""
+    item_ids: List[str] = Field(..., max_length=100)  # Max 100 items per request
 
 
 # =============================================================================

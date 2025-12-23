@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from core.security import get_current_user
 from core.db import get_supabase
@@ -16,10 +16,10 @@ router = APIRouter()
 # ============================================================
 
 class ConversationCreate(BaseModel):
-    title: str = "New Chat"
+    title: str = Field(default="New Chat", max_length=200)
 
 class ConversationUpdate(BaseModel):
-    title: str
+    title: str = Field(..., max_length=200)
 
 class ConversationResponse(BaseModel):
     id: str
@@ -148,16 +148,25 @@ async def get_messages(
 # ============================================================
 
 class ChatRequest(BaseModel):
-    query: str
-    conversation_id: Optional[str] = None  # If provided, saves to conversation
+    """
+    Chat request with input validation.
+    
+    Constraints:
+    - query: max 20,000 chars (~5,000 tokens) - prevents massive payloads
+    - conversation_id: max 50 chars (UUIDs are 36 chars)
+    - model: max 50 chars - prevents abuse
+    """
+    query: str = Field(..., min_length=1, max_length=20000)
+    conversation_id: Optional[str] = Field(None, max_length=50)
     history: Optional[List[Dict[str, str]]] = []
-    model: str = "gpt-4o"
+    model: str = Field(default="gpt-4o", max_length=50)
 
 class ChatResponse(BaseModel):
     answer: str
     sources: List[str]
     conversation_id: Optional[str] = None
     message_id: Optional[str] = None
+
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(
