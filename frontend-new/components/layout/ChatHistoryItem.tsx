@@ -64,48 +64,57 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
     <>
       <div
         className={cn(
-          "group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors",
+          "group relative flex items-center rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors",
           isActive
             ? "bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-sidebar-foreground hover:bg-sidebar-accent/50"
         )}
         onClick={handleClick}
       >
-        <span className="flex-1 truncate min-w-0">{conversation.title}</span>
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <button className="flex-shrink-0 p-1 rounded hover:bg-sidebar-border/50 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors">
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            side="right"
-            sideOffset={5}
-            className="w-40 z-[100]"
-          >
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                setNewTitle(conversation.title);
-                setShowRenameDialog(true);
-              }}
+        {/* Title with max-width to leave room for button */}
+        <span className="truncate pr-6" style={{ maxWidth: 'calc(100% - 24px)' }}>
+          {conversation.title}
+        </span>
+
+        {/* Three-dots button - positioned absolutely on right */}
+        <div className="absolute right-1 top-1/2 -translate-y-1/2">
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <button
+                className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded hover:bg-sidebar-border/50 text-sidebar-foreground/70 hover:text-sidebar-foreground transition-all"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              side="bottom"
+              sideOffset={5}
+              className="w-40 z-[100]"
             >
-              <Pencil className="mr-2 h-4 w-4" />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowDeleteDialog(true);
-              }}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNewTitle(conversation.title);
+                  setShowRenameDialog(true);
+                }}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDeleteDialog(true);
+                }}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Rename Dialog */}
