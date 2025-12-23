@@ -45,7 +45,7 @@ export const useDocuments = () => {
 
     const deleteDocument = async (id: string) => {
         try {
-            await api.delete(`/api/v1/documents/${id}`);
+            await api.delete(`api/v1/documents/${id}`);
             setDocuments((prev) => prev.filter((doc) => doc.id !== id));
             toast({
                 title: "Document deleted",

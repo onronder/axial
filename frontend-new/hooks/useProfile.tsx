@@ -47,7 +47,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         setIsLoading(true);
         setError(null);
         try {
-            const { data } = await api.get('/api/v1/settings/profile');
+            const { data } = await api.get('api/v1/settings/profile');
             console.log('📋 [useProfile] ✅ Profile fetched:', data?.first_name, data?.last_name);
             setProfile(data);
         } catch (err: any) {
@@ -69,7 +69,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     const updateProfile = useCallback(async (payload: ProfileUpdatePayload): Promise<boolean> => {
         console.log('📋 [useProfile] Updating with:', payload);
         try {
-            const { data } = await api.patch('/api/v1/settings/profile', payload);
+            const { data } = await api.patch('api/v1/settings/profile', payload);
             console.log('📋 [useProfile] ✅ Updated');
             setProfile(data);
             toast({

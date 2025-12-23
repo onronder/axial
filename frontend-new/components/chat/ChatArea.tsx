@@ -161,7 +161,7 @@ export function ChatArea({ initialMessages = [], conversationId, initialQuery }:
 
     try {
       // Call real chat API with the conversation ID
-      const { data } = await api.post('/api/v1/chat', {
+      const { data } = await api.post('api/v1/chat', {
         query: content,
         conversation_id: chatId,
         history: messages.slice(-10).map(m => ({

@@ -27,7 +27,7 @@ export const useNotificationSettings = () => {
         setIsLoading(true);
         setError(null);
         try {
-            const { data } = await api.get('/api/v1/settings/notifications');
+            const { data } = await api.get('api/v1/settings/notifications');
             setSettings(data);
         } catch (err: any) {
             console.error('Failed to fetch notification settings:', err);
@@ -54,7 +54,7 @@ export const useNotificationSettings = () => {
         ));
 
         try {
-            const { data } = await api.patch('/api/v1/settings/notifications', {
+            const { data } = await api.patch('api/v1/settings/notifications', {
                 setting_key: settingKey,
                 enabled: newEnabled,
             });
