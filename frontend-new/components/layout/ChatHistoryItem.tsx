@@ -62,23 +62,28 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
       <Link
         href={`/dashboard/chat/${conversation.id}`}
         className={cn(
-          "group relative flex items-center rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors block",
+          "group relative flex items-center rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors block",
           isActive
             ? "bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-sidebar-foreground hover:bg-sidebar-accent/50"
         )}
       >
         {/* Title with max-width to leave room for button */}
-        <span className="truncate pr-6" style={{ maxWidth: 'calc(100% - 24px)' }}>
+        <span className="truncate pr-8 flex-1">
           {conversation.title}
         </span>
 
-        {/* Three-dots button - positioned absolutely on right */}
-        <div className="absolute right-1 top-1/2 -translate-y-1/2">
+        {/* Three-dots button - always visible on active, visible on hover otherwise */}
+        <div
+          className={cn(
+            "absolute right-2 top-1/2 -translate-y-1/2 transition-opacity",
+            isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
+        >
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
               <button
-                className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded hover:bg-sidebar-border/50 text-sidebar-foreground/70 hover:text-sidebar-foreground transition-all"
+                className="p-1.5 rounded-md hover:bg-sidebar-border/50 text-sidebar-foreground/70 hover:text-sidebar-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
