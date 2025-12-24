@@ -1,8 +1,5 @@
 -- Migration: Create ingestion_jobs table for tracking background task progress
--- Run this migration manually in Supabase SQL Editor
-
--- Note: Supabase uses auth.users, not a separate users table for FK
--- We'll reference it directly or omit the FK if not using Supabase auth schema
+-- Enables polling-based progress tracking for long-running ingestion tasks
 
 -- Create enum for job status
 DO $$ BEGIN
