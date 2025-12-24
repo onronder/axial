@@ -63,11 +63,38 @@ async def get_profile(user_id: str = Depends(get_current_user)):
         if response.data and len(response.data) > 0:
             return response.data[0]
         
-        # Create default profile if not exists
+        # Profile doesn't exist - create one
+        # Try to get user metadata from Supabase auth to populate names
+        first_name = None
+        last_name = None
+        
+        try:
+            # Fetch user from Supabase auth.users to get metadata
+            user_response = supabase.auth.admin.get_user_by_id(user_id)
+            if user_response and user_response.user:
+                user_metadata = user_response.user.user_metadata or {}
+                
+                # Prefer direct first_name/last_name if available
+                first_name = user_metadata.get("first_name")
+                last_name = user_metadata.get("last_name")
+                
+                # Fallback: parse from full_name if separate fields not available
+                if not first_name and not last_name:
+                    full_name = user_metadata.get("full_name", "")
+                    if full_name:
+                        name_parts = full_name.strip().split(" ", 1)
+                        first_name = name_parts[0] if len(name_parts) > 0 else None
+                        last_name = name_parts[1] if len(name_parts) > 1 else None
+        except Exception as e:
+            # If we can't get user metadata, continue with null names
+            # This is non-critical - user can update names later in settings
+            pass
+        
+        # Create default profile with names from metadata (if available)
         new_profile = {
             "user_id": user_id,
-            "first_name": None,
-            "last_name": None,
+            "first_name": first_name,
+            "last_name": last_name,
             "plan": "free",
             "theme": "system",
             "created_at": datetime.utcnow().isoformat(),

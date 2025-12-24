@@ -48,7 +48,7 @@ export function RegisterForm() {
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
     try {
-      await register(`${data.firstName} ${data.lastName}`, data.email, data.password);
+      await register(data.firstName, data.lastName, data.email, data.password);
       toast({
         title: "Account created!",
         description: "Welcome to Axio Hub.",

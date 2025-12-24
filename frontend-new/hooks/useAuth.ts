@@ -108,12 +108,16 @@ export const useAuth = () => {
     /**
      * Register a new user
      */
-    const register = async (name: string, email: string, password: string): Promise<void> => {
+    const register = async (firstName: string, lastName: string, email: string, password: string): Promise<void> => {
         const { error } = await supabase.auth.signUp({
             email,
             password,
             options: {
-                data: { full_name: name },
+                data: {
+                    full_name: `${firstName} ${lastName}`,
+                    first_name: firstName,
+                    last_name: lastName,
+                },
             },
         });
 
