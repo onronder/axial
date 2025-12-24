@@ -7,6 +7,7 @@
  * - Mock implementations for external services
  */
 
+import { vi } from 'vitest';
 import '@testing-library/jest-dom';
 
 // =============================================================================
