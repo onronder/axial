@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     message TEXT,
     type notification_type NOT NULL DEFAULT 'info',
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
-    metadata JSONB DEFAULT '{}'::jsonb,
+    extra_data TEXT,  -- JSON string for additional metadata
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

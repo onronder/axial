@@ -8,6 +8,7 @@ Tracks operation lifecycle events (success, warning, error, info).
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional, List
 from datetime import datetime
+import json
 from core.security import get_current_user
 from core.db import get_supabase
 from models import NotificationResponse, NotificationListResponse, UnreadCountResponse
@@ -49,7 +50,8 @@ def create_notification(
         "message": message,
         "type": notification_type,
         "is_read": False,
-        "metadata": metadata or {},
+        # Serialize dict to JSON string for extra_data column
+        "extra_data": json.dumps(metadata) if metadata else None,
         "created_at": datetime.utcnow().isoformat()
     }
     
@@ -100,6 +102,14 @@ async def list_notifications(
             .eq("is_read", False)\
             .execute()
         
+        def parse_extra_data(data: Optional[str]) -> Optional[dict]:
+            if not data:
+                return None
+            try:
+                return json.loads(data)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        
         notifications = [
             NotificationResponse(
                 id=str(n["id"]),
@@ -107,7 +117,7 @@ async def list_notifications(
                 message=n.get("message"),
                 type=n["type"],
                 is_read=n["is_read"],
-                metadata=n.get("metadata"),
+                metadata=parse_extra_data(n.get("extra_data")),
                 created_at=n.get("created_at")
             )
             for n in (response.data or [])
@@ -167,13 +177,22 @@ async def mark_as_read(
             raise HTTPException(status_code=404, detail="Notification not found")
         
         n = response.data[0]
+        
+        # Parse extra_data JSON
+        extra_data_parsed = None
+        if n.get("extra_data"):
+            try:
+                extra_data_parsed = json.loads(n["extra_data"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
         return NotificationResponse(
             id=str(n["id"]),
             title=n["title"],
             message=n.get("message"),
             type=n["type"],
             is_read=n["is_read"],
-            metadata=n.get("metadata"),
+            metadata=extra_data_parsed,
             created_at=n.get("created_at")
         )
         

@@ -6,6 +6,7 @@ These run in a separate worker process to avoid blocking the FastAPI server.
 """
 
 import logging
+import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -66,7 +67,8 @@ def create_notification(
             "message": message,
             "type": notification_type,
             "is_read": False,
-            "metadata": metadata or {},
+            # Serialize dict as JSON string for extra_data column
+            "extra_data": json.dumps(metadata) if metadata else None,
             "created_at": datetime.utcnow().isoformat()
         }
         

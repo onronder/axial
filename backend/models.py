@@ -181,7 +181,8 @@ class Notification(SQLModel, table=True):
     message: Optional[str] = None
     type: str = Field(default="info")  # info, success, warning, error
     is_read: bool = Field(default=False)
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    # Note: renamed from 'metadata' to avoid shadowing SQLModel.metadata attribute
+    extra_data: Optional[str] = Field(default=None)  # JSON string for metadata
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
 
