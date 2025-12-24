@@ -180,7 +180,7 @@ class Notification(SQLModel, table=True):
     message: Optional[str] = None
     type: str = Field(default="info")  # info, success, warning, error
     is_read: bool = Field(default=False)
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, sa_type_kwargs={"astext_type": None})
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
 
