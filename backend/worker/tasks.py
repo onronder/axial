@@ -19,6 +19,28 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
+# JOB PROGRESS HELPERS
+# ============================================================
+
+def update_job_status(supabase, job_id: str, status: str, processed_files: int = None, error_message: str = None):
+    """Helper to update ingestion job status in the database."""
+    try:
+        update_data = {
+            "status": status,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        if processed_files is not None:
+            update_data["processed_files"] = processed_files
+        if error_message is not None:
+            update_data["error_message"] = error_message
+            
+        supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
+        logger.info(f"📊 [Job:{job_id}] Status: {status}, Processed: {processed_files}")
+    except Exception as e:
+        logger.error(f"❌ [Job:{job_id}] Failed to update status: {e}")
+
+
+# ============================================================
 # INGESTION TASK
 # ============================================================
 
@@ -33,7 +55,8 @@ def ingest_file_task(
     user_id: str,
     provider: str,
     item_ids: List[str],
-    credentials: Dict[str, Any]
+    credentials: Dict[str, Any],
+    job_id: str = None
 ):
     """
     Background task to ingest files from a provider.
@@ -42,20 +65,27 @@ def ingest_file_task(
     - Doesn't block the FastAPI server
     - Handles large files without memory issues (prefetch=1)
     - Retries automatically on failure
+    - Updates job progress for frontend polling
     
     Args:
         user_id: The user's ID for multi-tenancy
         provider: Provider type (e.g., 'google_drive')
         item_ids: List of file IDs to ingest
         credentials: Encrypted OAuth credentials
+        job_id: Optional job ID for progress tracking
     """
     task_id = self.request.id
     logger.info(f"📥 [Worker:{task_id}] Starting ingestion for user {user_id}")
-    logger.info(f"📥 [Worker:{task_id}] Provider: {provider}, Items: {len(item_ids)}")
+    logger.info(f"📥 [Worker:{task_id}] Provider: {provider}, Items: {len(item_ids)}, Job: {job_id}")
     
     supabase = get_supabase()
+    processed_count = 0
     
     try:
+        # Update job to processing
+        if job_id:
+            update_job_status(supabase, job_id, "processing", processed_count)
+        
         # 1. Decrypt credentials
         decrypted_creds = {}
         for key, value in credentials.items():
@@ -69,11 +99,12 @@ def ingest_file_task(
         connector = get_connector(provider)
         
         # Pass credentials to connector for this ingestion
-        # Note: Connector needs to support credential injection
         docs = connector.ingest_sync(user_id, item_ids, decrypted_creds)
         
         if not docs:
             logger.warning(f"📥 [Worker:{task_id}] No content processed")
+            if job_id:
+                update_job_status(supabase, job_id, "completed", len(item_ids))
             return {"status": "skipped", "message": "No content processed"}
         
         # 3. Embed documents
@@ -141,15 +172,25 @@ def ingest_file_task(
             
             supabase.table("document_chunks").insert(chunk_records).execute()
             results.append(parent_id)
+            
+            # Update progress after each document group
+            processed_count += 1
+            if job_id:
+                update_job_status(supabase, job_id, "processing", processed_count)
+        
+        # Mark job as completed
+        if job_id:
+            update_job_status(supabase, job_id, "completed", len(item_ids))
         
         logger.info(f"✅ [Worker:{task_id}] Ingestion complete: {len(results)} documents")
-        return {"status": "success", "ingested_ids": results, "task_id": task_id}
+        return {"status": "success", "ingested_ids": results, "task_id": task_id, "job_id": job_id}
         
     except Exception as e:
         logger.error(f"❌ [Worker:{task_id}] Ingestion failed: {e}")
         
-        # Update document status to FAILED if we have a reference
-        # (This would require tracking document IDs during processing)
+        # Update job status to failed
+        if job_id:
+            update_job_status(supabase, job_id, "failed", processed_count, str(e))
         
         # Re-raise for Celery retry mechanism
         raise
@@ -159,3 +200,4 @@ def ingest_file_task(
 def health_check_task(self):
     """Simple task to verify worker is running."""
     return {"status": "healthy", "task_id": self.request.id}
+

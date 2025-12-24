@@ -105,3 +105,51 @@ class IngestResponse(BaseModel):
     """Response schema for document ingestion."""
     status: str
     doc_id: str
+
+
+# =============================================================================
+# Ingestion Job Tracking
+# =============================================================================
+
+from enum import Enum as PyEnum
+
+
+class JobStatus(str, PyEnum):
+    """Status of an ingestion job."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class IngestionJob(SQLModel, table=True):
+    """
+    Tracks the progress of background ingestion tasks.
+    Used for polling-based progress updates to the frontend.
+    """
+    __tablename__ = "ingestion_jobs"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(index=True)
+    provider: str
+    total_files: int = Field(default=0)
+    processed_files: int = Field(default=0)
+    status: str = Field(default="pending")  # pending, processing, completed, failed
+    error_message: Optional[str] = None
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
+
+class IngestionJobResponse(BaseModel):
+    """API response for ingestion job status."""
+    id: str
+    provider: str
+    total_files: int
+    processed_files: int
+    status: str
+    percent: float  # Calculated: (processed_files / total_files) * 100
+    error_message: Optional[str] = None
+    created_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True

@@ -10,6 +10,7 @@ import { useProfile, ProfileProvider } from "@/hooks/useProfile";
 import { useTheme } from "@/hooks/useTheme";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { ChatHistoryList } from "@/components/layout/ChatHistoryList";
+import { GlobalProgress } from "@/components/layout/global-progress";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { GlobalIngestModal } from "@/components/GlobalIngestModal";
 import { Button } from "@/components/ui/button";
@@ -220,6 +221,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
                         {/* Global IngestModal - controlled via context */}
                         <GlobalIngestModal />
+
+                        {/* Global Progress Bar - for ingestion tracking */}
+                        <GlobalProgress />
                     </div>
                 </IngestModalProvider>
             </ChatHistoryProvider>

@@ -162,9 +162,11 @@ app.include_router(integrations_router, prefix="/api/v1", tags=["integrations"])
 from api.v1.settings import router as settings_router
 from api.v1.team import router as team_router
 from api.v1.stream import router as stream_router
+from api.v1.jobs import router as jobs_router
 app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
 app.include_router(team_router, prefix="/api/v1", tags=["team"])
 app.include_router(stream_router, prefix="/api/v1", tags=["streaming"])
+app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
 
 
 # =============================================================================

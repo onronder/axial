@@ -322,8 +322,9 @@ async def ingest_provider_items(
     """
     Ingest items from a provider (Download, Parse, Embed, Store).
     
-    This endpoint now returns 202 Accepted immediately and processes
-    files asynchronously via Celery worker.
+    This endpoint returns 202 Accepted immediately and processes
+    files asynchronously via Celery worker. Creates an ingestion job
+    for progress tracking.
     """
     try:
         # 1. Get user's credentials for this provider
@@ -342,23 +343,44 @@ async def ingest_provider_items(
         
         credentials = integration.data['credentials']
         
-        # 2. Queue the ingestion task
+        # 2. Create ingestion job for progress tracking
+        from datetime import datetime
+        job_data = {
+            "user_id": user_id,
+            "provider": provider,
+            "total_files": len(request.item_ids),
+            "processed_files": 0,
+            "status": "pending",
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        job_response = supabase.table("ingestion_jobs").insert(job_data).execute()
+        if not job_response.data:
+            raise HTTPException(status_code=500, detail="Failed to create ingestion job")
+        
+        job_id = job_response.data[0]["id"]
+        logger.info(f"📋 [Ingest] Created job {job_id} for {len(request.item_ids)} items")
+        
+        # 3. Queue the ingestion task with job_id
         from worker.tasks import ingest_file_task
         
         task = ingest_file_task.delay(
             user_id=user_id,
             provider=provider,
             item_ids=request.item_ids,
-            credentials=credentials
+            credentials=credentials,
+            job_id=str(job_id)
         )
         
-        logger.info(f"📥 [Ingest] Queued task {task.id} for {len(request.item_ids)} items")
+        logger.info(f"📥 [Ingest] Queued task {task.id} for job {job_id}")
         
-        # 3. Return 202 Accepted with task info
+        # 4. Return 202 Accepted with job info
         return {
             "status": "accepted",
             "message": f"Ingestion queued for {len(request.item_ids)} items",
-            "task_id": task.id
+            "task_id": task.id,
+            "job_id": str(job_id)
         }
 
     except HTTPException:
@@ -366,4 +388,5 @@ async def ingest_provider_items(
     except Exception as e:
         logger.error(f"❌ [Ingest] Failed to queue task: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to queue ingestion: {str(e)}")
+
 
