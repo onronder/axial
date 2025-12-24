@@ -163,6 +163,13 @@ async def update_profile(
 # Default notification settings to seed for new users
 DEFAULT_NOTIFICATION_SETTINGS = [
     {
+        "setting_key": "email_on_ingestion_complete",
+        "setting_label": "Ingestion Complete Emails",
+        "setting_description": "Receive an email when document processing finishes",
+        "category": "email",
+        "enabled": True
+    },
+    {
         "setting_key": "weekly-digest",
         "setting_label": "Weekly Digest",
         "setting_description": "Receive a weekly summary of activity",
