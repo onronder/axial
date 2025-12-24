@@ -9,6 +9,15 @@ from core.config import settings
 try:
     from cryptography.fernet import Fernet, InvalidToken
     ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+    
+    # SECURITY: Mandatory encryption in production
+    if ENVIRONMENT == "production" and not ENCRYPTION_KEY:
+        raise RuntimeError(
+            "FATAL: ENCRYPTION_KEY is required in production. "
+            "Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+        )
+    
     if ENCRYPTION_KEY:
         cipher_suite = Fernet(ENCRYPTION_KEY.encode())
         HAS_ENCRYPTION = True

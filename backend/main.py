@@ -8,10 +8,15 @@ for Supabase + Railway + Vercel deployment.
 import os
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
-from core.db import check_connection
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from core.db import check_connection, get_supabase
+from core.config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +51,12 @@ async def lifespan(app: FastAPI):
     logger.info("👋 Shutting down Axio Hub API...")
 
 
+# =============================================================================
+# Rate Limiting Configuration
+# =============================================================================
+limiter = Limiter(key_func=get_remote_address)
+
+
 app = FastAPI(
     title="Axio Hub RAG API",
     version="1.0.0",
@@ -53,6 +64,10 @@ app = FastAPI(
     docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
     redoc_url="/redoc" if os.getenv("ENVIRONMENT") != "production" else None,
 )
+
+# Register rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # =============================================================================
 # CORS Configuration - Production Hardened
@@ -180,12 +195,56 @@ app.include_router(notifications_router, prefix="/api/v1", tags=["notifications"
 # =============================================================================
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Railway/load balancer monitoring."""
-    return {
-        "status": "healthy", 
+    """
+    Enhanced health check endpoint for Railway/load balancer monitoring.
+    
+    Checks connectivity to:
+    - Database (PostgreSQL via Supabase)
+    - Redis (Celery broker)
+    
+    Returns 200 if healthy, 503 if degraded.
+    """
+    status = {
+        "status": "healthy",
         "version": "1.0.0",
-        "environment": os.getenv("ENVIRONMENT", "development")
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "services": {
+            "database": "unknown",
+            "redis": "unknown"
+        }
     }
+    
+    is_healthy = True
+    
+    # Check Database connectivity
+    try:
+        supabase = get_supabase()
+        # Lightweight query to verify connection
+        supabase.table("documents").select("id").limit(1).execute()
+        status["services"]["database"] = "up"
+    except Exception as e:
+        status["services"]["database"] = "down"
+        status["status"] = "degraded"
+        is_healthy = False
+        logger.error(f"❌ Health check - Database: {e}")
+    
+    # Check Redis connectivity
+    try:
+        import redis
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        r = redis.from_url(redis_url)
+        r.ping()
+        status["services"]["redis"] = "up"
+    except Exception as e:
+        status["services"]["redis"] = "down"
+        status["status"] = "degraded"
+        is_healthy = False
+        logger.error(f"❌ Health check - Redis: {e}")
+    
+    if is_healthy:
+        return status
+    else:
+        return JSONResponse(status_code=503, content=status)
 
 
 @app.get("/")

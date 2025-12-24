@@ -140,8 +140,10 @@ def send_email_notification(
 
 @celery_app.task(
     bind=True,
-    autoretry_for=(Exception,),
-    retry_kwargs={'max_retries': 3, 'countdown': 60},
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,  # Exponential backoff: 1s, 2s, 4s, 8s...
+    retry_backoff_max=600,  # Max 10 minutes between retries
+    max_retries=3,
     acks_late=True
 )
 def ingest_file_task(

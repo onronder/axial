@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
 from typing import Optional
 from models import IngestResponse
 from core.security import get_current_user
@@ -6,6 +6,9 @@ from core.db import get_supabase
 from core.config import settings
 from core.embeddings import EmbeddingFactory, EmbeddingTier
 from connectors.factory import get_connector
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+import magic
 import uuid
 import datetime
 import json
@@ -14,8 +17,31 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Rate limiter instance (uses same key_func as main.py)
+limiter = Limiter(key_func=get_remote_address)
+
+# Allowed MIME types for uploaded files
+ALLOWED_MIME_TYPES = {
+    "application/pdf": [".pdf"],
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+    "text/plain": [".txt"],
+    "text/markdown": [".md"],
+    "text/html": [".html", ".htm"],
+}
+
+# Dangerous MIME types that should always be rejected
+DANGEROUS_MIME_TYPES = [
+    "application/x-dosexec",
+    "application/x-executable",
+    "application/x-msdownload",
+    "application/x-msdos-program",
+]
+
+
 @router.post("/ingest", response_model=IngestResponse)
+@limiter.limit("10/minute")
 async def ingest_document(
+    request: Request,
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
     drive_id: Optional[str] = Form(None),
@@ -23,6 +49,42 @@ async def ingest_document(
     user_id: str = Depends(get_current_user)
 ):
     supabase = get_supabase()
+    
+    # SECURITY: Validate file content type using magic bytes
+    if file:
+        try:
+            # Read first 2048 bytes for MIME detection
+            header = await file.read(2048)
+            await file.seek(0)  # Reset file position
+            
+            detected_mime = magic.from_buffer(header, mime=True)
+            
+            # Check for dangerous MIME types
+            if detected_mime in DANGEROUS_MIME_TYPES:
+                logger.warning(f"🚨 [Ingest] Blocked dangerous file: {file.filename}, detected MIME: {detected_mime}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File type not allowed: detected as {detected_mime}"
+                )
+            
+            # Validate extension matches detected MIME type
+            file_ext = "." + file.filename.split(".")[-1].lower() if "." in file.filename else ""
+            if detected_mime in ALLOWED_MIME_TYPES:
+                allowed_extensions = ALLOWED_MIME_TYPES[detected_mime]
+                if file_ext and file_ext not in allowed_extensions:
+                    logger.warning(f"🚨 [Ingest] Extension mismatch: {file.filename} ({file_ext}) vs detected {detected_mime}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"File extension mismatch: {file_ext} does not match detected type {detected_mime}"
+                    )
+            
+            logger.info(f"✅ [Ingest] File validated: {file.filename}, MIME: {detected_mime}")
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"❌ [Ingest] MIME validation error: {e}")
+            # Continue with upload - don't block on validation errors
     
     # 0. Parse metadata JSON string
     try:
