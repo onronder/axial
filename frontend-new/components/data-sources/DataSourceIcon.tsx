@@ -134,14 +134,18 @@ const containerSizeConfig = {
 };
 
 // Map source IDs to their custom icons
+// Support both hyphen and underscore formats for compatibility
 const customIconMap: Record<string, React.FC<{ className?: string }>> = {
   "google-drive": GoogleDriveIcon,
+  "google_drive": GoogleDriveIcon, // Backend uses underscore format
   "notion": NotionIcon,
   "onedrive": OneDriveIcon,
+  "one_drive": OneDriveIcon,
   "dropbox": DropboxIcon,
   "slack": SlackIcon,
   "teams": TeamsIcon,
   "url-crawler": GlobeIcon,
+  "url_crawler": GlobeIcon,
   "confluence": ConfluenceIcon,
   "discord": DiscordIcon,
   "box": BoxIcon,
