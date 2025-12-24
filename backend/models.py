@@ -9,6 +9,7 @@ from sqlmodel import SQLModel, Field
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from uuid import UUID, uuid4
+from enum import Enum
 
 
 # =============================================================================
@@ -159,7 +160,7 @@ class IngestionJobResponse(BaseModel):
 # Notification Models
 # =============================================================================
 
-class NotificationType(str, PyEnum):
+class NotificationType(str, Enum):
     """Type of notification."""
     INFO = "info"
     SUCCESS = "success"
