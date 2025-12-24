@@ -64,7 +64,11 @@ describe('OnboardingModal Component', () => {
             expect(true).toBe(true);
         });
 
-        it('opens IngestModal with drive tab when Google Drive clicked', () => {
+        it('navigates to data sources OAuth page when Google Drive clicked', () => {
+            /**
+             * CHANGED: Google Drive now routes to /dashboard/settings/data-sources
+             * for OAuth flow instead of opening legacy IngestModal.
+             */
             expect(true).toBe(true);
         });
 

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode, useCallback } from "react";
 
-type IngestModalTab = 'file' | 'url' | 'drive';
+type IngestModalTab = 'file' | 'url';
 
 interface IngestModalContextType {
     isOpen: boolean;

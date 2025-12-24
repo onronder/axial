@@ -1,6 +1,7 @@
 "use client";
 
 import { FileUp, Globe, Database, Bot, MessageSquare } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
 import { useIngestModal } from "@/hooks/useIngestModal";
@@ -26,6 +27,7 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
   const { profile } = useProfile();
   const { openModal } = useIngestModal();
   const { isEmpty, isLoading } = useDocumentCount();
+  const router = useRouter();
 
   const displayName = profile?.first_name || user?.name?.split(" ")[0] || "there";
 
@@ -88,7 +90,7 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
                 icon={<DataSourceIcon sourceId="google-drive" size="lg" />}
                 label="Google Drive"
                 description="Connect folders"
-                onClick={() => openModal("drive")}
+                onClick={() => router.push("/dashboard/settings/data-sources")}
                 color="blue"
               />
               <QuickActionCard

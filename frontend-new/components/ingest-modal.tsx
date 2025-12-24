@@ -11,14 +11,14 @@ import { cn } from "@/lib/utils"
 interface IngestModalProps {
     isOpen: boolean
     onClose: () => void
-    initialTab?: 'file' | 'url' | 'drive'
+    initialTab?: 'file' | 'url'
 }
 
 export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModalProps) {
-    const [activeTab, setActiveTab] = useState<'file' | 'url' | 'drive'>(initialTab)
+    const [activeTab, setActiveTab] = useState<'file' | 'url'>(initialTab)
     const [file, setFile] = useState<File | null>(null)
     const [url, setUrl] = useState<string>("")
-    const [driveId, setDriveId] = useState<string>("")
+
     const [loading, setLoading] = useState(false)
     const [status, setStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: "" })
 
@@ -81,22 +81,12 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 formData.append("metadata", JSON.stringify({ client_id: "frontend_user", source: "web_crawl" }))
 
                 await authFetch.post('/ingest', formData)
-            } else if (activeTab === 'drive') {
-                if (!driveId) {
-                    setLoading(false)
-                    return
-                }
-                const formData = new FormData()
-                formData.append("drive_id", driveId)
-                formData.append("metadata", JSON.stringify({ client_id: "frontend_user", source: "drive" }))
-
-                await authFetch.post('/ingest', formData)
             }
 
             setStatus({ type: 'success', message: "Ingestion queued successfully!" })
             setFile(null)
             setUrl("")
-            setDriveId("")
+
 
         } catch (err: any) {
             console.error(err)
@@ -132,9 +122,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                         <button onClick={() => setActiveTab('url')} className={cn("flex-1 rounded-sm px-3 py-1.5 text-sm font-medium transition-all", activeTab === 'url' ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-900")}>
                             <div className="flex items-center justify-center gap-2"><LinkIcon className="h-4 w-4" /><span>URL</span></div>
                         </button>
-                        <button onClick={() => setActiveTab('drive')} className={cn("flex-1 rounded-sm px-3 py-1.5 text-sm font-medium transition-all", activeTab === 'drive' ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-900")}>
-                            <div className="flex items-center justify-center gap-2"><FileText className="h-4 w-4" /><span>Drive</span></div>
-                        </button>
+
                     </div>
 
                     {/* Content */}
@@ -145,18 +133,10 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                                 <Input key="file-input" type="file" onChange={handleFileChange} />
                                 {file && <p className="text-xs text-slate-500">Selected: {file.name}</p>}
                             </div>
-                        ) : activeTab === 'url' ? (
+                        ) : (
                             <div className="space-y-2">
                                 <label className="text-sm font-medium leading-none">Web Page URL</label>
                                 <Input key="url-input" placeholder="https://example.com" value={url} onChange={(e) => setUrl(e.target.value)} />
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium leading-none">Google Drive Folder/File ID</label>
-                                <Input key="drive-input" placeholder="1A2b3C..." value={driveId} onChange={(e) => setDriveId(e.target.value)} />
-                                <p className="text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-200">
-                                    Share the folder/file with the Service Account email first (see credentials).
-                                </p>
                             </div>
                         )}
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AxioLogo } from "@/components/branding/AxioLogo";
@@ -19,10 +20,12 @@ type Step = "welcome" | "connect" | "success";
 export function OnboardingModal({ open, onOpenChange }: OnboardingModalProps) {
     const [step, setStep] = useState<Step>("welcome");
     const { openModal } = useIngestModal();
+    const router = useRouter();
 
     const handleConnectDrive = () => {
         onOpenChange(false);
-        openModal("drive");
+        // Navigate to data sources page with OAuth flow instead of legacy modal
+        router.push("/dashboard/settings/data-sources");
     };
 
     const handleUploadFiles = () => {
