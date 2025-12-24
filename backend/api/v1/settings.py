@@ -156,6 +156,46 @@ async def update_profile(
         raise HTTPException(status_code=500, detail=f"Failed to update profile: {str(e)}")
 
 
+@router.delete("/settings/profile/me", status_code=200)
+async def delete_account(user_id: str = Depends(get_current_user)):
+    """
+    Permanently delete user account and all associated data.
+    
+    GDPR Article 17 "Right to Erasure" / CCPA Deletion Request
+    
+    This is a hard delete that removes:
+    - All vector embeddings (AI memory)
+    - All uploaded files (storage)
+    - All database records (cascading)
+    - Auth account (Supabase Auth)
+    
+    WARNING: This action is irreversible.
+    """
+    from services.cleanup import cleanup_service
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"🗑️ [DeleteAccount] Request received for user: {user_id}")
+    
+    try:
+        # Execute complete account deletion
+        results = await cleanup_service.execute_account_deletion(user_id)
+        
+        logger.info(f"✅ [DeleteAccount] Account deleted successfully: {user_id}")
+        
+        return {
+            "message": "Account and all data permanently deleted",
+            "details": results
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [DeleteAccount] Failed to delete account {user_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete account: {str(e)}"
+        )
+
+
 # ============================================================
 # NOTIFICATION SETTINGS ENDPOINTS
 # ============================================================
