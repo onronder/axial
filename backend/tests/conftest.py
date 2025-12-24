@@ -88,6 +88,9 @@ def sample_document():
         "user_id": "test-user-123",
         "title": "Test Document",
         "source_type": "file",
+        "source_url": None,
+        "created_at": "2024-01-01T00:00:00Z",
+        "status": "indexed",
         "content": "This is a test document with some content for testing purposes.",
         "metadata": {"filename": "test.txt"}
     }
@@ -137,5 +140,9 @@ def mock_environment(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("SUPABASE_URL", "http://localhost:54321")
     monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret-key-that-is-long-enough-for-hs256")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    # Valid Fernet key (must be 32 url-safe base64-encoded bytes)
+    monkeypatch.setenv("ENCRYPTION_KEY", "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=")
+
