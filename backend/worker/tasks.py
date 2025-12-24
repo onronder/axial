@@ -111,12 +111,13 @@ def send_email_notification(
             logger.warning(f"📧 [Email] No email found for user {user_id}")
             return
         
-        # Check user preference (default to True if not set)
-        settings_response = supabase.table("user_settings").select("email_on_ingestion_complete").eq("user_id", user_id).single().execute()
+        # Check user preference in user_notification_settings (key-value table)
+        # Default to True if no explicit setting exists
+        settings_response = supabase.table("user_notification_settings").select("enabled").eq("user_id", user_id).eq("setting_key", "email_on_ingestion_complete").maybeSingle().execute()
         
-        email_enabled = True  # Default
+        email_enabled = True  # Default if no setting exists
         if settings_response.data:
-            email_enabled = settings_response.data.get("email_on_ingestion_complete", True)
+            email_enabled = settings_response.data.get("enabled", True)
         
         if not email_enabled:
             logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
