@@ -15,6 +15,7 @@ from core.db import get_supabase
 from core.config import settings
 from core.security import decrypt_token
 from services.parsers import DocumentParser
+from services.email import email_service
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,60 @@ def create_notification(
     except Exception as e:
         logger.error(f"❌ [Notification] Failed to create: {e}")
 
+
+def send_email_notification(
+    supabase,
+    user_id: str,
+    total_files: int
+):
+    """
+    Send email notification for completed ingestion.
+    
+    This is fail-safe: errors are logged but never raised.
+    Job status updates must succeed even if email fails.
+    
+    Args:
+        supabase: Supabase client
+        user_id: User's ID
+        total_files: Number of processed files
+    """
+    try:
+        # Fetch user profile for email and name
+        user_response = supabase.table("profiles").select("email, display_name, full_name").eq("id", user_id).single().execute()
+        
+        if not user_response.data:
+            logger.warning(f"📧 [Email] User profile not found for {user_id}")
+            return
+        
+        user_data = user_response.data
+        email = user_data.get("email")
+        name = user_data.get("display_name") or user_data.get("full_name") or "there"
+        
+        if not email:
+            logger.warning(f"📧 [Email] No email found for user {user_id}")
+            return
+        
+        # Check user preference (default to True if not set)
+        settings_response = supabase.table("user_settings").select("email_on_ingestion_complete").eq("user_id", user_id).single().execute()
+        
+        email_enabled = True  # Default
+        if settings_response.data:
+            email_enabled = settings_response.data.get("email_on_ingestion_complete", True)
+        
+        if not email_enabled:
+            logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
+            return
+        
+        # Send the email (EmailService handles its own errors)
+        email_service.send_ingestion_complete(
+            to_email=email,
+            name=name,
+            total_files=total_files
+        )
+        
+    except Exception as e:
+        # CRITICAL: Log but never raise - email is secondary functionality
+        logger.error(f"📧 [Email] Failed to send notification: {e}")
 
 # ============================================================
 # INGESTION TASK
@@ -239,6 +294,9 @@ def ingest_file_task(
             "success",
             {"job_id": job_id, "provider": provider, "document_count": len(results)}
         )
+        
+        # Send email notification (fail-safe, respects user preferences)
+        send_email_notification(supabase, user_id, len(results))
         
         logger.info(f"✅ [Worker:{task_id}] Ingestion complete: {len(results)} documents")
         return {"status": "success", "ingested_ids": results, "task_id": task_id, "job_id": job_id}

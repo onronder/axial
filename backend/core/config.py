@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     
     # Redis (Celery broker/backend)
     REDIS_URL: str = "redis://localhost:6379/0"
+    
+    # Email (Resend)
+    RESEND_API_KEY: Optional[str] = None
+    EMAILS_FROM_EMAIL: str = "noreply@axiohub.io"
+    APP_URL: str = "https://axiohub.io"
 
     class Config:
         env_file = [".env", "../.env"]

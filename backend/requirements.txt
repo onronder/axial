@@ -29,3 +29,5 @@ pytest
 pytest-asyncio
 httpx
 cryptography
+resend
+jinja2
