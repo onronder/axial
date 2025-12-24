@@ -10,6 +10,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from core.db import check_connection
 
 # Configure logging
@@ -147,6 +148,9 @@ app.add_middleware(
 # Add request tracing middleware
 from core.tracing import RequestTracingMiddleware
 app.add_middleware(RequestTracingMiddleware)
+
+# Add GZip compression for responses > 500 bytes
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # =============================================================================
 # API Routers

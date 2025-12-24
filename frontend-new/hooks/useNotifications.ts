@@ -131,12 +131,29 @@ export function useNotifications() {
         }
     }, [notifications]);
 
-    // Poll for unread count
+    // Poll for unread count (pause when tab is hidden for performance)
     useEffect(() => {
         fetchUnreadCount(); // Initial fetch
 
-        const interval = setInterval(fetchUnreadCount, POLL_INTERVAL);
-        return () => clearInterval(interval);
+        const interval = setInterval(() => {
+            // Only poll when tab is visible
+            if (!document.hidden) {
+                fetchUnreadCount();
+            }
+        }, POLL_INTERVAL);
+
+        // Also refresh when tab becomes visible again
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                fetchUnreadCount();
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
     }, [fetchUnreadCount]);
 
     return {

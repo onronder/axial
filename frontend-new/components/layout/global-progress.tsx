@@ -72,12 +72,29 @@ export function GlobalProgress() {
         }
     }, [isPolling, showSuccess]);
 
-    // Polling effect
+    // Polling effect (pause when tab is hidden for performance)
     useEffect(() => {
         fetchActiveJob(); // Initial fetch
 
-        const interval = setInterval(fetchActiveJob, POLL_INTERVAL);
-        return () => clearInterval(interval);
+        const interval = setInterval(() => {
+            // Only poll when tab is visible
+            if (!document.hidden) {
+                fetchActiveJob();
+            }
+        }, POLL_INTERVAL);
+
+        // Resume immediately when tab becomes visible
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                fetchActiveJob();
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
     }, [fetchActiveJob]);
 
     // Resume polling when needed
