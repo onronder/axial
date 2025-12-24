@@ -11,6 +11,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { ChatHistoryList } from "@/components/layout/ChatHistoryList";
 import { GlobalProgress } from "@/components/layout/global-progress";
+import { NotificationCenter } from "@/components/layout/NotificationCenter";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { GlobalIngestModal } from "@/components/GlobalIngestModal";
 import { Button } from "@/components/ui/button";
@@ -61,9 +62,12 @@ function SimpleSidebar() {
     return (
         <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
             {/* Header */}
-            <div className="p-4 flex items-center gap-2">
-                <AxioLogo variant="icon" size="md" forceDark />
-                <span className="font-display text-lg font-semibold">Axio Hub</span>
+            <div className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <AxioLogo variant="icon" size="md" forceDark />
+                    <span className="font-display text-lg font-semibold">Axio Hub</span>
+                </div>
+                <NotificationCenter />
             </div>
 
             {/* New Chat Button */}

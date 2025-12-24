@@ -153,3 +153,59 @@ class IngestionJobResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+# =============================================================================
+# Notification Models
+# =============================================================================
+
+class NotificationType(str, PyEnum):
+    """Type of notification."""
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class Notification(SQLModel, table=True):
+    """
+    User notification for operation lifecycle events.
+    Tracks success, warning, error, and info events.
+    """
+    __tablename__ = "notifications"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(index=True)
+    title: str
+    message: Optional[str] = None
+    type: str = Field(default="info")  # info, success, warning, error
+    is_read: bool = Field(default=False)
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, sa_type_kwargs={"astext_type": None})
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
+
+class NotificationResponse(BaseModel):
+    """API response for a notification."""
+    id: str
+    title: str
+    message: Optional[str] = None
+    type: str
+    is_read: bool
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class NotificationListResponse(BaseModel):
+    """API response for notification list."""
+    notifications: List["NotificationResponse"]
+    total: int
+    unread_count: int
+
+
+class UnreadCountResponse(BaseModel):
+    """Lightweight response for unread count."""
+    count: int
+

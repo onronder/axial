@@ -40,6 +40,42 @@ def update_job_status(supabase, job_id: str, status: str, processed_files: int =
         logger.error(f"❌ [Job:{job_id}] Failed to update status: {e}")
 
 
+def create_notification(
+    supabase,
+    user_id: str,
+    title: str,
+    message: str = None,
+    notification_type: str = "info",
+    metadata: dict = None
+):
+    """
+    Create a notification for the user.
+    
+    Args:
+        supabase: Supabase client
+        user_id: User's ID
+        title: Notification title
+        message: Optional detailed message
+        notification_type: 'info', 'success', 'warning', 'error'
+        metadata: Optional extra data
+    """
+    try:
+        notification_data = {
+            "user_id": user_id,
+            "title": title,
+            "message": message,
+            "type": notification_type,
+            "is_read": False,
+            "metadata": metadata or {},
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        supabase.table("notifications").insert(notification_data).execute()
+        logger.info(f"🔔 [Notification] Created {notification_type}: {title}")
+    except Exception as e:
+        logger.error(f"❌ [Notification] Failed to create: {e}")
+
+
 # ============================================================
 # INGESTION TASK
 # ============================================================
@@ -85,6 +121,16 @@ def ingest_file_task(
         # Update job to processing
         if job_id:
             update_job_status(supabase, job_id, "processing", processed_count)
+        
+        # Create "started" notification
+        create_notification(
+            supabase,
+            user_id,
+            f"Ingestion Started",
+            f"Processing {len(item_ids)} files from {provider.replace('_', ' ').title()}",
+            "info",
+            {"job_id": job_id, "provider": provider, "file_count": len(item_ids)}
+        )
         
         # 1. Decrypt credentials
         decrypted_creds = {}
@@ -182,6 +228,16 @@ def ingest_file_task(
         if job_id:
             update_job_status(supabase, job_id, "completed", len(item_ids))
         
+        # Create "success" notification
+        create_notification(
+            supabase,
+            user_id,
+            f"Ingestion Complete",
+            f"Successfully processed {len(results)} documents from {provider.replace('_', ' ').title()}",
+            "success",
+            {"job_id": job_id, "provider": provider, "document_count": len(results)}
+        )
+        
         logger.info(f"✅ [Worker:{task_id}] Ingestion complete: {len(results)} documents")
         return {"status": "success", "ingested_ids": results, "task_id": task_id, "job_id": job_id}
         
@@ -191,6 +247,16 @@ def ingest_file_task(
         # Update job status to failed
         if job_id:
             update_job_status(supabase, job_id, "failed", processed_count, str(e))
+        
+        # Create "error" notification
+        create_notification(
+            supabase,
+            user_id,
+            f"Ingestion Failed",
+            f"Failed to process files from {provider.replace('_', ' ').title()}: {str(e)[:200]}",
+            "error",
+            {"job_id": job_id, "provider": provider, "error": str(e)}
+        )
         
         # Re-raise for Celery retry mechanism
         raise
