@@ -1,11 +1,12 @@
 "use client";
 
-import { FileUp, HardDrive, Globe, Database, Bot, MessageSquare } from "lucide-react";
+import { FileUp, Globe, Database, Bot, MessageSquare } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
 import { useIngestModal } from "@/hooks/useIngestModal";
 import { useDocumentCount } from "@/hooks/useDocumentCount";
 import { AxioLogo } from "@/components/branding/AxioLogo";
+import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon";
 import { starterQueries } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
 
@@ -84,7 +85,7 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
                 color="emerald"
               />
               <QuickActionCard
-                icon={<HardDrive className="h-6 w-6" />}
+                icon={<DataSourceIcon sourceId="google-drive" size="lg" />}
                 label="Google Drive"
                 description="Connect folders"
                 onClick={() => openModal("drive")}

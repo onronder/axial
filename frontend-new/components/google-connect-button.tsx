@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from "@/components/ui/button"
-import { HardDrive } from "lucide-react"
+import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon"
 import { getGoogleRedirectUri, getGoogleClientId } from "@/lib/utils"
 
 export function GoogleConnectButton() {
@@ -43,7 +43,7 @@ export function GoogleConnectButton() {
 
     return (
         <Button onClick={handleConnect} variant="outline" className="w-full gap-2">
-            <HardDrive className="h-4 w-4" />
+            <DataSourceIcon sourceId="google-drive" size="sm" />
             Connect Google Drive
         </Button>
     )

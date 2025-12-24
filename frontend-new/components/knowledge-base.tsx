@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/api"
 import { format } from "date-fns"
-import { FileText, Link as LinkIcon, Trash2, HardDrive } from "lucide-react"
+import { FileText, Link as LinkIcon, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon"
 import { cn } from "@/lib/utils"
 
 interface Document {
@@ -57,7 +58,7 @@ export function KnowledgeBase() {
     const getIcon = (type: string) => {
         switch (type) {
             case 'web': return <LinkIcon className="h-4 w-4 text-blue-500" />
-            case 'drive': return <HardDrive className="h-4 w-4 text-yellow-500" />
+            case 'drive': return <DataSourceIcon sourceId="google-drive" size="sm" />
             default: return <FileText className="h-4 w-4 text-slate-500" />
         }
     }

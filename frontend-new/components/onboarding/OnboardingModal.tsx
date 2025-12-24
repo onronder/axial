@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AxioLogo } from "@/components/branding/AxioLogo";
-import { CloudUpload, HardDrive, Globe, CheckCircle, ArrowRight, Sparkles } from "lucide-react";
+import { CloudUpload, Globe, CheckCircle, ArrowRight, Sparkles } from "lucide-react";
+import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon";
 import { useIngestModal } from "@/hooks/useIngestModal";
 import { cn } from "@/lib/utils";
 
@@ -83,7 +84,7 @@ export function OnboardingModal({ open, onOpenChange }: OnboardingModalProps) {
                         {/* Data source cards */}
                         <div className="grid gap-4">
                             <DataSourceCard
-                                icon={<HardDrive className="h-6 w-6" />}
+                                icon={<DataSourceIcon sourceId="google-drive" size="lg" />}
                                 title="Google Drive"
                                 description="Connect folders and files from your Drive"
                                 onClick={handleConnectDrive}
