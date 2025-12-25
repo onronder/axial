@@ -99,11 +99,12 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
   };
 
   const toggleAll = () => {
-    const fileIds = files.filter((f) => f.type === "file").map((f) => f.id);
-    if (fileIds.every((id) => selectedIds.has(id))) {
+    // Select all items (both files and folders)
+    const allIds = files.map((f) => f.id);
+    if (allIds.every((id) => selectedIds.has(id))) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(fileIds));
+      setSelectedIds(new Set(allIds));
     }
   };
 
@@ -135,8 +136,8 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const fileCount = files.filter((f) => f.type === "file").length;
-  const allFilesSelected = fileCount > 0 && files.filter((f) => f.type === "file").every((f) => selectedIds.has(f.id));
+  const itemCount = files.length;
+  const allItemsSelected = itemCount > 0 && files.every((f) => selectedIds.has(f.id));
 
   return (
     <div className="space-y-4">
@@ -163,8 +164,8 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
             <button
               onClick={() => handleBreadcrumbClick(index)}
               className={`px-2 py-1 rounded hover:bg-muted transition-colors ${index === breadcrumbs.length - 1
-                  ? "font-medium text-foreground"
-                  : "text-muted-foreground"
+                ? "font-medium text-foreground"
+                : "text-muted-foreground"
                 }`}
             >
               {crumb.name}
@@ -180,9 +181,9 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
             <TableRow>
               <TableHead className="w-12">
                 <Checkbox
-                  checked={allFilesSelected}
+                  checked={allItemsSelected}
                   onCheckedChange={toggleAll}
-                  disabled={fileCount === 0}
+                  disabled={itemCount === 0}
                 />
               </TableHead>
               <TableHead>Name</TableHead>
@@ -218,12 +219,10 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
                   }}
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    {file.type === "file" && (
-                      <Checkbox
-                        checked={selectedIds.has(file.id)}
-                        onCheckedChange={() => toggleSelection(file.id)}
-                      />
-                    )}
+                    <Checkbox
+                      checked={selectedIds.has(file.id)}
+                      onCheckedChange={() => toggleSelection(file.id)}
+                    />
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -253,7 +252,7 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-slide-up">
           <div className="flex items-center gap-4 rounded-full border border-border bg-card px-6 py-3 shadow-lg">
             <span className="text-sm font-medium">
-              {selectedIds.size} file{selectedIds.size > 1 ? "s" : ""} selected
+              {selectedIds.size} item{selectedIds.size > 1 ? "s" : ""} selected
             </span>
             <Button onClick={handleIngest} disabled={ingesting} className="gap-2">
               {ingesting ? (
