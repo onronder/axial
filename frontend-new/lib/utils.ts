@@ -15,7 +15,7 @@ export function getGoogleRedirectUri(): string | undefined {
     if (typeof window === 'undefined') return undefined;
 
     const envUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI;
-    const autoUri = `${window.location.origin}/dashboard/oauth/callback`;
+    const autoUri = `${window.location.origin}/oauth/callback`;
 
     return envUri || autoUri;
 }
@@ -35,7 +35,7 @@ export function getNotionRedirectUri(): string | undefined {
     if (typeof window === 'undefined') return undefined;
 
     const envUri = process.env.NEXT_PUBLIC_NOTION_REDIRECT_URI;
-    const autoUri = `${window.location.origin}/dashboard/oauth/callback`;
+    const autoUri = `${window.location.origin}/oauth/callback`;
 
     return envUri || autoUri;
 }

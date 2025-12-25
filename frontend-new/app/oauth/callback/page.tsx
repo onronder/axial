@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 
 type Provider = "google" | "notion";
 
-export default function OAuthCallbackPage() {
+function OAuthCallbackContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
@@ -74,7 +74,7 @@ export default function OAuthCallbackPage() {
     const providerName = provider === "notion" ? "Notion" : "Google Drive";
 
     return (
-        <div className="flex min-h-[80vh] items-center justify-center p-4">
+        <div className="flex min-h-screen items-center justify-center p-4 bg-background">
             <Card className="w-full max-w-md">
                 <CardHeader className="text-center">
                     <div className="mx-auto mb-4">
@@ -115,5 +115,17 @@ export default function OAuthCallbackPage() {
                 )}
             </Card>
         </div>
+    );
+}
+
+export default function OAuthCallbackPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex min-h-screen items-center justify-center p-4 bg-background">
+                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            </div>
+        }>
+            <OAuthCallbackContent />
+        </Suspense>
     );
 }
