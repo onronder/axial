@@ -98,50 +98,123 @@ class NotionConnector(BaseConnector):
         user_id: str,
         parent_id: Optional[str] = None
     ) -> List[ConnectorItem]:
-        """List Notion pages (Async for UI)."""
-        # Note: list_items is typically called from API, so DB lookup is acceptable here.
+        """
+        List Notion pages with proper folder structure.
+        
+        - If parent_id is None or "root": Return TOP-LEVEL pages only (parent.type = "workspace")
+        - If parent_id is a Page ID: Return child pages/databases of that page
+        """
         access_token = self._get_access_token(user_id)
         items = []
         
+        # Handle "root" string as None
+        if parent_id == "root":
+            parent_id = None
+        
         if parent_id:
-            # Get children
-            result = self._make_request("GET", f"blocks/{parent_id}/children", access_token)
-            for block in result.get("results", []):
-                if block["type"] in ["child_page", "child_database"]:
-                    items.append(ConnectorItem(
-                        id=block["id"],
-                        name=block.get(block["type"], {}).get("title", "Untitled"),
-                        type="folder" if block["type"] == "child_database" else "file",
-                        mime_type="application/notion-page",
-                        parent_id=parent_id
-                    ))
+            # Get children of a specific page
+            try:
+                result = self._make_request("GET", f"blocks/{parent_id}/children", access_token)
+                for block in result.get("results", []):
+                    block_type = block.get("type")
+                    
+                    # Only include child pages and databases
+                    if block_type == "child_page":
+                        title = block.get("child_page", {}).get("title", "Untitled")
+                        items.append(ConnectorItem(
+                            id=block["id"],
+                            name=title,
+                            type="folder",  # Pages can contain sub-pages, so treat as folder
+                            mime_type="application/vnd.notion.page",
+                            parent_id=parent_id
+                        ))
+                    elif block_type == "child_database":
+                        title = block.get("child_database", {}).get("title", "Untitled Database")
+                        items.append(ConnectorItem(
+                            id=block["id"],
+                            name=title,
+                            type="folder",
+                            mime_type="application/vnd.notion.database",
+                            parent_id=parent_id
+                        ))
+            except Exception as e:
+                logger.error(f"Failed to get children for {parent_id}: {e}")
         else:
-            # Search all
-            result = self._make_request("POST", "search", access_token, {"page_size": 100})
+            # Get TOP-LEVEL pages only (no parent or parent is workspace)
+            result = self._make_request("POST", "search", access_token, {
+                "page_size": 100,
+                "filter": {"property": "object", "value": "page"}
+            })
+            
             for page in result.get("results", []):
-                page_type = page.get("object", "page")
+                # Check if this is a top-level page (parent type is workspace)
+                parent_info = page.get("parent", {})
+                parent_type = parent_info.get("type")
+                
+                # Only include pages that are directly in the workspace (top-level)
+                if parent_type != "workspace":
+                    continue
+                
+                # Extract title
                 title = "Untitled"
-                # Try generic title extraction
-                if page_type == "page":
-                    props = page.get("properties", {})
-                    for prop in props.values():
-                        if prop.get("type") == "title" and prop.get("title"):
-                            title = prop["title"][0].get("plain_text", "Untitled")
-                            break
-                elif page_type == "database":
-                    title_arr = page.get("title", [])
-                    if title_arr:
-                        title = title_arr[0].get("plain_text", "Untitled")
+                props = page.get("properties", {})
+                for prop in props.values():
+                    if prop.get("type") == "title" and prop.get("title"):
+                        title_arr = prop.get("title", [])
+                        if title_arr:
+                            title = title_arr[0].get("plain_text", "Untitled")
+                        break
+                
+                # Get icon emoji if available
+                icon = None
+                icon_data = page.get("icon")
+                if icon_data and icon_data.get("type") == "emoji":
+                    icon = icon_data.get("emoji")
                 
                 items.append(ConnectorItem(
                     id=page["id"],
                     name=title,
-                    type="folder" if page_type == "database" else "file",
-                    mime_type=f"application/notion-{page_type}",
-                    icon=page.get("icon", {}).get("emoji"),
-                    parent_id=page.get("parent", {}).get("page_id")
+                    type="folder",  # All pages can have children, so treat as folders
+                    mime_type="application/vnd.notion.page",
+                    icon=icon,
+                    parent_id=None
                 ))
+            
+            # Also get top-level databases
+            db_result = self._make_request("POST", "search", access_token, {
+                "page_size": 100,
+                "filter": {"property": "object", "value": "database"}
+            })
+            
+            for db in db_result.get("results", []):
+                parent_info = db.get("parent", {})
+                parent_type = parent_info.get("type")
+                
+                if parent_type != "workspace":
+                    continue
+                
+                title = "Untitled Database"
+                title_arr = db.get("title", [])
+                if title_arr:
+                    title = title_arr[0].get("plain_text", "Untitled Database")
+                
+                icon = None
+                icon_data = db.get("icon")
+                if icon_data and icon_data.get("type") == "emoji":
+                    icon = icon_data.get("emoji")
+                
+                items.append(ConnectorItem(
+                    id=db["id"],
+                    name=title,
+                    type="folder",
+                    mime_type="application/vnd.notion.database",
+                    icon=icon,
+                    parent_id=None
+                ))
+        
+        logger.info(f"📄 [Notion] list_items(parent={parent_id}): Found {len(items)} items")
         return items
+
 
     def _extract_text_from_blocks(self, blocks: List[Dict]) -> str:
         """Helper to convert blocks to markdown text."""
