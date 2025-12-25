@@ -37,7 +37,7 @@ export default function OAuthCallbackPage() {
         const exchangeCode = async () => {
             try {
                 console.log("🔐 [OAuth Callback] Sending code to backend...");
-                const response = await api.post("/api/v1/integrations/google/exchange", { code });
+                const response = await api.post("/integrations/google/exchange", { code });
                 console.log("🔐 [OAuth Callback] ✅ Success:", response.data);
                 setStatus("success");
                 // Redirect to data sources after short delay

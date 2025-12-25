@@ -53,8 +53,8 @@ export const useDataSources = () => {
         try {
             // Fetch both endpoints in parallel
             const [availableRes, statusRes] = await Promise.all([
-                api.get('api/v1/integrations/available'),
-                api.get('api/v1/integrations/status')
+                api.get('/integrations/available'),
+                api.get('/integrations/status')
             ]);
 
             const connectors: ConnectorDefinition[] = availableRes.data || [];
@@ -129,7 +129,7 @@ export const useDataSources = () => {
         console.log('📦 [useDataSources] Disconnecting:', type);
 
         try {
-            await api.delete(`api/v1/integrations/${type}`);
+            await api.delete(`/integrations/${type}`);
             console.log('📦 [useDataSources] ✅ Disconnected');
 
             // Update local state
@@ -150,7 +150,7 @@ export const useDataSources = () => {
         console.log('📦 [useDataSources] Getting files:', type, parentId);
 
         try {
-            const { data } = await api.get(`api/v1/integrations/${type}/items`, {
+            const { data } = await api.get(`/integrations/${type}/items`, {
                 params: parentId ? { parent_id: parentId } : undefined
             });
             console.log('📦 [useDataSources] ✅ Got', data?.length || 0, 'files');
@@ -166,7 +166,7 @@ export const useDataSources = () => {
         console.log('📦 [useDataSources] Ingesting:', type, fileIds.length, 'files');
 
         try {
-            await api.post(`api/v1/integrations/${type}/ingest`, {
+            await api.post(`/integrations/${type}/ingest`, {
                 item_ids: fileIds
             });
             console.log('📦 [useDataSources] ✅ Ingested');

@@ -13,7 +13,7 @@ export const useDocuments = () => {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await api.get("/api/v1/documents");
+            const response = await api.get("/documents");
             // Map backend response to Document interface if necessary
             // Assuming backend returns array of documents matching interface or close to it.
             // If backend fields differ, we might need to map them.
@@ -45,7 +45,7 @@ export const useDocuments = () => {
 
     const deleteDocument = async (id: string) => {
         try {
-            await api.delete(`api/v1/documents/${id}`);
+            await api.delete(`/documents/${id}`);
             setDocuments((prev) => prev.filter((doc) => doc.id !== id));
             toast({
                 title: "Document deleted",

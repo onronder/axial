@@ -23,7 +23,7 @@ export function useDocumentCount() {
         const fetchStats = async () => {
             try {
                 // Use optimized /stats endpoint - only fetches count, not documents
-                const { data } = await api.get<DocumentStats>('/api/v1/documents/stats');
+                const { data } = await api.get<DocumentStats>('/documents/stats');
                 setCount(data.total_documents);
                 setLastUpdated(data.last_updated);
             } catch (err: any) {

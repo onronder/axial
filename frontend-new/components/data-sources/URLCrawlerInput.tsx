@@ -36,7 +36,7 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
     try {
       // Call the backend web connector ingest endpoint
       // For web connector, item_ids are URLs
-      await api.post("/api/v1/integrations/web/ingest", {
+      await api.post("/integrations/web/ingest", {
         item_ids: [url]
       });
 

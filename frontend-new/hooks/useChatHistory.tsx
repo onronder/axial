@@ -50,7 +50,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
         console.log('💬 [ChatHistory] Fetching conversations...');
         setIsLoading(true);
         try {
-            const { data } = await api.get('api/v1/conversations');
+            const { data } = await api.get('/conversations');
             console.log('💬 [ChatHistory] ✅ Got', data?.length || 0, 'conversations');
             setConversations(data || []);
         } catch (error: any) {
@@ -71,7 +71,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     const createNewChat = useCallback(async (title: string = 'New Chat'): Promise<string> => {
         console.log('💬 [ChatHistory] Creating chat:', title);
         try {
-            const { data } = await api.post('api/v1/conversations', { title });
+            const { data } = await api.post('/conversations', { title });
             console.log('💬 [ChatHistory] ✅ Created:', data.id);
             setConversations(prev => [data, ...prev]);
             return data.id;
@@ -89,7 +89,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     const deleteChat = useCallback(async (id: string): Promise<void> => {
         console.log('💬 [ChatHistory] Deleting chat:', id);
         try {
-            await api.delete(`api/v1/conversations/${id}`);
+            await api.delete(`/conversations/${id}`);
             console.log('💬 [ChatHistory] ✅ Deleted');
             setConversations(prev => prev.filter(c => c.id !== id));
             toast({
@@ -109,7 +109,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     const renameChat = useCallback(async (id: string, title: string): Promise<void> => {
         console.log('💬 [ChatHistory] Renaming chat:', id);
         try {
-            const { data } = await api.patch(`api/v1/conversations/${id}`, { title });
+            const { data } = await api.patch(`/conversations/${id}`, { title });
             console.log('💬 [ChatHistory] ✅ Renamed');
             setConversations(prev =>
                 prev.map(c => (c.id === id ? { ...c, title: data.title } : c))
@@ -131,7 +131,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     const getMessagesById = useCallback(async (conversationId: string): Promise<Message[]> => {
         console.log('💬 [ChatHistory] Getting messages for:', conversationId);
         try {
-            const { data } = await api.get(`api/v1/conversations/${conversationId}/messages`);
+            const { data } = await api.get(`/conversations/${conversationId}/messages`);
             console.log('💬 [ChatHistory] ✅ Got', data?.length || 0, 'messages');
             return data;
         } catch (error: any) {
