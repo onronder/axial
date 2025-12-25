@@ -251,6 +251,8 @@ class NotionConnector(BaseConnector):
         """
         Synchronous ingestion for Worker.
         Config keys: 'user_id', 'item_ids', 'credentials' (optional)
+        
+        Recursively ingests pages and their child pages.
         """
         user_id = config.get("user_id")
         item_ids = config.get("item_ids", [])
@@ -267,8 +269,14 @@ class NotionConnector(BaseConnector):
             raise ValueError("No credentials or user_id provided for Notion ingestion")
 
         documents = []
+        processed_ids = set()  # Prevent infinite loops from circular references
         
-        for page_id in item_ids:
+        def ingest_page_recursive(page_id: str, depth: int = 0):
+            """Recursively ingest a page and its children."""
+            if page_id in processed_ids or depth > 10:  # Max depth to prevent runaway recursion
+                return
+            processed_ids.add(page_id)
+            
             try:
                 # Get Page Title
                 page = self._make_request("GET", f"pages/{page_id}", access_token)
@@ -282,14 +290,29 @@ class NotionConnector(BaseConnector):
 
                 # Get Blocks (Content) - Paginated fetch
                 all_blocks = []
+                child_page_ids = []
                 cursor = None
+                
                 while True:
                     endpoint = f"blocks/{page_id}/children"
                     if cursor:
                         endpoint += f"?start_cursor={cursor}"
                     
                     blocks_res = self._make_request("GET", endpoint, access_token)
-                    all_blocks.extend(blocks_res.get("results", []))
+                    
+                    for block in blocks_res.get("results", []):
+                        all_blocks.append(block)
+                        # Collect child page IDs for recursive processing
+                        if block.get("type") == "child_page":
+                            child_page_ids.append(block["id"])
+                        elif block.get("type") == "child_database":
+                            # For databases, fetch all pages inside
+                            try:
+                                db_pages = self._make_request("POST", f"databases/{block['id']}/query", access_token, {"page_size": 100})
+                                for db_page in db_pages.get("results", []):
+                                    child_page_ids.append(db_page["id"])
+                            except Exception as e:
+                                logger.warning(f"⚠️ [Notion] Failed to query database {block['id']}: {e}")
                     
                     if not blocks_res.get("has_more"):
                         break
@@ -308,9 +331,17 @@ class NotionConnector(BaseConnector):
                         }
                     ))
                     logger.info(f"✅ [Notion] Ingested: {title}")
+                
+                # Recursively process child pages
+                for child_id in child_page_ids:
+                    ingest_page_recursive(child_id, depth + 1)
                     
             except Exception as e:
                 logger.error(f"❌ [Notion] Failed to ingest {page_id}: {e}")
-                continue
+        
+        # Process all requested pages
+        for page_id in item_ids:
+            ingest_page_recursive(page_id)
                 
+        logger.info(f"📥 [Notion] Completed ingestion: {len(documents)} documents from {len(item_ids)} initial items")
         return documents
