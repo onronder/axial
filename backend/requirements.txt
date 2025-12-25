@@ -32,3 +32,4 @@ cryptography
 resend
 jinja2
 slowapi
+trafilatura

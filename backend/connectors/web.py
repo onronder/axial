@@ -1,7 +1,16 @@
-from typing import List, Optional
+"""
+Web Connector
+
+Ingests web pages using Trafilatura for robust article extraction.
+"""
+
+from typing import List, Dict, Any, Optional
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
-import requests
-from bs4 import BeautifulSoup
+import trafilatura
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class WebConnector(BaseConnector):
     async def authorize(self, user_id: str) -> bool:
@@ -10,43 +19,40 @@ class WebConnector(BaseConnector):
 
     async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
         # MVP: Web connector is stateless, the user provides the URL at ingest time.
-        # Future: Could list perviously crawled URLs from DB.
+        # Future: Could list previously crawled URLs from DB.
         return []
 
-    async def ingest(self, user_id: str, item_ids: List[str]) -> List[ConnectorDocument]:
-        # For Web, 'item_ids' are actually URLs
+    def ingest(self, config: Dict[str, Any]) -> List[ConnectorDocument]:
+        """
+        Ingests web pages using Trafilatura.
+        Config keys: 'item_ids' (List of URLs)
+        """
+        urls = config.get("item_ids", [])
         documents = []
-        for url in item_ids:
+        
+        for url in urls:
             try:
-                # Basic scraping MVP
-                resp = requests.get(url, timeout=10)
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.text, 'html.parser')
-                
-                # Simple extraction
-                title = soup.title.string if soup.title else url
-                
-                # Remove scripts and styles
-                for script in soup(["script", "style"]):
-                    script.decompose()
+                downloaded = trafilatura.fetch_url(url)
+                if downloaded:
+                    text = trafilatura.extract(downloaded, include_comments=False, include_tables=True)
+                    metadata = trafilatura.extract_metadata(downloaded)
                     
-                text = soup.get_text()
-                
-                # Clean whitespace
-                lines = (line.strip() for line in text.splitlines())
-                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-                text = '\n'.join(chunk for chunk in chunks if chunk)
-                
-                if text:
-                    documents.append(ConnectorDocument(
-                        page_content=text,
-                        metadata={
-                            "source": "web",
-                            "title": title,
-                            "source_url": url,
-                        }
-                    ))
+                    if text:
+                        title = metadata.title if metadata and metadata.title else url
+                        documents.append(ConnectorDocument(
+                            page_content=text,
+                            metadata={
+                                "source": "web",
+                                "title": title,
+                                "source_url": url
+                            }
+                        ))
+                        logger.info(f"✅ [Web] Scraped: {url}")
+                    else:
+                        logger.warning(f"⚠️ [Web] No text extracted from: {url}")
+                else:
+                    logger.warning(f"⚠️ [Web] Failed to download: {url}")
             except Exception as e:
-                print(f"Error scraping {url}: {e}")
-                
+                logger.error(f"❌ [Web] Failed to scrape {url}: {e}")
+        
         return documents

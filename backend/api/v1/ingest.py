@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi.concurrency import run_in_threadpool
 from typing import Optional
 from models import IngestResponse
 from core.security import get_current_user
@@ -45,6 +46,8 @@ async def ingest_document(
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
     drive_id: Optional[str] = Form(None),
+    notion_page_id: Optional[str] = Form(None),
+    notion_token: Optional[str] = Form(None),
     metadata: str = Form(...),
     user_id: str = Depends(get_current_user)
 ):
@@ -99,13 +102,26 @@ async def ingest_document(
         if url:
              connector = get_connector("web")
              source_type = "web"
-             # New BaseConnector Interface
-             docs = await connector.ingest(user_id, [url])
+             # Fix: Use run_in_threadpool for sync method + new config dict
+             config = {"item_ids": [url], "user_id": user_id, "provider": "web"}
+             docs = await run_in_threadpool(connector.ingest, config)
         elif drive_id:
              connector = get_connector("drive")
              source_type = "drive"
-             # New BaseConnector Interface
-             docs = await connector.ingest(user_id, [drive_id])
+             # Fix: Use run_in_threadpool + config (DriveConnector will fetch its own creds via user_id fallback)
+             config = {"item_ids": [drive_id], "user_id": user_id, "provider": "drive"}
+             docs = await run_in_threadpool(connector.ingest, config)
+        elif notion_page_id:
+             connector = get_connector("notion")
+             source_type = "notion"
+             # Prepare config (Hybrid: Token from request OR DB fallback handled by connector)
+             config = {
+                 "user_id": user_id,
+                 "item_ids": [notion_page_id],
+                 "provider": "notion",
+                 "credentials": {"access_token": notion_token} if notion_token else None
+             }
+             docs = await run_in_threadpool(connector.ingest, config)
         elif file:
             connector = get_connector("file")
             # FileConnector specific method
@@ -113,7 +129,7 @@ async def ingest_document(
         else:
              raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Either 'file', 'url', or 'drive_id' must be provided."
+                detail="Either 'file', 'url', 'drive_id', or 'notion_page_id' must be provided."
             )
             
     except Exception as e:

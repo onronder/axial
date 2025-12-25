@@ -7,7 +7,7 @@ File parsing is delegated to the centralized DocumentParser service.
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -158,56 +158,82 @@ class DriveConnector(BaseConnector):
             ))
         return items
 
-    async def ingest(self, user_id: str, item_ids: List[str]) -> List[ConnectorDocument]:
-        """Download and parse selected files from Drive, recursively handling folders."""
-        creds = self._get_credentials(user_id)
+    def ingest(self, config: Dict[str, Any]) -> List[ConnectorDocument]:
+        """
+        Synchronous ingestion.
+        Config keys: 'credentials' (optional), 'item_ids', 'user_id'
+        """
+        user_id = config.get("user_id")
+        item_ids = config.get("item_ids", [])
+        credentials_data = config.get("credentials")
+        
+        logger.info(f"📥 [DriveConnector] Starting ingestion for {len(item_ids)} items")
+
+        # 1. Hybrid Credential Resolution
+        if credentials_data:
+            # Worker case: Use passed decrypted credentials
+            creds = Credentials(
+                token=credentials_data.get('token') or credentials_data.get('access_token'),
+                refresh_token=credentials_data.get('refresh_token'),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=settings.GOOGLE_CLIENT_ID,
+                client_secret=settings.GOOGLE_CLIENT_SECRET,
+                scopes=['https://www.googleapis.com/auth/drive.readonly']
+            )
+        elif user_id:
+            # API case: Fallback to DB lookup
+            creds = self._get_credentials(user_id)
+        else:
+            raise ValueError("No credentials or user_id provided for Drive ingestion")
+
+        # 2. Build Service & Process
         service = build('drive', 'v3', credentials=creds)
         documents = []
 
-        # Collect all files (recursively expanding folders)
-        all_files = []
         for item_id in item_ids:
             try:
+                # Fetch metadata
                 file_meta = service.files().get(
                     fileId=item_id, 
                     fields="id, name, mimeType, webViewLink"
                 ).execute()
                 
+                # Handle folders recursively
                 if file_meta['mimeType'] == 'application/vnd.google-apps.folder':
-                    # Recursively get all files in folder
                     folder_files = self._get_all_files_recursive(service, item_id)
-                    all_files.extend(folder_files)
                     logger.info(f"📁 [DriveConnector] Found {len(folder_files)} files in folder: {file_meta['name']}")
+                    for f in folder_files:
+                        content = self._download_file_content(service, f)
+                        if content and content.strip():
+                            documents.append(ConnectorDocument(
+                                page_content=content,
+                                metadata={
+                                    "source": "google_drive",
+                                    "title": f.get('name'),
+                                    "source_url": f.get('webViewLink'),
+                                    "file_id": f.get('id')
+                                }
+                            ))
                 else:
-                    all_files.append(file_meta)
+                    # Download Content (reuse existing helper)
+                    content = self._download_file_content(service, file_meta)
                     
+                    if content and content.strip():
+                        documents.append(ConnectorDocument(
+                            page_content=content,
+                            metadata={
+                                "source": "google_drive",
+                                "title": file_meta.get('name'),
+                                "source_url": file_meta.get('webViewLink'),
+                                "file_id": file_meta.get('id')
+                            }
+                        ))
+                        logger.info(f"✅ [Drive] Processed: {file_meta.get('name')}")
             except Exception as e:
-                logger.error(f"❌ Error getting item {item_id}: {e}")
-                continue
-        
-        logger.info(f"📥 [DriveConnector] Processing {len(all_files)} total files")
-        
-        # Process each file
-        for item in all_files:
-            try:
-                content = self._download_file_content(service, item)
-                if content and content.strip():
-                    documents.append(ConnectorDocument(
-                        page_content=content,
-                        metadata={
-                            "source": "google_drive",
-                            "title": item['name'],
-                            "source_url": item.get('webViewLink', ''),
-                            "file_id": item['id']
-                        }
-                    ))
-                    logger.info(f"✅ Successfully processed file: {item['name']}")
-                else:
-                    logger.warning(f"⚠️ No content extracted from: {item['name']}")
-            except Exception as e:
-                logger.error(f"❌ Error processing {item.get('name', 'unknown')}: {e}")
+                logger.error(f"❌ [Drive] Failed to process {item_id}: {e}")
                 continue
 
+        logger.info(f"📥 [DriveConnector] Completed ingestion: {len(documents)} documents")
         return documents
 
     def _get_all_files_recursive(self, service, folder_id: str, max_depth: int = 10) -> List[dict]:

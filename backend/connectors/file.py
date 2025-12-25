@@ -5,7 +5,7 @@ Handles direct file uploads via FastAPI UploadFile.
 Uses the centralized DocumentParser service for text extraction.
 """
 
-from typing import List, Any
+from typing import List, Any, Dict
 from fastapi import UploadFile
 from .base import BaseConnector, ConnectorDocument
 from services.parsers import DocumentParser
@@ -30,7 +30,7 @@ class FileConnector(BaseConnector):
         """File uploads don't have a list operation."""
         return []
 
-    async def ingest(self, user_id: str, item_ids: List[str]) -> List[ConnectorDocument]:
+    def ingest(self, config: Dict[str, Any]) -> List[ConnectorDocument]:
         """Not used for file uploads - use process() instead."""
         raise NotImplementedError("FileConnector uses process() with UploadFile, not ingest() with IDs.")
 

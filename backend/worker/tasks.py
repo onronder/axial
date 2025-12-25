@@ -204,8 +204,16 @@ def ingest_file_task(
         from connectors.factory import get_connector
         connector = get_connector(provider)
         
-        # Pass credentials to connector for this ingestion
-        docs = connector.ingest_sync(user_id, item_ids, decrypted_creds)
+        # Prepare config for standardized ingest interface
+        ingest_config = {
+            "user_id": user_id,
+            "item_ids": item_ids,
+            "credentials": decrypted_creds,
+            "provider": provider
+        }
+        
+        # Call synchronous ingest (worker-compatible)
+        docs = connector.ingest(ingest_config)
         
         if not docs:
             logger.warning(f"📥 [Worker:{task_id}] No content processed")

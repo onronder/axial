@@ -26,7 +26,12 @@ class BaseConnector(ABC):
         pass
 
     @abstractmethod
-    async def ingest(self, user_id: str, item_ids: List[str]) -> List[ConnectorDocument]:
-        """Process specific items (by ID) and return documents."""
+    def ingest(self, config: Dict[str, Any]) -> List[ConnectorDocument]:
+        """
+        Worker-side ingestion (Synchronous).
+        Args:
+            config: Dict containing 'user_id', 'item_ids', 'credentials', 'provider'.
+        Returns:
+            List of ConnectorDocument objects.
+        """
         pass
-
