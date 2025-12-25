@@ -26,3 +26,23 @@ export function getGoogleRedirectUri(): string | undefined {
 export function getGoogleClientId(): string | undefined {
     return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 }
+
+/**
+ * Get the Notion OAuth redirect URI.
+ * Uses the same callback page as Google OAuth.
+ */
+export function getNotionRedirectUri(): string | undefined {
+    if (typeof window === 'undefined') return undefined;
+
+    const envUri = process.env.NEXT_PUBLIC_NOTION_REDIRECT_URI;
+    const autoUri = `${window.location.origin}/dashboard/oauth/callback`;
+
+    return envUri || autoUri;
+}
+
+/**
+ * Get the Notion Client ID from environment.
+ */
+export function getNotionClientId(): string | undefined {
+    return process.env.NEXT_PUBLIC_NOTION_CLIENT_ID;
+}

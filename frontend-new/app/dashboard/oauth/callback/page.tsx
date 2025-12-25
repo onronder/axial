@@ -7,17 +7,26 @@ import { api } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
+type Provider = "google" | "notion";
+
 export default function OAuthCallbackPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
     const [error, setError] = useState<string | null>(null);
+    const [provider, setProvider] = useState<Provider>("google");
 
     useEffect(() => {
         const code = searchParams.get("code");
         const errorParam = searchParams.get("error");
+        const stateParam = searchParams.get("state");
+
+        // Detect provider from state parameter (set during OAuth init)
+        const detectedProvider: Provider = stateParam === "notion" ? "notion" : "google";
+        setProvider(detectedProvider);
 
         console.log("🔐 [OAuth Callback] Starting...");
+        console.log("🔐 [OAuth Callback] Provider:", detectedProvider);
         console.log("🔐 [OAuth Callback] Code:", code ? `${code.substring(0, 20)}...` : null);
         console.log("🔐 [OAuth Callback] Error:", errorParam);
 
@@ -36,10 +45,17 @@ export default function OAuthCallbackPage() {
         // Exchange the code for tokens
         const exchangeCode = async () => {
             try {
-                console.log("🔐 [OAuth Callback] Sending code to backend...");
-                const response = await api.post("/integrations/google/exchange", { code });
+                console.log(`🔐 [OAuth Callback] Sending code to backend for ${detectedProvider}...`);
+
+                // Call the appropriate endpoint based on provider
+                const endpoint = detectedProvider === "notion"
+                    ? "/integrations/notion/exchange"
+                    : "/integrations/google/exchange";
+
+                const response = await api.post(endpoint, { code });
                 console.log("🔐 [OAuth Callback] ✅ Success:", response.data);
                 setStatus("success");
+
                 // Redirect to data sources after short delay
                 setTimeout(() => {
                     router.push("/dashboard/settings/data-sources");
@@ -47,12 +63,15 @@ export default function OAuthCallbackPage() {
             } catch (err: any) {
                 console.error("🔐 [OAuth Callback] ❌ Token exchange failed:", err.response?.data || err.message);
                 setStatus("error");
-                setError(err.response?.data?.detail || "Failed to connect Google Drive");
+                const providerName = detectedProvider === "notion" ? "Notion" : "Google Drive";
+                setError(err.response?.data?.detail || `Failed to connect ${providerName}`);
             }
         };
 
         exchangeCode();
     }, [searchParams, router]);
+
+    const providerName = provider === "notion" ? "Notion" : "Google Drive";
 
     return (
         <div className="flex min-h-[80vh] items-center justify-center p-4">
@@ -74,8 +93,8 @@ export default function OAuthCallbackPage() {
                         )}
                     </div>
                     <CardTitle>
-                        {status === "loading" && "Connecting Google Drive..."}
-                        {status === "success" && "Connected Successfully!"}
+                        {status === "loading" && `Connecting ${providerName}...`}
+                        {status === "success" && `${providerName} Connected!`}
                         {status === "error" && "Connection Failed"}
                     </CardTitle>
                     <CardDescription>

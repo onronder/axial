@@ -13,6 +13,7 @@ from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta
 from typing import Optional, List
 import logging
+import httpx
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -231,6 +232,129 @@ async def exchange_google_token(
         # Don't fail the OAuth just because sync scheduling failed
 
     return {"status": "success", "provider": "google_drive", "integration_id": integration_id}
+
+
+@router.post("/integrations/notion/exchange")
+async def exchange_notion_token(
+    request: ExchangeRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Exchange Notion OAuth code for tokens and persist to user_integrations.
+    Uses httpx for async HTTP request to Notion API.
+    """
+    logger.info(f"🔐 [OAuth] Starting Notion token exchange for user: {user_id}")
+    
+    if not settings.NOTION_CLIENT_ID or not settings.NOTION_CLIENT_SECRET:
+        logger.error("🔐 [OAuth] Notion credentials not configured!")
+        raise HTTPException(status_code=500, detail="Notion credentials not configured")
+    
+    if not settings.NOTION_REDIRECT_URI:
+        logger.error("🔐 [OAuth] Notion redirect URI not configured!")
+        raise HTTPException(status_code=500, detail="Notion redirect URI not configured")
+
+    supabase = get_supabase()
+
+    # 1. Look up connector_definition_id for notion
+    try:
+        def_response = supabase.table("connector_definitions").select("id").eq("type", "notion").single().execute()
+        if not def_response.data:
+            raise HTTPException(status_code=500, detail="notion connector not found in definitions")
+        connector_definition_id = def_response.data["id"]
+        logger.info(f"🔐 [OAuth] Found connector_definition_id: {connector_definition_id}")
+    except Exception as e:
+        logger.error(f"🔐 [OAuth] Failed to lookup connector definition: {e}")
+        raise HTTPException(status_code=500, detail="Failed to lookup connector definition")
+
+    # 2. Exchange Code for Tokens using httpx
+    try:
+        logger.info(f"🔐 [OAuth] Redirect URI: {settings.NOTION_REDIRECT_URI}")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.notion.com/v1/oauth/token",
+                auth=(settings.NOTION_CLIENT_ID, settings.NOTION_CLIENT_SECRET),
+                json={
+                    "grant_type": "authorization_code",
+                    "code": request.code,
+                    "redirect_uri": settings.NOTION_REDIRECT_URI
+                },
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"🔐 [OAuth] ❌ Notion API error: {response.status_code} {response.text}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Notion token exchange failed: {response.json().get('error', 'Unknown error')}"
+                )
+            
+            token_data = response.json()
+            access_token = token_data.get("access_token")
+            workspace_id = token_data.get("workspace_id")
+            workspace_name = token_data.get("workspace_name")
+            bot_id = token_data.get("bot_id")
+            
+            logger.info(f"🔐 [OAuth] ✅ Got Notion tokens. Workspace: {workspace_name} ({workspace_id})")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"🔐 [OAuth] ❌ Notion token exchange failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
+
+    # 3. Encrypt and store token
+    encrypted_access_token = encrypt_token(access_token) if access_token else None
+    
+    data = {
+        "user_id": user_id,
+        "connector_definition_id": connector_definition_id,
+        "access_token": encrypted_access_token,
+        "refresh_token": None,  # Notion doesn't use refresh tokens
+        "expires_at": None,  # Notion tokens don't expire
+        "credentials": {
+            "workspace_id": workspace_id,
+            "workspace_name": workspace_name,
+            "bot_id": bot_id
+        },
+        "updated_at": datetime.utcnow().isoformat()
+    }
+    
+    logger.info(f"🔐 [OAuth] Token encrypted before storage")
+    logger.info(f"🔐 [OAuth] Upserting to user_integrations: user_id={user_id}, connector_def={connector_definition_id}")
+    
+    try:
+        # Upsert: insert or update on conflict
+        upsert_res = supabase.table("user_integrations").upsert(
+            data,
+            on_conflict="user_id,connector_definition_id"
+        ).execute()
+        
+        logger.info(f"🔐 [OAuth] ✅ Upsert result: {upsert_res.data}")
+        
+        if not upsert_res.data:
+            logger.error("🔐 [OAuth] ❌ Upsert returned no data!")
+            raise HTTPException(status_code=500, detail="Database upsert returned no data")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"🔐 [OAuth] ❌ Database error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    integration_id = upsert_res.data[0]["id"]
+    return {
+        "status": "success", 
+        "provider": "notion", 
+        "integration_id": integration_id,
+        "workspace_name": workspace_name
+    }
 
 
 # =============================================================================

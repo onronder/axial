@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
-import { getGoogleRedirectUri, getGoogleClientId } from "@/lib/utils";
+import { getGoogleRedirectUri, getGoogleClientId, getNotionRedirectUri, getNotionClientId } from "@/lib/utils";
 import type { ConnectorDefinition, UserIntegration, MergedDataSource } from "@/types";
 
 /**
@@ -111,7 +111,8 @@ export const useDataSources = () => {
                 scope: scope,
                 access_type: 'offline',
                 prompt: 'consent',
-                include_granted_scopes: 'true'
+                include_granted_scopes: 'true',
+                state: 'google' // Used to identify provider in callback
             });
 
             const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
@@ -119,8 +120,36 @@ export const useDataSources = () => {
 
             window.location.href = authUrl;
         } else if (type === "notion") {
-            // TODO: Implement Notion OAuth
-            console.log('📦 [useDataSources] Notion OAuth not yet implemented');
+            const clientId = getNotionClientId();
+            const redirectUri = getNotionRedirectUri();
+
+            console.log('🔐 [useDataSources] Notion Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
+            console.log('🔐 [useDataSources] Notion Redirect URI:', redirectUri);
+
+            if (!clientId) {
+                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_NOTION_CLIENT_ID not configured');
+                alert('Notion OAuth not configured. Please check environment variables.');
+                return;
+            }
+
+            if (!redirectUri) {
+                console.error('📦 [useDataSources] ❌ Notion Redirect URI not available');
+                alert('OAuth redirect URI is not configured.');
+                return;
+            }
+
+            const params = new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                owner: 'user',
+                state: 'notion' // Used to identify provider in callback
+            });
+
+            const authUrl = `https://api.notion.com/v1/oauth/authorize?${params.toString()}`;
+            console.log('🔐 [useDataSources] Redirecting to Notion:', authUrl);
+
+            window.location.href = authUrl;
         }
     }, []);
 
