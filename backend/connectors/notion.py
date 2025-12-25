@@ -24,25 +24,43 @@ class NotionConnector(BaseConnector):
     NOTION_API_VERSION = "2022-06-28"
     BASE_URL = "https://api.notion.com/v1"
     
+    def _get_connector_definition_id(self) -> str:
+        """Get the connector_definition_id for notion from the database."""
+        supabase = get_supabase()
+        res = supabase.table("connector_definitions").select("id").eq(
+            "type", "notion"
+        ).single().execute()
+        if not res.data:
+            raise ValueError("Notion connector definition not found in database")
+        return res.data["id"]
+    
     async def authorize(self, user_id: str) -> bool:
         """Check if user has connected their Notion account."""
         supabase = get_supabase()
+        connector_def_id = self._get_connector_definition_id()
         res = supabase.table("user_integrations").select("id").eq(
             "user_id", user_id
-        ).eq("provider", "notion").execute()
+        ).eq("connector_definition_id", connector_def_id).execute()
         return len(res.data) > 0
     
     def _get_access_token(self, user_id: str) -> str:
         """Get the Notion access token for a user (DB Lookup)."""
+        from core.security import decrypt_token
+        
         supabase = get_supabase()
+        connector_def_id = self._get_connector_definition_id()
         res = supabase.table("user_integrations").select("access_token").eq(
             "user_id", user_id
-        ).eq("provider", "notion").execute()
+        ).eq("connector_definition_id", connector_def_id).execute()
         
         if not res.data:
             raise ValueError("Notion not connected for this user.")
         
-        return res.data[0]["access_token"]
+        encrypted_token = res.data[0]["access_token"]
+        if encrypted_token:
+            # Decrypt the token before use
+            return decrypt_token(encrypted_token)
+        raise ValueError("No access token found for Notion integration.")
     
     def _get_headers(self, access_token: str) -> Dict[str, str]:
         """Get headers for Notion API requests."""

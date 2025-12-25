@@ -349,6 +349,62 @@ async def exchange_notion_token(
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
     integration_id = upsert_res.data[0]["id"]
+    
+    # 4. Trigger auto-ingestion in background
+    # Fetch all accessible pages and start ingestion immediately
+    try:
+        from connectors.notion import NotionConnector
+        from worker.tasks import ingest_file_task
+        
+        connector = NotionConnector()
+        
+        # Fetch all accessible pages to ingest
+        items = []
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.notion.com/v1/search",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Notion-Version": "2022-06-28",
+                    "Content-Type": "application/json"
+                },
+                json={"page_size": 100}
+            )
+            if response.status_code == 200:
+                search_data = response.json()
+                items = [p["id"] for p in search_data.get("results", []) if p.get("object") == "page"]
+        
+        if items:
+            # Create ingestion job
+            job_data = {
+                "user_id": user_id,
+                "provider": "notion",
+                "total_files": len(items),
+                "processed_files": 0,
+                "status": "pending",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            job_response = supabase.table("ingestion_jobs").insert(job_data).execute()
+            
+            if job_response.data:
+                job_id = job_response.data[0]["id"]
+                # Queue the ingestion task
+                task = ingest_file_task.delay(
+                    user_id=user_id,
+                    provider="notion",
+                    item_ids=items,
+                    credentials={"access_token": access_token},
+                    job_id=str(job_id)
+                )
+                logger.info(f"📥 [OAuth] Auto-ingestion started: {len(items)} pages, job {job_id}, task {task.id}")
+        else:
+            logger.info("📥 [OAuth] No Notion pages found to ingest")
+            
+    except Exception as e:
+        logger.warning(f"🔐 [OAuth] Auto-ingestion failed (non-critical): {e}")
+        # Don't fail the OAuth just because auto-ingestion failed
+    
     return {
         "status": "success", 
         "provider": "notion", 
