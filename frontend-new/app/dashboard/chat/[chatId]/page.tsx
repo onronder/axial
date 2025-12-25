@@ -113,7 +113,7 @@ export default function ChatPage() {
 
         try {
             // Call chat API
-            const { data } = await api.post('api/v1/chat', {
+            const { data } = await api.post('/chat', {
                 query: content,
                 conversation_id: conversationId,
                 history: messages.slice(-10).map(m => ({

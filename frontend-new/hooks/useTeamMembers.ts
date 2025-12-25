@@ -50,7 +50,7 @@ export const useTeamMembers = () => {
             if (filters?.status && filters.status !== 'all') params.status = filters.status;
             if (filters?.search) params.search = filters.search;
 
-            const { data } = await api.get('api/v1/team/members', { params });
+            const { data } = await api.get('/team/members', { params });
             setMembers(data);
         } catch (err: any) {
             console.error('Failed to fetch team members:', err);
@@ -62,7 +62,7 @@ export const useTeamMembers = () => {
 
     const fetchStats = useCallback(async () => {
         try {
-            const { data } = await api.get('api/v1/team/stats');
+            const { data } = await api.get('/team/stats');
             setStats(data);
         } catch (err: any) {
             console.error('Failed to fetch team stats:', err);
@@ -76,7 +76,7 @@ export const useTeamMembers = () => {
 
     const inviteMember = async (email: string, role: Role = 'viewer', name?: string): Promise<boolean> => {
         try {
-            const { data } = await api.post('api/v1/team/members', { email, role, name });
+            const { data } = await api.post('/team/members', { email, role, name });
             setMembers(prev => [data, ...prev]);
             await fetchStats(); // Refresh stats
             toast({
@@ -98,7 +98,7 @@ export const useTeamMembers = () => {
 
     const updateMemberRole = async (memberId: string, role: Role): Promise<boolean> => {
         try {
-            const { data } = await api.patch(`api/v1/team/members/${memberId}`, { role });
+            const { data } = await api.patch(`/team/members/${memberId}`, { role });
             setMembers(prev => prev.map(m => m.id === memberId ? data : m));
             toast({
                 title: 'Role updated',
@@ -118,7 +118,7 @@ export const useTeamMembers = () => {
 
     const updateMemberStatus = async (memberId: string, status: MemberStatus): Promise<boolean> => {
         try {
-            const { data } = await api.patch(`api/v1/team/members/${memberId}`, { status });
+            const { data } = await api.patch(`/team/members/${memberId}`, { status });
             setMembers(prev => prev.map(m => m.id === memberId ? data : m));
             await fetchStats();
             return true;
@@ -135,7 +135,7 @@ export const useTeamMembers = () => {
 
     const removeMember = async (memberId: string): Promise<boolean> => {
         try {
-            await api.delete(`api/v1/team/members/${memberId}`);
+            await api.delete(`/team/members/${memberId}`);
             setMembers(prev => prev.filter(m => m.id !== memberId));
             await fetchStats();
             toast({
@@ -156,7 +156,7 @@ export const useTeamMembers = () => {
 
     const resendInvite = async (memberId: string, email: string): Promise<boolean> => {
         try {
-            await api.post(`api/v1/team/members/${memberId}/resend`);
+            await api.post(`/team/members/${memberId}/resend`);
             toast({
                 title: 'Invitation resent',
                 description: `Invitation resent to ${email}`,

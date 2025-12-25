@@ -293,7 +293,7 @@ export function GeneralSettings() {
                     onClick={async () => {
                       setIsDeleting(true);
                       try {
-                        await api.delete("api/v1/settings/profile/me");
+                        await api.delete("/settings/profile/me");
                         toast({
                           title: "Account deleted",
                           description: "Your account has been permanently deleted.",

@@ -49,7 +49,7 @@ export const useSearch = () => {
         setLastQuery(query);
 
         try {
-            const { data } = await api.post('api/v1/search', {
+            const { data } = await api.post('/search', {
                 query,
                 top_k: topK,
                 filters,
