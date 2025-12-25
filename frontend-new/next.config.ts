@@ -55,7 +55,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/py/:path*',
-        destination: 'https://axial-production-1503.up.railway.app/:path*',
+        destination: 'https://axial-production-1503.up.railway.app/api/v1/:path*',
       },
     ];
   },

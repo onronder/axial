@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { AxioLogo } from "@/components/branding/AxioLogo"
+import { ParticleBackground } from "@/components/ui/ParticleBackground"
 
 export default function AuthLayout({
     children,
@@ -34,15 +35,18 @@ export default function AuthLayout({
     }
 
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
-            <div className="w-full max-w-md space-y-8 animate-fade-in">
+        <div className="void-background min-h-screen flex flex-col items-center justify-center p-4 overflow-hidden relative">
+            <ParticleBackground />
+            <div className="w-full max-w-md space-y-8 animate-fade-in relative z-10">
                 {/* Centered Logo */}
-                <div className="flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center justify-center space-y-2">
                     <AxioLogo variant="full" size="lg" />
                 </div>
 
                 {/* Auth Form Content */}
-                {children}
+                <div className="animate-slide-up">
+                    {children}
+                </div>
             </div>
         </div>
     )
