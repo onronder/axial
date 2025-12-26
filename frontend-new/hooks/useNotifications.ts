@@ -3,14 +3,17 @@
 /**
  * useNotifications Hook
  * 
- * Manages user notifications with:
- * - Polling for unread count (every 30 seconds)
- * - Fetching full notification list on demand
- * - Optimistic updates for mark as read
+ * Real-time notification system with:
+ * - Supabase Realtime subscription for instant updates
+ * - Toast notifications for new items
+ * - Polling fallback (every 30 seconds)
+ * - Notification grouping support
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { authFetch } from "@/lib/api";
+import { createClient } from "@supabase/supabase-js";
+import { useToast } from "@/hooks/use-toast";
 
 export interface Notification {
     id: string;
@@ -19,6 +22,7 @@ export interface Notification {
     type: "info" | "success" | "warning" | "error";
     is_read: boolean;
     metadata?: Record<string, unknown>;
+    action_url?: string;
     created_at?: string;
 }
 
@@ -28,16 +32,152 @@ interface NotificationListResponse {
     unread_count: number;
 }
 
-const POLL_INTERVAL = 30000; // 30 seconds
+// Group similar notifications
+export interface GroupedNotification {
+    id: string;
+    title: string;
+    message?: string;
+    type: "info" | "success" | "warning" | "error";
+    count: number;
+    action_url?: string;
+    is_read: boolean;
+    created_at?: string;
+    items: Notification[];
+}
+
+const POLL_INTERVAL = 30000; // 30 seconds fallback
+
+// Initialize Supabase client for realtime
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 export function useNotifications() {
+    const { toast } = useToast();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
 
-    // Fetch unread count (lightweight, for polling)
+    const subscriptionRef = useRef<any>(null);
+    const userIdRef = useRef<string | null>(null);
+
+    // Parse metadata and extract action_url
+    const parseNotification = (n: any): Notification => {
+        let metadata = n.metadata;
+        let action_url = n.action_url;
+
+        // Parse extra_data if present
+        if (n.extra_data) {
+            try {
+                const parsed = typeof n.extra_data === 'string'
+                    ? JSON.parse(n.extra_data)
+                    : n.extra_data;
+                metadata = parsed;
+                action_url = parsed?.action_url || action_url;
+            } catch {
+                // Ignore parse errors
+            }
+        }
+
+        return {
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            type: n.type,
+            is_read: n.is_read,
+            metadata,
+            action_url,
+            created_at: n.created_at,
+        };
+    };
+
+    // Show toast for new notification
+    const showNotificationToast = useCallback((notification: Notification) => {
+        const variant = notification.type === "error" ? "destructive" : "default";
+
+        toast({
+            title: notification.title,
+            description: notification.message,
+            variant,
+            // Include action_url in the toast if needed
+        });
+    }, [toast]);
+
+    // Add new notification from realtime
+    const handleRealtimeInsert = useCallback((payload: any) => {
+        const newNotification = parseNotification(payload.new);
+
+        console.log("🔔 [Realtime] New notification:", newNotification.title);
+
+        // Add to list (prepend)
+        setNotifications(prev => [newNotification, ...prev]);
+        setUnreadCount(prev => prev + 1);
+        setTotal(prev => prev + 1);
+
+        // Show toast immediately
+        showNotificationToast(newNotification);
+    }, [showNotificationToast]);
+
+    // Setup Supabase Realtime subscription
+    const setupRealtimeSubscription = useCallback(async () => {
+        if (!supabaseUrl || !supabaseAnonKey) {
+            console.warn("⚠️ Supabase credentials not configured for realtime");
+            return;
+        }
+
+        try {
+            const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+            // Get current user ID from API
+            const response = await authFetch.get("/users/me");
+            const userId = response.data?.id;
+
+            if (!userId) {
+                console.warn("⚠️ Could not get user ID for realtime subscription");
+                return;
+            }
+
+            userIdRef.current = userId;
+
+            // Subscribe to notifications table changes for this user
+            const channel = supabase
+                .channel('notifications-realtime')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: 'INSERT',
+                        schema: 'public',
+                        table: 'notifications',
+                        filter: `user_id=eq.${userId}`,
+                    },
+                    handleRealtimeInsert
+                )
+                .subscribe((status) => {
+                    console.log("🔔 [Realtime] Subscription status:", status);
+                    setIsRealtimeConnected(status === 'SUBSCRIBED');
+                });
+
+            subscriptionRef.current = channel;
+            console.log("🔔 [Realtime] Subscribed to notifications for user:", userId);
+
+        } catch (err) {
+            console.error("❌ [Realtime] Failed to setup subscription:", err);
+        }
+    }, [handleRealtimeInsert]);
+
+    // Cleanup subscription
+    const cleanupSubscription = useCallback(() => {
+        if (subscriptionRef.current) {
+            subscriptionRef.current.unsubscribe();
+            subscriptionRef.current = null;
+            setIsRealtimeConnected(false);
+            console.log("🔔 [Realtime] Unsubscribed");
+        }
+    }, []);
+
+    // Fetch unread count (lightweight, for polling fallback)
     const fetchUnreadCount = useCallback(async () => {
         try {
             const response = await authFetch.get("/notifications/unread-count");
@@ -45,7 +185,6 @@ export function useNotifications() {
                 setUnreadCount(response.data.count);
             }
         } catch (err) {
-            // Silently fail for polling - don't disrupt UX
             console.debug("Failed to fetch unread count:", err);
         }
     }, []);
@@ -63,7 +202,8 @@ export function useNotifications() {
 
             if (response.data) {
                 const data = response.data as NotificationListResponse;
-                setNotifications(data.notifications);
+                const parsed = data.notifications.map(parseNotification);
+                setNotifications(parsed);
                 setTotal(data.total);
                 setUnreadCount(data.unread_count);
             }
@@ -77,7 +217,6 @@ export function useNotifications() {
 
     // Mark single notification as read (optimistic update)
     const markAsRead = useCallback(async (notificationId: string) => {
-        // Optimistic update
         setNotifications(prev =>
             prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
         );
@@ -86,7 +225,6 @@ export function useNotifications() {
         try {
             await authFetch.patch(`/notifications/${notificationId}/read`);
         } catch (err) {
-            // Revert on error
             setNotifications(prev =>
                 prev.map(n => n.id === notificationId ? { ...n, is_read: false } : n)
             );
@@ -97,7 +235,6 @@ export function useNotifications() {
 
     // Mark all notifications as read
     const markAllAsRead = useCallback(async () => {
-        // Optimistic update
         const prevNotifications = notifications;
         const prevUnreadCount = unreadCount;
 
@@ -107,7 +244,6 @@ export function useNotifications() {
         try {
             await authFetch.patch("/notifications/read-all");
         } catch (err) {
-            // Revert on error
             setNotifications(prevNotifications);
             setUnreadCount(prevUnreadCount);
             console.error("Failed to mark all as read:", err);
@@ -125,24 +261,72 @@ export function useNotifications() {
         try {
             await authFetch.delete("/notifications/all");
         } catch (err) {
-            // Revert on error
             setNotifications(prevNotifications);
             console.error("Failed to clear notifications:", err);
         }
     }, [notifications]);
 
-    // Poll for unread count (pause when tab is hidden for performance)
+    // Group notifications by type+title pattern (e.g., "5 files processed")
+    const groupNotifications = useCallback((items: Notification[]): GroupedNotification[] => {
+        const groups: Map<string, Notification[]> = new Map();
+
+        items.forEach(item => {
+            // Group by type + normalized title pattern
+            const key = `${item.type}:${item.title.replace(/\d+/g, 'N')}`;
+            const existing = groups.get(key) || [];
+            existing.push(item);
+            groups.set(key, existing);
+        });
+
+        return Array.from(groups.values()).map(group => {
+            const first = group[0];
+            const totalCount = group.length;
+
+            // Create grouped display
+            let title = first.title;
+            if (totalCount > 1) {
+                // Extract common pattern and show count
+                if (first.title.includes("file") || first.title.includes("document")) {
+                    title = `${totalCount} files processed`;
+                } else if (first.title.includes("page")) {
+                    title = `${totalCount} pages crawled`;
+                }
+            }
+
+            return {
+                id: first.id,
+                title,
+                message: totalCount > 1 ? `${totalCount} similar notifications` : first.message,
+                type: first.type,
+                count: totalCount,
+                action_url: first.action_url,
+                is_read: group.every(n => n.is_read),
+                created_at: first.created_at,
+                items: group,
+            };
+        });
+    }, []);
+
+    // Setup realtime on mount
+    useEffect(() => {
+        setupRealtimeSubscription();
+
+        return () => {
+            cleanupSubscription();
+        };
+    }, [setupRealtimeSubscription, cleanupSubscription]);
+
+    // Fallback polling (when realtime is disconnected)
     useEffect(() => {
         fetchUnreadCount(); // Initial fetch
 
         const interval = setInterval(() => {
-            // Only poll when tab is visible
-            if (!document.hidden) {
+            // Only poll when tab is visible AND realtime is not connected
+            if (!document.hidden && !isRealtimeConnected) {
                 fetchUnreadCount();
             }
         }, POLL_INTERVAL);
 
-        // Also refresh when tab becomes visible again
         const handleVisibilityChange = () => {
             if (!document.hidden) {
                 fetchUnreadCount();
@@ -154,7 +338,7 @@ export function useNotifications() {
             clearInterval(interval);
             document.removeEventListener("visibilitychange", handleVisibilityChange);
         };
-    }, [fetchUnreadCount]);
+    }, [fetchUnreadCount, isRealtimeConnected]);
 
     return {
         notifications,
@@ -162,10 +346,12 @@ export function useNotifications() {
         total,
         isLoading,
         error,
+        isRealtimeConnected,
         fetchNotifications,
         markAsRead,
         markAllAsRead,
         clearAll,
+        groupNotifications,
         refresh: fetchUnreadCount,
     };
 }

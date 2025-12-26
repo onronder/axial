@@ -77,14 +77,32 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
     const config = typeConfig[notification.type] || typeConfig.info;
     const [isExpanded, setIsExpanded] = useState(false);
 
+    // Get action_url from metadata
+    const actionUrl = notification.metadata?.action_url as string | undefined;
+
+    const handleClick = () => {
+        // Mark as read when clicked
+        if (!notification.is_read) {
+            onMarkAsRead(notification.id);
+        }
+
+        // Navigate to action_url if present
+        if (actionUrl) {
+            window.location.href = actionUrl;
+        } else {
+            setIsExpanded(!isExpanded);
+        }
+    };
+
     return (
         <div
             className={cn(
                 "p-3 border-b border-slate-100 dark:border-slate-800 transition-colors cursor-pointer",
                 "hover:bg-slate-50 dark:hover:bg-slate-800/50",
-                !notification.is_read && "bg-slate-50/50 dark:bg-slate-800/30"
+                !notification.is_read && "bg-slate-50/50 dark:bg-slate-800/30",
+                actionUrl && "hover:bg-primary/5"
             )}
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={handleClick}
         >
             <div className="flex gap-3">
                 {/* Icon */}
@@ -127,6 +145,9 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
 
                     <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                         {formatRelativeTime(notification.created_at)}
+                        {actionUrl && (
+                            <span className="ml-2 text-primary">Click to open →</span>
+                        )}
                     </p>
                 </div>
 
@@ -153,6 +174,7 @@ export function NotificationCenter() {
         notifications,
         unreadCount,
         isLoading,
+        isRealtimeConnected,
         fetchNotifications,
         markAsRead,
         markAllAsRead,

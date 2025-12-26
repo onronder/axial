@@ -48,7 +48,8 @@ def create_notification(
     title: str,
     message: str = None,
     notification_type: str = "info",
-    metadata: dict = None
+    metadata: dict = None,
+    action_url: str = None
 ):
     """
     Create a notification for the user.
@@ -60,8 +61,14 @@ def create_notification(
         message: Optional detailed message
         notification_type: 'info', 'success', 'warning', 'error'
         metadata: Optional extra data
+        action_url: Optional URL to navigate to when clicked (e.g., '/dashboard/chat')
     """
     try:
+        # Include action_url in metadata if provided
+        meta = metadata.copy() if metadata else {}
+        if action_url:
+            meta["action_url"] = action_url
+        
         notification_data = {
             "user_id": user_id,
             "title": title,
@@ -69,7 +76,7 @@ def create_notification(
             "type": notification_type,
             "is_read": False,
             # Serialize dict as JSON string for extra_data column
-            "extra_data": json.dumps(metadata) if metadata else None,
+            "extra_data": json.dumps(meta) if meta else None,
             "created_at": datetime.utcnow().isoformat()
         }
         
