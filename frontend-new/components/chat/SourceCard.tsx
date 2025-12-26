@@ -10,7 +10,27 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Source metadata for RAG citations
+ * 
+ * The backend returns structured sources with:
+ * - index: Citation number [1], [2], [3]
+ * - type: "File" | "Web" | "Drive" | "Notion"
+ * - label: Human-readable source name
+ * - url: Link to source (optional)
+ * - page: Page number for PDFs
+ * - section: Header path for markdown (e.g., "Setup > Installation")
+ */
 export interface SourceMetadata {
+    // New RAG fields from backend
+    index?: number;         // Citation index [1], [2], [3]
+    type?: string;          // "File" | "Web" | "Drive" | "Notion"
+    label?: string;         // Human-readable name
+    url?: string;           // Link to source
+    page?: number;          // Page number for PDFs
+    section?: string;       // Header path for markdown
+
+    // Legacy fields (for backwards compatibility)
     source?: string;        // 'web' | 'youtube' | 'drive' | 'notion' | 'file'
     source_type?: string;   // Alternative field name
     title?: string;
@@ -60,13 +80,17 @@ function getFaviconUrl(url: string): string {
  * - YouTube: Shows thumbnail with play overlay
  * - Web: Shows favicon and domain
  * - Other: Shows icon based on source type
+ * - NEW: Shows citation index badge [1], [2]
  */
 export function SourceCard({ source, className }: SourceCardProps) {
     const [imageError, setImageError] = useState(false);
 
-    const sourceType = source.source_type || source.source || "file";
-    const title = source.title || "Untitled Source";
-    const url = source.source_url;
+    // Use new RAG fields with fallbacks to legacy fields
+    const sourceType = source.type?.toLowerCase() || source.source_type || source.source || "file";
+    const title = source.label || source.title || "Untitled Source";
+    const url = source.url || source.source_url;
+    const citationIndex = source.index;
+    const pageInfo = source.page ? `Page ${source.page}` : source.section || null;
 
     // YouTube source
     if (sourceType === "youtube" || (url && url.includes("youtube"))) {
@@ -184,15 +208,25 @@ export function SourceCard({ source, className }: SourceCardProps) {
     // Default (file, drive, etc.)
     return (
         <div className={cn(
-            "flex items-center gap-3 rounded-lg border border-border bg-card p-3",
+            "flex items-center gap-3 rounded-lg border border-border bg-card p-3 relative",
             className
         )}>
+            {/* Citation Index Badge */}
+            {citationIndex && (
+                <div className="absolute -top-2 -left-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground shadow-sm">
+                    {citationIndex}
+                </div>
+            )}
+
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
                 <FileText className="h-5 w-5 text-muted-foreground" />
             </div>
             <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">{title}</p>
-                <p className="text-xs text-muted-foreground capitalize">{sourceType}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                    <span className="capitalize">{sourceType}</span>
+                    {pageInfo && <span className="ml-1">• {pageInfo}</span>}
+                </p>
             </div>
         </div>
     );
