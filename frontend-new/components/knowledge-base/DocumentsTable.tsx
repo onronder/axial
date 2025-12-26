@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  PlayCircle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,8 @@ const sourceIcons: Record<string, typeof FileText> = {
   upload: Upload,
   notion: Database,
   slack: MessageSquare,
+  youtube: PlayCircle,
+  file: FileText,
 };
 
 const statusStyles: Record<string, { label: string; className: string }> = {
