@@ -40,9 +40,32 @@ class DriveConnector(BaseConnector):
         separators=["\n\n", "\n", ". ", " ", ""]
     )
     
+    # =========================================================================
+    # RICH EXPORT: Map Google Native types to structured formats
+    # =========================================================================
+    # Google Docs -> DOCX (preserves headers/formatting)
+    # Google Sheets -> CSV (preserves row/column structure)
+    # Google Slides -> PDF (preserves slide separation)
+    EXPORT_MIME_TYPES = {
+        "application/vnd.google-apps.document": {
+            "export_mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "extension": ".docx",
+        },
+        "application/vnd.google-apps.spreadsheet": {
+            "export_mime": "text/csv",
+            "extension": ".csv",
+        },
+        "application/vnd.google-apps.presentation": {
+            "export_mime": "application/pdf",
+            "extension": ".pdf",
+        },
+    }
+    
     # Supported MIME types (delegated to DocumentParser for actual extraction)
     SUPPORTED_MIME_TYPES = {
         'application/vnd.google-apps.document': 'gdoc',
+        'application/vnd.google-apps.spreadsheet': 'gsheet',
+        'application/vnd.google-apps.presentation': 'gslides',
         'text/plain': 'text',
         'text/markdown': 'text',
         'text/csv': 'text',
@@ -160,8 +183,10 @@ class DriveConnector(BaseConnector):
 
     def ingest(self, config: Dict[str, Any]) -> List[ConnectorDocument]:
         """
-        Synchronous ingestion.
+        Synchronous ingestion with RICH EXPORT for Google native types.
         Config keys: 'credentials' (optional), 'item_ids', 'user_id'
+        
+        Returns documents with content_bytes (not text) so factory can process correctly.
         """
         user_id = config.get("user_id")
         item_ids = config.get("item_ids", [])
@@ -203,32 +228,46 @@ class DriveConnector(BaseConnector):
                     folder_files = self._get_all_files_recursive(service, item_id)
                     logger.info(f"📁 [DriveConnector] Found {len(folder_files)} files in folder: {file_meta['name']}")
                     for f in folder_files:
-                        content = self._download_file_content(service, f)
-                        if content and content.strip():
+                        content_bytes, export_mime, filename = self._download_file_content(service, f)
+                        if content_bytes:
+                            # Decode bytes to text for page_content
+                            try:
+                                text_content = content_bytes.decode('utf-8')
+                            except UnicodeDecodeError:
+                                text_content = content_bytes.decode('utf-8', errors='replace')
+                            
                             documents.append(ConnectorDocument(
-                                page_content=content,
+                                page_content=text_content,
                                 metadata={
                                     "source": "google_drive",
-                                    "title": f.get('name'),
+                                    "title": filename,
                                     "source_url": f.get('webViewLink'),
-                                    "file_id": f.get('id')
+                                    "file_id": f.get('id'),
+                                    "mime_type": export_mime,  # CRITICAL: Use exported mime_type
                                 }
                             ))
                 else:
-                    # Download Content (reuse existing helper)
-                    content = self._download_file_content(service, file_meta)
+                    # Download Content (returns tuple now)
+                    content_bytes, export_mime, filename = self._download_file_content(service, file_meta)
                     
-                    if content and content.strip():
+                    if content_bytes:
+                        # Decode bytes to text for page_content
+                        try:
+                            text_content = content_bytes.decode('utf-8')
+                        except UnicodeDecodeError:
+                            text_content = content_bytes.decode('utf-8', errors='replace')
+                        
                         documents.append(ConnectorDocument(
-                            page_content=content,
+                            page_content=text_content,
                             metadata={
                                 "source": "google_drive",
-                                "title": file_meta.get('name'),
+                                "title": filename,
                                 "source_url": file_meta.get('webViewLink'),
-                                "file_id": file_meta.get('id')
+                                "file_id": file_meta.get('id'),
+                                "mime_type": export_mime,  # CRITICAL: Use exported mime_type
                             }
                         ))
-                        logger.info(f"✅ [Drive] Processed: {file_meta.get('name')}")
+                        logger.info(f"✅ [Drive] Processed: {filename} (as {export_mime})")
             except Exception as e:
                 logger.error(f"❌ [Drive] Failed to process {item_id}: {e}")
                 continue
@@ -274,9 +313,9 @@ class DriveConnector(BaseConnector):
                         )
                         files.extend(subfolder_files)
                     else:
-                        # It's a file, add if supported
-                        if DocumentParser.is_supported(item['mimeType']) or \
-                           item['mimeType'] == 'application/vnd.google-apps.document':
+                        # It's a file, add if supported (including Google native types)
+                        mime = item['mimeType']
+                        if DocumentParser.is_supported(mime) or mime in self.EXPORT_MIME_TYPES:
                             files.append(item)
                 
                 page_token = results.get('nextPageToken')
@@ -289,46 +328,63 @@ class DriveConnector(BaseConnector):
         
         return files
 
-    def _download_file_content(self, service, file_meta: dict) -> Optional[str]:
+    def _download_file_content(self, service, file_meta: dict) -> tuple:
         """
-        Download file content based on MIME type.
-        Uses DocumentParser for actual text extraction.
+        Download file content with RICH EXPORT for Google native types.
+        
+        Returns:
+            Tuple of (content_bytes, export_mime_type, filename_with_ext)
+            - content_bytes: Raw file bytes
+            - export_mime_type: The MIME type of the exported format
+            - filename_with_ext: Filename with correct extension
+        
+        Google Native Types:
+        - Docs -> exported as DOCX (preserves headers/formatting)
+        - Sheets -> exported as CSV (preserves structure)
+        - Slides -> exported as PDF (preserves slides)
         """
-        mime_type = file_meta['mimeType']
+        original_mime = file_meta['mimeType']
         file_name = file_meta.get('name', 'unknown')
         
         try:
-            # Google Docs - export as plain text (special case, already text)
-            if mime_type == 'application/vnd.google-apps.document':
-                content = service.files().export_media(
-                    fileId=file_meta['id'], 
-                    mimeType='text/plain'
-                ).execute().decode('utf-8')
-                logger.info(f"📄 [DriveConnector] Extracted Google Doc: {file_name}")
-                return content
+            # ========== RICH EXPORT: Google Native Types ==========
+            if original_mime in self.EXPORT_MIME_TYPES:
+                export_config = self.EXPORT_MIME_TYPES[original_mime]
+                export_mime = export_config["export_mime"]
+                extension = export_config["extension"]
+                
+                # Export to rich format
+                content_bytes = service.files().export_media(
+                    fileId=file_meta['id'],
+                    mimeType=export_mime
+                ).execute()
+                
+                # Ensure filename has correct extension
+                filename_with_ext = file_name
+                if not file_name.endswith(extension):
+                    filename_with_ext = f"{file_name}{extension}"
+                
+                logger.info(f"📄 [DriveConnector] Rich export {original_mime} → {export_mime}: {file_name}")
+                return (content_bytes, export_mime, filename_with_ext)
             
-            # For all other supported types, download bytes and use DocumentParser
-            if DocumentParser.is_supported(mime_type):
+            # ========== Standard Download: Non-Google Files ==========
+            if DocumentParser.is_supported(original_mime):
                 file_bytes = service.files().get_media(
                     fileId=file_meta['id']
                 ).execute()
                 
-                # Delegate to centralized parser
-                content = DocumentParser.extract_text(file_bytes, mime_type)
-                if content:
-                    logger.info(f"📄 [DriveConnector] Extracted via DocumentParser: {file_name}")
-                return content
+                logger.info(f"📄 [DriveConnector] Downloaded: {file_name} ({original_mime})")
+                return (file_bytes, original_mime, file_name)
             
-            # Unsupported type
-            else:
-                logger.info(f"⏭️ Skipping unsupported type '{mime_type}': {file_name}")
-                return None
+            # ========== Unsupported Type ==========
+            logger.info(f"⏭️ Skipping unsupported type '{original_mime}': {file_name}")
+            return (None, None, None)
                 
         except Exception as e:
             logger.error(f"❌ Error downloading {file_name}: {e}")
             import traceback
             traceback.print_exc()
-            return None
+            return (None, None, None)
 
     async def sync(self, user_id: str, integration_id: str) -> dict:
         """
