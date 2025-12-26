@@ -16,6 +16,7 @@ import { DataSourceCard } from "./DataSourceCard";
 import { FileBrowser } from "./FileBrowser";
 import { URLCrawlerInput } from "./URLCrawlerInput";
 import { FileUploadZone } from "./FileUploadZone";
+import { ComingSoonIntegrations } from "./ComingSoonIntegrations";
 import { useDataSources } from "@/hooks/useDataSources";
 import type { MergedDataSource } from "@/types";
 
@@ -177,6 +178,9 @@ export function DataSourcesGrid() {
           </div>
         )}
       </div>
+
+      {/* Coming Soon Section */}
+      <ComingSoonIntegrations />
     </div>
   );
 }
