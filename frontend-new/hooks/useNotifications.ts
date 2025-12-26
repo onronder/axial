@@ -130,9 +130,9 @@ export function useNotifications() {
         try {
             const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-            // Get current user ID from API
-            const response = await authFetch.get("/users/me");
-            const userId = response.data?.id;
+            // Get current user ID from profile API
+            const response = await authFetch.get("/settings/profile");
+            const userId = response.data?.user_id;
 
             if (!userId) {
                 console.warn("⚠️ Could not get user ID for realtime subscription");
