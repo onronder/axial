@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel
 from core.security import get_current_user
 from core.db import get_supabase
+from services.audit import log_document_delete
 
 router = APIRouter()
 
@@ -111,24 +112,36 @@ async def list_documents(
 @router.delete("/documents/{doc_id}")
 async def delete_document(
     doc_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
     supabase = get_supabase()
     
     try:
-        # Verify ownership / delete
-        # Postgres RLS should handle ownership, but explicit check is good practice
-        # Delete parent. Cascade in DB handles chunks.
+        # First, get document info for audit log
+        doc_response = supabase.table("documents")\
+            .select("title")\
+            .eq("id", doc_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        doc_title = doc_response.data.get("title", "Unknown") if doc_response.data else "Unknown"
+        
+        # Delete the document
         response = supabase.table("documents")\
             .delete()\
             .eq("id", doc_id)\
             .eq("user_id", user_id)\
             .execute()
             
-        # Supabase returns the deleted record if successful
         if not response.data:
-             raise HTTPException(status_code=404, detail="Document not found or access denied")
-             
+            raise HTTPException(status_code=404, detail="Document not found or access denied")
+        
+        # Audit log (async, non-blocking)
+        log_document_delete(background_tasks, user_id, doc_id, doc_title, request)
+        
         return {"status": "success", "id": doc_id}
     except HTTPException as he:
         raise he

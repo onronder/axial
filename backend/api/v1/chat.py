@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from core.security import get_current_user
 from core.db import get_supabase
+from services.audit import log_chat_delete
 from core.config import settings
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -120,18 +121,27 @@ async def update_conversation(
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
     """Delete a conversation and all its messages."""
     supabase = get_supabase()
     
     try:
-        # Messages will be deleted automatically due to ON DELETE CASCADE
+        # Get conversation info for audit log
+        conv_response = supabase.table("conversations").select("title").eq("id", conversation_id).eq("user_id", user_id).single().execute()
+        conv_title = conv_response.data.get("title", "Unknown") if conv_response.data else "Unknown"
+        
+        # Delete conversation (messages cascade)
         response = supabase.table("conversations").delete().eq("id", conversation_id).eq("user_id", user_id).execute()
+        
+        # Audit log (async)
+        log_chat_delete(background_tasks, user_id, conversation_id, conv_title, request)
+        
         return {"status": "success", "deleted_id": conversation_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete conversation: {str(e)}")
-
 @router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
 async def get_messages(
     conversation_id: str,
