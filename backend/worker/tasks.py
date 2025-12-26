@@ -262,28 +262,21 @@ def ingest_file_task(
         
         logger.info(f"📦 [Worker:{task_id}] Downloaded to: {local_path}")
         
-        # ========== STEP 2: Parse and Chunk ==========
-        from services.parsers import DocumentParser
-        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        # ========== STEP 2: Smart Parse & Chunk (Format-Specific) ==========
+        from services.parsers import DocumentProcessorFactory
         
-        # Parse file
-        parser = DocumentParser()
-        text_content = parser.parse_file(local_path, filename)
+        # Process file with format-specific strategy
+        result = DocumentProcessorFactory.process(
+            file_path=local_path,
+            filename=filename
+        )
         
-        if not text_content or not text_content.strip():
+        if not result.chunks:
             logger.warning(f"📥 [Worker:{task_id}] No content extracted from {filename}")
             update_job_status(supabase, job_id, "completed", 1)
             return {"status": "skipped", "message": "No content extracted"}
         
-        # Chunk
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=100,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
-        chunks = splitter.split_text(text_content)
-        
-        logger.info(f"📄 [Worker:{task_id}] Extracted {len(chunks)} chunks from {filename}")
+        logger.info(f"📄 [Worker:{task_id}] {result.file_type}: {len(result.chunks)} chunks, {result.total_tokens} tokens")
         
         # ========== STEP 3: Embed ==========
         from langchain_openai import OpenAIEmbeddings
@@ -293,18 +286,34 @@ def ingest_file_task(
             api_key=settings.OPENAI_API_KEY
         )
         
-        chunk_embeddings = embeddings_model.embed_documents(chunks)
-        logger.info(f"🔢 [Worker:{task_id}] Embedded {len(chunks)} chunks")
+        # Get chunk texts for embedding
+        chunk_texts = [chunk.content for chunk in result.chunks]
+        chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+        logger.info(f"🔢 [Worker:{task_id}] Embedded {len(chunk_texts)} chunks")
         
         # ========== STEP 4: Atomic RPC Insert ==========
-        # Prepare chunks payload for RPC
+        # Prepare chunks payload with enriched metadata
         chunks_payload = []
-        for i, (chunk, embedding) in enumerate(zip(chunks, chunk_embeddings)):
+        for chunk, embedding in zip(result.chunks, chunk_embeddings):
             chunks_payload.append({
-                "content": chunk,
+                "content": chunk.content,
                 "embedding": embedding,
-                "chunk_index": i
+                "chunk_index": chunk.chunk_index,
+                # Extended metadata from factory
+                "metadata": {
+                    **chunk.metadata,
+                    "token_count": chunk.token_count,
+                }
             })
+        
+        # Merge document metadata
+        doc_metadata = {
+            **(metadata or {}),
+            "file_type": result.file_type,
+            "total_tokens": result.total_tokens,
+            "total_chunks": len(result.chunks),
+            **(result.metadata or {}),
+        }
         
         # Call atomic ingestion RPC
         rpc_result = supabase.rpc("ingest_document_with_chunks", {
@@ -312,7 +321,7 @@ def ingest_file_task(
             "p_doc_title": filename,
             "p_source_type": "file",
             "p_source_url": None,
-            "p_metadata": json.dumps(metadata or {}),
+            "p_metadata": json.dumps(doc_metadata),
             "p_chunks": json.dumps(chunks_payload)
         }).execute()
         
@@ -1000,6 +1009,8 @@ def process_page_task(
     
     try:
         from connectors.web import WebConnector
+        from services.parsers import DocumentProcessorFactory
+        
         connector = WebConnector()
         
         # Fetch and parse page
@@ -1012,6 +1023,18 @@ def process_page_task(
             logger.warning(f"⚠️ [Page:{task_id}] No content from: {url}")
             return {"status": "skipped", "url": url}
         
+        # Get page content and title
+        page_content = docs[0].page_content if docs else ""
+        page_title = docs[0].metadata.get("title", "Web Page") if docs else "Web Page"
+        page_metadata = docs[0].metadata if docs else {}
+        
+        # Process using MarkdownProcessor (treats web content as markdown)
+        result = DocumentProcessorFactory.process_web_content(page_content, url)
+        
+        if not result.chunks:
+            logger.warning(f"⚠️ [Page:{task_id}] No chunks generated from: {url}")
+            return {"status": "skipped", "url": url}
+        
         # Embed
         from langchain_openai import OpenAIEmbeddings
         embeddings_model = OpenAIEmbeddings(
@@ -1019,32 +1042,45 @@ def process_page_task(
             api_key=settings.OPENAI_API_KEY
         )
         
-        chunk_texts = [d.page_content for d in docs]
+        chunk_texts = [chunk.content for chunk in result.chunks]
         chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
         
-        # Store using atomic RPC
-        for i, doc in enumerate(docs):
-            chunks_payload = [{
-                "content": doc.page_content,
-                "embedding": chunk_embeddings[i],
-                "chunk_index": 0
-            }]
-            
-            rpc_result = supabase.rpc("ingest_document_with_chunks", {
-                "p_user_id": user_id,
-                "p_doc_title": doc.metadata.get("title", "Web Page"),
-                "p_source_type": "web",
-                "p_source_url": doc.metadata.get("source_url"),
-                "p_metadata": json.dumps(doc.metadata if isinstance(doc.metadata, dict) else {}),
-                "p_chunks": json.dumps(chunks_payload)
-            }).execute()
+        # Build chunks payload with enriched metadata
+        chunks_payload = []
+        for chunk, embedding in zip(result.chunks, chunk_embeddings):
+            chunks_payload.append({
+                "content": chunk.content,
+                "embedding": embedding,
+                "chunk_index": chunk.chunk_index,
+                "metadata": {
+                    **chunk.metadata,
+                    "token_count": chunk.token_count,
+                }
+            })
         
-        logger.info(f"✅ [Page:{task_id}] Stored: {url}")
+        # Document metadata
+        doc_metadata = {
+            **page_metadata,
+            "file_type": "web",
+            "total_tokens": result.total_tokens,
+            "total_chunks": len(result.chunks),
+        }
+        
+        # Store using atomic RPC
+        rpc_result = supabase.rpc("ingest_document_with_chunks", {
+            "p_user_id": user_id,
+            "p_doc_title": page_title,
+            "p_source_type": "web",
+            "p_source_url": url,
+            "p_metadata": json.dumps(doc_metadata),
+            "p_chunks": json.dumps(chunks_payload)
+        }).execute()
+        
+        logger.info(f"✅ [Page:{task_id}] Stored: {url} ({len(result.chunks)} chunks)")
         
         # Update crawl progress
         if crawl_id:
             try:
-                # Increment counter (eventual consistency is acceptable here)
                 supabase.rpc("increment_crawl_counter", {
                     "p_crawl_id": crawl_id,
                     "p_field": "pages_ingested"

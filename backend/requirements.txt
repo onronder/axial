@@ -16,6 +16,7 @@ tiktoken
 unstructured[pdf]
 docx2txt
 pypdf
+pymupdf
 python-magic
 python-multipart
 pyjwt
