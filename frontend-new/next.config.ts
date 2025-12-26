@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   // Production optimizations
@@ -61,4 +62,22 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Sentry configuration for source maps and error tracking
+export default withSentryConfig(nextConfig, {
+  // Sentry organization and project (read from environment)
+  org: process.env.SENTRY_ORG || "axio-hub",
+  project: process.env.SENTRY_PROJECT || "frontend",
+
+  // Suppress build logs
+  silent: !process.env.CI,
+
+  // Upload source maps for better stack traces
+  widenClientFileUpload: true,
+
+  // Disable Sentry features that increase bundle size
+  disableLogger: true,
+
+  // Automatically tree-shake Sentry logger statements
+  automaticVercelMonitors: true,
+});
+
