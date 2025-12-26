@@ -169,7 +169,70 @@ class EmailService:
         except Exception as e:
             logger.error(f"📧 Failed to send welcome email to {to_email}: {e}")
             return False
+    
+    def send_ingestion_failed(
+        self,
+        to_email: str,
+        name: str,
+        filename: str,
+        error_message: str
+    ) -> bool:
+        """
+        Send notification when document ingestion fails.
+        
+        Args:
+            to_email: Recipient email address
+            name: User's display name
+            filename: Name of the file that failed
+            error_message: Error details (truncated for safety)
+        
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        if not self.enabled:
+            logger.debug("📧 Email not sent: service not enabled")
+            return False
+        
+        try:
+            # Truncate error message for safety
+            safe_error = str(error_message)[:500] if error_message else "Unknown error"
+            
+            html_content = f"""
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #dc2626;">⚠️ Ingestion Failed</h2>
+                <p>Hello {name},</p>
+                <p>Unfortunately, we couldn't process your document:</p>
+                <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; margin: 15px 0;">
+                    <strong>File:</strong> {filename}<br>
+                    <strong>Reason:</strong> {safe_error}
+                </div>
+                <p>What you can try:</p>
+                <ul>
+                    <li>Check if the file is corrupted or password-protected</li>
+                    <li>Ensure the file format is supported (PDF, DOCX, TXT, MD)</li>
+                    <li>Try uploading a smaller file if it's very large</li>
+                </ul>
+                <p><a href="{self.app_url}/dashboard" style="background: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Dashboard</a></p>
+                <p style="color: #6b7280; font-size: 12px;">If this keeps happening, contact our support team.</p>
+            </div>
+            """
+            
+            params = {
+                "from": f"Axio Hub <{self.from_email}>",
+                "to": [to_email],
+                "subject": f"⚠️ Ingestion Failed: {filename[:50]}",
+                "html": html_content,
+            }
+            
+            response = resend.Emails.send(params)
+            logger.info(f"📧 Sent ingestion failed email to {to_email}, id={response.get('id', 'unknown')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"📧 Failed to send ingestion failed email to {to_email}: {e}")
+            return False
 
 
 # Singleton instance for easy import
 email_service = EmailService()
+

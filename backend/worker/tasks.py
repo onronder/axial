@@ -134,6 +134,62 @@ def send_email_notification(
         # CRITICAL: Log but never raise - email is secondary functionality
         logger.error(f"📧 [Email] Failed to send notification: {e}")
 
+
+def send_failure_email_notification(
+    supabase,
+    user_id: str,
+    filename: str,
+    error_message: str
+):
+    """
+    Send email notification when ingestion fails.
+    
+    This is fail-safe: errors are logged but never raised.
+    
+    Args:
+        supabase: Supabase client
+        user_id: User's ID
+        filename: Name of the file that failed
+        error_message: Error details
+    """
+    try:
+        # Fetch user profile for email and name
+        user_response = supabase.table("profiles").select("email, display_name, full_name").eq("id", user_id).single().execute()
+        
+        if not user_response.data:
+            logger.warning(f"📧 [Email] User profile not found for {user_id}")
+            return
+        
+        user_data = user_response.data
+        email = user_data.get("email")
+        name = user_data.get("display_name") or user_data.get("full_name") or "there"
+        
+        if not email:
+            logger.warning(f"📧 [Email] No email found for user {user_id}")
+            return
+        
+        # Check user preference (respect opt-out for error emails too)
+        settings_response = supabase.table("user_notification_settings").select("enabled").eq("user_id", user_id).eq("setting_key", "email_on_ingestion_complete").maybeSingle().execute()
+        
+        email_enabled = True
+        if settings_response.data:
+            email_enabled = settings_response.data.get("enabled", True)
+        
+        if not email_enabled:
+            logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
+            return
+        
+        # Send the failure email
+        email_service.send_ingestion_failed(
+            to_email=email,
+            name=name,
+            filename=filename,
+            error_message=str(error_message)[:500]
+        )
+        
+    except Exception as e:
+        logger.error(f"📧 [Email] Failed to send failure notification: {e}")
+
 # ============================================================
 # ZERO-COPY FILE INGESTION TASK
 # ============================================================
@@ -293,6 +349,9 @@ def ingest_file_task(
             "error",
             {"job_id": job_id, "error": str(e)}
         )
+        
+        # Send failure email (fail-safe, respects user preferences)
+        send_failure_email_notification(supabase, user_id, filename, str(e))
         
         raise
         
@@ -1007,6 +1066,9 @@ def process_page_task(
                 }).execute()
             except Exception:
                 pass
+        
+        # Send failure email for web page (fail-safe)
+        send_failure_email_notification(supabase, user_id, url, str(e))
         
         raise
 
