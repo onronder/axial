@@ -33,3 +33,7 @@ resend
 jinja2
 slowapi
 trafilatura
+# Advanced Web Crawling
+ultimate-sitemap-parser
+youtube-transcript-api
+lxml

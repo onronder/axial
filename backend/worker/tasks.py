@@ -333,6 +333,278 @@ def ingest_file_task(
         raise
 
 
+# ============================================================
+# WEB CRAWL TASK
+# ============================================================
+
+def update_crawl_status(
+    supabase,
+    crawl_id: str,
+    status: str = None,
+    total_pages: int = None,
+    pages_ingested: int = None,
+    pages_failed: int = None,
+    error_message: str = None
+):
+    """Helper to update web crawl config status."""
+    try:
+        update_data = {"updated_at": datetime.utcnow().isoformat()}
+        
+        if status:
+            update_data["status"] = status
+        if total_pages is not None:
+            update_data["total_pages_found"] = total_pages
+        if pages_ingested is not None:
+            update_data["pages_ingested"] = pages_ingested
+        if pages_failed is not None:
+            update_data["pages_failed"] = pages_failed
+        if error_message:
+            update_data["error_message"] = error_message
+        if status == "completed":
+            update_data["completed_at"] = datetime.utcnow().isoformat()
+            
+        supabase.table("web_crawl_configs").update(update_data).eq("id", crawl_id).execute()
+        logger.info(f"🕸️ [Crawl:{crawl_id}] Status: {status}, Ingested: {pages_ingested}")
+    except Exception as e:
+        logger.error(f"❌ [Crawl:{crawl_id}] Failed to update status: {e}")
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    max_retries=2,
+    acks_late=True
+)
+def crawl_web_task(
+    self,
+    user_id: str,
+    root_url: str,
+    crawl_config: Dict[str, Any]
+):
+    """
+    Background task for advanced web crawling.
+    
+    Supports:
+    - Single page crawling
+    - Sitemap-based crawling
+    - Recursive link following
+    - YouTube transcript extraction
+    
+    Args:
+        user_id: User's ID for multi-tenancy
+        root_url: Starting URL to crawl
+        crawl_config: Dict with:
+            - 'crawl_id': UUID of WebCrawlConfig record
+            - 'crawl_type': 'single', 'recursive', 'sitemap'
+            - 'max_depth': int (1-10)
+            - 'respect_robots': bool
+    """
+    import time
+    import random
+    from collections import deque
+    
+    task_id = self.request.id
+    crawl_id = crawl_config.get("crawl_id")
+    crawl_type = crawl_config.get("crawl_type", "single")
+    max_depth = min(crawl_config.get("max_depth", 1), 10)
+    respect_robots = crawl_config.get("respect_robots", True)
+    
+    logger.info(f"🕸️ [Worker:{task_id}] Starting web crawl for user {user_id}")
+    logger.info(f"🕸️ [Worker:{task_id}] URL: {root_url}, Type: {crawl_type}, Depth: {max_depth}")
+    
+    supabase = get_supabase()
+    
+    # Import connector
+    from connectors.web import WebConnector
+    connector = WebConnector()
+    
+    # Track progress
+    urls_to_process: List[str] = []
+    processed_urls: set = set()
+    ingested_count = 0
+    failed_count = 0
+    
+    try:
+        # ===== PHASE 1: DISCOVERY =====
+        if crawl_id:
+            update_crawl_status(supabase, crawl_id, status="discovering")
+        
+        create_notification(
+            supabase, user_id,
+            "Web Crawl Started",
+            f"Discovering pages from {root_url}",
+            "info",
+            {"crawl_id": crawl_id, "crawl_type": crawl_type}
+        )
+        
+        if crawl_type == "sitemap":
+            # Parse sitemap.xml
+            logger.info(f"🗺️ [Crawl] Parsing sitemap: {root_url}")
+            urls_to_process = connector.parse_sitemap(root_url)
+            
+        elif crawl_type == "recursive":
+            # BFS crawl with depth limit
+            logger.info(f"🔄 [Crawl] Recursive crawl from: {root_url}")
+            queue = deque([(root_url, 0)])  # (url, depth)
+            seen = {root_url}
+            
+            while queue:
+                url, depth = queue.popleft()
+                urls_to_process.append(url)
+                
+                if depth < max_depth:
+                    # Fetch page and extract links
+                    html = connector.fetch_html(url)
+                    if html:
+                        links = connector.extract_links(html, url)
+                        for link in links:
+                            if link not in seen:
+                                seen.add(link)
+                                queue.append((link, depth + 1))
+                    
+                    # Rate limit during discovery
+                    time.sleep(random.uniform(0.5, 1.0))
+            
+        else:  # single
+            urls_to_process = [root_url]
+        
+        total_pages = len(urls_to_process)
+        logger.info(f"📊 [Crawl] Discovered {total_pages} URLs to process")
+        
+        if crawl_id:
+            update_crawl_status(supabase, crawl_id, status="processing", total_pages=total_pages)
+        
+        if total_pages == 0:
+            if crawl_id:
+                update_crawl_status(supabase, crawl_id, status="completed", total_pages=0)
+            return {"status": "completed", "message": "No pages found to crawl"}
+        
+        # ===== PHASE 2: PROCESSING =====
+        documents = []
+        
+        for i, url in enumerate(urls_to_process):
+            if url in processed_urls:
+                continue
+            processed_urls.add(url)
+            
+            try:
+                # Rate limiting (polite crawling)
+                if i > 0:
+                    time.sleep(random.uniform(1.0, 2.0))
+                
+                # Ingest this URL
+                docs = connector.ingest({
+                    "item_ids": [url],
+                    "respect_robots": respect_robots
+                })
+                
+                if docs:
+                    documents.extend(docs)
+                    ingested_count += 1
+                    logger.info(f"✅ [Crawl] Ingested ({ingested_count}/{total_pages}): {url}")
+                else:
+                    failed_count += 1
+                    logger.warning(f"⚠️ [Crawl] No content from: {url}")
+                
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"❌ [Crawl] Failed to process {url}: {e}")
+            
+            # Update progress every 5 pages
+            if crawl_id and (i + 1) % 5 == 0:
+                update_crawl_status(
+                    supabase, crawl_id,
+                    pages_ingested=ingested_count,
+                    pages_failed=failed_count
+                )
+        
+        # ===== PHASE 3: EMBEDDING & STORAGE =====
+        if documents:
+            logger.info(f"🔢 [Crawl] Embedding {len(documents)} documents...")
+            
+            from langchain_openai import OpenAIEmbeddings
+            embeddings_model = OpenAIEmbeddings(
+                model="text-embedding-3-small",
+                api_key=settings.OPENAI_API_KEY
+            )
+            
+            chunk_texts = [d.page_content for d in documents]
+            chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+            
+            # Store in database
+            for i, doc in enumerate(documents):
+                parent_doc_data = {
+                    "user_id": user_id,
+                    "title": doc.metadata.get("title", "Web Page"),
+                    "source_type": doc.metadata.get("source", "web"),
+                    "source_url": doc.metadata.get("source_url"),
+                    "metadata": doc.metadata,
+                    "created_at": datetime.utcnow().isoformat()
+                }
+                
+                p_res = supabase.table("documents").insert(parent_doc_data).execute()
+                if p_res.data:
+                    parent_id = p_res.data[0]["id"]
+                    
+                    # Insert chunk
+                    chunk_record = {
+                        "document_id": parent_id,
+                        "content": doc.page_content,
+                        "embedding": chunk_embeddings[i],
+                        "chunk_index": 0,
+                        "created_at": datetime.utcnow().isoformat()
+                    }
+                    supabase.table("document_chunks").insert(chunk_record).execute()
+        
+        # ===== COMPLETE =====
+        if crawl_id:
+            update_crawl_status(
+                supabase, crawl_id,
+                status="completed",
+                pages_ingested=ingested_count,
+                pages_failed=failed_count
+            )
+        
+        create_notification(
+            supabase, user_id,
+            "Web Crawl Complete",
+            f"Successfully ingested {ingested_count} pages from {root_url}",
+            "success",
+            {"crawl_id": crawl_id, "pages_ingested": ingested_count}
+        )
+        
+        logger.info(f"✅ [Worker:{task_id}] Crawl complete: {ingested_count} pages ingested")
+        return {
+            "status": "success",
+            "crawl_id": crawl_id,
+            "pages_discovered": total_pages,
+            "pages_ingested": ingested_count,
+            "pages_failed": failed_count
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [Worker:{task_id}] Crawl failed: {e}")
+        
+        if crawl_id:
+            update_crawl_status(
+                supabase, crawl_id,
+                status="failed",
+                error_message=str(e)
+            )
+        
+        create_notification(
+            supabase, user_id,
+            "Web Crawl Failed",
+            f"Failed to crawl {root_url}: {str(e)[:200]}",
+            "error",
+            {"crawl_id": crawl_id, "error": str(e)}
+        )
+        
+        raise
+
+
 @celery_app.task(bind=True)
 def health_check_task(self):
     """Simple task to verify worker is running."""

@@ -100,11 +100,53 @@ async def ingest_document(
         source_type = "file"
         
         if url:
-             connector = get_connector("web")
-             source_type = "web"
-             # Fix: Use run_in_threadpool for sync method + new config dict
-             config = {"item_ids": [url], "user_id": user_id, "provider": "web"}
-             docs = await run_in_threadpool(connector.ingest, config)
+            # ===== ASYNC WEB CRAWLING =====
+            # Extract optional crawl options from metadata
+            crawl_type = meta_dict.get("crawl_type", "single")  # single, recursive, sitemap
+            max_depth = min(int(meta_dict.get("depth", 1)), 10)
+            respect_robots = meta_dict.get("respect_robots", True)
+            
+            # Create WebCrawlConfig record for tracking
+            from datetime import datetime as dt
+            crawl_config_data = {
+                "user_id": user_id,
+                "root_url": url,
+                "crawl_type": crawl_type,
+                "max_depth": max_depth,
+                "respect_robots_txt": respect_robots,
+                "status": "pending",
+                "created_at": dt.utcnow().isoformat(),
+                "updated_at": dt.utcnow().isoformat()
+            }
+            
+            crawl_res = supabase.table("web_crawl_configs").insert(crawl_config_data).execute()
+            if not crawl_res.data:
+                raise HTTPException(status_code=500, detail="Failed to create crawl config")
+            
+            crawl_id = str(crawl_res.data[0]["id"])
+            
+            # Dispatch Celery task
+            from worker.tasks import crawl_web_task
+            task = crawl_web_task.delay(
+                user_id=user_id,
+                root_url=url,
+                crawl_config={
+                    "crawl_id": crawl_id,
+                    "crawl_type": crawl_type,
+                    "max_depth": max_depth,
+                    "respect_robots": respect_robots
+                }
+            )
+            
+            # Update task ID reference
+            supabase.table("web_crawl_configs").update({
+                "celery_task_id": task.id
+            }).eq("id", crawl_id).execute()
+            
+            logger.info(f"🕸️ [Ingest] Web crawl queued: {url}, type={crawl_type}, task={task.id}")
+            
+            # Return immediately with job reference
+            return IngestResponse(status="queued", doc_id=crawl_id)
         elif drive_id:
              connector = get_connector("drive")
              source_type = "drive"
