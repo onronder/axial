@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   // Production optimizations
@@ -62,22 +61,8 @@ const nextConfig: NextConfig = {
   },
 };
 
-// Sentry configuration for source maps and error tracking
-export default withSentryConfig(nextConfig, {
-  // Sentry organization and project (read from environment)
-  org: process.env.SENTRY_ORG || "axio-hub",
-  project: process.env.SENTRY_PROJECT || "frontend",
+// NOTE: withSentryConfig removed for Turbopack compatibility (Next.js 16)
+// Sentry error tracking still works via sentry.client.config.ts runtime initialization
+// Source maps are NOT uploaded during build - errors will have minified stack traces
 
-  // Suppress build logs
-  silent: !process.env.CI,
-
-  // Upload source maps for better stack traces
-  widenClientFileUpload: true,
-
-  // Disable Sentry features that increase bundle size
-  disableLogger: true,
-
-  // Automatically tree-shake Sentry logger statements
-  automaticVercelMonitors: true,
-});
-
+export default nextConfig;
