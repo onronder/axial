@@ -44,4 +44,15 @@ celery_app.conf.update(
     # Retry configuration
     task_default_retry_delay=60,  # 1 minute
     task_max_retries=3,
+    
+    # ============================================================
+    # CELERY BEAT - Scheduled Tasks
+    # ============================================================
+    beat_schedule={
+        # Check for scheduled re-crawls every hour
+        "check-scheduled-crawls-hourly": {
+            "task": "worker.tasks.check_scheduled_crawls",
+            "schedule": 3600.0,  # Every hour (in seconds)
+        },
+    },
 )

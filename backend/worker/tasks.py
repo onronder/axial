@@ -605,6 +605,111 @@ def crawl_web_task(
         raise
 
 
+# ============================================================
+# SCHEDULED RE-CRAWL TASK (Living Knowledge)
+# ============================================================
+
+@celery_app.task(bind=True)
+def check_scheduled_crawls(self):
+    """
+    Celery Beat task to check for scheduled re-crawls.
+    
+    Runs hourly via Celery Beat.
+    Finds completed crawls that are due for refresh and triggers them.
+    """
+    from datetime import timedelta
+    
+    task_id = self.request.id
+    logger.info(f"⏰ [Scheduler:{task_id}] Checking for scheduled re-crawls...")
+    
+    supabase = get_supabase()
+    now = datetime.utcnow()
+    
+    try:
+        # Find crawls that are due for refresh
+        # Status = completed, refresh_interval != never, next_crawl_at <= now
+        result = supabase.table("web_crawl_configs").select("*").eq(
+            "status", "completed"
+        ).neq(
+            "refresh_interval", "never"
+        ).lte(
+            "next_crawl_at", now.isoformat()
+        ).execute()
+        
+        if not result.data:
+            logger.info(f"⏰ [Scheduler:{task_id}] No crawls due for refresh")
+            return {"status": "ok", "crawls_triggered": 0}
+        
+        crawls_triggered = 0
+        
+        for config in result.data:
+            try:
+                crawl_id = str(config["id"])
+                user_id = str(config["user_id"])
+                root_url = config["root_url"]
+                crawl_type = config["crawl_type"]
+                max_depth = config["max_depth"]
+                refresh_interval = config["refresh_interval"]
+                
+                logger.info(f"🔄 [Scheduler] Triggering re-crawl: {root_url} ({refresh_interval})")
+                
+                # Reset status to pending for re-crawl
+                supabase.table("web_crawl_configs").update({
+                    "status": "pending",
+                    "pages_ingested": 0,
+                    "pages_failed": 0,
+                    "total_pages_found": 0,
+                    "error_message": None,
+                    "updated_at": now.isoformat()
+                }).eq("id", crawl_id).execute()
+                
+                # Trigger the crawl task
+                task = crawl_web_task.delay(
+                    user_id=user_id,
+                    root_url=root_url,
+                    crawl_config={
+                        "crawl_id": crawl_id,
+                        "crawl_type": crawl_type,
+                        "max_depth": max_depth,
+                        "respect_robots": config.get("respect_robots_txt", True),
+                        "is_recrawl": True  # Flag for re-crawl
+                    }
+                )
+                
+                # Calculate next_crawl_at based on interval
+                if refresh_interval == "daily":
+                    next_crawl = now + timedelta(days=1)
+                elif refresh_interval == "weekly":
+                    next_crawl = now + timedelta(weeks=1)
+                elif refresh_interval == "monthly":
+                    next_crawl = now + timedelta(days=30)
+                else:
+                    next_crawl = None
+                
+                # Update with new task ID and next crawl time
+                update_data = {
+                    "celery_task_id": task.id,
+                    "last_crawl_at": now.isoformat()
+                }
+                if next_crawl:
+                    update_data["next_crawl_at"] = next_crawl.isoformat()
+                
+                supabase.table("web_crawl_configs").update(update_data).eq("id", crawl_id).execute()
+                
+                crawls_triggered += 1
+                
+            except Exception as e:
+                logger.error(f"❌ [Scheduler] Failed to trigger re-crawl for {config.get('root_url')}: {e}")
+                continue
+        
+        logger.info(f"✅ [Scheduler:{task_id}] Triggered {crawls_triggered} re-crawls")
+        return {"status": "ok", "crawls_triggered": crawls_triggered}
+        
+    except Exception as e:
+        logger.error(f"❌ [Scheduler:{task_id}] Failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+
 @celery_app.task(bind=True)
 def health_check_task(self):
     """Simple task to verify worker is running."""

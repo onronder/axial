@@ -233,10 +233,19 @@ class CrawlStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class RefreshInterval(str, Enum):
+    """How often to re-crawl a web source."""
+    NEVER = "never"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
 class WebCrawlConfig(SQLModel, table=True):
     """
     Tracks web crawl job configurations and progress.
     Supports single, recursive, and sitemap-based crawling.
+    Supports scheduled re-crawling for living knowledge.
     """
     __tablename__ = "web_crawl_configs"
     
@@ -254,6 +263,11 @@ class WebCrawlConfig(SQLModel, table=True):
     total_pages_found: int = Field(default=0)        # URLs discovered
     pages_ingested: int = Field(default=0)           # URLs successfully processed
     pages_failed: int = Field(default=0)             # URLs that failed
+    
+    # Scheduled Re-crawling (Living Knowledge)
+    refresh_interval: str = Field(default="never")   # never, daily, weekly, monthly
+    next_crawl_at: Optional[datetime] = None         # When to re-crawl next
+    last_crawl_at: Optional[datetime] = None         # When last crawl completed
     
     # Error Handling
     error_message: Optional[str] = None
