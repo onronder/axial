@@ -1617,3 +1617,57 @@ def health_check_task(self):
     """Simple task to verify worker is running."""
     return {"status": "healthy", "task_id": self.request.id}
 
+
+# ============================================================
+# DATABASE CLEANUP TASK
+# ============================================================
+
+@celery_app.task(bind=True)
+def cleanup_old_jobs(self):
+    """
+    Clean up old completed/failed ingestion jobs.
+    
+    Runs daily via Celery Beat to prevent database bloat.
+    Deletes jobs older than 30 days that are no longer active.
+    """
+    from core.db import get_supabase
+    from datetime import datetime, timedelta
+    
+    task_id = self.request.id[:8] if self.request.id else "cleanup"
+    logger.info(f"🧹 [Cleanup:{task_id}] Starting database cleanup...")
+    
+    try:
+        supabase = get_supabase()
+        
+        # Calculate cutoff date (30 days ago)
+        cutoff_date = (datetime.utcnow() - timedelta(days=30)).isoformat()
+        
+        # Delete old completed jobs
+        completed_result = supabase.table("ingestion_jobs")\
+            .delete()\
+            .in_("status", ["completed", "failed"])\
+            .lt("created_at", cutoff_date)\
+            .execute()
+        
+        deleted_count = len(completed_result.data) if completed_result.data else 0
+        logger.info(f"🧹 [Cleanup:{task_id}] Deleted {deleted_count} old ingestion jobs")
+        
+        # Delete old read notifications (keep unread ones)
+        notif_result = supabase.table("notifications")\
+            .delete()\
+            .eq("is_read", True)\
+            .lt("created_at", cutoff_date)\
+            .execute()
+        
+        notif_deleted = len(notif_result.data) if notif_result.data else 0
+        logger.info(f"🧹 [Cleanup:{task_id}] Deleted {notif_deleted} old notifications")
+        
+        return {
+            "status": "success",
+            "jobs_deleted": deleted_count,
+            "notifications_deleted": notif_deleted
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [Cleanup:{task_id}] Cleanup failed: {e}")
+        return {"status": "error", "error": str(e)}

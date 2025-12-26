@@ -47,6 +47,9 @@ celery_app.conf.update(
     # If worker crashes, task goes back to queue
     task_acks_late=True,
     
+    # Resilience: Requeue task if worker is killed/lost
+    task_reject_on_worker_lost=True,
+    
     # Memory Safety: Worker takes ONLY 1 task at a time
     # Vital for large file processing (prevents memory exhaustion)
     worker_prefetch_multiplier=1,
@@ -75,6 +78,11 @@ celery_app.conf.update(
         "check-scheduled-crawls-hourly": {
             "task": "worker.tasks.check_scheduled_crawls",
             "schedule": 3600.0,  # Every hour (in seconds)
+        },
+        # Cleanup old completed/failed jobs daily at midnight UTC
+        "cleanup-old-jobs-daily": {
+            "task": "worker.tasks.cleanup_old_jobs",
+            "schedule": 86400.0,  # Every 24 hours (in seconds)
         },
     },
 )

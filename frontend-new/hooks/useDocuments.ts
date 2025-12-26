@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
 import { Document } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
@@ -8,6 +8,7 @@ export const useDocuments = () => {
     const [documents, setDocuments] = useState<Document[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const hasFetched = useRef(false);
 
     const fetchDocuments = async () => {
         setIsLoading(true);
@@ -61,7 +62,10 @@ export const useDocuments = () => {
         }
     };
 
+    // Initial fetch - only once (prevents duplicate calls in Strict Mode)
     useEffect(() => {
+        if (hasFetched.current) return;
+        hasFetched.current = true;
         fetchDocuments();
     }, []);
 
