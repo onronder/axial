@@ -22,9 +22,9 @@ export const useDocuments = () => {
             // Backend might return snake_case.
             const mappedDocs: Document[] = response.data.map((d: any) => ({
                 id: d.id,
-                name: d.title || d.name || "Untitled", // Handle title/name difference
-                source: d.source || "Unknown",
-                sourceType: d.source_type || "upload", // Map source_type to sourceType
+                name: d.title || d.name || "Untitled",
+                source: d.source_type || "file",  // Use source_type from backend
+                sourceType: d.source_type || "upload",
                 status: d.status || "indexed",
                 addedAt: d.created_at || new Date().toISOString(),
                 size: d.size || 0

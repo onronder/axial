@@ -254,7 +254,7 @@ export function DocumentsTable() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <SourceIcon className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">{doc.source}</span>
+                        <span className="text-sm text-muted-foreground capitalize">{doc.source}</span>
                       </div>
                     </TableCell>
                     <TableCell>
