@@ -135,81 +135,255 @@ def send_email_notification(
         logger.error(f"📧 [Email] Failed to send notification: {e}")
 
 # ============================================================
-# INGESTION TASK
+# ZERO-COPY FILE INGESTION TASK
 # ============================================================
+
+STAGING_BUCKET = "ephemeral-staging"
 
 @celery_app.task(
     bind=True,
-    autoretry_for=(ConnectionError, TimeoutError, OSError),
-    retry_backoff=True,  # Exponential backoff: 1s, 2s, 4s, 8s...
-    retry_backoff_max=600,  # Max 10 minutes between retries
+    autoretry_for=(ConnectionError, TimeoutError, OSError, Exception),
+    retry_backoff=True,
+    retry_backoff_max=600,
     max_retries=3,
     acks_late=True
 )
 def ingest_file_task(
     self,
     user_id: str,
-    provider: str,
-    item_ids: List[str],
-    credentials: Dict[str, Any],
-    job_id: str = None
+    job_id: str,
+    storage_path: str,
+    filename: str,
+    metadata: Dict[str, Any] = None
 ):
     """
-    Background task to ingest files from a provider.
+    Zero-Copy File Ingestion Task.
     
-    This runs in a separate Celery worker process, so it:
-    - Doesn't block the FastAPI server
-    - Handles large files without memory issues (prefetch=1)
-    - Retries automatically on failure
-    - Updates job progress for frontend polling
+    Architecture: Store-Forward-Process-Delete
+    1. Download file from Supabase Storage to /tmp
+    2. Parse and chunk the file
+    3. Embed and store via atomic RPC
+    4. Delete file from /tmp AND Storage (zero-copy cleanup)
     
     Args:
-        user_id: The user's ID for multi-tenancy
-        provider: Provider type (e.g., 'google_drive')
-        item_ids: List of file IDs to ingest
-        credentials: Encrypted OAuth credentials
-        job_id: Optional job ID for progress tracking
+        user_id: User's ID for multi-tenancy
+        job_id: Ingestion job ID for progress tracking
+        storage_path: Path in ephemeral-staging bucket
+        filename: Original filename
+        metadata: Optional metadata dict
     """
+    import os
+    import tempfile
+    
     task_id = self.request.id
-    logger.info(f"📥 [Worker:{task_id}] Starting ingestion for user {user_id}")
-    logger.info(f"📥 [Worker:{task_id}] Provider: {provider}, Items: {len(item_ids)}, Job: {job_id}")
+    logger.info(f"📥 [Worker:{task_id}] Starting zero-copy ingestion for {filename}")
     
     supabase = get_supabase()
-    processed_count = 0
+    local_path = None
     
     try:
         # Update job to processing
-        if job_id:
-            update_job_status(supabase, job_id, "processing", processed_count)
+        update_job_status(supabase, job_id, "processing", 0)
         
-        # Create "started" notification
+        create_notification(
+            supabase, user_id,
+            "Processing File",
+            f"Ingesting {filename}",
+            "info",
+            {"job_id": job_id, "filename": filename}
+        )
+        
+        # ========== STEP 1: Download from Storage ==========
+        logger.info(f"📦 [Worker:{task_id}] Downloading from storage: {storage_path}")
+        
+        file_data = supabase.storage.from_(STAGING_BUCKET).download(storage_path)
+        
+        # Write to temp file
+        file_ext = os.path.splitext(filename)[1] if filename else ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+            tmp.write(file_data)
+            local_path = tmp.name
+        
+        logger.info(f"📦 [Worker:{task_id}] Downloaded to: {local_path}")
+        
+        # ========== STEP 2: Parse and Chunk ==========
+        from services.parsers import DocumentParser
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        
+        # Parse file
+        parser = DocumentParser()
+        text_content = parser.parse_file(local_path, filename)
+        
+        if not text_content or not text_content.strip():
+            logger.warning(f"📥 [Worker:{task_id}] No content extracted from {filename}")
+            update_job_status(supabase, job_id, "completed", 1)
+            return {"status": "skipped", "message": "No content extracted"}
+        
+        # Chunk
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=100,
+            separators=["\n\n", "\n", ". ", " ", ""]
+        )
+        chunks = splitter.split_text(text_content)
+        
+        logger.info(f"📄 [Worker:{task_id}] Extracted {len(chunks)} chunks from {filename}")
+        
+        # ========== STEP 3: Embed ==========
+        from langchain_openai import OpenAIEmbeddings
+        
+        embeddings_model = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            api_key=settings.OPENAI_API_KEY
+        )
+        
+        chunk_embeddings = embeddings_model.embed_documents(chunks)
+        logger.info(f"🔢 [Worker:{task_id}] Embedded {len(chunks)} chunks")
+        
+        # ========== STEP 4: Atomic RPC Insert ==========
+        # Prepare chunks payload for RPC
+        chunks_payload = []
+        for i, (chunk, embedding) in enumerate(zip(chunks, chunk_embeddings)):
+            chunks_payload.append({
+                "content": chunk,
+                "embedding": embedding,
+                "chunk_index": i
+            })
+        
+        # Call atomic ingestion RPC
+        rpc_result = supabase.rpc("ingest_document_with_chunks", {
+            "p_user_id": user_id,
+            "p_doc_title": filename,
+            "p_source_type": "file",
+            "p_source_url": None,
+            "p_metadata": json.dumps(metadata or {}),
+            "p_chunks": json.dumps(chunks_payload)
+        }).execute()
+        
+        if rpc_result.data:
+            doc_id = rpc_result.data
+            logger.info(f"✅ [Worker:{task_id}] Document stored: {doc_id}")
+        else:
+            raise Exception("RPC returned no document ID")
+        
+        # Update job to completed
+        update_job_status(supabase, job_id, "completed", 1)
+        
+        create_notification(
+            supabase, user_id,
+            "Ingestion Complete",
+            f"Successfully processed {filename} ({len(chunks)} chunks)",
+            "success",
+            {"job_id": job_id, "document_id": str(doc_id)}
+        )
+        
+        send_email_notification(supabase, user_id, 1)
+        
+        return {"status": "success", "document_id": str(doc_id), "chunks": len(chunks)}
+        
+    except Exception as e:
+        logger.error(f"❌ [Worker:{task_id}] Failed: {e}")
+        
+        update_job_status(supabase, job_id, "failed", 0, str(e))
+        
+        create_notification(
+            supabase, user_id,
+            "Ingestion Failed",
+            f"Failed to process {filename}: {str(e)[:200]}",
+            "error",
+            {"job_id": job_id, "error": str(e)}
+        )
+        
+        raise
+        
+    finally:
+        # ========== ZERO-COPY CLEANUP ==========
+        # Delete local temp file
+        if local_path and os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+                logger.info(f"🗑️ [Worker:{task_id}] Deleted local temp: {local_path}")
+            except Exception as e:
+                logger.warning(f"⚠️ [Worker:{task_id}] Failed to delete temp: {e}")
+        
+        # Delete from Supabase Storage
+        try:
+            supabase.storage.from_(STAGING_BUCKET).remove([storage_path])
+            logger.info(f"🗑️ [Worker:{task_id}] Deleted from storage: {storage_path}")
+            logger.info(f"🔒 [Worker:{task_id}] File destroyed securely after processing")
+        except Exception as e:
+            logger.warning(f"⚠️ [Worker:{task_id}] Failed to delete from storage: {e}")
+
+
+# ============================================================
+# CONNECTOR INGESTION TASK (Drive, Notion)
+# ============================================================
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    retry_backoff_max=600,
+    max_retries=3,
+    acks_late=True
+)
+def ingest_connector_task(
+    self,
+    user_id: str,
+    job_id: str,
+    connector_type: str,
+    item_id: str,
+    credentials: Dict[str, Any] = None
+):
+    """
+    Background task to ingest files from cloud connectors (Drive, Notion).
+    
+    Uses atomic RPC for database insertion.
+    
+    Args:
+        user_id: User's ID for multi-tenancy
+        job_id: Ingestion job ID for progress tracking
+        connector_type: 'drive' or 'notion'
+        item_id: File/page ID to ingest
+        credentials: Optional OAuth credentials
+    """
+    task_id = self.request.id
+    logger.info(f"📥 [Worker:{task_id}] Starting connector ingestion for user {user_id}")
+    logger.info(f"📥 [Worker:{task_id}] Connector: {connector_type}, Item: {item_id}, Job: {job_id}")
+    
+    supabase = get_supabase()
+    
+    try:
+        update_job_status(supabase, job_id, "processing", 0)
+        
         create_notification(
             supabase,
             user_id,
-            f"Ingestion Started",
-            f"Processing {len(item_ids)} files from {provider.replace('_', ' ').title()}",
+            "Ingestion Started",
+            f"Processing from {connector_type.replace('_', ' ').title()}",
             "info",
-            {"job_id": job_id, "provider": provider, "file_count": len(item_ids)}
+            {"job_id": job_id, "connector": connector_type}
         )
         
-        # 1. Decrypt credentials
+        # 1. Decrypt credentials if provided
         decrypted_creds = {}
-        for key, value in credentials.items():
-            if isinstance(value, str):
-                decrypted_creds[key] = decrypt_token(value)
-            else:
-                decrypted_creds[key] = value
+        if credentials:
+            for key, value in credentials.items():
+                if isinstance(value, str):
+                    decrypted_creds[key] = decrypt_token(value)
+                else:
+                    decrypted_creds[key] = value
         
         # 2. Get connector and ingest
         from connectors.factory import get_connector
-        connector = get_connector(provider)
+        connector = get_connector(connector_type)
         
         # Prepare config for standardized ingest interface
         ingest_config = {
             "user_id": user_id,
-            "item_ids": item_ids,
+            "item_ids": [item_id],
             "credentials": decrypted_creds,
-            "provider": provider
+            "provider": connector_type
         }
         
         # Call synchronous ingest (worker-compatible)
@@ -217,8 +391,7 @@ def ingest_file_task(
         
         if not docs:
             logger.warning(f"📥 [Worker:{task_id}] No content processed")
-            if job_id:
-                update_job_status(supabase, job_id, "completed", len(item_ids))
+            update_job_status(supabase, job_id, "completed", 1)
             return {"status": "skipped", "message": "No content processed"}
         
         # 3. Embed documents
@@ -233,7 +406,7 @@ def ingest_file_task(
         
         logger.info(f"📥 [Worker:{task_id}] Embedded {len(chunk_texts)} chunks")
         
-        # 4. Map provider to source_type enum
+        # 4. Map connector to source_type enum
         CONNECTOR_TYPE_TO_ENUM = {
             "google_drive": "drive",
             "drive": "drive",
@@ -242,7 +415,7 @@ def ingest_file_task(
             "file": "file",
             "web": "web",
         }
-        source_type_enum = CONNECTOR_TYPE_TO_ENUM.get(provider, "file")
+        source_type_enum = CONNECTOR_TYPE_TO_ENUM.get(connector_type, "file")
         
         # 5. Group by source and store
         from collections import defaultdict
