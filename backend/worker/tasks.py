@@ -417,7 +417,7 @@ def ingest_connector_task(
         }
         source_type_enum = CONNECTOR_TYPE_TO_ENUM.get(connector_type, "file")
         
-        # 5. Group by source and store
+        # 5. Group by source and store via ATOMIC RPC
         from collections import defaultdict
         grouped = defaultdict(list)
         for i, doc in enumerate(docs):
@@ -425,40 +425,36 @@ def ingest_connector_task(
             grouped[key].append((doc, chunk_embeddings[i]))
         
         results = []
+        processed_count = 0
         
         for key, pairs in grouped.items():
             first_doc = pairs[0][0]
             
-            # Create Parent Document
-            parent_doc_data = {
-                "user_id": user_id,
-                "title": first_doc.metadata.get('title', 'Untitled'),
-                "source_type": source_type_enum,
-                "source_url": first_doc.metadata.get('source_url'),
-                "metadata": first_doc.metadata,
-                "created_at": datetime.utcnow().isoformat()
-            }
-            
-            logger.info(f"📄 [Worker:{task_id}] Creating document: {parent_doc_data['title']}")
-            
-            p_res = supabase.table("documents").insert(parent_doc_data).execute()
-            if not p_res.data:
-                continue
-            parent_id = p_res.data[0]['id']
-            
-            # Create Chunks
-            chunk_records = []
+            # Prepare chunks payload for atomic RPC
+            chunks_payload = []
             for idx, (doc, emb) in enumerate(pairs):
-                chunk_records.append({
-                    "document_id": parent_id,
+                chunks_payload.append({
                     "content": doc.page_content,
                     "embedding": emb,
-                    "chunk_index": idx,
-                    "created_at": datetime.utcnow().isoformat()
+                    "chunk_index": idx
                 })
             
-            supabase.table("document_chunks").insert(chunk_records).execute()
-            results.append(parent_id)
+            # ATOMIC RPC: Insert document with all chunks in single transaction
+            rpc_result = supabase.rpc("ingest_document_with_chunks", {
+                "p_user_id": user_id,
+                "p_doc_title": first_doc.metadata.get('title', 'Untitled'),
+                "p_source_type": source_type_enum,
+                "p_source_url": first_doc.metadata.get('source_url'),
+                "p_metadata": json.dumps(first_doc.metadata if isinstance(first_doc.metadata, dict) else {}),
+                "p_chunks": json.dumps(chunks_payload)
+            }).execute()
+            
+            if rpc_result.data:
+                doc_id = rpc_result.data
+                results.append(str(doc_id))
+                logger.info(f"📄 [Worker:{task_id}] Created document via RPC: {first_doc.metadata.get('title', 'Untitled')}")
+            else:
+                logger.warning(f"⚠️ [Worker:{task_id}] RPC returned no data for {key}")
             
             # Update progress after each document group
             processed_count += 1
@@ -467,22 +463,22 @@ def ingest_connector_task(
         
         # Mark job as completed
         if job_id:
-            update_job_status(supabase, job_id, "completed", len(item_ids))
+            update_job_status(supabase, job_id, "completed", 1)
         
         # Create "success" notification
         create_notification(
             supabase,
             user_id,
             f"Ingestion Complete",
-            f"Successfully processed {len(results)} documents from {provider.replace('_', ' ').title()}",
+            f"Successfully processed {len(results)} documents from {connector_type.replace('_', ' ').title()}",
             "success",
-            {"job_id": job_id, "provider": provider, "document_count": len(results)}
+            {"job_id": job_id, "connector": connector_type, "document_count": len(results)}
         )
         
         # Send email notification (fail-safe, respects user preferences)
         send_email_notification(supabase, user_id, len(results))
         
-        logger.info(f"✅ [Worker:{task_id}] Ingestion complete: {len(results)} documents")
+        logger.info(f"✅ [Worker:{task_id}] Ingestion complete: {len(results)} documents (via atomic RPC)")
         return {"status": "success", "ingested_ids": results, "task_id": task_id, "job_id": job_id}
         
     except Exception as e:
@@ -490,16 +486,16 @@ def ingest_connector_task(
         
         # Update job status to failed
         if job_id:
-            update_job_status(supabase, job_id, "failed", processed_count, str(e))
+            update_job_status(supabase, job_id, "failed", 0, str(e))
         
         # Create "error" notification
         create_notification(
             supabase,
             user_id,
             f"Ingestion Failed",
-            f"Failed to process files from {provider.replace('_', ' ').title()}: {str(e)[:200]}",
+            f"Failed to process files from {connector_type.replace('_', ' ').title()}: {str(e)[:200]}",
             "error",
-            {"job_id": job_id, "provider": provider, "error": str(e)}
+            {"job_id": job_id, "connector": connector_type, "error": str(e)}
         )
         
         # Re-raise for Celery retry mechanism
@@ -693,7 +689,7 @@ def crawl_web_task(
                     pages_failed=failed_count
                 )
         
-        # ===== PHASE 3: EMBEDDING & STORAGE =====
+        # ===== PHASE 3: EMBEDDING & STORAGE (ATOMIC RPC) =====
         if documents:
             logger.info(f"🔢 [Crawl] Embedding {len(documents)} documents...")
             
@@ -706,30 +702,27 @@ def crawl_web_task(
             chunk_texts = [d.page_content for d in documents]
             chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
             
-            # Store in database
+            # Store in database using ATOMIC RPC
             for i, doc in enumerate(documents):
-                parent_doc_data = {
-                    "user_id": user_id,
-                    "title": doc.metadata.get("title", "Web Page"),
-                    "source_type": doc.metadata.get("source", "web"),
-                    "source_url": doc.metadata.get("source_url"),
-                    "metadata": doc.metadata,
-                    "created_at": datetime.utcnow().isoformat()
-                }
+                # Prepare chunk payload for atomic RPC (single chunk per page)
+                chunks_payload = [{
+                    "content": doc.page_content,
+                    "embedding": chunk_embeddings[i],
+                    "chunk_index": 0
+                }]
                 
-                p_res = supabase.table("documents").insert(parent_doc_data).execute()
-                if p_res.data:
-                    parent_id = p_res.data[0]["id"]
-                    
-                    # Insert chunk
-                    chunk_record = {
-                        "document_id": parent_id,
-                        "content": doc.page_content,
-                        "embedding": chunk_embeddings[i],
-                        "chunk_index": 0,
-                        "created_at": datetime.utcnow().isoformat()
-                    }
-                    supabase.table("document_chunks").insert(chunk_record).execute()
+                # ATOMIC RPC: Insert document with all chunks in single transaction
+                rpc_result = supabase.rpc("ingest_document_with_chunks", {
+                    "p_user_id": user_id,
+                    "p_doc_title": doc.metadata.get("title", "Web Page"),
+                    "p_source_type": "web",
+                    "p_source_url": doc.metadata.get("source_url"),
+                    "p_metadata": json.dumps(doc.metadata if isinstance(doc.metadata, dict) else {}),
+                    "p_chunks": json.dumps(chunks_payload)
+                }).execute()
+                
+                if rpc_result.data:
+                    logger.debug(f"📄 [Crawl] Stored via RPC: {doc.metadata.get('title', 'Web Page')}")
         
         # ===== COMPLETE =====
         if crawl_id:
@@ -774,6 +767,246 @@ def crawl_web_task(
             "error",
             {"crawl_id": crawl_id, "error": str(e)}
         )
+        
+        raise
+
+
+# ============================================================
+# DISTRIBUTED CRAWLER: Master-Worker Pattern
+# ============================================================
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=True,
+    max_retries=2
+)
+def crawl_discovery_task(
+    self,
+    user_id: str,
+    root_url: str,
+    crawl_config: Dict[str, Any]
+):
+    """
+    Master task for distributed web crawling.
+    
+    Discovers URLs (via sitemap or recursive) and dispatches
+    individual page processing tasks using Celery groups.
+    
+    This pattern prevents Celery Soft Time Limit issues when
+    crawling large sites (10,000+ pages).
+    """
+    from celery import group
+    from collections import deque
+    import time
+    import random
+    
+    task_id = self.request.id
+    crawl_id = crawl_config.get("crawl_id")
+    crawl_type = crawl_config.get("crawl_type", "single")
+    max_depth = min(crawl_config.get("max_depth", 1), 10)
+    respect_robots = crawl_config.get("respect_robots", True)
+    
+    logger.info(f"🕸️ [Discovery:{task_id}] Starting distributed crawl for user {user_id}")
+    logger.info(f"🕸️ [Discovery:{task_id}] URL: {root_url}, Type: {crawl_type}, Depth: {max_depth}")
+    
+    supabase = get_supabase()
+    
+    try:
+        # Import connector
+        from connectors.web import WebConnector
+        connector = WebConnector()
+        
+        # Update status
+        if crawl_id:
+            update_crawl_status(supabase, crawl_id, status="discovering")
+        
+        create_notification(
+            supabase, user_id,
+            "Web Crawl Started",
+            f"Discovering pages from {root_url}",
+            "info",
+            {"crawl_id": crawl_id, "crawl_type": crawl_type}
+        )
+        
+        # ===== DISCOVERY PHASE =====
+        urls_to_process: List[str] = []
+        
+        if crawl_type == "sitemap":
+            logger.info(f"🗺️ [Discovery] Parsing sitemap: {root_url}")
+            urls_to_process = connector.parse_sitemap(root_url)
+            
+        elif crawl_type == "recursive":
+            logger.info(f"🔄 [Discovery] Recursive crawl from: {root_url}")
+            queue = deque([(root_url, 0)])
+            seen = {root_url}
+            
+            while queue:
+                url, depth = queue.popleft()
+                urls_to_process.append(url)
+                
+                if depth < max_depth:
+                    html = connector.fetch_html(url)
+                    if html:
+                        links = connector.extract_links(html, url)
+                        for link in links:
+                            if link not in seen:
+                                seen.add(link)
+                                queue.append((link, depth + 1))
+                    
+                    # Rate limit during discovery
+                    time.sleep(random.uniform(0.3, 0.6))
+        else:
+            urls_to_process = [root_url]
+        
+        total_pages = len(urls_to_process)
+        logger.info(f"📊 [Discovery] Discovered {total_pages} URLs")
+        
+        if crawl_id:
+            update_crawl_status(supabase, crawl_id, status="processing", total_pages=total_pages)
+        
+        if total_pages == 0:
+            if crawl_id:
+                update_crawl_status(supabase, crawl_id, status="completed", total_pages=0)
+            return {"status": "completed", "message": "No pages found"}
+        
+        # ===== DISPATCH PHASE: Parallel processing =====
+        # Create a group of tasks for parallel execution
+        page_tasks = group(
+            process_page_task.s(
+                user_id=user_id,
+                url=url,
+                crawl_id=crawl_id,
+                respect_robots=respect_robots
+            ) for url in urls_to_process
+        )
+        
+        # Execute all tasks in parallel
+        result = page_tasks.apply_async()
+        
+        logger.info(f"🚀 [Discovery:{task_id}] Dispatched {total_pages} page tasks")
+        
+        return {
+            "status": "dispatched",
+            "crawl_id": crawl_id,
+            "total_pages": total_pages,
+            "group_id": str(result.id)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [Discovery:{task_id}] Failed: {e}")
+        
+        if crawl_id:
+            update_crawl_status(
+                supabase, crawl_id,
+                status="failed",
+                error_message=str(e)
+            )
+        
+        create_notification(
+            supabase, user_id,
+            "Web Crawl Failed",
+            f"Discovery failed for {root_url}: {str(e)[:200]}",
+            "error",
+            {"crawl_id": crawl_id, "error": str(e)}
+        )
+        
+        raise
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=True,
+    max_retries=3,
+    rate_limit='10/s'  # Rate limit: max 10 pages per second
+)
+def process_page_task(
+    self,
+    user_id: str,
+    url: str,
+    crawl_id: str = None,
+    respect_robots: bool = True
+):
+    """
+    Worker task for processing a single web page.
+    
+    Downloads, parses, embeds, and stores a single URL.
+    Uses rate limiting to be polite to target servers.
+    """
+    task_id = self.request.id
+    logger.info(f"📄 [Page:{task_id}] Processing: {url}")
+    
+    supabase = get_supabase()
+    
+    try:
+        from connectors.web import WebConnector
+        connector = WebConnector()
+        
+        # Fetch and parse page
+        docs = connector.ingest({
+            "item_ids": [url],
+            "respect_robots": respect_robots
+        })
+        
+        if not docs:
+            logger.warning(f"⚠️ [Page:{task_id}] No content from: {url}")
+            return {"status": "skipped", "url": url}
+        
+        # Embed
+        from langchain_openai import OpenAIEmbeddings
+        embeddings_model = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            api_key=settings.OPENAI_API_KEY
+        )
+        
+        chunk_texts = [d.page_content for d in docs]
+        chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+        
+        # Store using atomic RPC
+        for i, doc in enumerate(docs):
+            chunks_payload = [{
+                "content": doc.page_content,
+                "embedding": chunk_embeddings[i],
+                "chunk_index": 0
+            }]
+            
+            rpc_result = supabase.rpc("ingest_document_with_chunks", {
+                "p_user_id": user_id,
+                "p_doc_title": doc.metadata.get("title", "Web Page"),
+                "p_source_type": "web",
+                "p_source_url": doc.metadata.get("source_url"),
+                "p_metadata": json.dumps(doc.metadata if isinstance(doc.metadata, dict) else {}),
+                "p_chunks": json.dumps(chunks_payload)
+            }).execute()
+        
+        logger.info(f"✅ [Page:{task_id}] Stored: {url}")
+        
+        # Update crawl progress
+        if crawl_id:
+            try:
+                # Increment counter (eventual consistency is acceptable here)
+                supabase.rpc("increment_crawl_counter", {
+                    "p_crawl_id": crawl_id,
+                    "p_field": "pages_ingested"
+                }).execute()
+            except Exception:
+                pass  # Non-critical
+        
+        return {"status": "success", "url": url}
+        
+    except Exception as e:
+        logger.error(f"❌ [Page:{task_id}] Failed {url}: {e}")
+        
+        # Increment failure counter
+        if crawl_id:
+            try:
+                supabase.rpc("increment_crawl_counter", {
+                    "p_crawl_id": crawl_id,
+                    "p_field": "pages_failed"
+                }).execute()
+            except Exception:
+                pass
         
         raise
 
