@@ -1,214 +1,256 @@
 "use client";
 
 /**
- * GlobalProgress Component
+ * GlobalProgress Component - REALTIME VERSION
  * 
- * Polls the backend for active ingestion jobs and displays
- * a progress bar at the bottom of the screen during ingestion.
- * 
- * Uses polling (not WebSockets) for simplicity and reliability.
+ * Uses Supabase Realtime to display ingestion progress instantly.
+ * No more polling - updates arrive via WebSocket!
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle2, Loader2, XCircle, FileText, X } from "lucide-react";
-import { authFetch } from "@/lib/api";
+import {
+    CheckCircle2,
+    Loader2,
+    XCircle,
+    FileText,
+    X,
+    Upload,
+    Globe,
+    Database
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 interface IngestionJob {
     id: string;
+    user_id: string;
     provider: string;
     total_files: number;
     processed_files: number;
     status: "pending" | "processing" | "completed" | "failed";
-    percent: number;
     error_message?: string;
+    created_at: string;
+    updated_at: string;
 }
 
-const POLL_INTERVAL = 3000; // 3 seconds
-const COMPLETION_DISPLAY_TIME = 5000; // Show success for 5 seconds
+const COMPLETION_DISPLAY_TIME = 5000;
+
+const providerIcons: Record<string, typeof FileText> = {
+    file: Upload,
+    web: Globe,
+    drive: FileText,
+    notion: Database,
+};
+
+const providerLabels: Record<string, string> = {
+    file: "File Upload",
+    web: "Web Crawl",
+    drive: "Google Drive",
+    google_drive: "Google Drive",
+    notion: "Notion",
+};
 
 export function GlobalProgress() {
-    const [job, setJob] = useState<IngestionJob | null>(null);
-    const [isVisible, setIsVisible] = useState(false);
-    const [showSuccess, setShowSuccess] = useState(false);
-    const [isPolling, setIsPolling] = useState(true);
+    const { user } = useAuth();
+    const { toast } = useToast();
+    const [jobs, setJobs] = useState<IngestionJob[]>([]);
+    const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
 
-    const fetchActiveJob = useCallback(async () => {
-        if (!isPolling) return;
-
-        try {
-            const response = await authFetch.get("/jobs/active");
-            const data = response.data;
-
-            if (data) {
-                setJob(data);
-                setIsVisible(true);
-
-                // If job just completed, show success and schedule hide
-                if (data.status === "completed" && !showSuccess) {
-                    setShowSuccess(true);
-                    setTimeout(() => {
-                        setIsVisible(false);
-                        setJob(null);
-                        setShowSuccess(false);
-                    }, COMPLETION_DISPLAY_TIME);
-                }
-
-                // If job failed, keep visible until dismissed
-                if (data.status === "failed") {
-                    setIsPolling(false);
-                }
-            } else {
-                // No active job
-                if (!showSuccess) {
-                    setIsVisible(false);
-                    setJob(null);
-                }
-            }
-        } catch (error) {
-            // Silently fail - don't disrupt UX for polling errors
-            console.debug("Failed to fetch job status:", error);
-        }
-    }, [isPolling, showSuccess]);
-
-    // Polling effect (pause when tab is hidden for performance)
+    // Setup realtime subscription
     useEffect(() => {
-        fetchActiveJob(); // Initial fetch
+        if (!user?.id) return;
 
-        const interval = setInterval(() => {
-            // Only poll when tab is visible
-            if (!document.hidden) {
-                fetchActiveJob();
-            }
-        }, POLL_INTERVAL);
+        // Fetch initial active jobs
+        const fetchJobs = async () => {
+            const { data } = await supabase
+                .from("ingestion_jobs")
+                .select("*")
+                .eq("user_id", user.id)
+                .in("status", ["pending", "processing"])
+                .order("created_at", { ascending: false })
+                .limit(5);
 
-        // Resume immediately when tab becomes visible
-        const handleVisibilityChange = () => {
-            if (!document.hidden) {
-                fetchActiveJob();
-            }
+            if (data) setJobs(data);
         };
-        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        fetchJobs();
+
+        // Subscribe to realtime updates
+        const channel = supabase
+            .channel(`progress_${user.id}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "ingestion_jobs",
+                    filter: `user_id=eq.${user.id}`,
+                },
+                (payload) => {
+                    const newJob = payload.new as IngestionJob;
+                    const oldJob = payload.old as IngestionJob;
+
+                    if (payload.eventType === "INSERT") {
+                        setJobs((prev) => [newJob, ...prev].slice(0, 5));
+                    }
+
+                    if (payload.eventType === "UPDATE") {
+                        setJobs((prev) =>
+                            prev.map((job) => (job.id === newJob.id ? newJob : job))
+                        );
+
+                        // Show completion toast
+                        if (newJob.status === "completed" && oldJob?.status !== "completed") {
+                            toast({
+                                title: "Ingestion Complete! 🎉",
+                                description: `Successfully processed ${newJob.processed_files} files from ${providerLabels[newJob.provider] || newJob.provider}.`,
+                            });
+
+                            // Auto-dismiss after delay
+                            setTimeout(() => {
+                                setJobs((prev) => prev.filter((j) => j.id !== newJob.id));
+                            }, COMPLETION_DISPLAY_TIME);
+                        }
+
+                        if (newJob.status === "failed" && oldJob?.status !== "failed") {
+                            toast({
+                                title: "Ingestion Failed",
+                                description: newJob.error_message || "An error occurred during processing.",
+                                variant: "destructive",
+                            });
+                        }
+                    }
+                }
+            )
+            .subscribe((status) => {
+                if (status === "SUBSCRIBED") {
+                    console.log("🔔 GlobalProgress: Realtime connected");
+                }
+            });
 
         return () => {
-            clearInterval(interval);
-            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            channel.unsubscribe();
         };
-    }, [fetchActiveJob]);
+    }, [user?.id, toast]);
 
-    // Resume polling when needed
-    useEffect(() => {
-        if (!job && !showSuccess) {
-            setIsPolling(true);
-        }
-    }, [job, showSuccess]);
+    // Filter out dismissed jobs
+    const visibleJobs = jobs.filter(
+        (job) => !dismissedIds.has(job.id)
+    );
 
-    const handleDismiss = () => {
-        setIsVisible(false);
-        setJob(null);
-        setShowSuccess(false);
-        setIsPolling(true);
+    const handleDismiss = (jobId: string) => {
+        setDismissedIds((prev) => new Set([...prev, jobId]));
+        setJobs((prev) => prev.filter((j) => j.id !== jobId));
     };
 
-    if (!isVisible || !job) return null;
-
-    const getStatusIcon = () => {
-        switch (job.status) {
-            case "pending":
-                return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-            case "processing":
-                return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-            case "completed":
-                return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-            case "failed":
-                return <XCircle className="h-4 w-4 text-red-500" />;
-        }
-    };
-
-    const getStatusText = () => {
-        switch (job.status) {
-            case "pending":
-                return "Preparing ingestion...";
-            case "processing":
-                return `Processing ${job.processed_files} of ${job.total_files} files...`;
-            case "completed":
-                return `Successfully ingested ${job.total_files} files!`;
-            case "failed":
-                return job.error_message || "Ingestion failed";
-        }
-    };
-
-    const getProviderLabel = () => {
-        const providers: Record<string, string> = {
-            google_drive: "Google Drive",
-            drive: "Google Drive",
-            notion: "Notion",
-            file: "File Upload",
-            web: "Web Crawler",
-        };
-        return providers[job.provider] || job.provider;
-    };
+    if (visibleJobs.length === 0) return null;
 
     return (
-        <div
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+            <AnimatePresence mode="popLayout">
+                {visibleJobs.map((job) => (
+                    <JobCard
+                        key={job.id}
+                        job={job}
+                        onDismiss={() => handleDismiss(job.id)}
+                    />
+                ))}
+            </AnimatePresence>
+        </div>
+    );
+}
+
+function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void }) {
+    const Icon = providerIcons[job.provider] || FileText;
+    const label = providerLabels[job.provider] || job.provider;
+
+    const progress = job.total_files > 0
+        ? Math.round((job.processed_files / job.total_files) * 100)
+        : 0;
+
+    const isActive = job.status === "pending" || job.status === "processing";
+    const isComplete = job.status === "completed";
+    const isFailed = job.status === "failed";
+
+    return (
+        <motion.div
+            layout
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 100, scale: 0.95 }}
             className={cn(
-                "fixed bottom-0 left-0 right-0 z-50 transition-all duration-300",
-                "bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700",
-                "shadow-lg backdrop-blur-sm"
+                "relative flex items-center gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm min-w-[280px]",
+                "bg-card/95 dark:bg-card/95",
+                isActive && "border-primary/30",
+                isComplete && "border-green-500/30 bg-green-50/50 dark:bg-green-950/20",
+                isFailed && "border-red-500/30 bg-red-50/50 dark:bg-red-950/20"
             )}
         >
-            <div className="max-w-screen-xl mx-auto px-4 py-3">
-                <div className="flex items-center gap-4">
-                    {/* Icon */}
-                    <div className="flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-slate-500" />
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {getProviderLabel()}
-                        </span>
-                    </div>
+            {/* Dismiss button */}
+            {(isComplete || isFailed) && (
+                <button
+                    onClick={onDismiss}
+                    className="absolute top-1 right-1 p-1 rounded-full hover:bg-muted transition-colors"
+                >
+                    <X className="h-3 w-3 text-muted-foreground" />
+                </button>
+            )}
 
-                    {/* Progress Section */}
-                    <div className="flex-1 flex items-center gap-3">
-                        <Progress
-                            value={job.percent}
-                            className={cn(
-                                "h-2 flex-1",
-                                job.status === "failed" && "opacity-50"
-                            )}
-                        />
-                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400 min-w-[60px] text-right">
-                            {Math.round(job.percent)}%
-                        </span>
-                    </div>
-
-                    {/* Status */}
-                    <div className="flex items-center gap-2">
-                        {getStatusIcon()}
-                        <span
-                            className={cn(
-                                "text-sm",
-                                job.status === "completed" && "text-green-600 dark:text-green-400",
-                                job.status === "failed" && "text-red-600 dark:text-red-400",
-                                (job.status === "pending" || job.status === "processing") && "text-slate-600 dark:text-slate-400"
-                            )}
-                        >
-                            {getStatusText()}
-                        </span>
-                    </div>
-
-                    {/* Dismiss button for failed/completed */}
-                    {(job.status === "completed" || job.status === "failed") && (
-                        <button
-                            onClick={handleDismiss}
-                            className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            aria-label="Dismiss"
-                        >
-                            <X className="h-4 w-4 text-slate-500" />
-                        </button>
-                    )}
-                </div>
+            {/* Status Icon */}
+            <div className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                isActive && "bg-primary/10",
+                isComplete && "bg-green-100 dark:bg-green-900/30",
+                isFailed && "bg-red-100 dark:bg-red-900/30"
+            )}>
+                {isActive ? (
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                ) : isComplete ? (
+                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                ) : (
+                    <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                )}
             </div>
-        </div>
+
+            {/* Content */}
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium truncate">{label}</span>
+                </div>
+
+                {isActive && (
+                    <>
+                        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                            <motion.div
+                                className="h-full bg-primary rounded-full"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${progress}%` }}
+                                transition={{ duration: 0.4, ease: "easeOut" }}
+                            />
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            {job.processed_files} / {job.total_files} files • {progress}%
+                        </p>
+                    </>
+                )}
+
+                {isComplete && (
+                    <p className="mt-0.5 text-xs text-green-600 dark:text-green-400">
+                        ✓ {job.processed_files} files ingested
+                    </p>
+                )}
+
+                {isFailed && (
+                    <p className="mt-0.5 text-xs text-red-600 dark:text-red-400 truncate pr-4">
+                        {job.error_message || "Processing failed"}
+                    </p>
+                )}
+            </div>
+        </motion.div>
     );
 }
