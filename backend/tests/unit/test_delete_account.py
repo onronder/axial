@@ -20,7 +20,7 @@ class TestDeleteAccountEndpoint:
     @pytest.mark.asyncio
     async def test_delete_account_calls_cleanup_service(self):
         """Should call cleanup service with authenticated user ID."""
-        with patch('api.v1.settings.cleanup_service') as mock_cleanup:
+        with patch('services.cleanup.cleanup_service') as mock_cleanup:
             mock_cleanup.execute_account_deletion = AsyncMock(return_value={
                 "user_id": "user-123",
                 "vector_store": {"deleted": 5, "status": "success"},
@@ -39,7 +39,7 @@ class TestDeleteAccountEndpoint:
     @pytest.mark.asyncio
     async def test_delete_account_returns_deletion_details(self):
         """Should return detailed results from cleanup service."""
-        with patch('api.v1.settings.cleanup_service') as mock_cleanup:
+        with patch('services.cleanup.cleanup_service') as mock_cleanup:
             mock_cleanup.execute_account_deletion = AsyncMock(return_value={
                 "user_id": "user-123",
                 "vector_store": {"deleted": 10, "status": "success"},
@@ -59,7 +59,7 @@ class TestDeleteAccountEndpoint:
     @pytest.mark.asyncio
     async def test_delete_account_raises_500_on_failure(self):
         """Should raise HTTPException 500 when cleanup fails."""
-        with patch('api.v1.settings.cleanup_service') as mock_cleanup:
+        with patch('services.cleanup.cleanup_service') as mock_cleanup:
             mock_cleanup.execute_account_deletion = AsyncMock(
                 side_effect=Exception("Database connection failed")
             )
@@ -93,7 +93,7 @@ class TestDeleteAccountLogging:
     @pytest.mark.asyncio
     async def test_delete_account_logs_request(self):
         """Should log deletion request."""
-        with patch('api.v1.settings.cleanup_service') as mock_cleanup:
+        with patch('services.cleanup.cleanup_service') as mock_cleanup:
             mock_cleanup.execute_account_deletion = AsyncMock(return_value={
                 "user_id": "user-123",
                 "vector_store": {"deleted": 0, "status": "success"},
@@ -120,7 +120,7 @@ class TestDeleteAccountEdgeCases:
     @pytest.mark.asyncio
     async def test_delete_account_with_no_data(self):
         """Should succeed even if user has no data."""
-        with patch('api.v1.settings.cleanup_service') as mock_cleanup:
+        with patch('services.cleanup.cleanup_service') as mock_cleanup:
             mock_cleanup.execute_account_deletion = AsyncMock(return_value={
                 "user_id": "new-user",
                 "vector_store": {"deleted": 0, "status": "success"},
@@ -139,7 +139,7 @@ class TestDeleteAccountEdgeCases:
     @pytest.mark.asyncio
     async def test_delete_account_with_uuid_format(self):
         """Should work with proper UUID format."""
-        with patch('api.v1.settings.cleanup_service') as mock_cleanup:
+        with patch('services.cleanup.cleanup_service') as mock_cleanup:
             mock_cleanup.execute_account_deletion = AsyncMock(return_value={
                 "user_id": "550e8400-e29b-41d4-a716-446655440000",
                 "vector_store": {"deleted": 0, "status": "success"},
@@ -172,7 +172,7 @@ class TestDeleteAccountSecurityChecks:
     @pytest.mark.asyncio
     async def test_delete_only_affects_authenticated_user(self):
         """Cleanup should only be called for the authenticated user's ID."""
-        with patch('api.v1.settings.cleanup_service') as mock_cleanup:
+        with patch('services.cleanup.cleanup_service') as mock_cleanup:
             mock_cleanup.execute_account_deletion = AsyncMock(return_value={
                 "user_id": "user-abc",
                 "vector_store": {"deleted": 0, "status": "success"},

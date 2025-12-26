@@ -219,7 +219,7 @@ describe('GeneralSettings - Danger Zone', () => {
             await userEvent.type(screen.getByPlaceholderText(/Type DELETE here/i), 'DELETE');
             await userEvent.click(screen.getByRole('button', { name: /Permanently Delete/i }));
 
-            expect(api.delete).toHaveBeenCalledWith('api/v1/settings/profile/me');
+            expect(api.delete).toHaveBeenCalledWith('/settings/profile/me');
         });
 
         it('should call logout after successful deletion', async () => {

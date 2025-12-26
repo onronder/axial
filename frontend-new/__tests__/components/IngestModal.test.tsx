@@ -1,13 +1,14 @@
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
 import { IngestModal } from '@/components/ingest-modal'
 
 // Mock fetch
-global.fetch = jest.fn()
+global.fetch = vi.fn()
 
 // Mock Supabase client
-jest.mock('@/lib/supabase/client', () => ({
+vi.mock('@/lib/supabase/client', () => ({
     createClient: () => ({
         auth: {
             getSession: () => Promise.resolve({
@@ -18,15 +19,16 @@ jest.mock('@/lib/supabase/client', () => ({
 }))
 
 describe('IngestModal', () => {
-    const mockOnClose = jest.fn()
+    const mockOnClose = vi.fn()
 
     beforeEach(() => {
-        jest.clearAllMocks()
-            ; (global.fetch as jest.Mock).mockResolvedValue({
+        vi.clearAllMocks()
+            ; (global.fetch as Mock).mockResolvedValue({
                 ok: true,
                 json: () => Promise.resolve({ status: 'queued', doc_id: 'test-123' })
             })
     })
+
 
     describe('Tab Navigation', () => {
         it('should render with File tab active by default', () => {
@@ -87,7 +89,7 @@ describe('IngestModal', () => {
             })
 
             // Check FormData contains url
-            const fetchCall = (global.fetch as jest.Mock).mock.calls[0]
+            const fetchCall = (global.fetch as Mock).mock.calls[0]
             const formData = fetchCall[1].body as FormData
             expect(formData.get('url')).toBe('https://example.com/test-page')
         })
@@ -131,7 +133,7 @@ describe('IngestModal', () => {
             })
 
             // Check FormData contains notion fields
-            const fetchCall = (global.fetch as jest.Mock).mock.calls[0]
+            const fetchCall = (global.fetch as Mock).mock.calls[0]
             const formData = fetchCall[1].body as FormData
             expect(formData.get('notion_page_id')).toBe('abc123-def456-789')
             expect(formData.get('notion_token')).toBe('secret_test_token_12345')

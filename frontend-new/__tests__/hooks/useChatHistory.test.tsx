@@ -31,7 +31,7 @@ vi.mock('@/lib/api', () => ({
 
 // Test wrapper
 const wrapper = ({ children }: { children: ReactNode }) => (
-    <ChatHistoryProvider>{ children } </ChatHistoryProvider>
+    <ChatHistoryProvider>{children} </ChatHistoryProvider>
 );
 
 describe('useChatHistory', () => {
@@ -58,7 +58,7 @@ describe('useChatHistory', () => {
                 expect(result.current.isLoading).toBe(false);
             });
 
-            expect(mockApiGet).toHaveBeenCalledWith('api/v1/conversations');
+            expect(mockApiGet).toHaveBeenCalledWith('/conversations');
             expect(result.current.conversations).toEqual(mockConversations);
         });
 
@@ -90,7 +90,7 @@ describe('useChatHistory', () => {
             });
 
             expect(chatId!).toBe('new-1');
-            expect(mockApiPost).toHaveBeenCalledWith('api/v1/conversations', { title: 'New Chat' });
+            expect(mockApiPost).toHaveBeenCalledWith('/conversations', { title: 'New Chat' });
             expect(result.current.conversations[0]).toEqual(newChat);
         });
 
@@ -135,7 +135,7 @@ describe('useChatHistory', () => {
                 await result.current.deleteChat('1');
             });
 
-            expect(mockApiDelete).toHaveBeenCalledWith('api/v1/conversations/1');
+            expect(mockApiDelete).toHaveBeenCalledWith('/conversations/1');
             expect(result.current.conversations).toHaveLength(1);
             expect(result.current.conversations[0].id).toBe('2');
             expect(mockToast).toHaveBeenCalledWith(
@@ -179,7 +179,7 @@ describe('useChatHistory', () => {
                 await result.current.renameChat('1', 'New Title');
             });
 
-            expect(mockApiPatch).toHaveBeenCalledWith('api/v1/conversations/1', { title: 'New Title' });
+            expect(mockApiPatch).toHaveBeenCalledWith('/conversations/1', { title: 'New Title' });
             expect(result.current.conversations[0].title).toBe('New Title');
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Chat renamed' })
@@ -209,7 +209,7 @@ describe('useChatHistory', () => {
                 fetchedMessages = await result.current.getMessagesById('conv-1');
             });
 
-            expect(mockApiGet).toHaveBeenCalledWith('api/v1/conversations/conv-1/messages');
+            expect(mockApiGet).toHaveBeenCalledWith('/conversations/conv-1/messages');
             expect(fetchedMessages).toEqual(messages);
         });
 

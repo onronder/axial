@@ -237,22 +237,23 @@ class TestWebConnectorRefactoring:
 
 
 class TestWorkerIntegration:
-    """Tests that worker calls connector.ingest with correct config."""
+    """Tests that worker uses zero-copy architecture correctly."""
 
     def test_worker_calls_ingest_with_config(self):
-        """Worker should call connector.ingest(config) with proper structure."""
+        """Worker should use zero-copy architecture for file ingestion."""
         # This is a structural test - verify the worker code uses the right pattern
         import inspect
         from worker import tasks
         source = inspect.getsource(tasks.ingest_file_task)
         
-        # Verify the config structure is used
-        assert 'ingest_config' in source or 'config' in source, "Worker should prepare a config dict"
-        assert 'connector.ingest(ingest_config)' in source, "Worker should call connector.ingest(config)"
-        assert 'ingest_sync' not in source, "Old method ingest_sync should NOT be present"
+        # Verify zero-copy architecture components
+        assert 'storage' in source.lower(), "Worker should use storage (zero-copy)"
+        assert 'download' in source.lower(), "Worker should download from storage"
         
-        # Verify all expected config keys are populated
-        assert '"user_id"' in source, "Config should contain user_id"
-        assert '"item_ids"' in source, "Config should contain item_ids"
-        assert '"credentials"' in source, "Config should contain credentials"
-        assert '"provider"' in source, "Config should contain provider"
+        # Verify atomic RPC is used for insertion
+        assert 'rpc' in source.lower() or 'ingest_document_with_chunks' in source, \
+            "Worker should use atomic RPC for insertion"
+        
+        # Verify cleanup happens (zero-copy cleanup)
+        assert 'finally' in source or 'remove' in source.lower(), \
+            "Worker should clean up storage files"

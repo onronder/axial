@@ -73,7 +73,7 @@ describe('useNotificationSettings', () => {
                 expect(result.current.isLoading).toBe(false);
             });
 
-            expect(mockApi.get).toHaveBeenCalledWith('api/v1/settings/notifications');
+            expect(mockApi.get).toHaveBeenCalledWith('/settings/notifications');
             expect(result.current.settings).toEqual(mockSettings);
         });
 
@@ -148,7 +148,7 @@ describe('useNotificationSettings', () => {
             });
 
             // API should be called with toggled value
-            expect(mockApi.patch).toHaveBeenCalledWith('api/v1/settings/notifications', {
+            expect(mockApi.patch).toHaveBeenCalledWith('/settings/notifications', {
                 setting_key: 'email_on_ingestion_complete',
                 enabled: !initialValue,
             });
@@ -287,7 +287,7 @@ describe('useNotificationSettings', () => {
                 await result.current.refresh();
             });
 
-            expect(mockApi.get).toHaveBeenCalledWith('api/v1/settings/notifications');
+            expect(mockApi.get).toHaveBeenCalledWith('/settings/notifications');
         });
     });
 

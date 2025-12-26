@@ -27,7 +27,7 @@ vi.mock('@/lib/api', () => ({
 
 // Test wrapper
 const wrapper = ({ children }: { children: ReactNode }) => (
-    <ProfileProvider>{ children } </ProfileProvider>
+    <ProfileProvider>{children} </ProfileProvider>
 );
 
 const mockProfile: UserProfile = {
@@ -60,7 +60,7 @@ describe('useProfile', () => {
                 expect(result.current.isLoading).toBe(false);
             });
 
-            expect(mockApiGet).toHaveBeenCalledWith('api/v1/settings/profile');
+            expect(mockApiGet).toHaveBeenCalledWith('/settings/profile');
             expect(result.current.profile).toEqual(mockProfile);
         });
 
@@ -93,7 +93,7 @@ describe('useProfile', () => {
             });
 
             expect(success!).toBe(true);
-            expect(mockApiPatch).toHaveBeenCalledWith('api/v1/settings/profile', { first_name: 'Jane' });
+            expect(mockApiPatch).toHaveBeenCalledWith('/settings/profile', { first_name: 'Jane' });
             expect(result.current.profile?.first_name).toBe('Jane');
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Profile updated' })

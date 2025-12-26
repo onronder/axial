@@ -81,8 +81,8 @@ describe('useTeamMembers', () => {
                 expect(result.current.isLoading).toBe(false);
             });
 
-            expect(mockApiGet).toHaveBeenCalledWith('api/v1/team/members', { params: {} });
-            expect(mockApiGet).toHaveBeenCalledWith('api/v1/team/stats');
+            expect(mockApiGet).toHaveBeenCalledWith('/team/members', { params: {} });
+            expect(mockApiGet).toHaveBeenCalledWith('/team/stats');
             expect(result.current.members).toEqual(mockMembers);
             expect(result.current.stats).toEqual(mockStats);
         });
@@ -124,7 +124,7 @@ describe('useTeamMembers', () => {
             });
 
             expect(success!).toBe(true);
-            expect(mockApiPost).toHaveBeenCalledWith('api/v1/team/members', {
+            expect(mockApiPost).toHaveBeenCalledWith('/team/members', {
                 email: 'new@test.com',
                 role: 'editor',
                 name: 'New User',
@@ -172,7 +172,7 @@ describe('useTeamMembers', () => {
             });
 
             expect(success!).toBe(true);
-            expect(mockApiPatch).toHaveBeenCalledWith('api/v1/team/members/2', { role: 'editor' });
+            expect(mockApiPatch).toHaveBeenCalledWith('/team/members/2', { role: 'editor' });
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Role updated' })
             );
@@ -212,7 +212,7 @@ describe('useTeamMembers', () => {
             });
 
             expect(success!).toBe(true);
-            expect(mockApiPatch).toHaveBeenCalledWith('api/v1/team/members/2', { status: 'active' });
+            expect(mockApiPatch).toHaveBeenCalledWith('/team/members/2', { status: 'active' });
         });
     });
 
@@ -230,7 +230,7 @@ describe('useTeamMembers', () => {
             });
 
             expect(success!).toBe(true);
-            expect(mockApiDelete).toHaveBeenCalledWith('api/v1/team/members/1');
+            expect(mockApiDelete).toHaveBeenCalledWith('/team/members/1');
             expect(result.current.members.find(m => m.id === '1')).toBeUndefined();
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Access revoked' })
@@ -267,7 +267,7 @@ describe('useTeamMembers', () => {
             });
 
             expect(success!).toBe(true);
-            expect(mockApiPost).toHaveBeenCalledWith('api/v1/team/members/2/resend');
+            expect(mockApiPost).toHaveBeenCalledWith('/team/members/2/resend');
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Invitation resent' })
             );
@@ -284,7 +284,7 @@ describe('useTeamMembers', () => {
                 await result.current.refresh({ role: 'admin', status: 'active' });
             });
 
-            expect(mockApiGet).toHaveBeenLastCalledWith('api/v1/team/members', {
+            expect(mockApiGet).toHaveBeenLastCalledWith('/team/members', {
                 params: { role: 'admin', status: 'active' },
             });
         });
