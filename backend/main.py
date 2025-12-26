@@ -25,6 +25,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# Sentry Error Tracking (Production)
+# =============================================================================
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            # Performance Monitoring
+            traces_sample_rate=0.1,  # 10% of transactions for performance
+            # Profiling
+            profiles_sample_rate=0.1,  # 10% of sampled transactions
+            # Environment
+            environment=os.getenv("ENVIRONMENT", "development"),
+            # Integrations
+            integrations=[
+                FastApiIntegration(),
+                StarletteIntegration(),
+            ],
+            # Release tracking
+            release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "local"),
+        )
+        logger.info("🔭 Sentry initialized for error tracking")
+    except ImportError:
+        logger.warning("⚠️ sentry-sdk not installed, error tracking disabled")
+    except Exception as e:
+        logger.warning(f"⚠️ Sentry initialization failed: {e}")
+
 # Import routers
 from api.v1.ingest import router as ingest_router
 from api.v1.search import router as search_router

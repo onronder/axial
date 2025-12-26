@@ -37,3 +37,6 @@ trafilatura
 ultimate-sitemap-parser
 youtube-transcript-api
 lxml
+
+# Production Monitoring & Error Tracking
+sentry-sdk[fastapi,celery]

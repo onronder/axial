@@ -5,8 +5,30 @@ Production-grade async task queue for heavy file processing.
 Uses Redis as broker and result backend.
 """
 
+import os
 from celery import Celery
 from core.config import settings
+
+# =============================================================================
+# Sentry Error Tracking for Celery Workers
+# =============================================================================
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.celery import CeleryIntegration
+        
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            traces_sample_rate=0.1,
+            profiles_sample_rate=0.1,
+            environment=os.getenv("ENVIRONMENT", "development"),
+            integrations=[CeleryIntegration()],
+            release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "local"),
+        )
+    except ImportError:
+        pass  # sentry-sdk not installed
+    except Exception:
+        pass  # Sentry init failed
 
 # Initialize Celery with Redis
 celery_app = Celery(
