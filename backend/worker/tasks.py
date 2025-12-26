@@ -462,19 +462,16 @@ def ingest_connector_task(
             update_job_status(supabase, job_id, "completed", 1)
             return {"status": "skipped", "message": "No content processed"}
         
-        # 3. Embed documents
+        # 3. Process each document through DocumentProcessorFactory
+        from services.parsers import DocumentProcessorFactory
         from langchain_openai import OpenAIEmbeddings
+        
         embeddings_model = OpenAIEmbeddings(
             model="text-embedding-3-small",
             api_key=settings.OPENAI_API_KEY
         )
         
-        chunk_texts = [d.page_content for d in docs]
-        chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
-        
-        logger.info(f"📥 [Worker:{task_id}] Embedded {len(chunk_texts)} chunks")
-        
-        # 4. Map connector to source_type enum
+        # Map connector to source_type enum
         CONNECTOR_TYPE_TO_ENUM = {
             "google_drive": "drive",
             "drive": "drive",
@@ -485,46 +482,91 @@ def ingest_connector_task(
         }
         source_type_enum = CONNECTOR_TYPE_TO_ENUM.get(connector_type, "file")
         
-        # 5. Group by source and store via ATOMIC RPC
-        from collections import defaultdict
-        grouped = defaultdict(list)
-        for i, doc in enumerate(docs):
-            key = doc.metadata.get('source_url') or doc.metadata.get('file_id') or "unknown"
-            grouped[key].append((doc, chunk_embeddings[i]))
-        
         results = []
         processed_count = 0
         
-        for key, pairs in grouped.items():
-            first_doc = pairs[0][0]
+        for doc in docs:
+            doc_title = doc.metadata.get('title', 'Untitled')
+            doc_content = doc.page_content
+            source_url = doc.metadata.get('source_url')
             
-            # Prepare chunks payload for atomic RPC
+            # Route through appropriate processor based on connector type
+            if connector_type in ["notion"]:
+                # Notion: Treat as markdown (has headers, lists, etc.)
+                result = DocumentProcessorFactory.process_web_content(
+                    doc_content,
+                    source_url or doc_title
+                )
+            else:
+                # Drive and others: Use extension/mime_type routing
+                content_bytes = doc_content.encode('utf-8')
+                mime_type = doc.metadata.get('mime_type', 'text/plain')
+                
+                # Try to get file extension from title
+                filename = doc_title
+                if not any(filename.endswith(ext) for ext in ['.pdf', '.docx', '.md', '.txt', '.py', '.js']):
+                    # Add extension based on mime type
+                    if 'pdf' in mime_type:
+                        filename = f"{doc_title}.pdf"
+                    elif 'markdown' in mime_type:
+                        filename = f"{doc_title}.md"
+                    elif 'document' in mime_type:
+                        filename = f"{doc_title}.docx"
+                
+                result = DocumentProcessorFactory.process(
+                    content=content_bytes,
+                    filename=filename,
+                    mime_type=mime_type
+                )
+            
+            if not result.chunks:
+                logger.warning(f"⚠️ [Worker:{task_id}] No chunks from: {doc_title}")
+                continue
+            
+            # Embed chunks
+            chunk_texts = [chunk.content for chunk in result.chunks]
+            chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+            
+            # Build chunks payload with enriched metadata
             chunks_payload = []
-            for idx, (doc, emb) in enumerate(pairs):
+            for chunk, embedding in zip(result.chunks, chunk_embeddings):
                 chunks_payload.append({
-                    "content": doc.page_content,
-                    "embedding": emb,
-                    "chunk_index": idx
+                    "content": chunk.content,
+                    "embedding": embedding,
+                    "chunk_index": chunk.chunk_index,
+                    "metadata": {
+                        **chunk.metadata,
+                        "token_count": chunk.token_count,
+                    }
                 })
             
-            # ATOMIC RPC: Insert document with all chunks in single transaction
+            # Document metadata
+            doc_metadata = {
+                **doc.metadata,
+                "file_type": result.file_type,
+                "total_tokens": result.total_tokens,
+                "total_chunks": len(result.chunks),
+                **(result.metadata or {}),
+            }
+            
+            # ATOMIC RPC: Insert document with all chunks
             rpc_result = supabase.rpc("ingest_document_with_chunks", {
                 "p_user_id": user_id,
-                "p_doc_title": first_doc.metadata.get('title', 'Untitled'),
+                "p_doc_title": doc_title,
                 "p_source_type": source_type_enum,
-                "p_source_url": first_doc.metadata.get('source_url'),
-                "p_metadata": json.dumps(first_doc.metadata if isinstance(first_doc.metadata, dict) else {}),
+                "p_source_url": source_url,
+                "p_metadata": json.dumps(doc_metadata),
                 "p_chunks": json.dumps(chunks_payload)
             }).execute()
             
             if rpc_result.data:
                 doc_id = rpc_result.data
                 results.append(str(doc_id))
-                logger.info(f"📄 [Worker:{task_id}] Created document via RPC: {first_doc.metadata.get('title', 'Untitled')}")
+                logger.info(f"📄 [Worker:{task_id}] {doc_title}: {len(result.chunks)} chunks via {result.file_type}")
             else:
-                logger.warning(f"⚠️ [Worker:{task_id}] RPC returned no data for {key}")
+                logger.warning(f"⚠️ [Worker:{task_id}] RPC returned no data for {doc_title}")
             
-            # Update progress after each document group
+            # Update progress
             processed_count += 1
             if job_id:
                 update_job_status(supabase, job_id, "processing", processed_count)
@@ -546,7 +588,7 @@ def ingest_connector_task(
         # Send email notification (fail-safe, respects user preferences)
         send_email_notification(supabase, user_id, len(results))
         
-        logger.info(f"✅ [Worker:{task_id}] Ingestion complete: {len(results)} documents (via atomic RPC)")
+        logger.info(f"✅ [Worker:{task_id}] Ingestion complete: {len(results)} documents (via DocumentProcessorFactory)")
         return {"status": "success", "ingested_ids": results, "task_id": task_id, "job_id": job_id}
         
     except Exception as e:
