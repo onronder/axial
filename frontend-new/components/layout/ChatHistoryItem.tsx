@@ -73,37 +73,47 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
 
   return (
     <>
-      <Link
-        href={`/dashboard/chat/${conversation.id}`}
-        className={cn(
-          "group flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-all duration-150",
-          isActive
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "text-sidebar-foreground hover:bg-sidebar-accent/50"
-        )}
-      >
-        {/* Title - flex-1 with min-w-0 for proper truncation */}
-        <span className="flex-1 min-w-0 truncate">
-          {conversation.title}
-        </span>
+      {/* 
+        CRITICAL FIX: Dropdown is now OUTSIDE the Link component.
+        This prevents clicks on the menu from triggering navigation.
+      */}
+      <div className="group relative flex items-center">
+        {/* Chat Link - navigates to conversation */}
+        <Link
+          href={`/dashboard/chat/${conversation.id}`}
+          className={cn(
+            "flex-1 flex items-center rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-all duration-150 pr-10",
+            isActive
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-foreground hover:bg-sidebar-accent/50"
+          )}
+        >
+          <span className="flex-1 min-w-0 truncate">
+            {conversation.title}
+          </span>
+        </Link>
 
-        {/* Three-dots button container - shrink-0 to maintain size */}
+        {/* Three-dots menu - OUTSIDE the Link, positioned absolutely */}
         <div
           className={cn(
-            "shrink-0 transition-opacity duration-150",
+            "absolute right-1 top-1/2 -translate-y-1/2 shrink-0 transition-opacity duration-150",
             isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           )}
-          onClick={(e) => e.preventDefault()}
         >
           <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuTrigger asChild>
               <button
+                type="button"
                 className={cn(
                   "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
-                  "bg-sidebar-accent/80 hover:bg-sidebar-border",
+                  "bg-sidebar-accent hover:bg-sidebar-border",
                   "text-sidebar-foreground/70 hover:text-sidebar-foreground",
                   "focus:outline-none focus:ring-2 focus:ring-primary/50"
                 )}
+                onClick={(e) => {
+                  // Prevent any bubbling to parent elements
+                  e.stopPropagation();
+                }}
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
@@ -115,8 +125,8 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
               className="w-40 z-[100]"
             >
               <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
+                onSelect={(e) => {
+                  e.preventDefault();
                   setNewTitle(conversation.title);
                   setShowRenameDialog(true);
                 }}
@@ -125,8 +135,8 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
                 Rename
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
+                onSelect={(e) => {
+                  e.preventDefault();
                   setShowDeleteDialog(true);
                 }}
                 className="text-destructive focus:text-destructive"
@@ -137,7 +147,7 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </Link>
+      </div>
 
       {/* Rename Dialog */}
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
