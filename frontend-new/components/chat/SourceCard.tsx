@@ -234,13 +234,21 @@ export function SourceCard({ source, className }: SourceCardProps) {
 
 /**
  * SourceCardGrid - Displays multiple sources in a responsive grid
+ * Supports hover highlighting to coordinate with inline citations
  */
 interface SourceCardGridProps {
     sources: SourceMetadata[];
     className?: string;
+    highlightedIndex?: number | null;
+    onSourceHover?: (index: number | null) => void;
 }
 
-export function SourceCardGrid({ sources, className }: SourceCardGridProps) {
+export function SourceCardGrid({
+    sources,
+    className,
+    highlightedIndex = null,
+    onSourceHover
+}: SourceCardGridProps) {
     if (!sources || sources.length === 0) return null;
 
     return (
@@ -251,9 +259,24 @@ export function SourceCardGrid({ sources, className }: SourceCardGridProps) {
                 : "grid-cols-2 lg:grid-cols-3",
             className
         )}>
-            {sources.map((source, index) => (
-                <SourceCard key={index} source={source} />
-            ))}
+            {sources.map((source, idx) => {
+                const sourceIndex = source.index || idx + 1;
+                const isHighlighted = highlightedIndex === sourceIndex;
+
+                return (
+                    <div
+                        key={idx}
+                        className={cn(
+                            "transition-all duration-150",
+                            isHighlighted && "ring-2 ring-primary ring-offset-2 rounded-lg scale-[1.02]"
+                        )}
+                        onMouseEnter={() => onSourceHover?.(sourceIndex)}
+                        onMouseLeave={() => onSourceHover?.(null)}
+                    >
+                        <SourceCard source={source} />
+                    </div>
+                );
+            })}
         </div>
     );
 }

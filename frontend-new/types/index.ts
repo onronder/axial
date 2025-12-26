@@ -18,13 +18,25 @@ export interface User {
 // CHAT TYPES
 // =============================================================================
 
+/**
+ * RAG Citation Source - structured metadata from backend
+ */
+export interface Source {
+    index: number;
+    type: 'File' | 'Web' | 'Drive' | 'Notion' | string;
+    label: string;
+    url?: string;
+    page?: number;
+    section?: string;
+}
+
 export interface Message {
     id: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
     timestamp?: string;
     created_at?: string;
-    sources?: string[];
+    sources?: Source[];  // Structured RAG sources
 }
 
 export interface ChatConversation {

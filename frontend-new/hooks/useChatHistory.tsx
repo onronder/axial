@@ -3,12 +3,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { Source } from '@/types';
 
 export interface Message {
     id: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
-    sources?: string[];
+    sources?: Source[];  // Structured RAG sources from backend
     created_at: string;
 }
 
