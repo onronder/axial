@@ -15,12 +15,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 
-# LangChain imports
-from langchain.text_splitter import (
+# LangChain imports (use langchain_text_splitters package)
+from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
     Language,
+    MarkdownHeaderTextSplitter,
 )
-from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 # Token counting
 import tiktoken
