@@ -161,11 +161,28 @@ export function DataSourcesGrid() {
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {sources.map((source) => (
-                <DataSourceCard
-                  key={source.id}
-                  source={source}
-                  onBrowse={() => setBrowsing(source)}
-                />
+                // Use URLCrawlerInput for web type, DataSourceCard for others
+                source.type === "web" ? (
+                  <URLCrawlerInput
+                    key={source.id}
+                    source={{
+                      id: source.id,
+                      name: source.name,
+                      type: source.type,
+                      status: source.isConnected ? "connected" : "disconnected",
+                      lastSync: source.lastSyncAt || "-",
+                      icon: source.iconPath || source.type,
+                      description: source.description,
+                      category: source.category as any,
+                    }}
+                  />
+                ) : (
+                  <DataSourceCard
+                    key={source.id}
+                    source={source}
+                    onBrowse={() => setBrowsing(source)}
+                  />
+                )
               ))}
             </div>
           </div>
