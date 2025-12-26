@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useRouter, useParams } from "next/navigation";
+import { MoreHorizontal, Pencil, Trash2, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,21 +40,35 @@ interface ChatHistoryItemProps {
 
 export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps) {
   const router = useRouter();
+  const params = useParams();
+  const currentChatId = params.chatId as string;
+
   const { deleteChat, renameChat } = useChatHistory();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [newTitle, setNewTitle] = useState(conversation.title);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleRename = () => {
-    renameChat(conversation.id, newTitle);
+  const handleRename = async () => {
+    await renameChat(conversation.id, newTitle);
     setShowRenameDialog(false);
   };
 
-  const handleDelete = () => {
-    deleteChat(conversation.id);
-    setShowDeleteDialog(false);
-    // Navigate to new chat after deletion
-    router.push("/dashboard/chat/new");
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteChat(conversation.id);
+      setShowDeleteDialog(false);
+
+      // Only navigate if we're currently viewing the deleted chat
+      if (currentChatId === conversation.id) {
+        router.replace("/dashboard/chat/new");
+      }
+    } catch (error) {
+      console.error("Delete failed:", error);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -62,28 +76,34 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
       <Link
         href={`/dashboard/chat/${conversation.id}`}
         className={cn(
-          "group relative flex items-center rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors block",
+          "group flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-all duration-150",
           isActive
             ? "bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-sidebar-foreground hover:bg-sidebar-accent/50"
         )}
       >
-        {/* Title with max-width to leave room for button */}
-        <span className="truncate pr-8 flex-1">
+        {/* Title - flex-1 with min-w-0 for proper truncation */}
+        <span className="flex-1 min-w-0 truncate">
           {conversation.title}
         </span>
 
-        {/* Three-dots button - always visible on active, visible on hover otherwise */}
+        {/* Three-dots button container - shrink-0 to maintain size */}
         <div
           className={cn(
-            "absolute right-2 top-1/2 -translate-y-1/2 transition-opacity",
+            "shrink-0 transition-opacity duration-150",
             isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           )}
+          onClick={(e) => e.preventDefault()}
         >
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
               <button
-                className="p-1.5 rounded-md hover:bg-sidebar-border/50 text-sidebar-foreground/70 hover:text-sidebar-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className={cn(
+                  "flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+                  "bg-sidebar-accent/80 hover:bg-sidebar-border",
+                  "text-sidebar-foreground/70 hover:text-sidebar-foreground",
+                  "focus:outline-none focus:ring-2 focus:ring-primary/50"
+                )}
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
@@ -151,12 +171,20 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
+              disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
