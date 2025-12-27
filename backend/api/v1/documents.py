@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from core.security import get_current_user
 from core.db import get_supabase
+from core.rate_limit import limiter
 from services.audit import log_document_delete
 
 router = APIRouter()
@@ -34,7 +35,9 @@ class DocumentStatsDTO(BaseModel):
 # =============================================================================
 
 @router.get("/documents/stats", response_model=DocumentStatsDTO)
+@limiter.limit("100/minute")
 async def get_document_stats(
+    request: Request,
     user_id: str = Depends(get_current_user)
 ):
     """
@@ -82,7 +85,9 @@ async def get_document_stats(
 # =============================================================================
 
 @router.get("/documents", response_model=List[DocumentDTO])
+@limiter.limit("60/minute")
 async def list_documents(
+    request: Request,
     user_id: str = Depends(get_current_user),
     limit: int = 50,
     offset: int = 0
@@ -110,6 +115,7 @@ async def list_documents(
         raise HTTPException(status_code=500, detail=f"Failed to fetch documents: {str(e)}")
 
 @router.delete("/documents/{doc_id}")
+@limiter.limit("30/minute")
 async def delete_document(
     doc_id: str,
     request: Request,

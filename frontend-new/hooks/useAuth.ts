@@ -137,7 +137,7 @@ export const useAuth = () => {
         }
 
         setUser(null);
-        router.push("/login");
+        router.push("/auth/login");
     };
 
     return {

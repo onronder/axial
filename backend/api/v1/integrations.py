@@ -4,11 +4,12 @@ Integrations API Endpoints
 Provides dynamic connector discovery, OAuth handling, and integration management.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 from core.security import get_current_user, encrypt_token
 from core.db import get_supabase
 from core.config import settings
+from core.rate_limit import limiter
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta
 from typing import Optional, List
@@ -59,7 +60,8 @@ class IngestRequest(BaseModel):
 # =============================================================================
 
 @router.get("/integrations/available", response_model=List[ConnectorDefinitionOut])
-async def get_available_connectors():
+@limiter.limit("100/minute")
+async def get_available_connectors(request: Request):
     """
     Returns all active connector definitions.
     Frontend uses this to dynamically render available integrations.
@@ -75,7 +77,9 @@ async def get_available_connectors():
 
 
 @router.get("/integrations/status", response_model=List[UserIntegrationOut])
+@limiter.limit("60/minute")
 async def get_user_integrations(
+    request: Request,
     user_id: str = Depends(get_current_user)
 ):
     """
