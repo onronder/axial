@@ -4,9 +4,12 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from core.security import get_current_user
 from core.db import get_supabase
-from services.audit import log_chat_delete
 from core.config import settings
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from services.audit import log_chat_delete, audit_logger
+from services.llm_factory import LLMFactory
+from services.guardrails import guardrail_service
+from services.router import llm_router
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from slowapi import Limiter
@@ -251,6 +254,7 @@ SYSTEM_PROMPT = """You are Axio, an intelligent AI assistant with access to the 
 - Answer questions using ONLY the provided context documents
 - Be helpful, accurate, and conversational
 - Synthesize information from multiple sources when relevant
+- RESPOND IN {language} (the user's detected language)
 
 ## Citation Rules (IMPORTANT)
 - Use bracket citations like [1], [2], [3] to reference your sources
@@ -270,7 +274,7 @@ If the context doesn't contain enough information, say:
 
 ---
 
-Remember: Cite your sources using [1], [2], etc. and be conversational."""
+Remember: Cite your sources using [1], [2], etc. Respond in {language}."""
 
 
 def format_context_with_citations(docs: List[Dict]) -> tuple:
@@ -342,23 +346,85 @@ def format_context_with_citations(docs: List[Dict]) -> tuple:
 async def chat_endpoint(
     request: Request,
     payload: ChatRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
     """
-    Conversational RAG Chat Endpoint.
+    Intelligent Conversational RAG Chat Endpoint.
     
-    Features:
-    1. Condense Question - Rewrites follow-ups as standalone queries
-    2. Hybrid Search - Vector + keyword retrieval
-    3. Citation-aware System Prompt
-    4. Streaming Support (optional)
+    Pipeline:
+    1. Guardrail Analysis - Safety, language, intent, complexity
+    2. Fast Exit - Handle greetings/off-topic without RAG
+    3. User Plan Lookup - Determine subscription tier
+    4. Smart Routing - Select optimal model (GPT-4o or Llama)
+    5. RAG Execution - Retrieve context, generate answer
+    6. Streaming Support - Optional SSE streaming
     """
     supabase = get_supabase()
     
-    # ========== STEP 1: Condense Question (if history exists) ==========
+    # ========== STEP 1: GUARDRAIL ANALYSIS (Ultra-fast via Groq) ==========
+    guardrail_result = await guardrail_service.analyze_query(payload.query)
+    detected_language = guardrail_result.language
+    
+    logger.info(f"🛡️ [Chat] Guardrails: lang={detected_language}, "
+                f"safe={guardrail_result.is_safe}, intent={guardrail_result.intent}, "
+                f"complexity={guardrail_result.complexity}")
+    
+    # ========== STEP 2: SAFETY CHECK ==========
+    if not guardrail_result.is_safe:
+        # Log safety violation to audit
+        audit_logger.log(
+            background_tasks,
+            user_id=user_id,
+            action="safety_violation",
+            resource_type="chat",
+            resource_id=payload.conversation_id,
+            details={"query": payload.query[:500], "language": detected_language},
+            request=request
+        )
+        
+        # Return refusal message
+        refusal = guardrail_result.reply or "I cannot assist with that request."
+        return ChatResponse(
+            answer=refusal,
+            sources=[],
+            conversation_id=payload.conversation_id
+        )
+    
+    # ========== STEP 3: INTENT CHECK (Fast exit for non-RAG) ==========
+    if guardrail_result.intent in ("GREETING", "OFF_TOPIC"):
+        # Return pre-generated response (no RAG needed)
+        fast_reply = guardrail_result.reply or "How can I help you with your documents today?"
+        
+        # Save to conversation if conversation_id exists
+        if payload.conversation_id:
+            save_messages(supabase, payload.conversation_id, payload.query, fast_reply, [])
+        
+        return ChatResponse(
+            answer=fast_reply,
+            sources=[],
+            conversation_id=payload.conversation_id
+        )
+    
+    # ========== STEP 4: FETCH USER PLAN ==========
+    try:
+        profile_response = supabase.table("user_profiles").select("plan").eq("user_id", user_id).single().execute()
+        user_plan = profile_response.data.get("plan", "free") if profile_response.data else "free"
+    except Exception as e:
+        logger.warning(f"⚠️ [Chat] Could not fetch user plan: {e}")
+        user_plan = "free"
+    
+    # ========== STEP 5: SMART ROUTING (Select Model) ==========
+    model_selection = llm_router.select_model(
+        plan=user_plan,
+        complexity=guardrail_result.complexity
+    )
+    logger.info(f"🚀 [Chat] Route: plan={user_plan} → {model_selection.provider}/{model_selection.model}")
+    
+    # ========== STEP 6: CONDENSE QUESTION (if history exists) ==========
     search_query = condense_question(payload.query, payload.history or [])
     
-    # ========== STEP 2: Embed the (potentially condensed) query ==========
+    # ========== STEP 7: EMBED QUERY ==========
     embeddings_model = OpenAIEmbeddings(
         model="text-embedding-3-small", 
         api_key=settings.OPENAI_API_KEY
@@ -370,23 +436,21 @@ async def chat_endpoint(
         logger.error(f"ERROR: Embedding failed: {e}")
         raise HTTPException(500, f"Embedding failed: {e}")
 
-    # ========== STEP 3: Hybrid Search (Vector + Keyword) ==========
+    # ========== STEP 8: HYBRID SEARCH ==========
     try:
-        # Hybrid search with weighted scoring
         response = supabase.rpc("hybrid_search", {
             "query_text": search_query,
             "query_embedding": query_vector,
-            "match_count": 7,  # Increased for better coverage
+            "match_count": 7,
             "filter_user_id": user_id,
             "vector_weight": 0.7,
             "keyword_weight": 0.3,
-            "similarity_threshold": 0.25  # Slightly lower for more recall
+            "similarity_threshold": 0.25
         }).execute()
         
         docs = response.data
         logger.info(f"📚 [Chat] Hybrid search: {len(docs) if docs else 0} results")
     except Exception as e:
-        # Fallback to vector-only search
         logger.warning(f"⚠️ [Chat] Hybrid search failed, using vector: {e}")
         try:
             response = supabase.rpc("match_documents", {
@@ -400,36 +464,44 @@ async def chat_endpoint(
             logger.error(f"ERROR: Retrieval failed: {fallback_e}")
             raise HTTPException(500, f"Retrieval failed: {fallback_e}")
 
-    # ========== STEP 4: Format Context with Citations ==========
+    # ========== STEP 9: HANDLE NO DOCUMENTS ==========
     if not docs:
-        no_docs_response = ChatResponse(
-            answer="I couldn't find relevant information in your knowledge base to answer that question. Try uploading more documents or rephrasing your question.",
+        # Language-aware "no results" message
+        no_docs_messages = {
+            "tr": "Bilgi tabanınızda bu soruyu yanıtlayacak ilgili bilgi bulamadım. Daha fazla belge yüklemeyi veya sorunuzu yeniden ifade etmeyi deneyin.",
+            "en": "I couldn't find relevant information in your knowledge base to answer that question. Try uploading more documents or rephrasing your question.",
+        }
+        no_docs_answer = no_docs_messages.get(detected_language, no_docs_messages["en"])
+        
+        return ChatResponse(
+            answer=no_docs_answer,
             sources=[],
             conversation_id=payload.conversation_id
         )
-        return no_docs_response
 
     context_text, sources_metadata = format_context_with_citations(docs)
 
-    # ========== STEP 5: Generate Answer ==========
+    # ========== STEP 10: GET SELECTED LLM ==========
+    llm = LLMFactory.get_model(
+        provider=model_selection.provider,
+        model_name=model_selection.model,
+        temperature=0.1,
+        streaming=payload.stream
+    )
+    
+    # Language-aware prompt
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
         ("user", "{question}")
     ])
-    
-    llm = ChatOpenAI(
-        model=payload.model,
-        temperature=0.1,  # Slight creativity for natural responses
-        api_key=settings.OPENAI_API_KEY,
-        streaming=payload.stream
-    )
     
     if payload.stream:
         # ========== STREAMING RESPONSE ==========
         return StreamingResponse(
             stream_chat_response(
                 prompt, llm, context_text, payload.query, 
-                sources_metadata, payload.conversation_id, user_id, supabase
+                sources_metadata, payload.conversation_id, user_id, supabase,
+                detected_language
             ),
             media_type="text/event-stream"
         )
@@ -438,7 +510,11 @@ async def chat_endpoint(
         chain = prompt | llm | StrOutputParser()
         
         try:
-            answer = chain.invoke({"context": context_text, "question": payload.query})
+            answer = chain.invoke({
+                "context": context_text, 
+                "question": payload.query,
+                "language": detected_language
+            })
         except Exception as e:
             logger.error(f"ERROR: LLM Generation failed: {e}")
             raise HTTPException(500, f"LLM Generation failed: {e}")
@@ -459,7 +535,8 @@ async def chat_endpoint(
 
 async def stream_chat_response(
     prompt, llm, context: str, question: str,
-    sources: List[Dict], conversation_id: str, user_id: str, supabase
+    sources: List[Dict], conversation_id: str, user_id: str, supabase,
+    language: str = "en"
 ) -> AsyncGenerator[str, None]:
     """
     Stream chat response using Server-Sent Events (SSE).
@@ -474,7 +551,7 @@ async def stream_chat_response(
     try:
         chain = prompt | llm
         
-        async for chunk in chain.astream({"context": context, "question": question}):
+        async for chunk in chain.astream({"context": context, "question": question, "language": language}):
             if hasattr(chunk, 'content') and chunk.content:
                 full_response += chunk.content
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
