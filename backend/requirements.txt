@@ -41,3 +41,7 @@ lxml
 
 # Production Monitoring & Error Tracking
 sentry-sdk[fastapi,celery]
+
+# Multi-Model AI (Groq for high-speed Llama inference)
+langchain-groq==0.2.1
+groq==0.13.0
