@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { createContext, useContext, useCallback, ReactNode } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Source } from '@/types';
@@ -9,7 +10,7 @@ export interface Message {
     id: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
-    sources?: Source[];  // Structured RAG sources from backend
+    sources?: Source[];
     created_at: string;
 }
 
@@ -32,114 +33,143 @@ interface ChatHistoryContextType {
     deleteChat: (id: string) => Promise<void>;
     renameChat: (id: string, title: string) => Promise<void>;
     getMessagesById: (conversationId: string) => Promise<Message[]>;
-    refresh: () => Promise<void>;
+    refresh: () => void;
 }
 
 const ChatHistoryContext = createContext<ChatHistoryContextType | null>(null);
 
+// Query key for chat history
+const CHAT_HISTORY_KEY = ['chatHistory'] as const;
+
 /**
- * Provider component that wraps the app and provides chat history state.
- * This ensures only ONE fetch happens regardless of how many components use the hook.
+ * Fetch conversations from API.
+ */
+async function fetchConversations(): Promise<ChatConversation[]> {
+    const { data } = await api.get('/conversations');
+    return data || [];
+}
+
+/**
+ * Provider component with React Query integration.
+ * Provides automatic caching, deduplication, and background refetching.
  */
 export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     const { toast } = useToast();
-    const [conversations, setConversations] = useState<ChatConversation[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const hasFetched = useRef(false);
+    const queryClient = useQueryClient();
 
-    const fetchConversations = useCallback(async () => {
-        console.log('💬 [ChatHistory] Fetching conversations...');
-        setIsLoading(true);
-        try {
-            const { data } = await api.get('/conversations');
-            console.log('💬 [ChatHistory] ✅ Got', data?.length || 0, 'conversations');
-            setConversations(data || []);
-        } catch (error: any) {
-            console.error('💬 [ChatHistory] ❌ Fetch failed:', error.message);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+    // Main query for fetching conversations
+    const {
+        data: conversations = [],
+        isLoading,
+        refetch
+    } = useQuery({
+        queryKey: CHAT_HISTORY_KEY,
+        queryFn: fetchConversations,
+        staleTime: 5 * 60 * 1000, // 5 minutes
+        gcTime: 10 * 60 * 1000,   // 10 minutes cache
+    });
 
-    // Fetch once on mount
-    useEffect(() => {
-        if (!hasFetched.current) {
-            hasFetched.current = true;
-            fetchConversations();
-        }
-    }, [fetchConversations]);
-
-    const createNewChat = useCallback(async (title: string = 'New Chat'): Promise<string> => {
-        console.log('💬 [ChatHistory] Creating chat:', title);
-        try {
+    // Create chat mutation
+    const createMutation = useMutation({
+        mutationFn: async (title: string) => {
             const { data } = await api.post('/conversations', { title });
-            console.log('💬 [ChatHistory] ✅ Created:', data.id);
-            setConversations(prev => [data, ...prev]);
-            return data.id;
-        } catch (error: any) {
-            console.error('💬 [ChatHistory] ❌ Create failed:', error.message);
+            return data;
+        },
+        onSuccess: (newChat) => {
+            // Optimistically add to cache
+            queryClient.setQueryData<ChatConversation[]>(CHAT_HISTORY_KEY, (old) =>
+                [newChat, ...(old || [])]
+            );
+        },
+        onError: (error: any) => {
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to create new chat.',
                 variant: 'destructive',
             });
-            throw error;
-        }
-    }, [toast]);
+        },
+    });
 
-    const deleteChat = useCallback(async (id: string): Promise<void> => {
-        console.log('💬 [ChatHistory] Deleting chat:', id);
-        try {
+    // Delete chat mutation
+    const deleteMutation = useMutation({
+        mutationFn: async (id: string) => {
             await api.delete(`/conversations/${id}`);
-            console.log('💬 [ChatHistory] ✅ Deleted');
-            setConversations(prev => prev.filter(c => c.id !== id));
+            return id;
+        },
+        onMutate: async (deletedId) => {
+            await queryClient.cancelQueries({ queryKey: CHAT_HISTORY_KEY });
+            const previous = queryClient.getQueryData<ChatConversation[]>(CHAT_HISTORY_KEY);
+            queryClient.setQueryData<ChatConversation[]>(CHAT_HISTORY_KEY, (old) =>
+                old?.filter((c) => c.id !== deletedId) ?? []
+            );
+            return { previous };
+        },
+        onSuccess: () => {
             toast({
                 title: 'Chat deleted',
                 description: 'The conversation has been removed.',
             });
-        } catch (error: any) {
-            console.error('💬 [ChatHistory] ❌ Delete failed:', error.message);
+        },
+        onError: (error: any, _id, context) => {
+            if (context?.previous) {
+                queryClient.setQueryData(CHAT_HISTORY_KEY, context.previous);
+            }
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to delete chat.',
                 variant: 'destructive',
             });
-        }
-    }, [toast]);
+        },
+    });
 
-    const renameChat = useCallback(async (id: string, title: string): Promise<void> => {
-        console.log('💬 [ChatHistory] Renaming chat:', id);
-        try {
+    // Rename chat mutation
+    const renameMutation = useMutation({
+        mutationFn: async ({ id, title }: { id: string; title: string }) => {
             const { data } = await api.patch(`/conversations/${id}`, { title });
-            console.log('💬 [ChatHistory] ✅ Renamed');
-            setConversations(prev =>
-                prev.map(c => (c.id === id ? { ...c, title: data.title } : c))
+            return data;
+        },
+        onSuccess: (updatedChat) => {
+            queryClient.setQueryData<ChatConversation[]>(CHAT_HISTORY_KEY, (old) =>
+                old?.map((c) => (c.id === updatedChat.id ? updatedChat : c)) ?? []
             );
             toast({
                 title: 'Chat renamed',
                 description: 'The conversation has been updated.',
             });
-        } catch (error: any) {
-            console.error('💬 [ChatHistory] ❌ Rename failed:', error.message);
+        },
+        onError: (error: any) => {
             toast({
                 title: 'Error',
                 description: error.response?.data?.detail || 'Failed to rename chat.',
                 variant: 'destructive',
             });
-        }
-    }, [toast]);
+        },
+    });
 
+    // Get messages (uses separate query per conversation)
     const getMessagesById = useCallback(async (conversationId: string): Promise<Message[]> => {
-        console.log('💬 [ChatHistory] Getting messages for:', conversationId);
         try {
             const { data } = await api.get(`/conversations/${conversationId}/messages`);
-            console.log('💬 [ChatHistory] ✅ Got', data?.length || 0, 'messages');
             return data;
-        } catch (error: any) {
-            console.error('💬 [ChatHistory] ❌ Get messages failed:', error.message);
+        } catch (error) {
+            console.error('Failed to get messages:', error);
             return [];
         }
     }, []);
+
+    // Wrapper functions for mutations
+    const createNewChat = useCallback(async (title: string = 'New Chat'): Promise<string> => {
+        const result = await createMutation.mutateAsync(title);
+        return result.id;
+    }, [createMutation]);
+
+    const deleteChat = useCallback(async (id: string): Promise<void> => {
+        await deleteMutation.mutateAsync(id);
+    }, [deleteMutation]);
+
+    const renameChat = useCallback(async (id: string, title: string): Promise<void> => {
+        await renameMutation.mutateAsync({ id, title });
+    }, [renameMutation]);
 
     const value: ChatHistoryContextType = {
         conversations,
@@ -148,7 +178,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
         deleteChat,
         renameChat,
         getMessagesById,
-        refresh: fetchConversations,
+        refresh: () => refetch(),
     };
 
     return (
@@ -160,7 +190,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
 
 /**
  * Hook for accessing chat history from anywhere in the app.
- * All consumers share the same state - no duplicate API calls.
+ * All consumers share the same cached state.
  */
 export const useChatHistory = (): ChatHistoryContextType => {
     const context = useContext(ChatHistoryContext);
@@ -171,7 +201,7 @@ export const useChatHistory = (): ChatHistoryContextType => {
 };
 
 /**
- * Group conversations by date for sidebar display
+ * Group conversations by date for sidebar display.
  */
 export const groupConversationsByDate = (conversations: ChatConversation[]): GroupedConversation[] => {
     const now = new Date();

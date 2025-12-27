@@ -1,16 +1,46 @@
 "use client";
 
-import { MessageSquare } from "lucide-react";
+import { useMemo } from "react";
+import { MessageSquare, Loader2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useChatHistory, groupConversationsByDate } from "@/hooks/useChatHistory";
 import { ChatHistoryItem } from "./ChatHistoryItem";
 
+/**
+ * Chat history list component with grouping by date.
+ * 
+ * Features:
+ * - Groups chats by Today, Yesterday, Previous 7 Days, Older
+ * - Loading skeleton while fetching
+ * - Empty state for new users
+ * - Memoized grouping for performance
+ */
 export function ChatHistoryList() {
   const { chatId } = useParams();
-  const { conversations } = useChatHistory();
+  const { conversations, isLoading } = useChatHistory();
 
-  const groupedConversations = groupConversationsByDate(conversations);
+  // Memoize grouping to avoid recalculation on every render
+  const groupedConversations = useMemo(
+    () => groupConversationsByDate(conversations),
+    [conversations]
+  );
 
+  // Loading skeleton
+  if (isLoading) {
+    return (
+      <div className="space-y-2 px-2">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className="h-10 bg-sidebar-accent/30 rounded-md animate-pulse"
+            style={{ opacity: 1 - i * 0.15 }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Empty state
   if (conversations.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
@@ -42,4 +72,3 @@ export function ChatHistoryList() {
     </div>
   );
 }
-
