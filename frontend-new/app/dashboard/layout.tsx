@@ -11,6 +11,7 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { GlobalProgress } from "@/components/layout/global-progress";
 import { GlobalIngestModal } from "@/components/GlobalIngestModal";
+import { AppErrorBoundary, SidebarErrorBoundary } from "@/components/providers/ErrorBoundary";
 
 interface DashboardLayoutProps {
     children: ReactNode;
@@ -47,12 +48,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <ChatHistoryProvider>
                 <IngestModalProvider>
                     <div className="min-h-screen bg-background">
-                        {/* DESKTOP SIDEBAR - Fixed position, visible on md+ */}
+                        {/* DESKTOP SIDEBAR - Isolated error boundary */}
                         <aside
                             className="fixed inset-y-0 left-0 z-40 hidden md:block border-r border-sidebar-border"
                             style={{ width: `${SIDEBAR_WIDTH}px` }}
                         >
-                            <DashboardSidebar />
+                            <SidebarErrorBoundary>
+                                <DashboardSidebar />
+                            </SidebarErrorBoundary>
                         </aside>
 
                         {/* MAIN CONTENT AREA */}
@@ -63,15 +66,21 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                 onToggle={setMobileMenuOpen}
                             />
 
-                            {/* Page content */}
+                            {/* Page content - with error boundary */}
                             <main className="h-[calc(100vh-56px)] md:h-screen">
-                                {children}
+                                <AppErrorBoundary name="PageContent">
+                                    {children}
+                                </AppErrorBoundary>
                             </main>
                         </div>
 
-                        {/* Global modals and overlays */}
-                        <GlobalIngestModal />
-                        <GlobalProgress />
+                        {/* Global modals and overlays - isolated */}
+                        <SidebarErrorBoundary>
+                            <GlobalIngestModal />
+                        </SidebarErrorBoundary>
+                        <SidebarErrorBoundary>
+                            <GlobalProgress />
+                        </SidebarErrorBoundary>
                     </div>
                 </IngestModalProvider>
             </ChatHistoryProvider>
