@@ -76,16 +76,26 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
     supabase = get_supabase()
     
     # Get user's plan and status from user_profiles
-    profile_result = supabase.table("user_profiles").select("plan, subscription_status").eq(
-        "user_id", str(user_id)
-    ).single().execute()
-    
-    plan = "free"  # Default if no profile exists
-    subscription_status = "active" # Default for backward compatibility
-    
-    if profile_result.data:
-        plan = profile_result.data.get("plan", "free")
-        subscription_status = profile_result.data.get("subscription_status", "active")
+    # Wrap in try/except to handle race condition where profile doesn't exist yet (PGRST116)
+    try:
+        profile_result = supabase.table("user_profiles").select("plan, subscription_status").eq(
+            "user_id", str(user_id)
+        ).single().execute()
+        
+        if profile_result.data:
+            plan = profile_result.data.get("plan", "free")
+            subscription_status = profile_result.data.get("subscription_status", "active")
+    except Exception as e:
+        # If profile not found (common during signup), return safe "none" state
+        logger.warning(f"User profile not found for {user_id} (PGRST116 race condition): {e}")
+        return UserUsage(
+            user_id=str(user_id),
+            files=0,
+            storage_bytes=0,
+            storage_display="0 B",
+            plan="none",
+            subscription_status="inactive"
+        )
     
     # Calculate usage from documents table (accurate, not cached)
     # Using raw SQL via RPC for aggregate functions
