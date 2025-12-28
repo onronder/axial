@@ -48,3 +48,4 @@ groq==0.13.0
 
 # Async caching for hot path queries
 async-lru
+locust
