@@ -75,6 +75,7 @@ class UsageResponse(BaseModel):
     storage: StorageUsage
     features: FeatureAccess
     model_tier: str
+    subscription_status: str
 
 
 class PlansResponse(BaseModel):
@@ -124,7 +125,8 @@ async def get_usage(
                 team=limits.max_team_seats > 1,
                 premium_models=limits.model_tier.value in ["hybrid", "premium"]
             ),
-            model_tier=limits.model_tier.value
+            model_tier=limits.model_tier.value,
+            subscription_status=usage.subscription_status
         )
         
     except Exception as e:

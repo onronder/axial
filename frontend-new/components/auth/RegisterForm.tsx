@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -24,6 +25,9 @@ const registerSchema = z.object({
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Please enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
+  termsAccepted: z.boolean().refine((val) => val === true, {
+    message: "You must accept the Terms and Privacy Policy",
+  }),
 });
 
 type RegisterFormData = z.infer<typeof registerSchema>;
@@ -41,6 +45,7 @@ export function RegisterForm() {
       lastName: "",
       email: "",
       password: "",
+      termsAccepted: false,
     },
   });
 
@@ -154,9 +159,46 @@ export function RegisterForm() {
             )}
           />
 
+          <FormField
+            control={form.control}
+            name="termsAccepted"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    className="border-white/20 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                  />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel className="text-sm font-normal text-white/80">
+                    I agree to the{" "}
+                    <Link
+                      href="/legal/terms"
+                      target="_blank"
+                      className="text-primary hover:underline hover:text-primary/80"
+                    >
+                      Terms of Service
+                    </Link>{" "}
+                    and{" "}
+                    <Link
+                      href="/legal/privacy"
+                      target="_blank"
+                      className="text-primary hover:underline hover:text-primary/80"
+                    >
+                      Privacy Policy
+                    </Link>
+                  </FormLabel>
+                  <FormMessage className="text-red-400 text-xs" />
+                </div>
+              </FormItem>
+            )}
+          />
+
           <button
             type="submit"
-            className="btn-primary-gradient w-full py-3 h-auto mt-2"
+            className="btn-primary-gradient w-full py-3 h-auto mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isLoading}
           >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />}

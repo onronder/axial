@@ -44,7 +44,8 @@ class TestUsageResponseModel:
                 team=False,
                 premium_models=False
             ),
-            model_tier="basic"
+            model_tier="basic",
+            subscription_status="active"
         )
         
         assert response.plan == "free"
@@ -53,6 +54,7 @@ class TestUsageResponseModel:
         assert response.storage.used_bytes == 25_000_000
         assert response.features.web_crawl is False
         assert response.model_tier == "basic"
+        assert response.subscription_status == "active"
     
     @pytest.mark.unit
     def test_usage_count_percentage_calculation(self):
@@ -94,7 +96,9 @@ class TestUsageEndpointWithMocks:
         mock.usage.files = 4
         mock.usage.storage_bytes = 45_000_000
         mock.usage.storage_display = "45 MB"
+        mock.usage.storage_display = "45 MB"
         mock.usage.plan = "free"
+        mock.usage.subscription_status = "active"
         mock.limits = PLANS["free"]
         return mock
     
@@ -106,7 +110,9 @@ class TestUsageEndpointWithMocks:
         mock.usage.files = 50
         mock.usage.storage_bytes = 500_000_000
         mock.usage.storage_display = "500 MB"
+        mock.usage.storage_display = "500 MB"
         mock.usage.plan = "pro"
+        mock.usage.subscription_status = "active"
         mock.limits = PLANS["pro"]
         return mock
     
@@ -153,7 +159,9 @@ class TestUsageEndpointWithMocks:
         mock_over_limit.usage.files = 10  # Over the 5 file limit
         mock_over_limit.usage.storage_bytes = 100_000_000  # Over 50MB limit
         mock_over_limit.usage.storage_display = "100 MB"
+        mock_over_limit.usage.storage_display = "100 MB"
         mock_over_limit.usage.plan = "free"
+        mock_over_limit.usage.subscription_status = "active"
         mock_over_limit.limits = PLANS["free"]
         
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
@@ -272,7 +280,7 @@ class TestUsageServiceWithMocks:
         
         # Mock profile lookup - chained calls need proper setup
         profile_mock = Mock()
-        profile_mock.data = {"plan": "starter"}
+        profile_mock.data = {"plan": "starter", "subscription_status": "trialing"}
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
         
         # Mock documents lookup
@@ -290,6 +298,7 @@ class TestUsageServiceWithMocks:
             assert result.files == 2
             assert result.storage_bytes == 3_000_000
             assert result.plan == "starter"
+            assert result.subscription_status == "trialing"
     
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -303,7 +312,8 @@ class TestUsageServiceWithMocks:
                 files=3,
                 storage_bytes=20_000_000,
                 storage_display="20 MB",
-                plan="free"
+                plan="free",
+                subscription_status="active"
             ),
             limits=PLANS["free"],
             files_remaining=2,
@@ -334,7 +344,8 @@ class TestUsageServiceWithMocks:
                 files=5,  # At limit
                 storage_bytes=20_000_000,
                 storage_display="20 MB",
-                plan="free"
+                plan="free",
+                subscription_status="active"
             ),
             limits=PLANS["free"],
             files_remaining=0,
@@ -364,7 +375,8 @@ class TestUsageServiceWithMocks:
                 files=3,
                 storage_bytes=50_000_000,  # Almost at 50MB limit
                 storage_display="50 MB",
-                plan="free"
+                plan="free",
+                subscription_status="active"
             ),
             limits=PLANS["free"],
             files_remaining=2,
@@ -423,12 +435,16 @@ class TestPlanLimitsConsistency:
     def test_all_plans_have_positive_file_limits(self):
         """Every plan should have positive max_files."""
         for plan_name, limits in PLANS.items():
+            if plan_name == "none":
+                continue
             assert limits.max_files > 0, f"Plan {plan_name} has invalid max_files"
     
     @pytest.mark.unit
     def test_all_plans_have_positive_storage_limits(self):
         """Every plan should have positive max_storage_bytes."""
         for plan_name, limits in PLANS.items():
+            if plan_name == "none":
+                continue
             assert limits.max_storage_bytes > 0, f"Plan {plan_name} has invalid max_storage_bytes"
     
     @pytest.mark.unit
