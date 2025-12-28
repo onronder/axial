@@ -81,7 +81,7 @@ export function DocumentsTable() {
   const [pageSize, setPageSize] = useState(10);
 
   const filteredAndSortedDocuments = useMemo(() => {
-    let result = documents.filter((doc) =>
+    const result = documents.filter((doc) =>
       doc.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 

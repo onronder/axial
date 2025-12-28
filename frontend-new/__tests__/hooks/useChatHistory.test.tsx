@@ -107,7 +107,10 @@ describe('useChatHistory', () => {
 
             expect(chatId!).toBe('new-1');
             expect(mockApiPost).toHaveBeenCalledWith('/conversations', { title: 'New Chat' });
-            expect(result.current.conversations[0]).toEqual(newChat);
+
+            await waitFor(() => {
+                expect(result.current.conversations[0]).toEqual(newChat);
+            });
         });
 
         it('should show error toast on create failure', async () => {
@@ -152,8 +155,12 @@ describe('useChatHistory', () => {
             });
 
             expect(mockApiDelete).toHaveBeenCalledWith('/conversations/1');
-            expect(result.current.conversations).toHaveLength(1);
-            expect(result.current.conversations[0].id).toBe('2');
+
+            await waitFor(() => {
+                expect(result.current.conversations).toHaveLength(1);
+                expect(result.current.conversations[0].id).toBe('2');
+            });
+
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Chat deleted' })
             );
@@ -167,15 +174,19 @@ describe('useChatHistory', () => {
             await waitFor(() => expect(result.current.isLoading).toBe(false));
 
             await act(async () => {
-                await result.current.deleteChat('nonexistent');
+                try {
+                    await result.current.deleteChat('nonexistent');
+                } catch {
+                    // Expected rejection
+                }
             });
 
-            expect(mockToast).toHaveBeenCalledWith(
+            await waitFor(() => expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({
                     title: 'Error',
                     variant: 'destructive',
                 })
-            );
+            ));
         });
     });
 
@@ -196,7 +207,11 @@ describe('useChatHistory', () => {
             });
 
             expect(mockApiPatch).toHaveBeenCalledWith('/conversations/1', { title: 'New Title' });
-            expect(result.current.conversations[0].title).toBe('New Title');
+
+            await waitFor(() => {
+                expect(result.current.conversations[0].title).toBe('New Title');
+            });
+
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Chat renamed' })
             );
@@ -264,7 +279,9 @@ describe('useChatHistory', () => {
                 await result.current.refresh();
             });
 
-            expect(result.current.conversations).toHaveLength(1);
+            await waitFor(() => {
+                expect(result.current.conversations).toHaveLength(1);
+            });
         });
     });
 });

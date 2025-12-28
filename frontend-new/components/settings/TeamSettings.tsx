@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import {
   UserPlus,
   Upload,
@@ -295,10 +296,12 @@ export function TeamSettings() {
                 </p>
               </div>
             </div>
-            <Button className="gap-2 shrink-0">
-              <Sparkles className="h-4 w-4" />
-              Upgrade Now
-            </Button>
+            <Link href="/dashboard/settings/billing">
+              <Button className="gap-2 shrink-0">
+                <Sparkles className="h-4 w-4" />
+                Upgrade Now
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       )}

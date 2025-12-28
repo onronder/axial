@@ -8,6 +8,9 @@ import { useChatHistory } from "@/hooks/useChatHistory";
 import { Settings, LogOut, User, Moon, Sun, ChevronUp, MessageSquarePlus } from "lucide-react";
 import { ChatHistoryList } from "@/components/layout/ChatHistoryList";
 import { NotificationCenter } from "@/components/layout/NotificationCenter";
+import { UsageIndicator } from "@/components/UsageIndicator";
+import { HelpTrigger } from "@/components/help/HelpTrigger";
+import { HelpModal } from "@/components/help/HelpModal";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -78,8 +81,16 @@ export function DashboardSidebar() {
                 <ChatHistoryList />
             </div>
 
+            {/* Usage Indicator - shows file/storage usage */}
+            <UsageIndicator />
+
+            {/* Help & Support */}
+            <div className="px-4 py-1">
+                <HelpTrigger />
+            </div>
+
             {/* Settings Link */}
-            <div className="px-4 py-2 border-t border-sidebar-border/50">
+            <div className="px-4 py-2">
                 <a
                     href="/dashboard/settings"
                     className={`flex items-center gap-2 px-2 py-2 rounded-md transition-colors ${isSettingsActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent/50'
@@ -89,6 +100,9 @@ export function DashboardSidebar() {
                     <span>Settings</span>
                 </a>
             </div>
+
+            {/* Help Modal */}
+            <HelpModal />
 
             {/* User Menu */}
             <div className="p-2 border-t border-sidebar-border/50">
