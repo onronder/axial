@@ -25,24 +25,23 @@
           - /url: /dashboard/settings
           - img [ref=e25]
           - generic [ref=e28]: Settings
-        - button "TU Testmjqa88m50859j6fxkj User Free" [ref=e30]:
+        - button "TU Testmjqa87vxnq8rnudc82n User Free" [ref=e30]:
           - generic [ref=e32]: TU
           - generic [ref=e33]:
-            - generic [ref=e34]: Testmjqa88m50859j6fxkj User
+            - generic [ref=e34]: Testmjqa87vxnq8rnudc82n User
             - generic [ref=e35]: Free
-          - img [ref=e36]
-    - main [ref=e39]:
-      - img [ref=e41]
-  - generic [ref=e43]:
-    - img [ref=e45]
-    - button "Open Tanstack query devtools" [ref=e94] [cursor=pointer]:
-      - img [ref=e95]
-  - button "Open Next.js Dev Tools" [ref=e149] [cursor=pointer]:
-    - generic [ref=e152]:
+    - main [ref=e38]:
+      - img [ref=e40]
+  - generic [ref=e42]:
+    - img [ref=e44]
+    - button "Open Tanstack query devtools" [ref=e92] [cursor=pointer]:
+      - img [ref=e93]
+  - button "Open Next.js Dev Tools" [ref=e146] [cursor=pointer]:
+    - generic [ref=e149]:
       - text: Rendering
-      - generic [ref=e153]:
-        - generic [ref=e154]: .
-        - generic [ref=e155]: .
-        - generic [ref=e156]: .
-  - alert [ref=e157]
+      - generic [ref=e150]:
+        - generic [ref=e151]: .
+        - generic [ref=e152]: .
+        - generic [ref=e153]: .
+  - alert [ref=e154]
 ```

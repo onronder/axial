@@ -86,16 +86,23 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
             plan = profile_result.data.get("plan", "free")
             subscription_status = profile_result.data.get("subscription_status", "active")
     except Exception as e:
-        # If profile not found (common during signup), return safe "none" state
-        logger.warning(f"User profile not found for {user_id} (PGRST116 race condition): {e}")
-        return UserUsage(
-            user_id=str(user_id),
-            files=0,
-            storage_bytes=0,
-            storage_display="0 B",
-            plan="none",
-            subscription_status="inactive"
-        )
+        error_msg = str(e)
+        # Check specifically for PGRST116 (0 rows) or empty result error
+        if "PGRST116" in error_msg or "0 rows" in error_msg or "JSON object must be str" in error_msg:
+            # "JSON object must be str" can happen if .single() returns None/empty response body depending on client version
+            logger.warning(f"User profile not found for {user_id} (PGRST116 race condition): {e}")
+            return UserUsage(
+                user_id=str(user_id),
+                files=0,
+                storage_bytes=0,
+                storage_display="0 B",
+                plan="none",
+                subscription_status="inactive"
+            )
+        
+        # Re-raise other unexpected errors
+        logger.error(f"Error fetching user profile for {user_id}: {e}")
+        raise e
     
     # Calculate usage from documents table (accurate, not cached)
     # Using raw SQL via RPC for aggregate functions
