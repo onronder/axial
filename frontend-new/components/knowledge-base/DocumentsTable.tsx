@@ -203,16 +203,17 @@ export function DocumentsTable() {
   return (
     <div className="space-y-8">
       {/* Header Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-1">
+      <div className="space-y-6">
+        <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Knowledge Base</h1>
           <p className="text-muted-foreground text-lg">
             Manage your ingested documents and connected data sources.
           </p>
         </div>
-        <div className="lg:col-span-1">
-          {/* Storage Meter Widget */}
-          <StorageMeter />
+
+        {/* Storage Meter Banner */}
+        <div className="w-full">
+          <StorageMeter variant="horizontal" className="w-full" />
         </div>
       </div>
 
