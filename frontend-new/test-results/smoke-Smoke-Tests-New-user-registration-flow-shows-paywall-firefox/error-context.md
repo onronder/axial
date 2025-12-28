@@ -25,10 +25,10 @@
           - /url: /dashboard/settings
           - img [ref=e25]
           - generic [ref=e28]: Settings
-        - button "TU Testmjqa88m50859j6fxkj User Free" [ref=e30]:
+        - button "TU Testmjqavtimrrc3uv5p7jb User Free" [ref=e30]:
           - generic [ref=e32]: TU
           - generic [ref=e33]:
-            - generic [ref=e34]: Testmjqa88m50859j6fxkj User
+            - generic [ref=e34]: Testmjqavtimrrc3uv5p7jb User
             - generic [ref=e35]: Free
           - img [ref=e36]
     - main [ref=e39]:
