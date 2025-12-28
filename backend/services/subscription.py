@@ -222,9 +222,21 @@ class SubscriptionService:
             # Update the user's plan
             subscription_id = data.get("id") or data.get("subscription_id")
             
+            # Determine subscription status from Polar
+            # Polar sends status in the data object
+            polar_status = data.get("status", "active")
+            
+            # Map Polar status to our status
+            if polar_status == "trialing":
+                subscription_status = "trialing"
+            elif polar_status in ["active", "incomplete"]:
+                subscription_status = "active"
+            else:
+                subscription_status = "active"  # Default to active for subscription events
+            
             update_data = {
                 "plan": new_plan,
-                "subscription_status": "active",
+                "subscription_status": subscription_status,
                 "updated_at": datetime.utcnow().isoformat()
             }
             

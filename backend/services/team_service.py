@@ -129,14 +129,14 @@ class TeamService:
                         subscription_status = profile_response.data.get("subscription_status", "active")
                         
                         # Check 1: Subscription Status
-                        # If owner's subscription is problematic, enforce restrictions
-                        restricted_statuses = ["unpaid", "past_due", "canceled", "expired"]
-                        if subscription_status in restricted_statuses:
+                        # Allow only active and trialing statuses
+                        allowed_statuses = ["active", "trialing"]
+                        if subscription_status not in allowed_statuses:
                             logger.info(
                                 f"[TeamService] Owner {owner_id[:8]}... has status={subscription_status}, "
-                                f"forcing 'free' for user {user_id[:8]}..."
+                                f"forcing 'none' (paywall) for user {user_id[:8]}..."
                             )
-                            return "free"
+                            return "none"
                         
                         # Check 2: Team Lockout (MVP)
                         # If user is NOT the owner, check if owner's plan allows team members
@@ -165,18 +165,18 @@ class TeamService:
                 subscription_status = own_profile.data.get("subscription_status", "active")
                 
                 # Check subscription status for solo users too
-                restricted_statuses = ["unpaid", "past_due", "canceled", "expired"]
-                if subscription_status in restricted_statuses:
-                    logger.info(f"[TeamService] User {user_id[:8]}... has status={subscription_status}, forcing 'free'")
-                    return "free"
+                allowed_statuses = ["active", "trialing"]
+                if subscription_status not in allowed_statuses:
+                    logger.info(f"[TeamService] User {user_id[:8]}... has status={subscription_status}, forcing 'none'")
+                    return "none"
                 
-                return own_profile.data.get("plan", "free")
+                return own_profile.data.get("plan", "none")
             
             return "free"
             
         except Exception as e:
             logger.error(f"[TeamService] Direct query failed: {e}")
-            return "free"
+            return "none"
     
     def invalidate_plan_cache(self, user_id: str) -> None:
         """

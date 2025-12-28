@@ -33,6 +33,7 @@ class UserUsage(BaseModel):
     storage_bytes: int
     storage_display: str
     plan: str
+    subscription_status: str
 
 
 class UsageWithLimits(BaseModel):
@@ -74,14 +75,17 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
     """
     supabase = get_supabase()
     
-    # Get user's plan from user_profiles
-    profile_result = supabase.table("user_profiles").select("plan").eq(
+    # Get user's plan and status from user_profiles
+    profile_result = supabase.table("user_profiles").select("plan, subscription_status").eq(
         "user_id", str(user_id)
     ).single().execute()
     
     plan = "free"  # Default if no profile exists
+    subscription_status = "active" # Default for backward compatibility
+    
     if profile_result.data:
         plan = profile_result.data.get("plan", "free")
+        subscription_status = profile_result.data.get("subscription_status", "active")
     
     # Calculate usage from documents table (accurate, not cached)
     # Using raw SQL via RPC for aggregate functions
@@ -118,7 +122,8 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
         files=file_count,
         storage_bytes=total_bytes,
         storage_display=format_bytes(total_bytes),
-        plan=plan
+        plan=plan,
+        subscription_status=subscription_status
     )
 
 

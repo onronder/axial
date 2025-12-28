@@ -201,7 +201,7 @@ export interface NotificationSetting {
 /**
  * Extended plan type with all available subscription tiers
  */
-export type PlanType = 'free' | 'starter' | 'pro' | 'enterprise';
+export type PlanType = 'none' | 'free' | 'starter' | 'pro' | 'enterprise';
 
 /**
  * User usage stats from GET /api/v1/usage
@@ -220,6 +220,7 @@ export interface UserUsage {
         web_crawl: boolean;
         team_enabled: boolean;
     };
+    subscription_status: string;
 }
 
 /**

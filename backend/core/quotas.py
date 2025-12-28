@@ -48,6 +48,13 @@ class PlanLimits(BaseModel):
 # Changes here affect quota enforcement across the entire application.
 
 PLANS: Dict[str, PlanLimits] = {
+    "none": PlanLimits(
+        max_files=0,
+        max_storage_bytes=0,
+        max_team_seats=0,
+        allow_web_crawl=False,
+        model_tier=ModelTier.BASIC
+    ),
     "free": PlanLimits(
         max_files=5,
         max_storage_bytes=50 * 1024 * 1024,  # 50 MB
