@@ -163,7 +163,7 @@ class DriveConnector(BaseConnector):
         
         results = service.files().list(
             q=f"'{query_parent}' in parents and trashed=false",
-            fields="files(id, name, mimeType, iconLink, thumbnailLink)",
+            fields="files(id, name, mimeType, iconLink, thumbnailLink, size)",
             orderBy="folder,name"
         ).execute()
 
@@ -220,7 +220,7 @@ class DriveConnector(BaseConnector):
                 # Fetch metadata
                 file_meta = service.files().get(
                     fileId=item_id, 
-                    fields="id, name, mimeType, webViewLink"
+                    fields="id, name, mimeType, webViewLink, size"
                 ).execute()
                 
                 # Handle folders recursively
@@ -230,6 +230,9 @@ class DriveConnector(BaseConnector):
                     for f in folder_files:
                         content_bytes, export_mime, filename = self._download_file_content(service, f)
                         if content_bytes:
+                            # Calculate accurate size from downloaded bytes (important for rich exports)
+                            file_size = len(content_bytes)
+                            
                             # Decode bytes to text for page_content
                             try:
                                 text_content = content_bytes.decode('utf-8')
@@ -244,6 +247,8 @@ class DriveConnector(BaseConnector):
                                     "source_url": f.get('webViewLink'),
                                     "file_id": f.get('id'),
                                     "mime_type": export_mime,  # CRITICAL: Use exported mime_type
+                                    "file_size": file_size,    # CRITICAL: Store accurate size
+                                    "size": file_size,         # Alias for frontend
                                 }
                             ))
                 else:
@@ -251,6 +256,9 @@ class DriveConnector(BaseConnector):
                     content_bytes, export_mime, filename = self._download_file_content(service, file_meta)
                     
                     if content_bytes:
+                        # Calculate accurate size from downloaded bytes
+                        file_size = len(content_bytes)
+                        
                         # Decode bytes to text for page_content
                         try:
                             text_content = content_bytes.decode('utf-8')
@@ -265,9 +273,11 @@ class DriveConnector(BaseConnector):
                                 "source_url": file_meta.get('webViewLink'),
                                 "file_id": file_meta.get('id'),
                                 "mime_type": export_mime,  # CRITICAL: Use exported mime_type
+                                "file_size": file_size,    # CRITICAL: Store accurate size
+                                "size": file_size,         # Alias for frontend
                             }
                         ))
-                        logger.info(f"✅ [Drive] Processed: {filename} (as {export_mime})")
+                        logger.info(f"✅ [Drive] Processed: {filename} (as {export_mime}, {file_size} bytes)")
             except Exception as e:
                 logger.error(f"❌ [Drive] Failed to process {item_id}: {e}")
                 continue

@@ -38,10 +38,10 @@ describe('StorageMeter Component', () => {
         // Check for pulse animation
         expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
         // Should not show stats
-        expect(screen.queryByText('Approaching Limit')).not.toBeInTheDocument();
+        expect(screen.queryByText('Storage Status')).not.toBeInTheDocument();
     });
 
-    it('should show "Unlimited" for Enterprise plan', () => {
+    it('should show "Unlimited Storage" for Enterprise plan', () => {
         mockUseUsage.mockReturnValue({
             isLoading: false,
             plan: 'enterprise',
@@ -53,10 +53,11 @@ describe('StorageMeter Component', () => {
 
         render(<StorageMeter />);
 
-        expect(screen.getByText('Unlimited')).toBeInTheDocument();
-        expect(screen.getByText('Enterprise Plan')).toBeInTheDocument();
-        // Should show file count but not "Files" section specific to meter
-        expect(screen.getByText(/Files: 1,000/)).toBeInTheDocument();
+        expect(screen.getByText('Unlimited Storage')).toBeInTheDocument();
+        expect(screen.getByText(/Your Enterprise plan includes/)).toBeInTheDocument();
+        // Should show file count in grid
+        expect(screen.getByText('Files')).toBeInTheDocument();
+        expect(screen.getByText('1,000')).toBeInTheDocument();
     });
 
     it('should render normal usage correctly', () => {
@@ -73,10 +74,15 @@ describe('StorageMeter Component', () => {
 
         render(<StorageMeter />);
 
-        expect(screen.getByText('Healthy')).toBeInTheDocument();
+        expect(screen.getByText('Storage Status')).toBeInTheDocument();
         expect(screen.getByText('Files')).toBeInTheDocument();
         expect(screen.getByText('Storage')).toBeInTheDocument();
         expect(screen.getByText('10 / 20')).toBeInTheDocument();
+
+        // Circular percentage
+        expect(screen.getByText('50%')).toBeInTheDocument();
+        // No warnings
+        expect(screen.queryByText(/plan limits/)).not.toBeInTheDocument();
     });
 
     it('should show warning status when usage >= 75%', () => {
@@ -93,9 +99,11 @@ describe('StorageMeter Component', () => {
 
         const { container } = render(<StorageMeter />);
 
-        expect(screen.getByText('Approaching Limit')).toBeInTheDocument();
-        // Check for warning classes
-        expect(container.innerHTML).toContain('text-warning');
+        expect(screen.getByText('You are approaching your storage limits.')).toBeInTheDocument();
+        expect(screen.getByText('75%')).toBeInTheDocument();
+        // Check for warning color class (amber)
+        const percentText = screen.getByText('75%');
+        expect(percentText.className).toContain('text-amber-600');
     });
 
     it('should show critical status when usage >= 90%', () => {
@@ -112,13 +120,12 @@ describe('StorageMeter Component', () => {
 
         const { container } = render(<StorageMeter />);
 
-        expect(screen.getByText('Critical')).toBeInTheDocument();
-        // Check for destructive classes
-        expect(container.innerHTML).toContain('text-destructive');
+        expect(screen.getByText('You have reached your plan limits.')).toBeInTheDocument();
+        expect(screen.getByText('Upgrade Plan')).toBeInTheDocument();
 
-        // Should show upgrade alert
-        expect(screen.getByText(/You've almost reached your limit/)).toBeInTheDocument();
-        expect(screen.getByText('Upgrade')).toBeInTheDocument();
+        // Check for critical color class (red)
+        const percentText = screen.getByText('90%');
+        expect(percentText.className).toContain('text-red-600');
     });
 
     it('should hide upgrade prompt if showUpgradePrompt is false', () => {
@@ -131,6 +138,6 @@ describe('StorageMeter Component', () => {
 
         render(<StorageMeter showUpgradePrompt={false} />);
 
-        expect(screen.queryByText('Upgrade')).not.toBeInTheDocument();
+        expect(screen.queryByText('Upgrade Plan')).not.toBeInTheDocument();
     });
 });

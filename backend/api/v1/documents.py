@@ -22,6 +22,7 @@ class DocumentDTO(BaseModel):
     source_url: Optional[str] = None
     created_at: str
     status: str = "indexed"
+    size: Optional[int] = 0
     metadata: Dict[str, Any]
 
 
@@ -109,6 +110,11 @@ async def list_documents(
         docs = []
         for d in response.data:
             d['status'] = d.get('status', 'indexed')
+            # Fallback for size if not top-level
+            if 'size' not in d or d['size'] is None:
+                meta = d.get('metadata') or {}
+                d['size'] = meta.get('size') or meta.get('file_size') or meta.get('file_size_bytes') or 0
+                
             docs.append(d)
             
         return docs

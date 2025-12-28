@@ -320,6 +320,8 @@ def ingest_file_task(
             "file_type": result.file_type,
             "total_tokens": result.total_tokens,
             "total_chunks": len(result.chunks),
+            "file_size": file_size_bytes,  # CRITICAL: Persist size in metadata
+            "size": file_size_bytes,       # CRITICAL: Alias for frontend
             **(result.metadata or {}),
         }
         

@@ -3,16 +3,15 @@
 /**
  * Storage Meter Component
  * 
- * Displays file count and storage usage with color-coded progress bars.
- * Shows warnings at 75% and 90% thresholds.
+ * Displays file count and storage usage with premium visuals.
+ * Features circular progress for desktop and refined indicators.
  */
 
-import { HardDrive, Files, AlertTriangle, TrendingUp } from "lucide-react";
+import { HardDrive, Files, Database, ArrowUpRight, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useUsage, formatBytes } from "@/hooks/useUsage";
-import { Progress } from "@/components/ui/progress";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
@@ -20,28 +19,6 @@ interface StorageMeterProps {
     className?: string;
     showUpgradePrompt?: boolean;
 }
-
-/**
- * Get color class based on usage percentage
- */
-const getColorClass = (percent: number): string => {
-    if (percent >= 90) return "text-destructive";
-    if (percent >= 75) return "text-warning";
-    return "text-success";
-};
-
-const getProgressColor = (percent: number): string => {
-    if (percent >= 90) return "bg-destructive";
-    if (percent >= 75) return "bg-warning";
-    return "bg-success";
-};
-
-const getStatusText = (percent: number): string => {
-    if (percent >= 100) return "Limit Reached";
-    if (percent >= 90) return "Critical";
-    if (percent >= 75) return "Approaching Limit";
-    return "Healthy";
-};
 
 export function StorageMeter({ className, showUpgradePrompt = true }: StorageMeterProps) {
     const {
@@ -57,13 +34,13 @@ export function StorageMeter({ className, showUpgradePrompt = true }: StorageMet
 
     if (isLoading) {
         return (
-            <Card className={cn("animate-pulse", className)}>
+            <Card className={cn("animate-pulse h-full border-border/50", className)}>
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-lg">Storage Usage</CardTitle>
+                    <div className="h-6 w-32 bg-muted rounded mb-2" />
+                    <div className="h-4 w-48 bg-muted rounded" />
                 </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="h-4 bg-muted rounded" />
-                    <div className="h-4 bg-muted rounded" />
+                <CardContent>
+                    <div className="h-32 bg-muted/50 rounded-lg" />
                 </CardContent>
             </Card>
         );
@@ -72,20 +49,24 @@ export function StorageMeter({ className, showUpgradePrompt = true }: StorageMet
     // Enterprise users have unlimited storage
     if (plan === "enterprise") {
         return (
-            <Card className={cn("border-success/20 bg-success/5", className)}>
-                <CardHeader className="pb-2">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                        <HardDrive className="h-5 w-5 text-success" />
-                        Storage Usage
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex items-center gap-2 text-success">
-                        <span className="text-2xl font-bold">Unlimited</span>
-                        <span className="text-sm text-muted-foreground">Enterprise Plan</span>
+            <Card className={cn("border-emerald-500/20 bg-emerald-500/5 h-full", className)}>
+                <CardContent className="pt-6 flex flex-col items-center text-center h-full justify-center">
+                    <div className="h-16 w-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
+                        <CheckCircle2 className="h-8 w-8 text-emerald-600" />
                     </div>
-                    <div className="mt-2 text-sm text-muted-foreground">
-                        Files: {filesUsed.toLocaleString()} • Storage: {formatBytes(storageUsed)}
+                    <h3 className="text-xl font-bold text-emerald-950 mb-1">Unlimited Storage</h3>
+                    <p className="text-emerald-700/80 mb-4 text-sm max-w-[200px]">
+                        Your Enterprise plan includes unlimited file storage and indexing.
+                    </p>
+                    <div className="grid grid-cols-2 gap-4 w-full mt-4">
+                        <div className="bg-background/50 p-3 rounded-lg border border-emerald-500/10">
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Files</div>
+                            <div className="text-lg font-bold text-emerald-900">{filesUsed.toLocaleString()}</div>
+                        </div>
+                        <div className="bg-background/50 p-3 rounded-lg border border-emerald-500/10">
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Size</div>
+                            <div className="text-lg font-bold text-emerald-900">{formatBytes(storageUsed)}</div>
+                        </div>
                     </div>
                 </CardContent>
             </Card>
@@ -93,94 +74,120 @@ export function StorageMeter({ className, showUpgradePrompt = true }: StorageMet
     }
 
     const worstPercent = Math.max(filesPercent, storagePercent);
-    const showWarning = worstPercent >= 75;
-    const showCritical = worstPercent >= 90;
+    const isCritical = worstPercent >= 90;
+    const isWarning = worstPercent >= 75;
+
+    // Circular Progress Calculation
+    const radius = 36;
+    const circumference = 2 * Math.PI * radius;
+    const fileOffset = circumference - (Math.min(100, filesPercent) / 100) * circumference;
+    const storageOffset = circumference - (Math.min(100, storagePercent) / 100) * circumference;
 
     return (
-        <Card className={cn(
-            showCritical ? "border-destructive/30 bg-destructive/5" :
-                showWarning ? "border-warning/30 bg-warning/5" : "",
-            className
-        )}>
+        <Card className={cn("h-full overflow-hidden border-border/60", className)}>
             <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                        <HardDrive className="h-5 w-5" />
-                        Storage Usage
-                    </CardTitle>
-                    <span className={cn(
-                        "text-xs font-medium px-2 py-1 rounded-full",
-                        showCritical ? "bg-destructive/10 text-destructive" :
-                            showWarning ? "bg-warning/10 text-warning" :
-                                "bg-success/10 text-success"
-                    )}>
-                        {getStatusText(worstPercent)}
-                    </span>
-                </div>
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Database className="h-4 w-4 text-primary" />
+                    Storage Status
+                </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-                {/* Files Usage */}
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                            <Files className="h-4 w-4" />
-                            <span>Files</span>
-                        </div>
-                        <span className={cn("font-medium", getColorClass(filesPercent))}>
-                            {filesUsed} / {filesLimit}
-                        </span>
-                    </div>
-                    <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
-                        <div
-                            className={cn("h-full transition-all duration-500", getProgressColor(filesPercent))}
-                            style={{ width: `${Math.min(100, filesPercent)}%` }}
-                        />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                        {Math.round(filesPercent)}% used
-                    </p>
-                </div>
-
-                {/* Storage Usage */}
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                            <HardDrive className="h-4 w-4" />
-                            <span>Storage</span>
-                        </div>
-                        <span className={cn("font-medium", getColorClass(storagePercent))}>
-                            {formatBytes(storageUsed)} / {formatBytes(storageLimit)}
-                        </span>
-                    </div>
-                    <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
-                        <div
-                            className={cn("h-full transition-all duration-500", getProgressColor(storagePercent))}
-                            style={{ width: `${Math.min(100, storagePercent)}%` }}
-                        />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                        {Math.round(storagePercent)}% used
-                    </p>
-                </div>
-
-                {/* Warning Message */}
-                {showWarning && showUpgradePrompt && (
-                    <Alert variant={showCritical ? "destructive" : "default"} className="mt-4">
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertDescription className="flex items-center justify-between">
-                            <span>
-                                {showCritical
-                                    ? "You've almost reached your limit!"
-                                    : "You're approaching your storage limit."}
+            <CardContent className="space-y-6">
+                <div className="flex items-center gap-6">
+                    {/* Circular Chart */}
+                    <div className="relative h-24 w-24 shrink-0">
+                        {/* Background Circle */}
+                        <svg className="h-full w-full rotate-[-90deg]" viewBox="0 0 100 100">
+                            <circle
+                                className="text-muted/20"
+                                strokeWidth="8"
+                                stroke="currentColor"
+                                fill="transparent"
+                                r={radius}
+                                cx="50"
+                                cy="50"
+                            />
+                            {/* Storage Ring (Outer) */}
+                            <circle
+                                className={cn(
+                                    "transition-all duration-1000 ease-out",
+                                    isCritical ? "text-red-500" : isWarning ? "text-amber-500" : "text-primary"
+                                )}
+                                strokeWidth="8"
+                                strokeDasharray={circumference}
+                                strokeDashoffset={storageOffset}
+                                strokeLinecap="round"
+                                stroke="currentColor"
+                                fill="transparent"
+                                r={radius}
+                                cx="50"
+                                cy="50"
+                            />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className={cn(
+                                "text-xl font-bold font-mono",
+                                isCritical ? "text-red-600" : isWarning ? "text-amber-600" : "text-primary"
+                            )}>
+                                {Math.round(worstPercent)}%
                             </span>
-                            <Button asChild size="sm" variant={showCritical ? "destructive" : "default"}>
-                                <Link href="/dashboard/settings/billing">
-                                    <TrendingUp className="h-4 w-4 mr-1" />
-                                    Upgrade
-                                </Link>
-                            </Button>
-                        </AlertDescription>
-                    </Alert>
+                        </div>
+                    </div>
+
+                    {/* Stats List */}
+                    <div className="flex-1 space-y-3">
+                        <div className="space-y-1">
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1.5">
+                                    <HardDrive className="h-3.5 w-3.5" /> Storage
+                                </span>
+                                <span>{formatBytes(storageUsed)} / {formatBytes(storageLimit)}</span>
+                            </div>
+                            <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                                <div
+                                    className={cn("h-full rounded-full transition-all duration-500",
+                                        storagePercent > 90 ? "bg-red-500" : "bg-primary"
+                                    )}
+                                    style={{ width: `${Math.min(100, storagePercent)}%` }}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1.5">
+                                    <Files className="h-3.5 w-3.5" /> Files
+                                </span>
+                                <span>{filesUsed} / {filesLimit}</span>
+                            </div>
+                            <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                                <div
+                                    className={cn("h-full rounded-full transition-all duration-500",
+                                        filesPercent > 90 ? "bg-red-500" : "bg-blue-500"
+                                    )}
+                                    style={{ width: `${Math.min(100, filesPercent)}%` }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {isWarning && showUpgradePrompt && (
+                    <div className={cn(
+                        "bg-card rounded-md p-3 border text-xs flex flex-col gap-2",
+                        isCritical ? "bg-red-50 border-red-100 dark:bg-red-950/20 dark:border-red-900/50" : "bg-amber-50 border-amber-100 dark:bg-amber-950/20 dark:border-amber-900/50"
+                    )}>
+                        <div className="flex items-start gap-2">
+                            <AlertTriangle className={cn("h-4 w-4 shrink-0 mt-0.5", isCritical ? "text-red-600" : "text-amber-600")} />
+                            <p className={cn("leading-tight", isCritical ? "text-red-800 dark:text-red-200" : "text-amber-800 dark:text-amber-200")}>
+                                {isCritical ? "You have reached your plan limits." : "You are approaching your storage limits."}
+                            </p>
+                        </div>
+                        <Button size="sm" variant={isCritical ? "destructive" : "secondary"} className="w-full h-8 text-xs">
+                            <Link href="/dashboard/settings/billing" className="flex items-center gap-1 w-full justify-center">
+                                Upgrade Plan <ArrowUpRight className="h-3 w-3" />
+                            </Link>
+                        </Button>
+                    </div>
                 )}
             </CardContent>
         </Card>
@@ -196,15 +203,38 @@ export function StorageMeterCompact({ className }: { className?: string }) {
     if (isLoading || plan === "enterprise") return null;
 
     const worstPercent = Math.max(filesPercent, storagePercent);
+    const colorClass = worstPercent >= 90 ? "text-red-500" : worstPercent >= 75 ? "text-amber-500" : "text-primary";
+    const bgClass = worstPercent >= 90 ? "bg-red-500" : worstPercent >= 75 ? "bg-amber-500" : "bg-primary";
 
     return (
         <div className={cn("flex items-center gap-2", className)}>
-            <div className={cn(
-                "h-2 w-2 rounded-full",
-                getProgressColor(worstPercent)
-            )} />
-            <span className={cn("text-xs", getColorClass(worstPercent))}>
-                {Math.round(worstPercent)}% used
+            <div className="relative h-4 w-4 shrink-0">
+                <svg className="h-full w-full rotate-[-90deg]" viewBox="0 0 100 100">
+                    <circle
+                        className="text-muted/20"
+                        strokeWidth="16"
+                        stroke="currentColor"
+                        fill="transparent"
+                        r="42"
+                        cx="50"
+                        cy="50"
+                    />
+                    <circle
+                        className={colorClass}
+                        strokeWidth="16"
+                        strokeDasharray={2 * Math.PI * 42}
+                        strokeDashoffset={(2 * Math.PI * 42) - (Math.min(100, worstPercent) / 100) * (2 * Math.PI * 42)}
+                        strokeLinecap="round"
+                        stroke="currentColor"
+                        fill="transparent"
+                        r="42"
+                        cx="50"
+                        cy="50"
+                    />
+                </svg>
+            </div>
+            <span className={cn("text-xs font-medium", colorClass)}>
+                {Math.round(worstPercent)}%
             </span>
         </div>
     );

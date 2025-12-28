@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Document } from "@/lib/mockData";
+import { Document } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
 /**
