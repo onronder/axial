@@ -101,7 +101,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         {/* Footer text with AI indicator */}
         <div className="mt-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground/60">
           <Sparkles className="h-3 w-3" />
-          <span>Powered by AI • Axio Hub can make mistakes</span>
+          <span>Powered by Axio Hub - Fittechs © • AI Agents can make mistakes</span>
         </div>
       </div>
     </div>
