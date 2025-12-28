@@ -61,6 +61,7 @@ import {
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useTeamMembers, Role, MemberStatus, TeamMember } from "@/hooks/useTeamMembers";
@@ -408,17 +409,19 @@ export function TeamSettings() {
         {/* Bulk Import Dialog */}
         <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
           <DialogTrigger asChild>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" className="gap-2" disabled={!teamEnabled}>
-                  <Upload className="h-4 w-4" />
-                  Bulk Import (.csv)
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{teamEnabled ? "Upload a CSV list for large teams" : "Upgrade to use bulk import"}</p>
-              </TooltipContent>
-            </Tooltip>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" className="gap-2" disabled={!teamEnabled}>
+                    <Upload className="h-4 w-4" />
+                    Bulk Import (.csv)
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{teamEnabled ? "Upload a CSV list for large teams" : "Upgrade to use bulk import"}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
