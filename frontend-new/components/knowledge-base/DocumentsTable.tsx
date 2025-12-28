@@ -200,7 +200,7 @@ export function DocumentsTable() {
         </div>
         <Button
           variant="outline"
-          onClick={handleRefresh}
+          onClick={() => handleRefresh()}
           disabled={isRefreshing}
           className="gap-2"
         >

@@ -45,3 +45,6 @@ sentry-sdk[fastapi,celery]
 # Multi-Model AI (Groq for high-speed Llama inference)
 langchain-groq==0.2.1
 groq==0.13.0
+
+# Async caching for hot path queries
+async-lru

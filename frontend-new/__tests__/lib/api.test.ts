@@ -30,11 +30,14 @@ describe('API Client', () => {
         });
 
         it('should handle null session gracefully', async () => {
-            const session: { access_token?: string } | null = null;
+            // Simulate what happens when session is null
+            const session = null as { access_token: string } | null;
             const headers: Record<string, string> = {};
 
-            if (session?.access_token) {
-                headers.Authorization = `Bearer ${session.access_token}`;
+            // The actual interceptor uses optional chaining
+            const token = session?.access_token;
+            if (token) {
+                headers.Authorization = `Bearer ${token}`;
             }
 
             expect(headers.Authorization).toBeUndefined();

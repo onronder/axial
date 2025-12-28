@@ -193,3 +193,75 @@ export interface NotificationSetting {
     category: NotificationCategory;
     enabled: boolean;
 }
+
+// =============================================================================
+// PLAN & USAGE TYPES
+// =============================================================================
+
+/**
+ * Extended plan type with all available subscription tiers
+ */
+export type PlanType = 'free' | 'starter' | 'pro' | 'enterprise';
+
+/**
+ * User usage stats from GET /api/v1/usage
+ */
+export interface UserUsage {
+    plan: PlanType;
+    files: {
+        used: number;
+        limit: number;
+    };
+    storage: {
+        used_bytes: number;
+        limit_bytes: number;
+    };
+    features: {
+        web_crawl: boolean;
+        team_enabled: boolean;
+    };
+}
+
+/**
+ * Effective plan response from GET /api/v1/team/effective-plan
+ */
+export interface EffectivePlan {
+    plan: PlanType;
+    inherited: boolean;
+    team_id: string | null;
+    team_name: string | null;
+}
+
+/**
+ * Team entity from GET /api/v1/team
+ */
+export interface Team {
+    id: string;
+    name: string;
+    slug: string;
+    owner_id: string;
+    is_owner?: boolean;
+    role?: Role;
+    created_at: string;
+}
+
+/**
+ * Invite request for POST /api/v1/team/invite
+ */
+export interface InviteRequest {
+    email: string;
+    role: Role;
+    name?: string;
+}
+
+/**
+ * Bulk invite result from POST /api/v1/team/bulk-invite
+ */
+export interface BulkInviteResult {
+    success: boolean;
+    total: number;
+    invited: number;
+    failed: number;
+    errors: Array<{ email: string; error: string }>;
+}
+

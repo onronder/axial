@@ -1,14 +1,15 @@
 """
 Team Management API Router
 
-Endpoints for managing team members and invitations.
+Endpoints for managing teams and team members.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from core.security import get_current_user
 from core.db import get_supabase
+from services.team_service import team_service
 from datetime import datetime
 
 router = APIRouter()
@@ -16,6 +17,16 @@ router = APIRouter()
 # ============================================================
 # MODELS
 # ============================================================
+
+class TeamResponse(BaseModel):
+    """Team details response."""
+    id: str
+    name: str
+    slug: Optional[str] = None
+    owner_id: str
+    created_at: str
+    user_role: Optional[str] = None
+    is_owner: bool = False
 
 class TeamMemberResponse(BaseModel):
     id: str
@@ -42,9 +53,83 @@ class TeamStatsResponse(BaseModel):
     active_members: int
     pending_invites: int
 
+class EffectivePlanResponse(BaseModel):
+    """Response for effective plan lookup."""
+    plan: str
+    inherited: bool
+    team_id: Optional[str] = None
+    team_name: Optional[str] = None
+
+
+class InviteRequest(BaseModel):
+    """Request to invite a team member."""
+    email: str
+    role: str = "viewer"
+    name: Optional[str] = None
+
+
+class InviteResponse(BaseModel):
+    """Response from invite operation."""
+    success: bool
+    member: Optional[dict] = None
+    error: Optional[str] = None
+    code: Optional[str] = None
+
+
+class BulkInviteResponse(BaseModel):
+    """Response from bulk invite operation."""
+    success: bool
+    total: int = 0
+    invited: int = 0
+    failed: int = 0
+    errors: List[dict] = []
+    error: Optional[str] = None
+    code: Optional[str] = None
+
+
 # ============================================================
 # TEAM ENDPOINTS
 # ============================================================
+
+@router.get("/team", response_model=TeamResponse)
+async def get_current_team(user_id: str = Depends(get_current_user)):
+    """Get the current user's team."""
+    team = await team_service.get_user_team(user_id)
+    
+    if not team:
+        raise HTTPException(status_code=404, detail="No team found for user")
+    
+    return team
+
+
+@router.get("/team/effective-plan", response_model=EffectivePlanResponse)
+async def get_effective_plan(user_id: str = Depends(get_current_user)):
+    """
+    Get the effective plan for the current user.
+    
+    This returns the plan inherited from the team owner,
+    which determines feature access.
+    """
+    plan = await team_service.get_effective_plan(user_id)
+    team = await team_service.get_user_team(user_id)
+    
+    # Determine if inherited (team owner's plan != user's own plan only matters if not owner)
+    inherited = False
+    team_id = None
+    team_name = None
+    
+    if team:
+        team_id = team.get("id")
+        team_name = team.get("name")
+        inherited = not team.get("is_owner", True)
+    
+    return EffectivePlanResponse(
+        plan=plan,
+        inherited=inherited,
+        team_id=team_id,
+        team_name=team_name
+    )
+
 
 @router.get("/team/members", response_model=List[TeamMemberResponse])
 async def list_team_members(
@@ -119,54 +204,130 @@ async def get_team_stats(user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
 
 
-@router.post("/team/members", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/team/invite", response_model=InviteResponse, status_code=status.HTTP_201_CREATED)
 async def invite_team_member(
+    payload: InviteRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Invite a new team member.
+    
+    **Enterprise Only**: Requires a plan with team seats.
+    Returns 403 if plan doesn't allow team management.
+    """
+    result = await team_service.invite_member(
+        owner_id=user_id,
+        email=payload.email,
+        role=payload.role,
+        name=payload.name
+    )
+    
+    if not result.get("success"):
+        error_code = result.get("code", "ERROR")
+        
+        if error_code == "UPGRADE_REQUIRED":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail=result.get("error", "Upgrade required")
+            )
+        elif error_code == "ALREADY_EXISTS":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=result.get("error", "Already invited")
+            )
+        elif error_code == "SEAT_LIMIT":
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=result.get("error", "Seat limit reached")
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Invite failed")
+            )
+    
+    return InviteResponse(
+        success=True,
+        member=result.get("member")
+    )
+
+
+@router.post("/team/bulk-invite", response_model=BulkInviteResponse)
+async def bulk_invite_team_members(
+    file: UploadFile,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Bulk invite team members from CSV file.
+    
+    **Enterprise Only**: Requires a plan with team seats.
+    
+    Expected CSV format:
+    ```csv
+    email,role,name
+    alice@example.com,editor,Alice
+    bob@example.com,viewer,Bob
+    ```
+    """
+    # Read CSV content
+    try:
+        content = await file.read()
+        csv_content = content.decode("utf-8")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to read CSV: {str(e)}"
+        )
+    
+    result = await team_service.bulk_invite_csv(
+        owner_id=user_id,
+        csv_content=csv_content
+    )
+    
+    if not result.get("success") and result.get("code") == "UPGRADE_REQUIRED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=result.get("error", "Upgrade required")
+        )
+    
+    return BulkInviteResponse(**result)
+
+
+# Legacy endpoint for backward compatibility
+@router.post("/team/members", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
+async def invite_team_member_legacy(
     payload: TeamMemberCreate,
     user_id: str = Depends(get_current_user)
 ):
-    """Invite a new team member."""
-    supabase = get_supabase()
+    """
+    Legacy invite endpoint - redirects to new gated version.
+    Kept for backward compatibility.
+    """
+    result = await team_service.invite_member(
+        owner_id=user_id,
+        email=payload.email,
+        role=payload.role,
+        name=payload.name
+    )
     
-    try:
-        # Validate role
-        if payload.role not in ["admin", "editor", "viewer"]:
-            raise HTTPException(status_code=400, detail="Invalid role")
+    if not result.get("success"):
+        error_code = result.get("code", "ERROR")
         
-        # Check if already invited
-        existing = supabase.table("team_members")\
-            .select("id")\
-            .eq("owner_user_id", user_id)\
-            .eq("email", payload.email)\
-            .execute()
-        
-        if existing.data and len(existing.data) > 0:
+        if error_code == "UPGRADE_REQUIRED":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail=result.get("error", "Upgrade to Enterprise to invite team members")
+            )
+        elif error_code == "ALREADY_EXISTS":
             raise HTTPException(status_code=409, detail="Member already invited")
-        
-        # Create invitation
-        now = datetime.utcnow().isoformat()
-        new_member = {
-            "owner_user_id": user_id,
-            "email": payload.email,
-            "name": payload.name or payload.email.split("@")[0],
-            "role": payload.role,
-            "status": "pending",
-            "created_at": now,
-            "invited_at": now
-        }
-        
-        response = supabase.table("team_members")\
-            .insert(new_member)\
-            .execute()
-        
-        if response.data:
-            return response.data[0]
-        
-        raise HTTPException(status_code=500, detail="Failed to create invitation")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to invite member: {str(e)}")
+        else:
+            raise HTTPException(status_code=400, detail=result.get("error", "Invite failed"))
+    
+    # Return the member data in legacy format
+    if result.get("member"):
+        return result["member"]
+    
+    raise HTTPException(status_code=500, detail="Failed to create invitation")
 
 
 @router.patch("/team/members/{member_id}", response_model=TeamMemberResponse)

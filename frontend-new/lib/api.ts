@@ -116,3 +116,93 @@ export const clearAuthCache = () => {
     cachedToken = null;
     tokenExpiryTime = 0;
 };
+
+// =============================================================================
+// USAGE & PLAN API
+// =============================================================================
+
+import type { UserUsage, EffectivePlan, Team, TeamMember, InviteRequest, BulkInviteResult } from '@/types';
+
+/**
+ * Get user usage stats and limits
+ * GET /api/v1/usage
+ */
+export const getUsageStats = async (): Promise<UserUsage> => {
+    const response = await api.get<UserUsage>('/usage');
+    return response.data;
+};
+
+/**
+ * Get user's effective plan (may be inherited from team owner)
+ * GET /api/v1/team/effective-plan
+ */
+export const getEffectivePlan = async (): Promise<EffectivePlan> => {
+    const response = await api.get<EffectivePlan>('/team/effective-plan');
+    return response.data;
+};
+
+// =============================================================================
+// TEAM API
+// =============================================================================
+
+/**
+ * Get current user's team
+ * GET /api/v1/team
+ */
+export const getMyTeam = async (): Promise<Team> => {
+    const response = await api.get<Team>('/team');
+    return response.data;
+};
+
+/**
+ * Get team members
+ * GET /api/v1/team/members
+ */
+export const getTeamMembers = async (): Promise<TeamMember[]> => {
+    const response = await api.get<TeamMember[]>('/team/members');
+    return response.data;
+};
+
+/**
+ * Invite a new team member
+ * POST /api/v1/team/invite
+ */
+export const inviteMember = async (request: InviteRequest): Promise<{ success: boolean; member?: TeamMember }> => {
+    const response = await api.post('/team/invite', request);
+    return response.data;
+};
+
+/**
+ * Bulk invite team members from CSV file
+ * POST /api/v1/team/bulk-invite
+ */
+export const bulkInvite = async (file: File): Promise<BulkInviteResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await api.post<BulkInviteResult>('/team/bulk-invite', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+    return response.data;
+};
+
+/**
+ * Remove a team member
+ * DELETE /api/v1/team/members/{memberId}
+ */
+export const removeMember = async (memberId: string): Promise<{ success: boolean }> => {
+    const response = await api.delete(`/team/members/${memberId}`);
+    return response.data;
+};
+
+/**
+ * Update a team member's role
+ * PATCH /api/v1/team/members/{memberId}
+ */
+export const updateMemberRole = async (memberId: string, role: string): Promise<TeamMember> => {
+    const response = await api.patch<TeamMember>(`/team/members/${memberId}`, { role });
+    return response.data;
+};
+

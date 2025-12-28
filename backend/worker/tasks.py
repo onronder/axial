@@ -260,6 +260,7 @@ def ingest_file_task(
         logger.info(f"📦 [Worker:{task_id}] Downloading from storage: {storage_path}")
         
         file_data = supabase.storage.from_(STAGING_BUCKET).download(storage_path)
+        file_size_bytes = len(file_data)  # Track for quota
         
         # Write to temp file
         file_ext = os.path.splitext(filename)[1] if filename else ""
@@ -267,7 +268,7 @@ def ingest_file_task(
             tmp.write(file_data)
             local_path = tmp.name
         
-        logger.info(f"📦 [Worker:{task_id}] Downloaded to: {local_path}")
+        logger.info(f"📦 [Worker:{task_id}] Downloaded to: {local_path} ({file_size_bytes} bytes)")
         
         # ========== STEP 2: Smart Parse & Chunk (Format-Specific) ==========
         from services.parsers import DocumentProcessorFactory
@@ -322,14 +323,15 @@ def ingest_file_task(
             **(result.metadata or {}),
         }
         
-        # Call atomic ingestion RPC
+        # Call atomic ingestion RPC with file size for quota tracking
         rpc_result = supabase.rpc("ingest_document_with_chunks", {
             "p_user_id": user_id,
             "p_doc_title": filename,
             "p_source_type": "file",
             "p_source_url": None,
             "p_metadata": json.dumps(doc_metadata),
-            "p_chunks": json.dumps(chunks_payload)
+            "p_chunks": json.dumps(chunks_payload),
+            "p_file_size_bytes": file_size_bytes
         }).execute()
         
         if rpc_result.data:
@@ -547,6 +549,9 @@ def ingest_connector_task(
                     }
                 })
             
+            # Calculate file size for quota tracking
+            content_size = len(doc_content.encode('utf-8'))
+            
             # Document metadata
             doc_metadata = {
                 **doc.metadata,
@@ -556,14 +561,15 @@ def ingest_connector_task(
                 **(result.metadata or {}),
             }
             
-            # ATOMIC RPC: Insert document with all chunks
+            # ATOMIC RPC: Insert document with all chunks and file size
             rpc_result = supabase.rpc("ingest_document_with_chunks", {
                 "p_user_id": user_id,
                 "p_doc_title": doc_title,
                 "p_source_type": source_type_enum,
                 "p_source_url": source_url,
                 "p_metadata": json.dumps(doc_metadata),
-                "p_chunks": json.dumps(chunks_payload)
+                "p_chunks": json.dumps(chunks_payload),
+                "p_file_size_bytes": content_size
             }).execute()
             
             if rpc_result.data:
@@ -829,13 +835,15 @@ def crawl_web_task(
                 }]
                 
                 # ATOMIC RPC: Insert document with all chunks in single transaction
+                content_size = len(doc.page_content.encode('utf-8'))
                 rpc_result = supabase.rpc("ingest_document_with_chunks", {
                     "p_user_id": user_id,
                     "p_doc_title": doc.metadata.get("title", "Web Page"),
                     "p_source_type": "web",
                     "p_source_url": doc.metadata.get("source_url"),
                     "p_metadata": json.dumps(doc.metadata if isinstance(doc.metadata, dict) else {}),
-                    "p_chunks": json.dumps(chunks_payload)
+                    "p_chunks": json.dumps(chunks_payload),
+                    "p_file_size_bytes": content_size
                 }).execute()
                 
                 if rpc_result.data:
@@ -1116,13 +1124,15 @@ def process_page_task(
         }
         
         # Store using atomic RPC
+        content_size = len(html_content.encode('utf-8')) if 'html_content' in dir() else 0
         rpc_result = supabase.rpc("ingest_document_with_chunks", {
             "p_user_id": user_id,
             "p_doc_title": page_title,
             "p_source_type": "web",
             "p_source_url": url,
             "p_metadata": json.dumps(doc_metadata),
-            "p_chunks": json.dumps(chunks_payload)
+            "p_chunks": json.dumps(chunks_payload),
+            "p_file_size_bytes": content_size
         }).execute()
         
         logger.info(f"✅ [Page:{task_id}] Stored: {url} ({len(result.chunks)} chunks)")
@@ -1396,13 +1406,15 @@ def process_page_task(
         }]
         
         # Atomic insert via RPC
+        content_size = len(doc.page_content.encode('utf-8'))
         rpc_result = supabase.rpc("ingest_document_with_chunks", {
             "p_user_id": user_id,
             "p_doc_title": doc.metadata.get("title", url),
             "p_source_type": doc.metadata.get("source", "web"),
             "p_source_url": url,
             "p_metadata": json.dumps(doc.metadata),
-            "p_chunks": json.dumps(chunks_payload)
+            "p_chunks": json.dumps(chunks_payload),
+            "p_file_size_bytes": content_size
         }).execute()
         
         if rpc_result.data:

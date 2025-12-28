@@ -145,15 +145,15 @@ describe('useIngestionJobs Hook', () => {
         });
 
         it('shows success toast on completion', () => {
-            const newStatus = 'completed';
-            const oldStatus = 'processing';
+            const newStatus: string = 'completed';
+            const oldStatus: string = 'processing';
             const shouldToast = newStatus === 'completed' && oldStatus !== 'completed';
             expect(shouldToast).toBe(true);
         });
 
         it('shows error toast on failure', () => {
-            const newStatus = 'failed';
-            const oldStatus = 'processing';
+            const newStatus: string = 'failed';
+            const oldStatus: string = 'processing';
             const shouldToast = newStatus === 'failed' && oldStatus !== 'failed';
             expect(shouldToast).toBe(true);
         });

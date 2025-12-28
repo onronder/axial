@@ -6,6 +6,7 @@ from core.security import get_current_user
 from core.db import get_supabase
 from core.rate_limit import limiter
 from services.audit import log_document_delete
+from api.v1.dependencies import validate_team_access
 
 router = APIRouter()
 
@@ -88,7 +89,7 @@ async def get_document_stats(
 @limiter.limit("60/minute")
 async def list_documents(
     request: Request,
-    user_id: str = Depends(get_current_user),
+    user_id: str = Depends(validate_team_access),  # Validates team access
     limit: int = 50,
     offset: int = 0
 ):

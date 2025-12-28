@@ -29,10 +29,26 @@ vi.mock('@/lib/api', () => ({
     },
 }));
 
-// Test wrapper
-const wrapper = ({ children }: { children: ReactNode }) => (
-    <ChatHistoryProvider>{children} </ChatHistoryProvider>
-);
+// Create QueryClient for tests
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const createTestQueryClient = () => new QueryClient({
+    defaultOptions: {
+        queries: {
+            retry: false,
+        },
+    },
+});
+
+// Test wrapper with all required providers
+const wrapper = ({ children }: { children: ReactNode }) => {
+    const queryClient = createTestQueryClient();
+    return (
+        <QueryClientProvider client={queryClient}>
+            <ChatHistoryProvider>{children}</ChatHistoryProvider>
+        </QueryClientProvider>
+    );
+};
 
 describe('useChatHistory', () => {
     beforeEach(() => {

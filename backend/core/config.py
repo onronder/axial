@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+
 
 class Settings(BaseSettings):
     SUPABASE_URL: str
@@ -52,9 +53,42 @@ class Settings(BaseSettings):
     
     # Groq API Key (for secondary/guardrail models)
     GROQ_API_KEY: Optional[str] = None
+    
+    # =========================================================================
+    # Payment Integration (Polar.sh)
+    # =========================================================================
+    
+    # Webhook secret for signature verification
+    POLAR_WEBHOOK_SECRET: Optional[str] = None
+    
+    # Product ID mappings (Polar Product UUID -> Internal Plan Name)
+    # These are placeholders - replace with real Polar product IDs in .env
+    POLAR_STARTER_PRODUCT_ID: Optional[str] = None
+    POLAR_PRO_PRODUCT_ID: Optional[str] = None
+    POLAR_ENTERPRISE_PRODUCT_ID: Optional[str] = None
 
-    class Config:
-        env_file = [".env", "../.env"]
-        extra = "ignore" # Ignore extra fields in .env
+    # Pydantic V2 settings configuration
+    model_config = SettingsConfigDict(
+        env_file=[".env", "../.env"],
+        extra="ignore"
+    )
+
+
+# Product mapping helper - maps Polar product IDs to internal plan names
+def get_polar_product_mapping() -> dict:
+    """
+    Returns mapping of Polar Product IDs to internal plan names.
+    Only includes products that are configured (not None).
+    """
+    mapping = {}
+    if settings.POLAR_STARTER_PRODUCT_ID:
+        mapping[settings.POLAR_STARTER_PRODUCT_ID] = "starter"
+    if settings.POLAR_PRO_PRODUCT_ID:
+        mapping[settings.POLAR_PRO_PRODUCT_ID] = "pro"
+    if settings.POLAR_ENTERPRISE_PRODUCT_ID:
+        mapping[settings.POLAR_ENTERPRISE_PRODUCT_ID] = "enterprise"
+    return mapping
+
 
 settings = Settings()
+

@@ -16,6 +16,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Download,
+  Lock,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +63,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useTeamMembers, Role, MemberStatus, TeamMember } from "@/hooks/useTeamMembers";
+import { useUsage } from "@/hooks/useUsage";
+import { bulkInvite } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 const roleStyles: Record<Role, string> = {
   admin: "bg-accent/10 text-accent border-accent/20",
@@ -74,6 +80,9 @@ const statusStyles: Record<MemberStatus, { label: string; className: string }> =
 };
 
 export function TeamSettings() {
+  const { toast } = useToast();
+  const { teamEnabled, plan } = useUsage();
+
   const {
     members,
     stats,
@@ -81,13 +90,19 @@ export function TeamSettings() {
     inviteMember,
     updateMemberRole,
     removeMember,
-    resendInvite
+    resendInvite,
+    refresh: refreshMembers,
   } = useTeamMembers();
 
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("viewer");
   const [isInviting, setIsInviting] = useState(false);
+
+  // Bulk CSV import state
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [isBulkImporting, setIsBulkImporting] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -103,6 +118,51 @@ export function TeamSettings() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
+
+  // CSV Template data URI
+  const CSV_TEMPLATE = "data:text/csv;charset=utf-8,email,role,name%0Aalice%40example.com,editor,Alice%0Abob%40example.com,viewer,Bob";
+
+  // Handle bulk CSV upload
+  const handleBulkImport = async () => {
+    if (!bulkFile) return;
+
+    setIsBulkImporting(true);
+    try {
+      const result = await bulkInvite(bulkFile);
+
+      if (result.success) {
+        toast({
+          title: "Bulk import complete",
+          description: `${result.invited} member(s) invited successfully. ${result.failed} failed.`,
+        });
+        refreshMembers();
+        setBulkDialogOpen(false);
+        setBulkFile(null);
+      } else {
+        toast({
+          title: "Import failed",
+          description: result.errors?.[0]?.error || "Unknown error",
+          variant: "destructive",
+        });
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      toast({
+        title: "Import error",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsBulkImporting(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setBulkFile(file);
+    }
+  };
 
   // Filtered members (client-side filtering for immediate responsiveness)
   const filteredMembers = useMemo(() => {
@@ -135,11 +195,6 @@ export function TeamSettings() {
       setInviteRole("viewer");
       setInviteDialogOpen(false);
     }
-  };
-
-  const handleBulkImport = () => {
-    // TODO: Implement CSV upload modal
-    alert("CSV upload feature coming soon.");
   };
 
   const openEditRoleDialog = (member: TeamMember) => {
@@ -221,6 +276,32 @@ export function TeamSettings() {
           Manage access and roles for your organization
         </p>
       </div>
+
+      {/* Enterprise Upgrade Banner - shows when team features are disabled */}
+      {!teamEnabled && (
+        <Card className="relative overflow-hidden border-primary/30 bg-gradient-to-r from-primary/5 via-transparent to-accent/5">
+          <CardContent className="flex items-center justify-between p-6">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                <Lock className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Upgrade to Enterprise for Team Features
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Your current plan ({plan}) doesn&apos;t include team management. Upgrade to invite team members and collaborate.
+                </p>
+              </div>
+            </div>
+            <Button className="gap-2 shrink-0">
+              <Sparkles className="h-4 w-4" />
+              Upgrade Now
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -321,17 +402,76 @@ export function TeamSettings() {
           </DialogContent>
         </Dialog>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="outline" className="gap-2" onClick={handleBulkImport}>
-              <Upload className="h-4 w-4" />
-              Bulk Import (.csv)
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Upload a CSV list for large teams</p>
-          </TooltipContent>
-        </Tooltip>
+        {/* Bulk Import Dialog */}
+        <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+          <DialogTrigger asChild>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" className="gap-2" disabled={!teamEnabled}>
+                  <Upload className="h-4 w-4" />
+                  Bulk Import (.csv)
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{teamEnabled ? "Upload a CSV list for large teams" : "Upgrade to use bulk import"}</p>
+              </TooltipContent>
+            </Tooltip>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Bulk Import Team Members</DialogTitle>
+              <DialogDescription>
+                Upload a CSV file to invite multiple members at once
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="csv-file">CSV File</Label>
+                <Input
+                  id="csv-file"
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileChange}
+                  className="cursor-pointer"
+                />
+                {bulkFile && (
+                  <p className="text-sm text-muted-foreground">
+                    Selected: {bulkFile.name}
+                  </p>
+                )}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <p className="mb-2">Expected format:</p>
+                <code className="block bg-muted p-2 rounded text-xs">
+                  email,role,name<br />
+                  alice@example.com,editor,Alice<br />
+                  bob@example.com,viewer,Bob
+                </code>
+              </div>
+              <a
+                href={CSV_TEMPLATE}
+                download="team_invite_template.csv"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                <Download className="h-3 w-3" />
+                Download CSV Template
+              </a>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleBulkImport} className="gap-2" disabled={!bulkFile || isBulkImporting}>
+                {isBulkImporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                Import Members
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Search and Filter */}

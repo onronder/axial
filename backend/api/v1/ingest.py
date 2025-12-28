@@ -3,19 +3,23 @@ Ingestion API Endpoint - Zero-Copy Architecture
 
 This endpoint acts as a thin proxy:
 1. Validates the upload
-2. Stores file in ephemeral staging bucket
-3. Dispatches Celery task for processing
-4. Returns job_id immediately
+2. Enforces quota limits (file count, storage, features)
+3. Stores file in ephemeral staging bucket
+4. Dispatches Celery task for processing
+5. Returns job_id immediately
 
 Heavy processing (parsing, embedding) happens in the worker.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
 from typing import Optional
+from uuid import UUID
 from models import IngestResponse
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
+from services.usage import check_can_upload, check_feature_access
+from api.v1.dependencies import validate_team_access
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 import magic
@@ -61,7 +65,7 @@ async def ingest_document(
     notion_page_id: Optional[str] = Form(None),
     notion_token: Optional[str] = Form(None),
     metadata: str = Form(...),
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(validate_team_access)  # Validates team access + returns user_id
 ):
     """
     Zero-Copy Ingestion Endpoint.
@@ -81,6 +85,15 @@ async def ingest_document(
     # ROUTE 1: WEB CRAWLING (Already async)
     # =========================================================
     if url:
+        # QUOTA CHECK: Verify user has access to web crawling feature
+        feature_check = await check_feature_access(UUID(user_id), "web_crawl")
+        if not feature_check["allowed"]:
+            logger.warning(f"🚫 [Quota] Web crawl blocked for user {user_id}: {feature_check['reason']}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=feature_check["reason"]
+            )
+        
         from datetime import datetime as dt
         crawl_type = meta_dict.get("crawl_type", "single")
         max_depth = min(int(meta_dict.get("depth", 1)), 10)
@@ -164,10 +177,30 @@ async def ingest_document(
     # ROUTE 3: FILE UPLOAD (Zero-Copy via Storage)
     # =========================================================
     if file:
+        # QUOTA CHECK: Read file first to get size, then verify quota
+        # We read early to get accurate size for quota check
+        file_content = await file.read()
+        file_size_bytes = len(file_content)
+        await file.seek(0)  # Reset for subsequent reads
+        
+        # Check if user can upload this file
+        quota_check = await check_can_upload(
+            user_id=UUID(user_id),
+            file_size_bytes=file_size_bytes,
+            file_count=1
+        )
+        if not quota_check["allowed"]:
+            logger.warning(f"🚫 [Quota] Upload blocked for user {user_id}: {quota_check['reason']}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=quota_check["reason"]
+            )
+        
+        logger.info(f"✅ [Quota] Upload approved for user {user_id}: {file_size_bytes} bytes")
+        
         # SECURITY: Validate file content type
         try:
-            header = await file.read(2048)
-            await file.seek(0)
+            header = file_content[:2048]  # Use already-read content
             
             detected_mime = magic.from_buffer(header, mime=True)
             
@@ -197,9 +230,6 @@ async def ingest_document(
         # Generate unique storage path
         file_uuid = str(uuid.uuid4())
         storage_path = f"{user_id}/{file_uuid}/{file.filename}"
-        
-        # Read file content for upload
-        file_content = await file.read()
         
         # Upload to ephemeral staging bucket
         try:
