@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import {
     Tooltip,
     TooltipContent,
+    TooltipProvider,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 
@@ -25,44 +26,48 @@ export function HelpTrigger({ variant = 'sidebar', className }: HelpTriggerProps
 
     if (variant === 'fab') {
         return (
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        onClick={openHelp}
-                        size="icon"
-                        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg bg-primary hover:bg-primary/90 z-50"
-                    >
-                        <HelpCircle className="h-6 w-6" />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">
-                    <p>Help & Support</p>
-                </TooltipContent>
-            </Tooltip>
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            onClick={openHelp}
+                            size="icon"
+                            className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg bg-primary hover:bg-primary/90 z-50"
+                        >
+                            <HelpCircle className="h-6 w-6" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                        <p>Help & Support</p>
+                    </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
         );
     }
 
     if (variant === 'icon') {
         return (
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        onClick={openHelp}
-                        variant="ghost"
-                        size="icon"
-                        className={className}
-                    >
-                        <HelpCircle className="h-5 w-5" />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                    <p>Help Center</p>
-                </TooltipContent>
-            </Tooltip>
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            onClick={openHelp}
+                            variant="ghost"
+                            size="icon"
+                            className={className}
+                        >
+                            <HelpCircle className="h-5 w-5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                        <p>Help Center</p>
+                    </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
         );
     }
 
-    // Default: sidebar variant
+    // Default: sidebar variant (no tooltip needed)
     return (
         <Button
             onClick={openHelp}
@@ -74,3 +79,4 @@ export function HelpTrigger({ variant = 'sidebar', className }: HelpTriggerProps
         </Button>
     );
 }
+

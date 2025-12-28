@@ -2,7 +2,7 @@
 
 import { HardDrive, Files } from "lucide-react";
 import { useUsage, formatBytes } from "@/hooks/useUsage";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -78,55 +78,57 @@ export function UsageIndicator() {
     }
 
     return (
-        <div className="px-3 py-3 space-y-3 border-t border-border/50">
-            {/* Files Usage */}
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <div className="space-y-1.5 cursor-default">
-                        <div className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-1.5 text-muted-foreground">
-                                <Files className="h-3 w-3" />
-                                <span>Files</span>
+        <TooltipProvider>
+            <div className="px-3 py-3 space-y-3 border-t border-border/50">
+                {/* Files Usage */}
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div className="space-y-1.5 cursor-default">
+                            <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1.5 text-muted-foreground">
+                                    <Files className="h-3 w-3" />
+                                    <span>Files</span>
+                                </div>
+                                <span className={cn("font-medium", getTextColorClass(filesPercent))}>
+                                    {filesUsed}/{filesLimit}
+                                </span>
                             </div>
-                            <span className={cn("font-medium", getTextColorClass(filesPercent))}>
-                                {filesUsed}/{filesLimit}
-                            </span>
+                            <ColoredProgressBar
+                                value={filesPercent}
+                                colorClass={getColorClass(filesPercent)}
+                            />
                         </div>
-                        <ColoredProgressBar
-                            value={filesPercent}
-                            colorClass={getColorClass(filesPercent)}
-                        />
-                    </div>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                    <p>{filesUsed} of {filesLimit} files used ({Math.round(filesPercent)}%)</p>
-                </TooltipContent>
-            </Tooltip>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">
+                        <p>{filesUsed} of {filesLimit} files used ({Math.round(filesPercent)}%)</p>
+                    </TooltipContent>
+                </Tooltip>
 
-            {/* Storage Usage */}
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <div className="space-y-1.5 cursor-default">
-                        <div className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-1.5 text-muted-foreground">
-                                <HardDrive className="h-3 w-3" />
-                                <span>Storage</span>
+                {/* Storage Usage */}
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div className="space-y-1.5 cursor-default">
+                            <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1.5 text-muted-foreground">
+                                    <HardDrive className="h-3 w-3" />
+                                    <span>Storage</span>
+                                </div>
+                                <span className={cn("font-medium", getTextColorClass(storagePercent))}>
+                                    {formatBytes(storageUsed)}/{formatBytes(storageLimit)}
+                                </span>
                             </div>
-                            <span className={cn("font-medium", getTextColorClass(storagePercent))}>
-                                {formatBytes(storageUsed)}/{formatBytes(storageLimit)}
-                            </span>
+                            <ColoredProgressBar
+                                value={storagePercent}
+                                colorClass={getColorClass(storagePercent)}
+                            />
                         </div>
-                        <ColoredProgressBar
-                            value={storagePercent}
-                            colorClass={getColorClass(storagePercent)}
-                        />
-                    </div>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                    <p>{formatBytes(storageUsed)} of {formatBytes(storageLimit)} used ({Math.round(storagePercent)}%)</p>
-                </TooltipContent>
-            </Tooltip>
-        </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">
+                        <p>{formatBytes(storageUsed)} of {formatBytes(storageLimit)} used ({Math.round(storagePercent)}%)</p>
+                    </TooltipContent>
+                </Tooltip>
+            </div>
+        </TooltipProvider>
     );
 }
 
@@ -141,16 +143,18 @@ export function UsageIndicatorCompact() {
     const worstPercent = Math.max(filesPercent, storagePercent);
 
     return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <div className={cn(
-                    "w-2 h-2 rounded-full",
-                    getColorClass(worstPercent)
-                )} />
-            </TooltipTrigger>
-            <TooltipContent>
-                <p>Files: {Math.round(filesPercent)}% • Storage: {Math.round(storagePercent)}%</p>
-            </TooltipContent>
-        </Tooltip>
+        <TooltipProvider>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <div className={cn(
+                        "w-2 h-2 rounded-full",
+                        getColorClass(worstPercent)
+                    )} />
+                </TooltipTrigger>
+                <TooltipContent>
+                    <p>Files: {Math.round(filesPercent)}% • Storage: {Math.round(storagePercent)}%</p>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
     );
 }
