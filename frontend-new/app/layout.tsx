@@ -15,8 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Axial Newton",
-  description: "Advanced Hybrid RAG SaaS Platform",
+  title: "Axio Hub",
+  description: "AI-Powered Knowledge Assistant",
+  icons: {
+    icon: "/favicon-32.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({
