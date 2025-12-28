@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { CloudUpload, Globe, CheckCircle, ArrowRight, Sparkles } from "lucide-react";
@@ -41,6 +41,7 @@ export function OnboardingModal({ open, onOpenChange }: OnboardingModalProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-xl p-0 overflow-hidden">
+                <DialogTitle className="sr-only">Welcome to Axio Hub</DialogTitle>
                 {step === "welcome" && (
                     <div className="p-8 space-y-6 text-center">
                         {/* Logo animation */}

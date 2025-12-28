@@ -12,7 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useHelpStore } from '@/store/useHelpStore';
 import { HELP_ARTICLES, getCategories, type HelpArticle } from '@/data/helpArticles';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -81,6 +81,7 @@ export function HelpModal() {
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && closeHelp()}>
             <DialogContent className="max-w-5xl h-[85vh] p-0 gap-0 overflow-hidden">
+                <DialogTitle className="sr-only">Help Center</DialogTitle>
                 <div className="flex h-full">
                     {/* Sidebar */}
                     <div className="w-64 border-r border-border bg-muted/30 flex flex-col">
