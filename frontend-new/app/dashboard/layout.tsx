@@ -29,7 +29,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     useEffect(() => {
         if (!loading && !isAuthenticated) {
-            router.push("/auth/login");
+            router.push("/login");
         }
     }, [isAuthenticated, loading, router]);
 

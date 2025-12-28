@@ -40,7 +40,7 @@ export function DashboardSidebar() {
 
     const handleLogout = () => {
         logout();
-        router.push("/auth/login");
+        router.push("/login");
     };
 
     const toggleTheme = () => {

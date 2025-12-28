@@ -6,7 +6,7 @@ test.describe('Smoke Tests', () => {
         const user = generateRandomUser();
 
         // 1. Go to Register page
-        await page.goto('/auth/register');
+        await page.goto('/register');
 
         // 2. Fill Form
         await page.fill('input[name="firstName"]', user.firstName);

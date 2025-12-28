@@ -97,7 +97,7 @@ export default function ResetPasswordPage() {
 
             // Redirect to login after a short delay
             setTimeout(() => {
-                router.push("/auth/login");
+                router.push("/login");
             }, 2000);
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : "Please try again.";
