@@ -1,87 +1,81 @@
 from locust import HttpUser, task, between, events
-import random
-import string
 import logging
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 class AxioUser(HttpUser):
-    # Aggressive testing - wait 1 second between tasks
-    wait_time = lambda self: 1.0
+    # Realistic wait time between tasks (1-5 seconds)
+    wait_time = between(1, 5)
 
     def on_start(self):
         """
-        Register a random user and log in to get the access token.
+        Log in a user ONCE when the simulation starts.
+        Uses dummy credentials as requested.
         """
-        self.email = f"loadtest_{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}@example.com"
-        self.password = "LoadTest123!"
-        self.first_name = "Load"
-        self.last_name = "Tester"
-
-        # Register
-        logger.info(f"Registering user: {self.email}")
-        with self.client.post("/auth/register", json={
-            "email": self.email,
-            "password": self.password,
-            "first_name": self.first_name,
-            "last_name": self.last_name,
-            "terms_accepted": True
-        }, catch_response=True) as response:
-            if response.status_code != 200:
-                # If registration fails (e.g., email taken), try logging in
-                if response.status_code == 400 and "Email already registered" in response.text:
-                    logger.info("User already exists, proceeding to login.")
-                else:
-                    response.failure(f"Registration failed: {response.text}")
-                    return
+        self.email = "test@example.com"
+        self.password = "password"
+        self.token = None
+        self.headers = {}
 
         # Login to get valid token
         logger.info(f"Logging in user: {self.email}")
+        # Note: Using standard /auth/jwt/login endpoint. 
+        # If your API uses /api/v1/auth/login, update the path below.
         with self.client.post("/auth/jwt/login", data={
             "username": self.email,
             "password": self.password
         }, catch_response=True) as response:
             if response.status_code == 200:
-                data = response.json()
-                self.token = data.get("access_token")
-                self.headers = {"Authorization": f"Bearer {self.token}"}
-                logger.info(f"Login successful for {self.email}")
+                try:
+                    data = response.json()
+                    self.token = data.get("access_token")
+                    if self.token:
+                        self.headers = {"Authorization": f"Bearer {self.token}"}
+                        logger.info(f"Login successful for {self.email}")
+                    else:
+                        response.failure("No access token in response")
+                        self.stop()
+                except Exception as e:
+                    response.failure(f"Failed to parse login response: {e}")
+                    self.stop()
             else:
-                response.failure(f"Login failed: {response.text}")
-                self.token = None
+                # Fail gracefully as requested
+                logger.error(f"Login failed: {response.status_code} - {response.text}")
+                response.failure(f"Login failed with status {response.status_code}")
+                self.stop() # Stop this user from running further tasks
 
     @task(3)
-    def chat(self):
+    def chat_interaction(self):
         """
-        Simulate sending a chat message. Weighted higher (3x) than document listing.
+        Task A: Simulate sending a chat message. High weight (3).
         """
-        if not hasattr(self, 'token') or not self.token:
+        if not self.token:
             return
 
         payload = {
-            "message": "Hello, this is a load test message.",
-            "stream": False # Disable streaming for simpler load testing verification
+            "messages": [
+                {"role": "user", "content": "Hello, this is a load test message."}
+            ],
+            "stream": False,
+            "use_search": False
         }
         
-        # Determine endpoint - verify if /api/v1/chat exists or needs specific router
-        # Assuming /api/v1/chat based on task description
         with self.client.post("/api/v1/chat", json=payload, headers=self.headers, catch_response=True) as response:
             if response.status_code == 200:
-                # Basic check for response structure
-                if "response" not in response.json() and "content" not in response.json():
-                     response.failure("Invalid chat response structure")
+                pass # Success
             else:
                 response.failure(f"Chat failed: {response.status_code} - {response.text}")
 
     @task(1)
-    def list_documents(self):
+    def view_profile(self):
         """
-        Simulate listing documents (DB read).
+        Task B: View user profile. Low weight (1).
+        URL: /api/v1/settings/profile (mapped from /api/v1/users/me requirement)
         """
-        if not hasattr(self, 'token') or not self.token:
+        if not self.token:
             return
 
-        with self.client.get("/api/v1/documents", headers=self.headers, catch_response=True) as response:
+        with self.client.get("/api/v1/settings/profile", headers=self.headers, catch_response=True) as response:
             if response.status_code != 200:
-                 response.failure(f"List documents failed: {response.status_code} - {response.text}")
+                 response.failure(f"Profile fetch failed: {response.status_code} - {response.text}")

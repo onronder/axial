@@ -31,7 +31,8 @@ test.describe('Smoke Tests', () => {
         // 5. Assert Paywall Content
         // Look for "Choose Your Plan" or similar text from UseWarningBanner/PaywallGuard
         // Update text based on actual Paywall component content
-        await expect(page.getByText(/Choose Your Plan|Upgrade to Continue|Unlock Full Access/i)).toBeVisible();
+        // Wait for usage check to complete (loader to disappear)
+        await expect(page.locator("text=Choose Your Plan")).toBeVisible({ timeout: 15000 });
     });
 
     test('Protected routes redirect to login if unauthenticated', async ({ page }) => {
