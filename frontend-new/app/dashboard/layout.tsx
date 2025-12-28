@@ -11,6 +11,7 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { GlobalProgress } from "@/components/layout/global-progress";
 import { GlobalIngestModal } from "@/components/GlobalIngestModal";
+import { UsageWarningBanner } from "@/components/UsageWarningBanner";
 import { AppErrorBoundary, SidebarErrorBoundary } from "@/components/providers/ErrorBoundary";
 
 interface DashboardLayoutProps {
@@ -65,6 +66,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                 isOpen={mobileMenuOpen}
                                 onToggle={setMobileMenuOpen}
                             />
+
+                            {/* Usage Warning Banner */}
+                            <UsageWarningBanner />
 
                             {/* Page content - with error boundary */}
                             <main className="h-[calc(100vh-56px)] md:h-screen">

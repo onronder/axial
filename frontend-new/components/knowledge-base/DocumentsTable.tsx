@@ -48,6 +48,7 @@ import {
 import { Document } from "@/lib/mockData";
 import { useDocuments } from "@/hooks/useDocuments";
 import { useToast } from "@/hooks/use-toast";
+import { StorageMeter } from "@/components/documents/StorageMeter";
 import { cn } from "@/lib/utils";
 
 const sourceIcons: Record<string, typeof FileText> = {
@@ -176,12 +177,17 @@ export function DocumentsTable() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="font-display text-2xl font-bold text-foreground">Knowledge Base</h1>
-        <p className="mt-1 text-muted-foreground">
-          Manage your ingested documents
-        </p>
+      {/* Header with Storage Meter */}
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1">
+          <h1 className="font-display text-2xl font-bold text-foreground">Knowledge Base</h1>
+          <p className="mt-1 text-muted-foreground">
+            Manage your ingested documents
+          </p>
+        </div>
+        <div className="lg:w-80">
+          <StorageMeter />
+        </div>
       </div>
 
       {/* Controls */}
