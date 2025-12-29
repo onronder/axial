@@ -34,7 +34,7 @@ from uuid import UUID
 from async_lru import alru_cache
 
 from core.db import get_supabase
-from core.quotas import PLANS, get_plan_limits
+from core.quotas import QUOTA_LIMITS, get_plan_limits
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ class TeamService:
                         # Check 2: Team Lockout (MVP)
                         # If user is NOT the owner, check if owner's plan allows team members
                         if not is_owner:
-                            plan_limits = PLANS.get(owner_plan, PLANS["free"])
+                            plan_limits = QUOTA_LIMITS.get(owner_plan, QUOTA_LIMITS["free"])
                             
                             if plan_limits.max_team_seats <= 1:
                                 # Owner downgraded to a plan without team support
@@ -288,7 +288,7 @@ class TeamService:
                 }
             
             # Check 2: Team Lockout (owner downgraded)
-            plan_limits = PLANS.get(owner_plan, PLANS["free"])
+            plan_limits = QUOTA_LIMITS.get(owner_plan, QUOTA_LIMITS["free"])
             
             if plan_limits.max_team_seats <= 1:
                 logger.warning(
@@ -520,7 +520,7 @@ class TeamService:
             if profile_response.data:
                 plan = profile_response.data.get("plan", "free")
             
-            limits = PLANS.get(plan, PLANS["free"])
+            limits = QUOTA_LIMITS.get(plan, QUOTA_LIMITS["free"])
             
             # Check if plan allows team members (max_team_seats > 1)
             if limits.max_team_seats <= 1:

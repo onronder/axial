@@ -252,7 +252,7 @@ async def check_feature_access(user_id: UUID, feature: str) -> dict:
             "reason": "Team collaboration is available on Enterprise plans."
         },
         "premium_models": {
-            "allowed": limits.model_tier.value in ["hybrid", "premium"],
+            "allowed": limits.model_tier in ["hybrid", "premium"],
             "reason": "Premium AI models are available on Pro and Enterprise plans."
         }
     }
