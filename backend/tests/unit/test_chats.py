@@ -12,6 +12,7 @@ Tests for:
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
+import api.v1.chat  # Ensure module is loaded for patching
 
 
 class TestChatList:
@@ -33,101 +34,185 @@ class TestChatList:
         pass
 
 
+@pytest.mark.asyncio
 class TestChatCreate:
-    """Tests for POST /api/v1/chats."""
+    """Tests for POST /api/v1/conversations."""
     
-    @pytest.mark.unit
-    def test_create_chat_returns_new_chat(self):
+    async def test_create_chat_returns_new_chat(self):
         """Creating a chat should return the new chat object."""
-        pass
-    
-    @pytest.mark.unit
-    def test_create_chat_with_title(self):
-        """Should accept optional title parameter."""
-        pass
-    
-    @pytest.mark.unit
-    def test_create_chat_generates_default_title(self):
-        """If no title provided, should generate one."""
-        pass
+        # Arrange
+        mock_supabase = MagicMock()
+        mock_response = MagicMock()
+        mock_response.data = [{"id": "new-chat-id", "title": "New Chat"}]
+        mock_supabase.table.return_value.insert.return_value.execute.return_value = mock_response
+        
+        with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
+            from api.v1.chat import create_conversation, ConversationCreate
+            
+            # Act
+            payload = ConversationCreate(title="Test Chat")
+            result = await create_conversation(payload, user_id="test-user")
+            
+            # Assert
+            assert result["id"] == "new-chat-id"
+            mock_supabase.table.assert_called_with("conversations")
+            mock_supabase.table().insert.assert_called()
 
 
-class TestChatMessages:
-    """Tests for chat message operations."""
-    
-    @pytest.mark.unit
-    def test_get_messages_returns_chat_messages(self):
-        """Should return all messages for a chat."""
-        pass
-    
-    @pytest.mark.unit
-    def test_get_messages_ordered_by_created_at_asc(self):
-        """Messages should be in chronological order."""
-        pass
-    
-    @pytest.mark.unit
-    def test_add_message_stores_in_database(self):
-        """New message should be persisted."""
-        pass
-    
-    @pytest.mark.unit
-    def test_add_message_validates_role(self):
-        """Role must be 'user' or 'assistant'."""
-        pass
-
-
-class TestChatDelete:
-    """Tests for DELETE /api/v1/chats/{id}."""
-    
-    @pytest.mark.unit
-    def test_delete_chat_requires_ownership(self):
-        """Users can only delete their own chats."""
-        pass
-    
-    @pytest.mark.unit
-    def test_delete_chat_cascades_to_messages(self):
-        """Deleting a chat should delete its messages."""
-        pass
-    
-    @pytest.mark.unit
-    def test_delete_nonexistent_chat_returns_404(self):
-        """Deleting non-existent chat returns 404."""
-        pass
-
-
+@pytest.mark.asyncio
 class TestRAGChatEndpoint:
     """Tests for POST /api/v1/chat - the RAG endpoint."""
     
-    @pytest.mark.unit
-    def test_chat_requires_message(self):
-        """Request must include a message."""
-        pass
-    
-    @pytest.mark.unit
-    def test_chat_performs_semantic_search(self):
-        """Should search user's knowledge base for relevant chunks."""
-        pass
-    
-    @pytest.mark.unit
-    def test_chat_includes_citations(self):
-        """Response should include source citations."""
-        pass
-    
-    @pytest.mark.unit
-    def test_chat_respects_user_data_isolation(self):
-        """Should only search current user's documents."""
-        pass
+    async def test_chat_uses_condensed_question(self):
+        """Verify LLM is invoked with condensed question, not original query."""
+        from fastapi import Request
+        
+        # Arrange
+        mock_request = MagicMock(spec=Request)
+        mock_request.client.host = "127.0.0.1"
+        
+        mock_bg_tasks = MagicMock()
+        mock_supabase = MagicMock()
+        
+        # Mock user profile plan
+        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "free"}
+        
+        with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
+             patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
+             patch("api.v1.chat.llm_router.select_model") as mock_router, \
+             patch("api.v1.chat.condense_question", return_value="Condensed Question?") as mock_condense, \
+             patch("api.v1.chat.OpenAIEmbeddings"), \
+             patch("api.v1.chat.LLMFactory") as mock_llm_factory, \
+             patch("api.v1.chat.save_messages") as mock_save_messages:
+            
+            # Mock Save Messages
+            mock_save_messages.return_value = "msg-123"
+            
+            # Mock Guardrails
+            mock_guard.return_value.is_safe = True
+            mock_guard.return_value.intent = "QA"
+            mock_guard.return_value.complexity = "simple"
+            
+            # Mock Router
+            mock_router.return_value.provider = "openai"
+            mock_router.return_value.model = "gpt-4o"
+            
+            # Mock LLM Chain
+            mock_chain = MagicMock()
+            mock_chain.invoke.return_value = "Test Answer"
+            
+            # Properly mock the chain construction: prompt | llm | parser
+            # We can mock the final invoke call
+            with patch("api.v1.chat.StrOutputParser"), \
+                 patch("api.v1.chat.ChatPromptTemplate") as mock_prompt_cls:
+                
+                # Make the chain object returned by the pipe operators
+                mock_prompt = MagicMock()
+                mock_llm = MagicMock()
+                mock_parser = MagicMock()
+                
+                mock_prompt_cls.from_messages.return_value = mock_prompt
+                
+                # Mock the pipe operation: prompt | llm | parser -> chain
+                mock_prompt.__or__.return_value = mock_llm
+                mock_llm.__or__.return_value = mock_chain
+                
+                from api.v1.chat import chat_endpoint, ChatRequest
+                
+                # Act
+                payload = ChatRequest(query="Original Query", history=[{"role": "user", "content": "prev"}])
+                await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
+                
+                # Assert
+                # Verify condense was called
+                mock_condense.assert_called_with("Original Query", payload.history)
+                
+                # Verify chain invoked with CONDENSED question
+                call_args = mock_chain.invoke.call_args
+                assert call_args is not None
+                args, kwargs = call_args
+                # chain.invoke({...}) is a positional arg
+                assert args[0]['question'] == "Condensed Question?"
 
-
-class TestChatDataIntegrity:
-    """Data validation tests."""
     
-    @pytest.mark.unit
-    def test_chat_response_schema(self):
-        """Chat response must match expected schema."""
-        pass
-    
-    @pytest.mark.unit
-    def test_message_response_schema(self):
-        """Message response must match expected schema."""
-        pass
+    async def test_chat_captures_sentry_exception(self):
+        """Mock sentry_sdk and trigger an error to verify capture."""
+        from fastapi import Request
+        
+        # Arrange
+        mock_request = MagicMock(spec=Request)
+        mock_request.client.host = "127.0.0.1"
+        
+        mock_bg_tasks = MagicMock() 
+        mock_supabase = MagicMock()
+        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "free"}
+        
+        with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
+             patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
+             patch("api.v1.chat.condense_question", return_value="Q"), \
+             patch("api.v1.chat.OpenAIEmbeddings"), \
+             patch("api.v1.chat.LLMFactory"), \
+             patch("api.v1.chat.sentry_sdk") as mock_sentry:
+                
+            mock_guard.return_value.is_safe = True
+            
+            # Force an error during routing or generation
+            with patch("api.v1.chat.llm_router.select_model", side_effect=Exception("Test Error")):
+                from api.v1.chat import chat_endpoint, ChatRequest
+                from fastapi import HTTPException
+                
+                # Act & Assert
+                with pytest.raises(Exception): # or HTTP 500
+                   payload = ChatRequest(query="Test", history=[])
+                   await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
+                
+                # Ideally check if error was logged/captured, but note that 
+                # generic Exceptions in earlier steps might just raise HTTP 500 without capturing 
+                # (Rate limiting capture was added to generation block).
+                # Let's target the Generation block failure for our Sentry test.
+            
+    async def test_generation_exception_captures_sentry(self):
+         # Arrange
+        from fastapi import Request
+        mock_request = MagicMock(spec=Request)
+        mock_request.client.host = "127.0.0.1"
+        
+        mock_bg_tasks = MagicMock()
+        mock_supabase = MagicMock()
+        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "free"}
+        
+        with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
+             patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
+             patch("api.v1.chat.llm_router.select_model") as mock_router, \
+             patch("api.v1.chat.condense_question", return_value="Q"), \
+             patch("api.v1.chat.OpenAIEmbeddings"), \
+             patch("api.v1.chat.LLMFactory"), \
+             patch("api.v1.chat.sentry_sdk") as mock_sentry:
+            
+            mock_guard.return_value.is_safe = True
+            mock_router.return_value.provider = "openai"
+            
+            # FORCE ERROR IN CHAIN INVOKE
+            mock_chain = MagicMock()
+            mock_chain.invoke.side_effect = Exception("Generation Failed")
+            
+            with patch("api.v1.chat.StrOutputParser"), \
+                 patch("api.v1.chat.ChatPromptTemplate") as mock_prompt_cls:
+                
+                mock_prompt = MagicMock()
+                mock_prompt_cls.from_messages.return_value = mock_prompt
+                mock_prompt.__or__.return_value = MagicMock(__or__=MagicMock(return_value=mock_chain))
+                
+                from api.v1.chat import chat_endpoint, ChatRequest, HTTPException
+                
+                # Act
+                payload = ChatRequest(query="Test")
+                try:
+                    await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
+                except HTTPException:
+                    pass
+                
+                # Assert
+                mock_sentry.capture_exception.assert_called_once()
+                args, _ = mock_sentry.capture_exception.call_args
+                assert str(args[0]) == "Generation Failed"

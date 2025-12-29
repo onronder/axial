@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     
     # Error Tracking (Sentry)
     SENTRY_DSN: Optional[str] = None
+
+    # Rate Limiting
+    RATE_LIMIT_DEFAULT: str = "50/minute"
     
     # =========================================================================
     # AI & Multi-Model Configuration

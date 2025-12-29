@@ -17,6 +17,7 @@ from slowapi.util import get_remote_address
 from datetime import datetime
 import logging
 import json
+import sentry_sdk
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -342,7 +343,7 @@ def format_context_with_citations(docs: List[Dict]) -> tuple:
 # ============================================================
 
 @router.post("/chat")
-@limiter.limit("50/minute")
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def chat_endpoint(
     request: Request,
     payload: ChatRequest,
@@ -499,7 +500,7 @@ async def chat_endpoint(
         # ========== STREAMING RESPONSE ==========
         return StreamingResponse(
             stream_chat_response(
-                prompt, llm, context_text, payload.query, 
+                prompt, llm, context_text, search_query, 
                 sources_metadata, payload.conversation_id, user_id, supabase,
                 detected_language
             ),
@@ -512,11 +513,12 @@ async def chat_endpoint(
         try:
             answer = chain.invoke({
                 "context": context_text, 
-                "question": payload.query,
+                "question": search_query,
                 "language": detected_language
             })
         except Exception as e:
             logger.error(f"ERROR: LLM Generation failed: {e}")
+            sentry_sdk.capture_exception(e)
             raise HTTPException(500, f"LLM Generation failed: {e}")
 
         # Save messages if conversation_id is provided
@@ -569,6 +571,7 @@ async def stream_chat_response(
         
     except Exception as e:
         logger.error(f"Streaming error: {e}")
+        sentry_sdk.capture_exception(e)
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
 
@@ -611,5 +614,6 @@ def save_messages(supabase, conversation_id: str, query: str, answer: str, sourc
         
     except Exception as e:
         logger.warning(f"WARNING: Failed to save messages: {e}")
+        sentry_sdk.capture_exception(e)
         return None
 
