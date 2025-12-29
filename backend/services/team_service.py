@@ -685,9 +685,9 @@ class TeamService:
                 f"  Link: {invite_link}"
             )
             
-            # TODO: Integrate with EmailService when ready
-            # from services.email import email_service
-            # email_service.send_team_invite(to_email, name, team_name, invite_link)
+            # Send actual email
+            from services.email import email_service
+            email_service.send_team_invite(to_email, name, team_name, invite_link)
             
             return True
             

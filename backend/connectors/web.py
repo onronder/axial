@@ -51,8 +51,35 @@ class WebConnector(BaseConnector):
         
         Future: Query web_crawl_configs table to show crawl history.
         """
-        # TODO: Query web_crawl_configs for this user's crawl jobs
-        return []
+        try:
+            from core.db import get_supabase
+            supabase = get_supabase()
+            
+            # Query crawl history from DB
+            response = supabase.table("web_crawl_configs").select(
+                "id, root_url, status, crawl_type, total_pages_found, created_at"
+            ).eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
+            
+            items = []
+            if response.data:
+                for config in response.data:
+                    items.append(ConnectorItem(
+                        id=config["id"],
+                        name=config["root_url"],
+                        type="web_crawl",
+                        metadata={
+                            "status": config.get("status", "unknown"),
+                            "pages_found": config.get("total_pages_found", 0),
+                            "crawl_type": config.get("crawl_type", "single"),
+                            "created_at": config.get("created_at")
+                        }
+                    ))
+            
+            return items
+            
+        except Exception as e:
+            logger.error(f"❌ [Web] Failed to list crawl history: {e}")
+            return []
 
     # =========================================================================
     # DISCOVERY METHODS

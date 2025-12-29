@@ -233,6 +233,61 @@ class EmailService:
             return False
 
 
+    def send_team_invite(
+        self,
+        to_email: str,
+        name: str,
+        team_name: str,
+        invite_link: str
+    ) -> bool:
+        """
+        Send team invitation email.
+        
+        Args:
+            to_email: Invitation recipient
+            name: Invitee name
+            team_name: Name of the team
+            invite_link: Acceptance URL
+            
+        Returns:
+            True if sent successfully
+        """
+        if not self.enabled:
+            logger.debug("📧 Email not sent: service not enabled")
+            return False
+            
+        try:
+            html_content = self._render_template(
+                "team_invite.html",
+                name=name,
+                team_name=team_name,
+                invite_link=invite_link,
+                app_url=self.app_url
+            )
+            
+            if not html_content:
+                html_content = f"""
+                <p>Hello {name},</p>
+                <p>You have been invited to join the team <strong>{team_name}</strong> on Axio Hub.</p>
+                <p><a href="{invite_link}">Click here to join</a></p>
+                """
+            
+            params = {
+                "from": f"Axio Hub <{self.from_email}>",
+                "to": [to_email],
+                "subject": f"Invitation to join {team_name} on Axio Hub",
+                "html": html_content,
+            }
+            
+            response = resend.Emails.send(params)
+            logger.info(f"📧 Sent team invite to {to_email}, id={response.get('id', 'unknown')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"📧 Failed to send team invite to {to_email}: {e}")
+            return False
+
+
 # Singleton instance for easy import
 email_service = EmailService()
 

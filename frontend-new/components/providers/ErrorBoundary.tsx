@@ -35,6 +35,8 @@ function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
     );
 }
 
+import * as Sentry from "@sentry/nextjs";
+
 /**
  * Reusable error boundary wrapper for isolating component failures.
  * 
@@ -49,7 +51,13 @@ export function AppErrorBoundary({ children, name }: AppErrorBoundaryProps) {
             FallbackComponent={ErrorFallback}
             onError={(error, info) => {
                 console.error(`[ErrorBoundary${name ? `:${name}` : ""}]`, error, info);
-                // TODO: Send to Sentry when integrated
+                // Send to Sentry
+                Sentry.captureException(error, {
+                    extra: {
+                        componentStack: info.componentStack,
+                        boundaryName: name,
+                    }
+                });
             }}
             onReset={() => {
                 // Reset any state that may have caused the error
