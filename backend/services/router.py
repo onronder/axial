@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from core.config import settings
-from core.quotas import PLANS, ModelTier, get_plan_limits
+from core.quotas import get_plan_limits
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +42,12 @@ class ModelSelection:
 class LLMRouter:
     """
     Smart router for selecting the optimal LLM based on:
-    - User's subscription plan model tier (BASIC, HYBRID, PREMIUM)
+    - User's subscription plan model tier (standard, premium)
     - Query complexity (SIMPLE, COMPLEX)
     
     Strategy:
-    - BASIC tier (Free/Starter): ALWAYS use Llama-3 (strict cost gate)
-    - HYBRID tier (Pro): Smart routing based on complexity
-    - PREMIUM tier (Enterprise): Prefer GPT-4o for best quality
+    - STANDARD tier (Free/Starter): ALWAYS use Speed Model (strict cost gate)
+    - PREMIUM tier (Pro/Enterprise): Smart routing based on complexity
     """
     
     # Model configurations
@@ -83,45 +82,38 @@ class LLMRouter:
         # Get model tier from centralized plan configuration
         try:
             limits = get_plan_limits(plan_lower)
-            model_tier = limits.model_tier
+            model_tier = limits.model_tier # "standard" or "premium"
         except ValueError:
-            # Unknown plan, default to BASIC (safest)
-            logger.warning(f"⚠️ [Router] Unknown plan '{plan_lower}', defaulting to BASIC tier")
-            model_tier = ModelTier.BASIC
+            # Unknown plan, default to standard (safest)
+            logger.warning(f"⚠️ [Router] Unknown plan '{plan_lower}', defaulting to STANDARD tier")
+            model_tier = "standard"
         
         # ================================================================
         # STRICT MODEL TIER ENFORCEMENT
         # ================================================================
         
-        # BASIC tier: ALWAYS use speed model (no GPT-4o access ever)
-        if model_tier == ModelTier.BASIC:
-            logger.info(f"🚀 [Router] Plan={plan_lower}, Tier=BASIC → Speed model (strict gate)")
+        # STANDARD tier: ALWAYS use speed model (no GPT-4o access ever)
+        if model_tier == "standard":
+            logger.info(f"🚀 [Router] Plan={plan_lower}, Tier=STANDARD → Speed model (strict gate)")
             return ModelSelection(
                 provider=self.SPEED_MODEL["provider"],
                 model=self.SPEED_MODEL["model"],
-                reason=f"Basic tier uses Llama-3 for all queries (upgrade for GPT-4o access)"
+                reason=f"Standard tier uses Llama-3 for all queries (upgrade for GPT-4o access)"
             )
         
-        # PREMIUM tier: Prefer intelligence model (best quality)
-        if model_tier == ModelTier.PREMIUM:
-            logger.info(f"🧠 [Router] Plan={plan_lower}, Tier=PREMIUM → Intelligence model (priority)")
-            return ModelSelection(
-                provider=self.INTELLIGENCE_MODEL["provider"],
-                model=self.INTELLIGENCE_MODEL["model"],
-                reason=f"Premium tier gets GPT-4o priority access"
-            )
+        # PREMIUM tier: Smart routing or Priority
+        # Use simple heuristic for now: Pro/Enterprise get hybrid routing
         
-        # HYBRID tier: Smart routing based on complexity
         if complexity_upper == "SIMPLE":
-            logger.info(f"🚀 [Router] Plan={plan_lower}, Tier=HYBRID, Complexity=SIMPLE → Speed model")
+            logger.info(f"🚀 [Router] Plan={plan_lower}, Tier=PREMIUM, Complexity=SIMPLE → Speed model")
             return ModelSelection(
                 provider=self.SPEED_MODEL["provider"],
                 model=self.SPEED_MODEL["model"],
-                reason=f"Simple query routed to Llama-3 for speed"
+                reason=f"Simple query routed to speed model efficiently"
             )
         
-        # HYBRID + COMPLEX: Use intelligence model
-        logger.info(f"🧠 [Router] Plan={plan_lower}, Tier=HYBRID, Complexity=COMPLEX → Intelligence model")
+        # PREMIUM + COMPLEX: Use intelligence model
+        logger.info(f"🧠 [Router] Plan={plan_lower}, Tier=PREMIUM, Complexity=COMPLEX → Intelligence model")
         return ModelSelection(
             provider=self.INTELLIGENCE_MODEL["provider"],
             model=self.INTELLIGENCE_MODEL["model"],
@@ -144,15 +136,10 @@ class LLMRouter:
             limits = get_plan_limits(plan_lower)
             model_tier = limits.model_tier
         except ValueError:
-            model_tier = ModelTier.BASIC
+            model_tier = "standard"
         
-        # For non-RAG responses, use speed model unless PREMIUM
-        if model_tier == ModelTier.PREMIUM:
-            return ModelSelection(
-                provider=self.INTELLIGENCE_MODEL["provider"],
-                model=self.INTELLIGENCE_MODEL["model"],
-                reason="Premium tier default model"
-            )
+        # For non-RAG responses, use speed model unless explicitly Premium-only behavior is desired
+        # Generally chat uses select_model, this is a fallback.
         
         return ModelSelection(
             provider=self.SPEED_MODEL["provider"],
@@ -160,24 +147,5 @@ class LLMRouter:
             reason="Default speed model for responses"
         )
     
-    def get_model_tier(self, plan: str) -> ModelTier:
-        """
-        Get the model tier for a plan.
-        
-        Args:
-            plan: User's subscription plan
-            
-        Returns:
-            ModelTier enum value
-        """
-        plan_lower = plan.lower() if plan else "free"
-        
-        try:
-            limits = get_plan_limits(plan_lower)
-            return limits.model_tier
-        except ValueError:
-            return ModelTier.BASIC
-
-
 # Singleton instance
 llm_router = LLMRouter()

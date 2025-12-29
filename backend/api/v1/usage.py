@@ -12,7 +12,7 @@ from uuid import UUID
 
 from core.security import get_current_user
 from services.usage import get_user_usage_with_limits
-from core.quotas import get_plan_display_info, PLANS
+from core.quotas import QUOTA_LIMITS, format_bytes
 
 import logging
 
@@ -50,25 +50,6 @@ class FeatureAccess(BaseModel):
 class UsageResponse(BaseModel):
     """
     Complete usage response for frontend display.
-    
-    Example:
-    {
-        "plan": "free",
-        "files": {"used": 4, "limit": 5, "percent": 80.0},
-        "storage": {
-            "used_bytes": 45000000,
-            "used_display": "45 MB",
-            "limit_bytes": 52428800,
-            "limit_display": "50 MB",
-            "percent": 85.8
-        },
-        "features": {
-            "web_crawl": false,
-            "team": false,
-            "premium_models": false
-        },
-        "model_tier": "basic"
-    }
     """
     plan: str
     files: UsageCount
@@ -117,15 +98,15 @@ async def get_usage(
                 used_bytes=usage.storage_bytes,
                 used_display=usage.storage_display,
                 limit_bytes=limits.max_storage_bytes,
-                limit_display=_format_bytes(limits.max_storage_bytes),
+                limit_display=format_bytes(limits.max_storage_bytes),
                 percent=round(storage_percent, 1)
             ),
             features=FeatureAccess(
                 web_crawl=limits.allow_web_crawl,
                 team=limits.max_team_seats > 1,
-                premium_models=limits.model_tier.value in ["hybrid", "premium"]
+                premium_models=limits.model_tier in ["hybrid", "premium"]
             ),
-            model_tier=limits.model_tier.value,
+            model_tier=limits.model_tier,
             subscription_status=usage.subscription_status
         )
         
@@ -142,8 +123,13 @@ async def get_plans():
     Returns all plan definitions for pricing page display.
     """
     plans_info = {}
-    for plan_name in PLANS.keys():
-        plans_info[plan_name] = get_plan_display_info(plan_name)
+    for plan_name, limits in QUOTA_LIMITS.items():
+        plans_info[plan_name] = {
+            "name": limits.plan_name,
+            "max_files": limits.max_files,
+            "max_storage_mb": limits.max_storage_mb,
+            "max_team_seats": limits.max_team_seats
+        }
     
     return PlansResponse(plans=plans_info)
 
