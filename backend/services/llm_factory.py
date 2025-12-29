@@ -46,26 +46,35 @@ class LLMFactory:
     def get_model(
         provider: str,
         model_name: str,
+        user_plan: str = "free",  # Added user_plan argument
         temperature: float = 0,
         streaming: bool = False,
         max_tokens: Optional[int] = None,
     ) -> BaseChatModel:
         """
-        Returns a configured LangChain Chat Model.
+        Returns a configured LangChain Chat Model with plan enforcement.
         
         Args:
             provider: 'openai' or 'groq'
-            model_name: Specific model identifier (e.g., 'gpt-4o', 'llama-3.3-70b-versatile')
-            temperature: Creativity level (default 0 for factual RAG)
+            model_name: Requested model identifier
+            user_plan: 'free', 'pro', or 'enterprise'
+            temperature: Creativity level
             streaming: Enable streaming output
             max_tokens: Optional max tokens limit
-            
-        Returns:
-            Configured BaseChatModel instance
-            
-        Raises:
-            ValueError: If provider is unsupported or API key is missing
         """
+        # ENFORCE PLAN LIMITS
+        # Free users are FORCED to use gpt-4o-mini regardless of request
+        if user_plan == "free":
+            if model_name != "gpt-4o-mini":
+                logger.info(f"🔒 [LLMFactory] Plan enforcement: Downgrading {model_name} to gpt-4o-mini for free plan")
+                provider = "openai"  # Force OpenAI for consistency with mini
+                model_name = "gpt-4o-mini"
+        
+        # Pro users can use gpt-4o if requested, otherwise default behavior
+        elif user_plan == "pro":
+            # Allow whatever is requested (checking limits if needed in future)
+            pass
+
         try:
             if provider == "openai":
                 return LLMFactory._create_openai(model_name, temperature, streaming, max_tokens)

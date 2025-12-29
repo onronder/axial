@@ -207,6 +207,56 @@ Follow-up Question: {question}
 
 Standalone Question:"""
 
+import tiktoken
+
+def trim_history(history: List[Dict[str, str]], max_tokens: int = 2000) -> List[Dict[str, str]]:
+    """
+    Trim chat history to fit within max_tokens limits.
+    Keeps the System Prompt (if present) and the VERY LAST User message.
+    Removes oldest messages from the middle.
+    """
+    if not history:
+        return []
+    
+    try:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        encoding = None
+        
+    def count_tokens(text: str):
+        if encoding:
+            return len(encoding.encode(text))
+        return len(text) // 4  # Fallback approximation
+        
+    current_tokens = sum(count_tokens(msg.get("content", "")) for msg in history)
+    
+    if current_tokens <= max_tokens:
+        return history
+        
+    logger.info(f"✂️ [Chat] Trimming history: {current_tokens} > {max_tokens}")
+    
+    # Preserve key messages
+    system_msg = vocab_msg = None
+    if history and history[0].get("role") == "system":
+        system_msg = history.pop(0)
+        
+    # Always keep the last message (current query usually)
+    last_msg = history.pop(-1) if history else None
+    
+    # Trim middle
+    while history and current_tokens > max_tokens:
+        removed = history.pop(0)
+        current_tokens -= count_tokens(removed.get("content", ""))
+        
+    # Reassemble
+    result = []
+    if system_msg:
+        result.append(system_msg)
+    result.extend(history)
+    if last_msg:
+        result.append(last_msg)
+        
+    return result
 
 def condense_question(query: str, history: List[Dict[str, str]]) -> str:
     """
@@ -422,8 +472,10 @@ async def chat_endpoint(
     )
     logger.info(f"🚀 [Chat] Route: plan={user_plan} → {model_selection.provider}/{model_selection.model}")
     
-    # ========== STEP 6: CONDENSE QUESTION (if history exists) ==========
-    search_query = condense_question(payload.query, payload.history or [])
+    # ========== STEP 6: CONDENSE QUESTION (with trimmed history) ==========
+    # Task 3: Token-Aware History Pruning
+    trimmed_history = trim_history(payload.history or [])
+    search_query = condense_question(payload.query, trimmed_history)
     
     # ========== STEP 7: EMBED QUERY ==========
     embeddings_model = OpenAIEmbeddings(
@@ -442,59 +494,87 @@ async def chat_endpoint(
         response = supabase.rpc("hybrid_search", {
             "query_text": search_query,
             "query_embedding": query_vector,
-            "match_count": 7,
+            "match_count": 10,  # Fetch more initially, then filter
             "filter_user_id": user_id,
             "vector_weight": 0.7,
             "keyword_weight": 0.3,
             "similarity_threshold": 0.25
         }).execute()
         
-        docs = response.data
-        logger.info(f"📚 [Chat] Hybrid search: {len(docs) if docs else 0} results")
+        docs = response.data or []
+        logger.info(f"📚 [Chat] Hybrid search found {len(docs)} raw candidates")
     except Exception as e:
         logger.warning(f"⚠️ [Chat] Hybrid search failed, using vector: {e}")
         try:
             response = supabase.rpc("match_documents", {
                 "query_embedding": query_vector,
                 "match_threshold": 0.25, 
-                "match_count": 7,
+                "match_count": 10,
                 "filter_user_id": user_id
             }).execute()
-            docs = response.data
+            docs = response.data or []
         except Exception as fallback_e:
             logger.error(f"ERROR: Retrieval failed: {fallback_e}")
             raise HTTPException(500, f"Retrieval failed: {fallback_e}")
 
-    # ========== STEP 9: HANDLE NO DOCUMENTS ==========
-    if not docs:
-        # Language-aware "no results" message
-        no_docs_messages = {
-            "tr": "Bilgi tabanınızda bu soruyu yanıtlayacak ilgili bilgi bulamadım. Daha fazla belge yüklemeyi veya sorunuzu yeniden ifade etmeyi deneyin.",
-            "en": "I couldn't find relevant information in your knowledge base to answer that question. Try uploading more documents or rephrasing your question.",
-        }
-        no_docs_answer = no_docs_messages.get(detected_language, no_docs_messages["en"])
-        
-        return ChatResponse(
-            answer=no_docs_answer,
-            sources=[],
-            conversation_id=payload.conversation_id
-        )
+    # ========== STEP 9: DYNAMIC CONTEXT INJECTION (The 0.75 Rule) ==========
+    # Task 2: Only include chunks with similarity > 0.75
+    high_quality_docs = [
+        d for d in docs 
+        if d.get("similarity", 0) >= 0.75
+    ]
+    
+    context_text = ""
+    sources_metadata = []
+    
+    if high_quality_docs:
+        logger.info(f"✅ [Chat] High quality context found: {len(high_quality_docs)} docs")
+        context_text, sources_metadata = format_context_with_citations(high_quality_docs)
+    else:
+        # "Empty Context" Logic: If no docs pass threshold, send raw query without context.
+        # This saves tokens on irrelevant retrieval and allows general retrieval fallback if desired,
+        # or simply general chitchat handling.
+        logger.info("📉 [Chat] No Docs > 0.75 similarity. Dropping context (General Query).")
+        context_text = ""
+        sources_metadata = []
 
-    context_text, sources_metadata = format_context_with_citations(docs)
-
-    # ========== STEP 10: GET SELECTED LLM ==========
+    # ========== STEP 10: GET SELECTED LLM & ENFORCE PLAN ==========
+    # Task 1: Hard-Enforce Limits via Factory
     llm = LLMFactory.get_model(
         provider=model_selection.provider,
         model_name=model_selection.model,
+        user_plan=user_plan,  # Must pass plan for enforcement
         temperature=0.1,
         streaming=payload.stream
     )
     
-    # Language-aware prompt
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
-        ("user", "{question}")
-    ])
+    # Prompt Construction
+    # If we have context, use RAG prompt. If not, use standard prompt.
+    if context_text:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", SYSTEM_PROMPT),  # Contains {context} placeholder
+            ("user", "{question}")
+        ])
+        input_vars = {
+            "context": context_text,
+            "question": search_query,
+            "language": detected_language
+        }
+    else:
+        # General/Fallback Prompt without context injection
+        # Saves 2000+ tokens by not injecting "No documents found" filler
+        GENERAL_SYSTEM_PROMPT = """You are Axio, a helpful AI assistant.
+        Answer the user's question directly and helpfully in {language}.
+        If the question requires private knowledge that you don't have, politely admit it.
+        """
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", GENERAL_SYSTEM_PROMPT),
+            ("user", "{question}")
+        ])
+        input_vars = {
+            "question": search_query,
+            "language": detected_language
+        }
     
     if payload.stream:
         # ========== STREAMING RESPONSE ==========
@@ -511,11 +591,7 @@ async def chat_endpoint(
         chain = prompt | llm | StrOutputParser()
         
         try:
-            answer = chain.invoke({
-                "context": context_text, 
-                "question": search_query,
-                "language": detected_language
-            })
+            answer = chain.invoke(input_vars)
         except Exception as e:
             logger.error(f"ERROR: LLM Generation failed: {e}")
             sentry_sdk.capture_exception(e)
