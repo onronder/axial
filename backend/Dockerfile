@@ -28,4 +28,4 @@ COPY . .
 
 # Run the application
 # Railway passes PORT variable, but defaults to 8000 if not present
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
