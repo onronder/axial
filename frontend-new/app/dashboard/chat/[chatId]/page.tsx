@@ -5,11 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useChatHistory, Message } from "@/hooks/useChatHistory";
 import { useDocumentCount } from "@/hooks/useDocumentCount";
 import { useProfile } from "@/hooks/useProfile";
-import { MessageBubble } from "@/components/chat/MessageBubble";
-import { ChatInput } from "@/components/chat/ChatInput";
-import { EmptyState } from "@/components/chat/EmptyState";
+import { ChatArea } from "@/components/chat/ChatArea";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
-import { AxioLogo } from "@/components/branding/AxioLogo";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { generateSmartTitle } from "@/lib/chat-utils";
@@ -176,50 +173,11 @@ export default function ChatPage() {
 
     return (
         <div className="flex h-full flex-col">
-            <div className="flex-1 overflow-y-auto">
-                {messages.length === 0 && !isTyping && !streamingMessage ? (
-                    <EmptyState onQuerySelect={handleSendMessage} />
-                ) : (
-                    <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">
-                        {messages.map((message) => (
-                            <MessageBubble
-                                key={message.id}
-                                message={{
-                                    ...message,
-                                    timestamp: message.created_at
-                                }}
-                            />
-                        ))}
-                        {isTyping && (
-                            <div className="flex items-start gap-3 animate-fade-in">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-                                    <AxioLogo variant="icon" size="sm" />
-                                </div>
-                                <div className="rounded-2xl bg-muted px-4 py-3">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
-                                        <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
-                                        <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                        {streamingMessage && (
-                            <MessageBubble
-                                message={{
-                                    id: "streaming",
-                                    role: "assistant",
-                                    content: streamingMessage,
-                                    timestamp: new Date().toISOString(),
-                                }}
-                                isStreaming
-                            />
-                        )}
-                    </div>
-                )}
-            </div>
-            <ChatInput
-                onSend={handleSendMessage}
+            <ChatArea
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                isTyping={isTyping}
+                streamingMessage={streamingMessage}
                 disabled={isDisabled}
                 selectedModel={selectedModel}
                 onModelSelect={setSelectedModel}

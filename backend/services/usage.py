@@ -12,7 +12,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from core.db import get_supabase
-from core.quotas import PLANS, PlanLimits, get_plan_limits, format_bytes
+from core.quotas import QUOTA_LIMITS, PlanLimits, get_plan_limits, format_bytes
 
 logger = logging.getLogger(__name__)
 

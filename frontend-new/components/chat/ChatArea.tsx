@@ -7,6 +7,8 @@ import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 
+import { ModelId } from "@/lib/types";
+
 /**
  * ChatArea - Pure display component for chat messages.
  * All business logic (loading, sending) is handled by the page.
@@ -17,6 +19,8 @@ interface ChatAreaProps {
   isTyping?: boolean;
   streamingMessage?: string | null;
   disabled?: boolean;
+  selectedModel: ModelId;
+  onModelSelect: (model: ModelId) => void;
 }
 
 export function ChatArea({
@@ -25,6 +29,8 @@ export function ChatArea({
   isTyping = false,
   streamingMessage = null,
   disabled = false,
+  selectedModel,
+  onModelSelect,
 }: ChatAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -83,7 +89,12 @@ export function ChatArea({
           </div>
         )}
       </div>
-      <ChatInput onSend={onSendMessage} disabled={disabled} />
+      <ChatInput
+        onSend={onSendMessage}
+        disabled={disabled}
+        selectedModel={selectedModel}
+        onModelSelect={onModelSelect}
+      />
     </div>
   );
 }
