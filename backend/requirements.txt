@@ -1,6 +1,8 @@
 fastapi>=0.111.0
 uvicorn>=0.30.1
 sqlmodel>=0.0.19
+asyncpg
+psycopg2-binary
 pydantic>=2.7.4
 pydantic-settings>=2.3.4
 python-multipart
@@ -20,7 +22,7 @@ redis
 celery
 flower
 beautifulsoup4
-# requests unpinned for compatibility
+# requests  <-- KEEP UNPINNED
 resend
 unstructured
 pdfminer.six
@@ -31,7 +33,11 @@ tenacity
 groq
 locust
 pyjwt
+# --- Google Dependencies ---
 google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+# ---------------------------
 cryptography
 jinja2
 slowapi
@@ -41,6 +47,4 @@ youtube-transcript-api
 lxml
 sentry-sdk[fastapi,celery]
 async-lru
-asyncpg
-psycopg2-binary
 email-validator
