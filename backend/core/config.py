@@ -55,8 +55,12 @@ class Settings(BaseSettings):
     GUARDRAIL_MODEL_NAME: str = "llama-3.1-8b-instant"
     
     # Groq API Key (for secondary/guardrail models)
+    # Groq API Key (for secondary/guardrail models)
     GROQ_API_KEY: Optional[str] = None
     
+    # RAG Settings
+    RAG_SIMILARITY_THRESHOLD: float = 0.70  # Minimum cosine similarity for context injection
+
     # =========================================================================
     # Payment Integration (Polar.sh)
     # =========================================================================

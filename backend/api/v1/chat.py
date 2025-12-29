@@ -521,7 +521,7 @@ async def chat_endpoint(
     # Task 2: Only include chunks with similarity > 0.75
     high_quality_docs = [
         d for d in docs 
-        if d.get("similarity", 0) >= 0.75
+        if d.get("similarity", 0) >= settings.RAG_SIMILARITY_THRESHOLD
     ]
     
     context_text = ""
@@ -534,7 +534,7 @@ async def chat_endpoint(
         # "Empty Context" Logic: If no docs pass threshold, send raw query without context.
         # This saves tokens on irrelevant retrieval and allows general retrieval fallback if desired,
         # or simply general chitchat handling.
-        logger.info("📉 [Chat] No Docs > 0.75 similarity. Dropping context (General Query).")
+        logger.info(f"📉 [Chat] No Docs > {settings.RAG_SIMILARITY_THRESHOLD} similarity. Dropping context (General Query).")
         context_text = ""
         sources_metadata = []
 
