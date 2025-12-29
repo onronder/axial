@@ -2,6 +2,41 @@
 
 import { useEffect, useRef } from 'react';
 
+class Particle {
+    x: number;
+    y: number;
+    size: number;
+    speedX: number;
+    speedY: number;
+    canvasWidth: number;
+    canvasHeight: number;
+
+    constructor(canvasWidth: number, canvasHeight: number) {
+        this.canvasWidth = canvasWidth;
+        this.canvasHeight = canvasHeight;
+        this.x = Math.random() * canvasWidth;
+        this.y = Math.random() * canvasHeight;
+        this.size = Math.random() * 2 + 1;
+        this.speedX = (Math.random() - 0.5) * 0.5;
+        this.speedY = (Math.random() - 0.5) * 0.5;
+    }
+
+    update(canvasWidth: number, canvasHeight: number) {
+        this.x += this.speedX;
+        this.y += this.speedY;
+
+        if (this.x > canvasWidth || this.x < 0) this.speedX *= -1;
+        if (this.y > canvasHeight || this.y < 0) this.speedY *= -1;
+    }
+
+    draw(ctx: CanvasRenderingContext2D) {
+        ctx.fillStyle = 'rgba(139, 92, 246, 0.4)';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
 export const ParticleBackground = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -18,47 +53,19 @@ export const ParticleBackground = () => {
         const resize = () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
+            // Re-initialize particles on resize to avoid out of bounds? 
+            // Or just update their bounds in update loop.
+            // Let's re-init for simplicity or keep them. 
+            // Existing code didn't re-init logic on resize other than checking bounds in update.
         };
 
         window.addEventListener('resize', resize);
         resize();
 
-        class Particle {
-            x: number;
-            y: number;
-            size: number;
-            speedX: number;
-            speedY: number;
-
-            constructor() {
-                this.x = Math.random() * (canvas?.width || 0);
-                this.y = Math.random() * (canvas?.height || 0);
-                this.size = Math.random() * 2 + 1;
-                this.speedX = (Math.random() - 0.5) * 0.5;
-                this.speedY = (Math.random() - 0.5) * 0.5;
-            }
-
-            update() {
-                this.x += this.speedX;
-                this.y += this.speedY;
-
-                if (canvas && (this.x > canvas.width || this.x < 0)) this.speedX *= -1;
-                if (canvas && (this.y > canvas.height || this.y < 0)) this.speedY *= -1;
-            }
-
-            draw() {
-                if (!ctx) return;
-                ctx.fillStyle = 'rgba(139, 92, 246, 0.4)';
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-
         const init = () => {
             particles = [];
             for (let i = 0; i < 80; i++) {
-                particles.push(new Particle());
+                particles.push(new Particle(canvas.width, canvas.height));
             }
         };
 
@@ -84,8 +91,8 @@ export const ParticleBackground = () => {
         const animate = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             for (let i = 0; i < particles.length; i++) {
-                particles[i].update();
-                particles[i].draw();
+                particles[i].update(canvas.width, canvas.height);
+                particles[i].draw(ctx);
             }
             connect();
             animationFrameId = requestAnimationFrame(animate);

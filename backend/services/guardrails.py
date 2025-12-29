@@ -152,23 +152,36 @@ class GuardrailService:
     
     def _parse_json_response(self, raw: str) -> GuardrailResult:
         """Parse JSON from LLM response, handling edge cases."""
+        data = {}
         try:
-            # Try direct JSON parse
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            # Try extracting JSON from markdown code block
-            json_match = re.search(r'\{[^{}]*\}', raw, re.DOTALL)
-            if json_match:
-                try:
-                    data = json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    logger.warning(f"⚠️ [Guardrails] Failed to parse: {raw[:200]}")
-                    return GuardrailResult()
-            else:
-                logger.warning(f"⚠️ [Guardrails] No JSON found in: {raw[:200]}")
-                return GuardrailResult()
+            # Try helper to extract JSON blob first
+            json_str = raw
+            if "```" in raw:
+                # Extract content between code blocks
+                matches = re.findall(r"```(?:json)?(.*?)```", raw, re.DOTALL)
+                if matches:
+                    json_str = matches[0].strip()
+            
+            # Additional cleanup for potential noises
+            json_str = json_str.strip()
+            if not json_str.startswith("{"):
+                # Try finding array or object
+                start = json_str.find("{")
+                end = json_str.rfind("}")
+                if start != -1 and end != -1:
+                    json_str = json_str[start:end+1]
+
+            data = json.loads(json_str)
+            
+            if not isinstance(data, dict):
+                 logger.warning(f"⚠️ [Guardrails] JSON is not a dict: {type(data)}")
+                 data = {}
+                 
+        except Exception as e:
+            logger.warning(f"⚠️ [Guardrails] Failed to parse JSON: {e} | Raw: {raw[:100]}...")
+            data = {}
         
-        # Map parsed data to result
+        # Map parsed data to result with safe defaults
         return GuardrailResult(
             language=data.get("language", "en"),
             is_safe=data.get("is_safe", True),

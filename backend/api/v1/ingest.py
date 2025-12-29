@@ -117,20 +117,27 @@ async def ingest_document(
         crawl_id = str(crawl_res.data[0]["id"])
         
         from worker.tasks import crawl_web_task
-        task = crawl_web_task.delay(
-            user_id=user_id,
-            root_url=url,
-            crawl_config={
-                "crawl_id": crawl_id,
-                "crawl_type": crawl_type,
-                "max_depth": max_depth,
-                "respect_robots": respect_robots
-            }
-        )
-        
-        supabase.table("web_crawl_configs").update({
-            "celery_task_id": task.id
-        }).eq("id", crawl_id).execute()
+        try:
+            task = crawl_web_task.delay(
+                user_id=user_id,
+                root_url=url,
+                crawl_config={
+                    "crawl_id": crawl_id,
+                    "crawl_type": crawl_type,
+                    "max_depth": max_depth,
+                    "respect_robots": respect_robots
+                }
+            )
+            
+            supabase.table("web_crawl_configs").update({
+                "celery_task_id": task.id
+            }).eq("id", crawl_id).execute()
+        except Exception as e:
+            logger.error(f"❌ [Ingest] Failed to dispatch web crawl task: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Task queue unavailable. Please try again later."
+            )
         
         logger.info(f"🕸️ [Ingest] Web crawl queued: {url}, task={task.id}")
         return IngestResponse(status="queued", doc_id=crawl_id)
@@ -162,13 +169,20 @@ async def ingest_document(
         job_id = str(job_res.data[0]["id"])
         
         # Dispatch to worker
-        task = ingest_connector_task.delay(
-            user_id=user_id,
-            job_id=job_id,
-            connector_type=connector_type,
-            item_id=item_id,
-            credentials={"access_token": notion_token} if notion_token else None
-        )
+        try:
+            task = ingest_connector_task.delay(
+                user_id=user_id,
+                job_id=job_id,
+                connector_type=connector_type,
+                item_id=item_id,
+                credentials={"access_token": notion_token} if notion_token else None
+            )
+        except Exception as e:
+            logger.error(f"❌ [Ingest] Failed to dispatch connector task: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Task queue unavailable. Please try again later."
+            )
         
         logger.info(f"🔗 [Ingest] Connector task queued: {connector_type}/{item_id}, task={task.id}")
         return IngestResponse(status="queued", doc_id=job_id)
@@ -267,13 +281,25 @@ async def ingest_document(
         
         # Dispatch to worker
         from worker.tasks import ingest_file_task
-        task = ingest_file_task.delay(
-            user_id=user_id,
-            job_id=job_id,
-            storage_path=storage_path,
-            filename=file.filename,
-            metadata=meta_dict
-        )
+        try:
+            task = ingest_file_task.delay(
+                user_id=user_id,
+                job_id=job_id,
+                storage_path=storage_path,
+                filename=file.filename,
+                metadata=meta_dict
+            )
+        except Exception as e:
+            logger.error(f"❌ [Ingest] Failed to dispatch file task: {e}")
+            # Try to cleanup the staged file if dispatch fails
+            try:
+                supabase.storage.from_(STAGING_BUCKET).remove([storage_path])
+            except:
+                pass
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Task queue unavailable. Please try again later."
+            )
         
         logger.info(f"📄 [Ingest] File task queued: {file.filename}, task={task.id}")
         return IngestResponse(status="queued", doc_id=job_id)

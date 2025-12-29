@@ -55,7 +55,9 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/py/:path*',
-        destination: 'https://axial-production-1503.up.railway.app/api/v1/:path*',
+        destination: process.env.NODE_ENV === 'development'
+          ? 'http://127.0.0.1:8000/api/v1/:path*'
+          : 'https://axial-production-1503.up.railway.app/api/v1/:path*',
       },
     ];
   },

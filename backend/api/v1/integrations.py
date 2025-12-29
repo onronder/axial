@@ -520,12 +520,23 @@ async def ingest_provider_items(
             raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
         
         # Get user's integration with credentials
-        integration = supabase.table("user_integrations").select("credentials").eq("user_id", user_id).eq("connector_definition_id", conn_def.data['id']).single().execute()
+        # Use maybe_single() or handle PGRST116 manually since not all providers require connection
+        try:
+            integration_res = supabase.table("user_integrations").select("credentials").eq("user_id", user_id).eq("connector_definition_id", conn_def.data['id']).execute()
+            integration_data = integration_res.data[0] if integration_res.data else None
+        except Exception as e:
+            logger.warning(f"⚠️ [Ingest] Failed to fetch integration: {e}")
+            integration_data = None
         
-        if not integration.data or not integration.data.get('credentials'):
-            raise HTTPException(status_code=401, detail=f"Not connected to {provider}")
-        
-        credentials = integration.data['credentials']
+        # Web provider doesn't require explicit connection, others do
+        if provider == "web":
+             credentials = {}
+             if integration_data:
+                 credentials = integration_data.get('credentials', {}) or {}
+        else:
+            if not integration_data or not integration_data.get('credentials'):
+                raise HTTPException(status_code=401, detail=f"Not connected to {provider}")
+            credentials = integration_data['credentials']
         
         # 2. Create ingestion job for progress tracking
         from datetime import datetime

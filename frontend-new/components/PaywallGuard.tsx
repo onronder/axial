@@ -98,6 +98,14 @@ export function PaywallGuard({ children }: PaywallGuardProps) {
     // If plan is 'none' or status is not active/trialing, show paywall
     const showPaywall = !isLoading && (plan === "none" || !hasActiveSubscription);
 
+    const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (redirectUrl) {
+            window.location.href = redirectUrl;
+        }
+    }, [redirectUrl]);
+
     // If loading or has valid subscription, show children
     if (isLoading) {
         return (
@@ -125,7 +133,7 @@ export function PaywallGuard({ children }: PaywallGuardProps) {
             urlWithMetadata.searchParams.set("customer_email", user.email);
         }
 
-        window.location.href = urlWithMetadata.toString();
+        setRedirectUrl(urlWithMetadata.toString());
     };
 
     return (
@@ -169,8 +177,8 @@ export function PaywallGuard({ children }: PaywallGuardProps) {
                             <Card
                                 key={pricing.id}
                                 className={`relative flex flex-col ${pricing.popular
-                                        ? "border-primary shadow-lg shadow-primary/20 scale-105"
-                                        : "border-border"
+                                    ? "border-primary shadow-lg shadow-primary/20 scale-105"
+                                    : "border-border"
                                     }`}
                             >
                                 {pricing.popular && (

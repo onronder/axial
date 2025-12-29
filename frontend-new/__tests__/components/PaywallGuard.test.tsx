@@ -158,6 +158,6 @@ describe('PaywallGuard Component', () => {
         expect(window.location.href).toContain('metadata%5Buser_id%5D=test-user');
 
         // Cleanup
-        window.location = originalLocation;
+        (window as any).location = originalLocation;
     });
 });
