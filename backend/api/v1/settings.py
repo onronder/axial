@@ -24,6 +24,7 @@ class ProfileResponse(BaseModel):
     last_name: Optional[str] = None
     plan: str = "free"
     theme: str = "system"
+    has_team: bool = False  # Task 3: Invite Loophole Fix
     created_at: str
     updated_at: str
 
@@ -47,8 +48,6 @@ class NotificationSettingUpdate(BaseModel):
 # ============================================================
 # PROFILE ENDPOINTS
 # ============================================================
-
-@router.get("/settings/profile", response_model=ProfileResponse)
 async def get_profile(user_id: str = Depends(get_current_user)):
     """Get user profile, creating one if it doesn't exist."""
     supabase = get_supabase()
@@ -60,55 +59,82 @@ async def get_profile(user_id: str = Depends(get_current_user)):
             .eq("user_id", user_id)\
             .execute()
         
+        profile_data = None
+        
         if response.data and len(response.data) > 0:
-            return response.data[0]
-        
-        # Profile doesn't exist - create one
-        # Try to get user metadata from Supabase auth to populate names
-        first_name = None
-        last_name = None
-        
-        try:
-            # Fetch user from Supabase auth.users to get metadata
-            user_response = supabase.auth.admin.get_user_by_id(user_id)
-            if user_response and user_response.user:
-                user_metadata = user_response.user.user_metadata or {}
-                
-                # Prefer direct first_name/last_name if available
-                first_name = user_metadata.get("first_name")
-                last_name = user_metadata.get("last_name")
-                
-                # Fallback: parse from full_name if separate fields not available
-                if not first_name and not last_name:
-                    full_name = user_metadata.get("full_name", "")
-                    if full_name:
-                        name_parts = full_name.strip().split(" ", 1)
-                        first_name = name_parts[0] if len(name_parts) > 0 else None
-                        last_name = name_parts[1] if len(name_parts) > 1 else None
-        except Exception as e:
-            # If we can't get user metadata, continue with null names
-            # This is non-critical - user can update names later in settings
-            pass
-        
-        # Create default profile with names from metadata (if available)
-        new_profile = {
-            "user_id": user_id,
-            "first_name": first_name,
-            "last_name": last_name,
-            "plan": "free",
-            "theme": "system",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat()
-        }
-        
-        insert_response = supabase.table("user_profiles")\
-            .insert(new_profile)\
+            profile_data = response.data[0]
+        else:
+            # Profile doesn't exist - create one
+            # Note: Trigger might have created it just now, so we could try select again or handle insert error.
+            # But standard flow handles safe creation below.
+            
+            # Try to get user metadata from Supabase auth
+            first_name = None
+            last_name = None
+            
+            try:
+                # Fetch user from Supabase auth.users to get metadata
+                user_response = supabase.auth.admin.get_user_by_id(user_id)
+                if user_response and user_response.user:
+                    user_metadata = user_response.user.user_metadata or {}
+                    
+                    # Prefer direct first_name/last_name if available
+                    first_name = user_metadata.get("first_name")
+                    last_name = user_metadata.get("last_name")
+                    
+                    # Fallback: parse from full_name if separate fields not available
+                    if not first_name and not last_name:
+                        full_name = user_metadata.get("full_name", "")
+                        if full_name:
+                            name_parts = full_name.strip().split(" ", 1)
+                            first_name = name_parts[0] if len(name_parts) > 0 else None
+                            last_name = name_parts[1] if len(name_parts) > 1 else None
+            except Exception as e:
+                # Non-critical metadata fetch failure
+                pass
+            
+            # Create default profile
+            new_profile = {
+                "user_id": user_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "plan": "free",
+                "theme": "system",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            
+            # Handle potential race condition with trigger using upsert or ignoring error
+            # Ideally we check again or use upsert. 
+            # Given Task 1 adds a trigger, we should prefer fetching the trigger-created one if insert fails.
+            try:
+                insert_response = supabase.table("user_profiles")\
+                    .insert(new_profile)\
+                    .execute()
+                if insert_response.data:
+                    profile_data = insert_response.data[0]
+            except Exception:
+                # If insert fails, assume trigger created it and fetch again
+                retry = supabase.table("user_profiles").select("*").eq("user_id", user_id).execute()
+                if retry.data:
+                    profile_data = retry.data[0]
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to create or retrieve profile")
+
+        if not profile_data:
+             raise HTTPException(status_code=500, detail="Failed to retrieve profile")
+             
+        # TASK 3: Check if user is in any team
+        # We assume if they are in a team, they completed onboarding or were invited.
+        team_check = supabase.table("team_members")\
+            .select("id")\
+            .eq("user_id", user_id)\
+            .limit(1)\
             .execute()
+            
+        profile_data["has_team"] = len(team_check.data) > 0
         
-        if insert_response.data:
-            return insert_response.data[0]
-        
-        raise HTTPException(status_code=500, detail="Failed to create profile")
+        return profile_data
         
     except HTTPException:
         raise

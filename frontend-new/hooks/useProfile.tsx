@@ -11,6 +11,7 @@ export interface UserProfile {
     last_name: string | null;
     plan: 'free' | 'pro' | 'enterprise';
     theme: 'light' | 'dark' | 'system';
+    has_team?: boolean;
     created_at: string;
     updated_at: string;
 }

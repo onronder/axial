@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useChatHistory, Message } from "@/hooks/useChatHistory";
 import { useDocumentCount } from "@/hooks/useDocumentCount";
+import { useProfile } from "@/hooks/useProfile";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { EmptyState } from "@/components/chat/EmptyState";
@@ -28,6 +29,7 @@ export default function ChatPage() {
 
     const { getMessagesById, createNewChat } = useChatHistory();
     const { isEmpty: hasNoDocuments, isLoading: docCountLoading } = useDocumentCount();
+    const { profile, isLoading: profileLoading } = useProfile();
 
     // State
     const [messages, setMessages] = useState<Message[]>([]);
@@ -37,11 +39,15 @@ export default function ChatPage() {
     const [showOnboarding, setShowOnboarding] = useState(false);
 
     // Show onboarding modal when user has no documents and this is a new chat
+    // TASK 3: Skip if user is already in a team (e.g. invited via email)
     useEffect(() => {
-        if (isNewChat && hasNoDocuments && !docCountLoading) {
-            setShowOnboarding(true);
+        if (isNewChat && hasNoDocuments && !docCountLoading && !profileLoading) {
+            // Only show onboarding if user is explicitly NOT in a team
+            if (!profile?.has_team) {
+                setShowOnboarding(true);
+            }
         }
-    }, [isNewChat, hasNoDocuments, docCountLoading]);
+    }, [isNewChat, hasNoDocuments, docCountLoading, profileLoading, profile?.has_team]);
 
     // Load messages for existing chats
     useEffect(() => {
