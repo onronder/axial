@@ -44,126 +44,114 @@ class LLMFactory:
 
     @staticmethod
     def get_model(
-        provider: str,
-        model_name: str,
-        user_plan: str = "free",  # Added user_plan argument
+        provider: str = None, # Legacy: inferred from tier if None
+        model_name: str = None, # Legacy: inferred from tier if None
+        user_plan: str = "free",
+        user_role: str = "member",
+        requested_tier: str = "fast", # "fast" or "smart"
         temperature: float = 0,
         streaming: bool = False,
         max_tokens: Optional[int] = None,
-    ) -> BaseChatModel:
+    ) -> tuple[BaseChatModel, dict]:
         """
-        Returns a configured LangChain Chat Model with plan enforcement.
+        Smart Router: Returns (LLM, Metadata)
         
         Args:
-            provider: 'openai' or 'groq'
-            model_name: Requested model identifier
-            user_plan: 'free', 'pro', or 'enterprise'
-            temperature: Creativity level
-            streaming: Enable streaming output
-            max_tokens: Optional max tokens limit
+            user_plan: 'free'/'starter', 'pro', 'enterprise'
+            user_role: 'admin', 'member', 'viewer'
+            requested_tier: 'fast' (Axio Fast) or 'smart' (Axio Pro)
+            
+        Returns:
+            (llm_instance, metadata_dict)
+            metadata example: {"upsell": True, "actual_tier": "fast"}
         """
-        # ENFORCE PLAN LIMITS
-        # Free users are FORCED to use gpt-4o-mini regardless of request
-        if user_plan == "free":
-            if model_name != "gpt-4o-mini":
-                logger.info(f"🔒 [LLMFactory] Plan enforcement: Downgrading {model_name} to gpt-4o-mini for free plan")
-                provider = "openai"  # Force OpenAI for consistency with mini
-                model_name = "gpt-4o-mini"
+        metadata = {"upsell": False, "actual_tier": requested_tier}
         
-        # Pro users can use gpt-4o if requested, otherwise default behavior
-        elif user_plan == "pro":
-            # Allow whatever is requested (checking limits if needed in future)
-            pass
+        # --- 1. RESOLVE TIER & ENFORCE LIMITS ---
+        
+        target_tier = requested_tier
+        
+        # RULE: 'Viewer' role MUST use Fast model (Field Staff constraint)
+        if user_role == "viewer":
+            if target_tier == settings.MODEL_ALIAS_SMART:
+                logger.info(f"🔒 [LLMFactory] Viewer Role Constraint: Downgrading to Fast")
+                target_tier = settings.MODEL_ALIAS_FAST
+                metadata["actual_tier"] = "fast"
+        
+        # RULE: 'Starter'/'Free' plan MUST use Fast model
+        if user_plan in ["free", "starter"]:
+            if target_tier == settings.MODEL_ALIAS_SMART:
+                logger.info(f"🔒 [LLMFactory] Plan Constraint: Downgrading {user_plan} to Fast (Upsell Triggered)")
+                target_tier = settings.MODEL_ALIAS_FAST
+                metadata["upsell"] = True
+                metadata["actual_tier"] = "fast"
+                
+        # --- 2. MAP TIER TO PROVIDER/ID ---
+        
+        final_provider = provider
+        final_model = model_name
+        
+        if target_tier == settings.MODEL_ALIAS_FAST:
+            final_provider = settings.SECONDARY_MODEL_PROVIDER
+            final_model = settings.SECONDARY_MODEL_NAME
+        elif target_tier == settings.MODEL_ALIAS_SMART:
+            final_provider = settings.PRIMARY_MODEL_PROVIDER
+            final_model = settings.PRIMARY_MODEL_NAME
+        else:
+            # Fallback if specific model requested directly (Legacy support)
+            if not final_provider or not final_model:
+                # Default to Fast if unknown
+                final_provider = settings.SECONDARY_MODEL_PROVIDER 
+                final_model = settings.SECONDARY_MODEL_NAME
 
+        # --- 3. INSTANTIATE ---
+        
         try:
-            if provider == "openai":
-                return LLMFactory._create_openai(model_name, temperature, streaming, max_tokens)
-            
-            elif provider == "groq":
-                return LLMFactory._create_groq(model_name, temperature, streaming, max_tokens)
-            
+            if final_provider == "openai":
+                llm = LLMFactory._create_openai(final_model, temperature, streaming, max_tokens)
+            elif final_provider == "groq":
+                llm = LLMFactory._create_groq(final_model, temperature, streaming, max_tokens)
             else:
-                raise ValueError(f"Unsupported LLM provider: {provider}")
+                raise ValueError(f"Unsupported LLM provider: {final_provider}")
+                
+            return llm, metadata
 
         except Exception as e:
-            logger.error(f"❌ [LLMFactory] Failed to initialize {provider}/{model_name}: {e}")
+            logger.error(f"❌ [LLMFactory] Failed to initialize {final_provider}/{final_model}: {e}")
             raise
-
-    @staticmethod
-    def _create_openai(
-        model_name: str,
-        temperature: float,
-        streaming: bool,
-        max_tokens: Optional[int]
-    ) -> ChatOpenAI:
-        """Create OpenAI chat model."""
-        kwargs = {
-            "model": model_name,
-            "temperature": temperature,
-            "streaming": streaming,
-            "api_key": settings.OPENAI_API_KEY,
-        }
-        if max_tokens:
-            kwargs["max_tokens"] = max_tokens
             
+    # _create_openai and _create_groq methods remain unchanged...
+    @staticmethod
+    def _create_openai(model_name, temperature, streaming, max_tokens) -> ChatOpenAI:
+        kwargs = {"model": model_name, "temperature": temperature, "streaming": streaming, "api_key": settings.OPENAI_API_KEY}
+        if max_tokens: kwargs["max_tokens"] = max_tokens
         return ChatOpenAI(**kwargs)
 
     @staticmethod
-    def _create_groq(
-        model_name: str,
-        temperature: float,
-        streaming: bool,
-        max_tokens: Optional[int]
-    ) -> BaseChatModel:
-        """Create Groq chat model (Llama 3.x via Groq Cloud)."""
-        # Lazy import to avoid errors if groq not installed
+    def _create_groq(model_name, temperature, streaming, max_tokens) -> BaseChatModel:
         try:
             from langchain_groq import ChatGroq
         except ImportError:
-            logger.error("❌ [LLMFactory] langchain-groq not installed. Run: pip install langchain-groq")
             raise ImportError("langchain-groq package not installed")
-        
         if not settings.GROQ_API_KEY:
-            logger.error("❌ [LLMFactory] GROQ_API_KEY not configured")
-            raise ValueError("GROQ_API_KEY not configured. Add it to .env file.")
-        
-        kwargs = {
-            "model_name": model_name,
-            "temperature": temperature,
-            "api_key": settings.GROQ_API_KEY,
-            "streaming": streaming,
-        }
-        if max_tokens:
-            kwargs["max_tokens"] = max_tokens
-            
+            raise ValueError("GROQ_API_KEY not configured.")
+        kwargs = {"model_name": model_name, "temperature": temperature, "api_key": settings.GROQ_API_KEY, "streaming": streaming}
+        if max_tokens: kwargs["max_tokens"] = max_tokens
         return ChatGroq(**kwargs)
 
+    # Convenience methods updated to use new signature if needed, or removed if obsolete.
+    # We will keep them for backward compatibility but redirecting to get_model is safer.
     @staticmethod
-    def get_primary_model(streaming: bool = False, temperature: float = 0) -> BaseChatModel:
-        """Convenience method for primary model (GPT-4o by default)."""
-        return LLMFactory.get_model(
-            provider=settings.PRIMARY_MODEL_PROVIDER,
-            model_name=settings.PRIMARY_MODEL_NAME,
-            temperature=temperature,
-            streaming=streaming,
-        )
+    def get_primary_model(streaming: bool = False) -> BaseChatModel:
+        llm, _ = LLMFactory.get_model(requested_tier=settings.MODEL_ALIAS_SMART, user_plan="pro", streaming=streaming)
+        return llm
 
     @staticmethod
-    def get_secondary_model(streaming: bool = False, temperature: float = 0) -> BaseChatModel:
-        """Convenience method for secondary model (Groq Llama by default)."""
-        return LLMFactory.get_model(
-            provider=settings.SECONDARY_MODEL_PROVIDER,
-            model_name=settings.SECONDARY_MODEL_NAME,
-            temperature=temperature,
-            streaming=streaming,
-        )
+    def get_secondary_model(streaming: bool = False) -> BaseChatModel:
+        llm, _ = LLMFactory.get_model(requested_tier=settings.MODEL_ALIAS_FAST, user_plan="pro", streaming=streaming)
+        return llm
 
     @staticmethod
     def get_guardrail_model(streaming: bool = False, temperature: float = 0) -> BaseChatModel:
-        """Convenience method for guardrail model (fast validation checks)."""
-        return LLMFactory.get_model(
-            provider=settings.GUARDRAIL_MODEL_PROVIDER,
-            model_name=settings.GUARDRAIL_MODEL_NAME,
-            temperature=temperature,
-            streaming=streaming,
-        )
+        # Guardrail always uses the specifically configured guardrail model, ignoring tiers
+        return LLMFactory._create_groq(settings.GUARDRAIL_MODEL_NAME, temperature, streaming, None)

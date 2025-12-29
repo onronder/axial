@@ -56,11 +56,31 @@ class Settings(BaseSettings):
     
     # Groq API Key (for secondary/guardrail models)
     # Groq API Key (for secondary/guardrail models)
-    GROQ_API_KEY: Optional[str] = None
-    
     # RAG Settings
     RAG_SIMILARITY_THRESHOLD: float = 0.70  # Minimum cosine similarity for context injection
 
+    # =========================================================================
+    # COMMERCIALIZATION & TIER LIMITS (Phase 6)
+    # =========================================================================
+    
+    # Model Abstraction (Internal Mapping)
+    # Frontend sends "fast" -> Maps to SECONDARY_MODEL_NAME (e.g. Llama/Mini)
+    # Frontend sends "smart" -> Maps to PRIMARY_MODEL_NAME (e.g. GPT-4o)
+    MODEL_ALIAS_FAST: str = "fast"
+    MODEL_ALIAS_SMART: str = "smart"
+    
+    # Storage Limits (File Counts)
+    LIMITS_STARTER_FILES: int = 50
+    LIMITS_PRO_FILES: int = 2000
+    
+    # Storage Limits (Total Size in MB) - Enforcement logic needs bytes (MB * 1024 * 1024)
+    LIMITS_STARTER_MB: int = 100
+    LIMITS_PRO_MB: int = 10240  # 10 GB
+    
+    # Marketing & Upsell Messages
+    MSG_UPSELL_SMART: str = "⚡ This answer used 'Axio Fast'. Upgrade to Pro for 'Axio Pro' intelligence."
+    MSG_UPSELL_FILES: str = "🔒 You have reached your file limit. Upgrade to Pro for 10GB storage."
+    
     # =========================================================================
     # Payment Integration (Polar.sh)
     # =========================================================================

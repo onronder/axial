@@ -13,6 +13,7 @@ import { AxioLogo } from "@/components/branding/AxioLogo";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { generateSmartTitle } from "@/lib/chat-utils";
+import { ModelId } from "@/lib/types";
 
 /**
  * Unified ChatPage handles both:
@@ -37,6 +38,7 @@ export default function ChatPage() {
     const [isTyping, setIsTyping] = useState(false);
     const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
     const [showOnboarding, setShowOnboarding] = useState(false);
+    const [selectedModel, setSelectedModel] = useState<ModelId>('fast'); // Default to Fast
 
     // Show onboarding modal when user has no documents and this is a new chat
     // TASK 3: Skip if user is already in a team (e.g. invited via email)
@@ -125,7 +127,8 @@ export default function ChatPage() {
                 history: messages.slice(-10).map(m => ({
                     role: m.role,
                     content: m.content
-                }))
+                })),
+                model: selectedModel // Pass selected model
             });
 
             setIsTyping(false);
@@ -215,7 +218,12 @@ export default function ChatPage() {
                     </div>
                 )}
             </div>
-            <ChatInput onSend={handleSendMessage} disabled={isDisabled} />
+            <ChatInput
+                onSend={handleSendMessage}
+                disabled={isDisabled}
+                selectedModel={selectedModel}
+                onModelSelect={setSelectedModel}
+            />
 
             {/* Onboarding Modal for new users */}
             <OnboardingModal
