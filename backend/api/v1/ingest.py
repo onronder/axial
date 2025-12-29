@@ -18,7 +18,9 @@ from models import IngestResponse
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
+from core.quotas import QUOTA_LIMITS, check_quota
 from services.usage import check_can_upload, check_feature_access
+from services.team_service import team_service
 from api.v1.dependencies import validate_team_access
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -74,6 +76,18 @@ async def ingest_document(
     No heavy computation happens in the API process.
     """
     supabase = get_supabase()
+    
+    # 1. RBAC Check: Viewers cannot ingest content
+    team = await team_service.get_user_team(user_id)
+    if team and team.get("user_role") == "viewer":
+        logger.warning(f"🚫 [Ingest] Blocked viewer {user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Viewers cannot upload or ingest documents."
+        )
+
+    # 2. Hard Quota Check (Raises 402 if exceeded)
+    await check_quota(user_id, "files")
     
     # Parse metadata
     try:

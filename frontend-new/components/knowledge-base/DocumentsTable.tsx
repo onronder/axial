@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Document } from "@/types";
 import { useDocuments } from "@/hooks/useDocuments";
+import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { StorageMeter } from "@/components/documents/StorageMeter";
 import { cn } from "@/lib/utils";
 
@@ -72,7 +73,12 @@ const sourceIcons: Record<string, typeof FileText> = {
 };
 
 const statusStyles: Record<string, { label: string; className: string; dotClass: string }> = {
-  indexed: {
+  completed: {
+    label: "Indexed",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    dotClass: "bg-emerald-500"
+  },
+  indexed: { // Legacy fallback
     label: "Indexed",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
     dotClass: "bg-emerald-500"
@@ -82,7 +88,17 @@ const statusStyles: Record<string, { label: string; className: string; dotClass:
     className: "bg-blue-50 text-blue-700 border-blue-200",
     dotClass: "bg-blue-500 animate-pulse"
   },
-  error: {
+  pending: {
+    label: "Pending",
+    className: "bg-yellow-50 text-yellow-700 border-yellow-200",
+    dotClass: "bg-yellow-500"
+  },
+  failed: {
+    label: "Failed",
+    className: "bg-red-50 text-red-700 border-red-200",
+    dotClass: "bg-red-500"
+  },
+  error: { // Legacy fallback
     label: "Error",
     className: "bg-red-50 text-red-700 border-red-200",
     dotClass: "bg-red-500"
@@ -96,6 +112,9 @@ const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
 
 export function DocumentsTable() {
   const { documents, isLoading: isRefreshing, refresh: handleRefresh, deleteDocument } = useDocuments();
+  const { currentMember } = useTeamMembers();
+  const isViewer = currentMember?.role === 'viewer';
+
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<SortField>("addedAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -285,7 +304,8 @@ export function DocumentsTable() {
               ) : (
                 paginatedDocuments.map((doc) => {
                   const SourceIcon = sourceIcons[doc.sourceType] || FileText;
-                  const status = statusStyles[doc.status] || statusStyles.indexed;
+                  const displayStatus = doc.indexingStatus || "completed";
+                  const status = statusStyles[displayStatus] || statusStyles.completed;
 
                   return (
                     <TableRow key={doc.id} className="group hover:bg-muted/30 transition-colors">
@@ -339,13 +359,24 @@ export function DocumentsTable() {
                             <DropdownMenuItem>
                               <ExternalLink className="mr-2 h-4 w-4" /> View Source
                             </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => setDeleteId(doc.id)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete
+                            <DropdownMenuItem>
+                              <ExternalLink className="mr-2 h-4 w-4" /> View Source
                             </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {!isViewer ? (
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setDeleteId(doc.id)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem disabled className="text-muted-foreground opacity-50 cursor-not-allowed">
+                                <span className="flex items-center">
+                                  <Trash2 className="mr-2 h-4 w-4" /> Delete (Read Only)
+                                </span>
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

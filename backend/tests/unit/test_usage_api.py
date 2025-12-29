@@ -14,7 +14,7 @@ from unittest.mock import patch, Mock, AsyncMock
 from uuid import uuid4, UUID
 
 from pydantic import BaseModel
-from core.quotas import PLANS, ModelTier, PlanLimits, format_bytes
+from core.quotas import QUOTA_LIMITS, PlanLimits, format_bytes
 
 
 # Test UUID - must be valid UUID format for endpoint tests
@@ -99,7 +99,7 @@ class TestUsageEndpointWithMocks:
         mock.usage.storage_display = "45 MB"
         mock.usage.plan = "free"
         mock.usage.subscription_status = "active"
-        mock.limits = PLANS["free"]
+        mock.limits = QUOTA_LIMITS["free"]
         return mock
     
     @pytest.fixture
@@ -113,7 +113,7 @@ class TestUsageEndpointWithMocks:
         mock.usage.storage_display = "500 MB"
         mock.usage.plan = "pro"
         mock.usage.subscription_status = "active"
-        mock.limits = PLANS["pro"]
+        mock.limits = QUOTA_LIMITS["pro"]
         return mock
     
     @pytest.mark.unit
@@ -162,7 +162,7 @@ class TestUsageEndpointWithMocks:
         mock_over_limit.usage.storage_display = "100 MB"
         mock_over_limit.usage.plan = "free"
         mock_over_limit.usage.subscription_status = "active"
-        mock_over_limit.limits = PLANS["free"]
+        mock_over_limit.limits = QUOTA_LIMITS["free"]
         
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_over_limit
@@ -315,7 +315,7 @@ class TestUsageServiceWithMocks:
                 plan="free",
                 subscription_status="active"
             ),
-            limits=PLANS["free"],
+            limits=QUOTA_LIMITS["free"],
             files_remaining=2,
             storage_remaining_bytes=32_428_800,
             storage_remaining_display="32 MB",
@@ -347,7 +347,7 @@ class TestUsageServiceWithMocks:
                 plan="free",
                 subscription_status="active"
             ),
-            limits=PLANS["free"],
+            limits=QUOTA_LIMITS["free"],
             files_remaining=0,
             storage_remaining_bytes=32_428_800,
             storage_remaining_display="32 MB",
@@ -378,7 +378,7 @@ class TestUsageServiceWithMocks:
                 plan="free",
                 subscription_status="active"
             ),
-            limits=PLANS["free"],
+            limits=QUOTA_LIMITS["free"],
             files_remaining=2,
             storage_remaining_bytes=2_428_800,  # ~2.4 MB remaining
             storage_remaining_display="2 MB",
@@ -434,7 +434,7 @@ class TestPlanLimitsConsistency:
     @pytest.mark.unit
     def test_all_plans_have_positive_file_limits(self):
         """Every plan should have positive max_files."""
-        for plan_name, limits in PLANS.items():
+        for plan_name, limits in QUOTA_LIMITS.items():
             if plan_name == "none":
                 continue
             assert limits.max_files > 0, f"Plan {plan_name} has invalid max_files"
@@ -442,7 +442,7 @@ class TestPlanLimitsConsistency:
     @pytest.mark.unit
     def test_all_plans_have_positive_storage_limits(self):
         """Every plan should have positive max_storage_bytes."""
-        for plan_name, limits in PLANS.items():
+        for plan_name, limits in QUOTA_LIMITS.items():
             if plan_name == "none":
                 continue
             assert limits.max_storage_bytes > 0, f"Plan {plan_name} has invalid max_storage_bytes"
@@ -450,26 +450,26 @@ class TestPlanLimitsConsistency:
     @pytest.mark.unit
     def test_higher_plans_have_higher_limits(self):
         """Higher tier plans should have more generous limits."""
-        assert PLANS["starter"].max_files > PLANS["free"].max_files
-        assert PLANS["pro"].max_files > PLANS["starter"].max_files
-        assert PLANS["enterprise"].max_files > PLANS["pro"].max_files
+        assert QUOTA_LIMITS["starter"].max_files > QUOTA_LIMITS["free"].max_files
+        assert QUOTA_LIMITS["pro"].max_files > QUOTA_LIMITS["starter"].max_files
+        assert QUOTA_LIMITS["enterprise"].max_files > QUOTA_LIMITS["pro"].max_files
         
-        assert PLANS["starter"].max_storage_bytes > PLANS["free"].max_storage_bytes
-        assert PLANS["pro"].max_storage_bytes > PLANS["starter"].max_storage_bytes
-        assert PLANS["enterprise"].max_storage_bytes > PLANS["pro"].max_storage_bytes
+        assert QUOTA_LIMITS["starter"].max_storage_bytes > QUOTA_LIMITS["free"].max_storage_bytes
+        assert QUOTA_LIMITS["pro"].max_storage_bytes > QUOTA_LIMITS["starter"].max_storage_bytes
+        assert QUOTA_LIMITS["enterprise"].max_storage_bytes > QUOTA_LIMITS["pro"].max_storage_bytes
     
     @pytest.mark.unit
     def test_web_crawl_only_on_paid_plans(self):
         """Web crawl should only be available on Pro and Enterprise."""
-        assert PLANS["free"].allow_web_crawl is False
-        assert PLANS["starter"].allow_web_crawl is False
-        assert PLANS["pro"].allow_web_crawl is True
-        assert PLANS["enterprise"].allow_web_crawl is True
+        assert QUOTA_LIMITS["free"].allow_web_crawl is False
+        assert QUOTA_LIMITS["starter"].allow_web_crawl is False
+        assert QUOTA_LIMITS["pro"].allow_web_crawl is True
+        assert QUOTA_LIMITS["enterprise"].allow_web_crawl is True
     
     @pytest.mark.unit
     def test_model_tier_progression(self):
         """Model tiers should progress with plan level."""
-        assert PLANS["free"].model_tier == ModelTier.BASIC
-        assert PLANS["starter"].model_tier == ModelTier.BASIC
-        assert PLANS["pro"].model_tier == ModelTier.HYBRID
-        assert PLANS["enterprise"].model_tier == ModelTier.PREMIUM
+        assert QUOTA_LIMITS["free"].model_tier == ModelTier.BASIC
+        assert QUOTA_LIMITS["starter"].model_tier == ModelTier.BASIC
+        assert QUOTA_LIMITS["pro"].model_tier == ModelTier.HYBRID
+        assert QUOTA_LIMITS["enterprise"].model_tier == ModelTier.PREMIUM

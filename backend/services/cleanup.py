@@ -78,8 +78,72 @@ class AccountCleanupService:
         except Exception as e:
             logger.error(f"❌ [AccountCleanup] Deletion failed for user {user_id}: {e}")
             raise
-    
-    async def _cleanup_vectors(self, user_id: str) -> dict:
+    async def delete_single_document(self, doc_id: str, user_id: str) -> dict:
+        """
+        Delete a single document atomically (Vectors -> Storage -> DB).
+        
+        Args:
+            doc_id: Document UUID
+            user_id: User UUID
+            
+        Returns:
+            dict with cleanup status
+        """
+        logger.info(f"🗑️ [DocCleanup] Deleting document {doc_id} for user {user_id}")
+        
+        try:
+            # 1. Get document metadata to find storage path
+            doc = self.supabase.table("documents").select("*").eq("id", doc_id).eq("user_id", user_id).single().execute()
+            if not doc.data:
+                raise Exception("Document not found")
+                
+            doc_data = doc.data
+            storage_path = None
+            
+            # Try to find storage path in metadata or source_url
+            if doc_data.get("source_type") == "file":
+                # Check metadata first
+                meta = doc_data.get("metadata") or {}
+                storage_path = meta.get("storage_path")
+                
+                # Fallback: if source_url looks like a storage path (user_id/...)
+                if not storage_path and doc_data.get("source_url"):
+                    url = doc_data.get("source_url")
+                    if user_id in url: # minimal check
+                         storage_path = url
+
+            # 2. Delete Vectors (Chunks)
+            # Cascade usually handles this, but explicit delete is safer/cleaner for vectors
+            self.supabase.table("document_chunks")\
+                .delete()\
+                .eq("document_id", doc_id)\
+                .execute()
+                
+            # 3. Delete from Storage (Soft Fail)
+            if storage_path:
+                try:
+                    # Clean up path - supabase storage methods accept list of paths
+                    self.supabase.storage.from_("uploads").remove([storage_path])
+                    # Also try to clean up the parent folder if it was a uuid folder (best effort)
+                    parent_folder = storage_path.split("/")[0] + "/" + storage_path.split("/")[1]
+                    if len(storage_path.split("/")) > 2:
+                         # list and check if empty? too expensive. leave folder.
+                         pass
+                except Exception as e:
+                    logger.warning(f"⚠️ [DocCleanup] Storage delete failed (continuing): {e}")
+
+            # 4. Delete Database Record
+            self.supabase.table("documents")\
+                .delete()\
+                .eq("id", doc_id)\
+                .eq("user_id", user_id)\
+                .execute()
+                
+            return {"status": "success", "id": doc_id}
+            
+        except Exception as e:
+            logger.error(f"❌ [DocCleanup] Failed for {doc_id}: {e}")
+            raise e
         """
         Delete all vector embeddings belonging to the user.
         

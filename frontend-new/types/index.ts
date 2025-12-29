@@ -126,6 +126,7 @@ export interface Document {
     source: string;
     sourceType: DocumentSourceType;
     status: DocumentStatus;
+    indexingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
     addedAt: string;
     size?: number;
 }

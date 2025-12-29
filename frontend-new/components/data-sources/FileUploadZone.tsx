@@ -7,6 +7,9 @@ import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { useUsage } from "@/hooks/useUsage";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 interface FileUploadZoneProps {
   source: DataSource;
@@ -14,8 +17,11 @@ interface FileUploadZoneProps {
 
 export function FileUploadZone({ source }: FileUploadZoneProps) {
   const { toast } = useToast();
+  const { filesUsed, filesLimit, refresh } = useUsage();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
+
+  const isOverLimit = filesUsed >= filesLimit;
 
   const uploadFile = async (file: File): Promise<boolean> => {
     try {
@@ -79,6 +85,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
       setIsUploading(false);
 
       if (successCount > 0 && failCount === 0) {
+        refresh(); // Update usage stats
         toast({
           title: "Files Uploaded",
           description: `${successCount} file(s) added to your knowledge base.`,
@@ -107,8 +114,20 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
       "text/plain": [".txt"],
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
     },
-    disabled: isUploading,
+    disabled: isUploading || isOverLimit,
   });
+
+  if (isOverLimit) {
+    return (
+      <Alert variant="destructive" className="mb-4">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>File Limit Reached</AlertTitle>
+        <AlertDescription>
+          You have reached your limit of {filesLimit} files. Please upgrade your plan to upload more.
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   return (
     <div

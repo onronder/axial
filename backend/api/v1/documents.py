@@ -7,6 +7,8 @@ from core.db import get_supabase
 from core.rate_limit import limiter
 from services.audit import log_document_delete
 from api.v1.dependencies import validate_team_access
+from services.cleanup import cleanup_service
+from services.team_service import team_service
 
 router = APIRouter()
 
@@ -22,6 +24,7 @@ class DocumentDTO(BaseModel):
     source_url: Optional[str] = None
     created_at: str
     status: str = "indexed"
+    indexing_status: str = "pending"
     size: Optional[int] = 0
     metadata: Dict[str, Any]
 
@@ -132,6 +135,14 @@ async def delete_document(
     supabase = get_supabase()
     
     try:
+        # RBAC Check: Viewers cannot delete documents
+        team = await team_service.get_user_team(user_id)
+        if team and team.get("user_role") == "viewer":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Viewers cannot delete documents."
+            )
+
         # First, get document info for audit log
         doc_response = supabase.table("documents")\
             .select("title")\
@@ -142,15 +153,10 @@ async def delete_document(
         
         doc_title = doc_response.data.get("title", "Unknown") if doc_response.data else "Unknown"
         
-        # Delete the document
-        response = supabase.table("documents")\
-            .delete()\
-            .eq("id", doc_id)\
-            .eq("user_id", user_id)\
-            .execute()
+        # Delete using cleanup service (Atomic: Vector -> Storage -> DB)
+        await cleanup_service.delete_single_document(doc_id, user_id)
             
-        if not response.data:
-            raise HTTPException(status_code=404, detail="Document not found or access denied")
+
         
         # Audit log (async, non-blocking)
         log_document_delete(background_tasks, user_id, doc_id, doc_title, request)

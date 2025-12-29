@@ -15,6 +15,7 @@ function mapDocument(d: any): Document {
         source: d.source_type || "file",
         sourceType: d.source_type || "upload",
         status: d.status || "indexed",
+        indexingStatus: d.indexing_status || "completed",
         addedAt: d.created_at || new Date().toISOString(),
         size: d.size || 0
     };

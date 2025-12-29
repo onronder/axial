@@ -14,7 +14,7 @@ import pytest
 from unittest.mock import patch, Mock, AsyncMock
 from uuid import uuid4
 
-from core.quotas import PLANS
+
 
 
 # Test UUIDs

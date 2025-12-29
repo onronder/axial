@@ -13,7 +13,7 @@ import pytest
 from unittest.mock import patch, Mock
 
 from services.router import LLMRouter, llm_router, ModelSelection
-from core.quotas import ModelTier, PLANS
+from core.quotas import QUOTA_LIMITS
 
 
 class TestModelTierEnforcement:
@@ -236,69 +236,33 @@ class TestGetModelForPlan:
             assert result.provider == "groq", f"Plan {plan} got wrong provider"
 
 
-class TestGetModelTier:
-    """Tests for get_model_tier helper method."""
-    
-    @pytest.fixture
-    def router(self):
-        return LLMRouter()
-    
-    @pytest.mark.unit
-    def test_free_plan_returns_basic_tier(self, router):
-        """Free plan should return BASIC tier."""
-        tier = router.get_model_tier("free")
-        assert tier == ModelTier.BASIC
-    
-    @pytest.mark.unit
-    def test_starter_plan_returns_basic_tier(self, router):
-        """Starter plan should return BASIC tier."""
-        tier = router.get_model_tier("starter")
-        assert tier == ModelTier.BASIC
-    
-    @pytest.mark.unit
-    def test_pro_plan_returns_hybrid_tier(self, router):
-        """Pro plan should return HYBRID tier."""
-        tier = router.get_model_tier("pro")
-        assert tier == ModelTier.HYBRID
-    
-    @pytest.mark.unit
-    def test_enterprise_plan_returns_premium_tier(self, router):
-        """Enterprise plan should return PREMIUM tier."""
-        tier = router.get_model_tier("enterprise")
-        assert tier == ModelTier.PREMIUM
-    
-    @pytest.mark.unit
-    def test_unknown_plan_returns_basic_tier(self, router):
-        """Unknown plan should return BASIC tier for safety."""
-        tier = router.get_model_tier("unknown")
-        assert tier == ModelTier.BASIC
 
 
 class TestPlanConfigurationConsistency:
-    """Tests to ensure router aligns with PLANS configuration."""
+    """Tests to ensure router aligns with QUOTA_LIMITS configuration."""
     
     @pytest.mark.unit
     def test_all_plans_have_model_tier(self):
-        """Every plan in PLANS should have a model_tier defined."""
-        for plan_name, limits in PLANS.items():
+        """Every plan in QUOTA_LIMITS should have a model_tier defined."""
+        for plan_name, limits in QUOTA_LIMITS.items():
             assert hasattr(limits, "model_tier"), f"Plan {plan_name} missing model_tier"
-            assert isinstance(limits.model_tier, ModelTier)
+            assert isinstance(limits.model_tier, str)
     
     @pytest.mark.unit
-    def test_free_and_starter_are_basic_tier(self):
-        """Free and Starter should be BASIC to control costs."""
-        assert PLANS["free"].model_tier == ModelTier.BASIC
-        assert PLANS["starter"].model_tier == ModelTier.BASIC
+    def test_free_and_starter_are_standard_tier(self):
+        """Free and Starter should be STANDARD to control costs."""
+        assert QUOTA_LIMITS["free"].model_tier == "standard"
+        assert QUOTA_LIMITS["starter"].model_tier == "standard"
     
     @pytest.mark.unit
-    def test_pro_is_hybrid_tier(self):
-        """Pro should be HYBRID for smart routing."""
-        assert PLANS["pro"].model_tier == ModelTier.HYBRID
+    def test_pro_is_premium_tier(self):
+        """Pro should be PREMIUM for smart routing."""
+        assert QUOTA_LIMITS["pro"].model_tier == "premium"
     
     @pytest.mark.unit
     def test_enterprise_is_premium_tier(self):
         """Enterprise should be PREMIUM for best quality."""
-        assert PLANS["enterprise"].model_tier == ModelTier.PREMIUM
+        assert QUOTA_LIMITS["enterprise"].model_tier == "premium"
 
 
 class TestSingletonInstance:

@@ -13,7 +13,7 @@ import hmac
 import hashlib
 from unittest.mock import patch, Mock, AsyncMock
 
-from core.quotas import PLANS
+
 
 
 # Test UUIDs
