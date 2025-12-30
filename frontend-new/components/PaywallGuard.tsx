@@ -1,246 +1,156 @@
 "use client";
 
-/**
- * Paywall Guard Component
- * 
- * Blocks access to dashboard for users without active subscription.
- * Shows pricing page with trial links to Polar checkout.
- */
-
-import { useEffect, useState } from "react";
-import { Check, Zap, Building2, Loader2, ArrowRight } from "lucide-react";
-import { useUsage } from "@/hooks/useUsage";
-import { useAuth } from "@/hooks/useAuth";
+import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { AxioLogo } from "@/components/branding/AxioLogo";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { useUsage } from "@/hooks/useUsage";
+import { usePlans } from "@/hooks/usePlans";
+import { api } from "@/lib/api";
+import { useToast } from "@/components/ui/use-toast";
+import { useState } from "react";
 
-interface PaywallGuardProps {
-    children: React.ReactNode;
-}
+export function PaywallGuard({ children }: { children: React.ReactNode }) {
+    const { isPro, isLoading: isUsageLoading } = useUsage();
+    const { plans, isLoading: isPlansLoading } = usePlans();
+    const { toast } = useToast();
+    const [isCheckoutLoading, setIsCheckoutLoading] = useState<string | null>(null);
 
-// Polar checkout URLs - these would typically come from environment variables
-const POLAR_CHECKOUT_URLS = {
-    starter: process.env.NEXT_PUBLIC_POLAR_STARTER_CHECKOUT || "https://polar.sh/checkout/starter",
-    pro: process.env.NEXT_PUBLIC_POLAR_PRO_CHECKOUT || "https://polar.sh/checkout/pro",
-    enterprise: process.env.NEXT_PUBLIC_POLAR_ENTERPRISE_CHECKOUT || "https://polar.sh/checkout/enterprise",
-};
+    // Global loading state
+    const isLoading = isUsageLoading || isPlansLoading;
 
-const plans = [
-    {
-        id: "starter",
-        name: "Starter",
-        price: "$9",
-        period: "/month",
-        description: "Perfect for individuals getting started",
-        features: [
-            "20 documents",
-            "200 MB storage",
-            "Fast AI (Llama-3)",
-            "Google Drive integration",
-            "Email support",
-        ],
-        cta: "Start Free Trial",
-        popular: false,
-        icon: Zap,
-    },
-    {
-        id: "pro",
-        name: "Pro",
-        price: "$29",
-        period: "/month",
-        description: "For professionals who need more power",
-        features: [
-            "500 documents",
-            "2 GB storage",
-            "Smart Router AI",
-            "Web crawling",
-            "All integrations",
-            "Priority support",
-        ],
-        cta: "Start Free Trial",
-        popular: true,
-        icon: Zap,
-    },
-    {
-        id: "enterprise",
-        name: "Enterprise",
-        price: "$99",
-        period: "/month",
-        description: "For teams with unlimited needs",
-        features: [
-            "Unlimited documents",
-            "Unlimited storage",
-            "Premium AI (GPT-4o)",
-            "Team collaboration",
-            "Admin controls",
-            "Dedicated support",
-        ],
-        cta: "Start Free Trial",
-        popular: false,
-        icon: Building2,
-    },
-];
-
-export function PaywallGuard({ children }: PaywallGuardProps) {
-    const { user } = useAuth();
-    const { plan, usage, isLoading } = useUsage();
-    const [isRedirecting, setIsRedirecting] = useState(false);
-
-    // Get subscription status from usage data
-    const subscriptionStatus = usage?.subscription_status || "inactive";
-
-    // Allowed statuses that grant access
-    const allowedStatuses = ["active", "trialing"];
-    const hasActiveSubscription = allowedStatuses.includes(subscriptionStatus);
-
-    // If plan is 'none' or status is not active/trialing, show paywall
-    const showPaywall = !isLoading && (plan === "none" || !hasActiveSubscription);
-
-    const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (redirectUrl) {
-            window.location.href = redirectUrl;
-        }
-    }, [redirectUrl]);
-
-    // If loading or has valid subscription, show children
     if (isLoading) {
         return (
-            <div className="flex h-screen items-center justify-center bg-background">
-                <Loader2 className="animate-spin h-8 w-8 text-primary" />
+            <div className="flex h-[50vh] items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
         );
     }
 
-    if (!showPaywall) {
+    // If user has access (isPro), render the content
+    if (isPro) {
         return <>{children}</>;
     }
 
-    const handleCheckout = (planId: string) => {
-        setIsRedirecting(true);
+    // --- PAYWALL UI LOGIC ---
 
-        // Build checkout URL with user metadata
-        const checkoutUrl = POLAR_CHECKOUT_URLS[planId as keyof typeof POLAR_CHECKOUT_URLS];
-        const urlWithMetadata = new URL(checkoutUrl);
+    const handleUpgrade = async (planType: string) => {
+        try {
+            setIsCheckoutLoading(planType);
 
-        if (user?.id) {
-            urlWithMetadata.searchParams.set("metadata[user_id]", user.id);
+            // Enterprise: Email link
+            if (planType === 'enterprise') {
+                window.location.href = "mailto:sales@axiohub.io?subject=Enterprise%20Inquiry";
+                return;
+            }
+
+            // Starter/Pro: Create Checkout Session
+            const response = await api.post('/billing/checkout', { plan: planType });
+            if (response.data && response.data.url) {
+                window.location.href = response.data.url;
+            } else if (response.data && response.data.error) {
+                throw new Error(response.data.error);
+            }
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: "Failed to start checkout. Please try again.",
+                variant: "destructive",
+            });
+        } finally {
+            setIsCheckoutLoading(null);
         }
-        if (user?.email) {
-            urlWithMetadata.searchParams.set("customer_email", user.email);
-        }
-
-        setRedirectUrl(urlWithMetadata.toString());
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-            {/* Header */}
-            <header className="border-b border-border/50 bg-background/80 backdrop-blur-sm">
-                <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <AxioLogo variant="icon" size="md" />
-                        <span className="font-display text-xl font-semibold">Axio Hub</span>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                        Signed in as {user?.email}
-                    </div>
-                </div>
-            </header>
+        <div className="space-y-8 p-8 min-h-screen bg-background/50">
+            <div className="text-center space-y-4 pt-8">
+                <h2 className="text-4xl font-extrabold tracking-tight">Unlock Full Power</h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
+                    You've reached the limits of the free tier. Upgrade to Pro to process more files, use advanced AI models, and collaborate with your team.
+                </p>
+            </div>
 
-            {/* Main Content */}
-            <main className="container mx-auto px-4 py-12">
-                {/* Hero Section */}
-                <div className="text-center max-w-3xl mx-auto mb-12">
-                    <Badge variant="secondary" className="mb-4">
-                        🎉 3-Day Free Trial on All Plans
-                    </Badge>
-                    <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-                        Choose Your Plan
-                    </h1>
-                    <p className="text-lg text-muted-foreground">
-                        Start your free trial today. No commitment, cancel anytime.
-                        <br />
-                        Your AI-powered knowledge assistant awaits.
-                    </p>
-                </div>
-
-                {/* Pricing Cards */}
-                <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-                    {plans.map((pricing) => {
-                        const Icon = pricing.icon;
-
-                        return (
-                            <Card
-                                key={pricing.id}
-                                className={`relative flex flex-col ${pricing.popular
-                                    ? "border-primary shadow-lg shadow-primary/20 scale-105"
-                                    : "border-border"
-                                    }`}
-                            >
-                                {pricing.popular && (
-                                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                                        <Badge className="bg-primary text-primary-foreground">
-                                            Most Popular
-                                        </Badge>
-                                    </div>
+            <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto items-start">
+                {/* Dynamic Plans from Polar */}
+                {plans.map((plan) => (
+                    <Card key={plan.id} className={`relative flex flex-col h-full ${plan.type === 'pro' ? 'border-primary shadow-2xl scale-105 z-10' : 'border-border'}`}>
+                        {plan.type === 'pro' && (
+                            <div className="absolute -top-4 left-0 right-0 flex justify-center">
+                                <span className="bg-primary text-primary-foreground text-sm font-medium px-4 py-1 rounded-full shadow-sm">
+                                    Most Popular
+                                </span>
+                            </div>
+                        )}
+                        <CardHeader>
+                            <CardTitle className="text-2xl">{plan.name}</CardTitle>
+                            <div className="mt-2 flex items-baseline">
+                                <span className="text-4xl font-bold">
+                                    {plan.price_amount > 0
+                                        ? new Intl.NumberFormat('en-US', { style: 'currency', currency: plan.price_currency }).format(plan.price_amount / 100)
+                                        : '$0'}
+                                </span>
+                                <span className="text-muted-foreground ml-1">/{plan.interval}</span>
+                            </div>
+                            <p className="text-sm text-muted-foreground mt-2 min-h-[40px]">{plan.description}</p>
+                        </CardHeader>
+                        <CardContent className="flex-1">
+                            <ul className="space-y-3 text-sm">
+                                {plan.type === 'starter' && (
+                                    <>
+                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> 50 Files Storage</li>
+                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Standard AI Chat</li>
+                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Basic Support</li>
+                                    </>
                                 )}
+                                {plan.type === 'pro' && (
+                                    <>
+                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>2,000 Files</strong> Storage</li>
+                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>Deep Research</strong> Agent</li>
+                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Advanced Reasoning Models</li>
+                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Priority Support</li>
+                                    </>
+                                )}
+                            </ul>
+                        </CardContent>
+                        <CardFooter>
+                            <Button
+                                className="w-full"
+                                size="lg"
+                                variant={plan.type === 'pro' ? 'default' : 'outline'}
+                                onClick={() => handleUpgrade(plan.type)}
+                                disabled={!!isCheckoutLoading || plan.type === 'starter'}
+                            >
+                                {isCheckoutLoading === plan.type && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                {plan.type === 'starter' ? 'Current Plan' : 'Upgrade to Pro'}
+                            </Button>
+                        </CardFooter>
+                    </Card>
+                ))}
 
-                                <CardHeader className="text-center pb-4">
-                                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                                        <Icon className="h-6 w-6 text-primary" />
-                                    </div>
-                                    <CardTitle className="text-xl">{pricing.name}</CardTitle>
-                                    <CardDescription>{pricing.description}</CardDescription>
-                                </CardHeader>
-
-                                <CardContent className="flex-1">
-                                    <div className="text-center mb-6">
-                                        <span className="text-4xl font-bold">{pricing.price}</span>
-                                        <span className="text-muted-foreground">{pricing.period}</span>
-                                    </div>
-
-                                    <ul className="space-y-3">
-                                        {pricing.features.map((feature, i) => (
-                                            <li key={i} className="flex items-center gap-2 text-sm">
-                                                <Check className="h-4 w-4 text-success shrink-0" />
-                                                <span>{feature}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </CardContent>
-
-                                <CardFooter>
-                                    <Button
-                                        className="w-full gap-2"
-                                        variant={pricing.popular ? "default" : "outline"}
-                                        size="lg"
-                                        onClick={() => handleCheckout(pricing.id)}
-                                        disabled={isRedirecting}
-                                    >
-                                        {isRedirecting ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                            <>
-                                                {pricing.cta}
-                                                <ArrowRight className="h-4 w-4" />
-                                            </>
-                                        )}
-                                    </Button>
-                                </CardFooter>
-                            </Card>
-                        );
-                    })}
-                </div>
-
-                {/* Trust Indicators */}
-                <div className="text-center mt-12 text-sm text-muted-foreground">
-                    <p>🔒 Secure payment via Polar • Cancel anytime • No hidden fees</p>
-                </div>
-            </main>
+                {/* Static Enterprise Card */}
+                <Card className="flex flex-col h-full border-dashed bg-muted/20">
+                    <CardHeader>
+                        <CardTitle className="text-2xl">Enterprise</CardTitle>
+                        <div className="mt-2 flex items-baseline">
+                            <span className="text-4xl font-bold">Custom</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-2 min-h-[40px]">For large organizations with strict security needs.</p>
+                    </CardHeader>
+                    <CardContent className="flex-1">
+                        <ul className="space-y-3 text-sm">
+                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0" /> Unlimited Files</li>
+                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0" /> SSO & SAML</li>
+                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0" /> Dedicated Account Manager</li>
+                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0" /> Custom SLAs</li>
+                        </ul>
+                    </CardContent>
+                    <CardFooter>
+                        <Button className="w-full" size="lg" variant="ghost" onClick={() => handleUpgrade('enterprise')}>
+                            Contact Sales
+                        </Button>
+                    </CardFooter>
+                </Card>
+            </div>
         </div>
     );
 }
