@@ -117,54 +117,54 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
     disabled: isUploading || isOverLimit,
   });
 
-  if (isOverLimit) {
-    return (
-      <Alert variant="destructive" className="mb-4">
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>File Limit Reached</AlertTitle>
-        <AlertDescription>
-          You have reached your limit of {filesLimit} files. Please upgrade your plan to upload more.
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
   return (
-    <div
-      {...getRootProps()}
-      className={cn(
-        "rounded-xl border-2 border-dashed bg-card p-5 transition-all",
-        isUploading ? "cursor-wait opacity-75" : "cursor-pointer",
-        isDragActive
-          ? "border-primary bg-primary/5 shadow-brand"
-          : "border-border hover:border-primary/50"
+    <div className="space-y-4">
+      {isOverLimit && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>File Limit Reached</AlertTitle>
+          <AlertDescription>
+            You have reached your limit of {filesLimit} files. Please upgrade your plan to upload more.
+          </AlertDescription>
+        </Alert>
       )}
-    >
-      <input {...getInputProps()} />
-      <div className="space-y-3 text-center">
-        <div className={cn(
-          "mx-auto flex h-10 w-10 items-center justify-center rounded-lg transition-all",
-          isUploading ? "bg-primary/10" : isDragActive ? "bg-axio-gradient shadow-brand" : "bg-muted"
-        )}>
-          {isUploading ? (
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          ) : (
-            <Upload className={cn("h-5 w-5", isDragActive ? "text-white" : "text-primary")} />
-          )}
-        </div>
-        <div>
-          <h3 className="font-medium text-foreground">{source.name}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isUploading
-              ? `Uploading... (${uploadedCount} uploaded)`
-              : isDragActive
-                ? "Drop files here..."
-                : source.description}
-          </p>
-        </div>
-        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-          <FileText className="h-3 w-3" />
-          PDF, TXT, DOCX
+
+      <div
+        {...getRootProps()}
+        className={cn(
+          "rounded-xl border-2 border-dashed bg-card p-5 transition-all",
+          isUploading ? "cursor-wait opacity-75" : isOverLimit ? "cursor-not-allowed opacity-60 bg-muted/50" : "cursor-pointer",
+          isDragActive && !isOverLimit
+            ? "border-primary bg-primary/5 shadow-brand"
+            : "border-border hover:border-primary/50"
+        )}
+      >
+        <input {...getInputProps()} />
+        <div className="space-y-3 text-center">
+          <div className={cn(
+            "mx-auto flex h-10 w-10 items-center justify-center rounded-lg transition-all",
+            isUploading ? "bg-primary/10" : isDragActive ? "bg-axio-gradient shadow-brand" : "bg-muted"
+          )}>
+            {isUploading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            ) : (
+              <Upload className={cn("h-5 w-5", isDragActive ? "text-white" : "text-primary")} />
+            )}
+          </div>
+          <div>
+            <h3 className="font-medium text-foreground">{source.name}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isUploading
+                ? `Uploading... (${uploadedCount} uploaded)`
+                : isDragActive
+                  ? "Drop files here..."
+                  : source.description}
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <FileText className="h-3 w-3" />
+            PDF, TXT, DOCX
+          </div>
         </div>
       </div>
     </div>

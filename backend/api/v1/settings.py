@@ -24,7 +24,8 @@ class ProfileResponse(BaseModel):
     last_name: Optional[str] = None
     plan: str = "free"
     theme: str = "system"
-    has_team: bool = False  # Task 3: Invite Loophole Fix
+    has_team: bool = False
+    role: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -127,12 +128,17 @@ async def get_profile(user_id: str = Depends(get_current_user)):
         # TASK 3: Check if user is in any team
         # We assume if they are in a team, they completed onboarding or were invited.
         team_check = supabase.table("team_members")\
-            .select("id")\
+            .select("id, role")\
             .eq("user_id", user_id)\
             .limit(1)\
             .execute()
             
-        profile_data["has_team"] = len(team_check.data) > 0
+        if len(team_check.data) > 0:
+            profile_data["has_team"] = True
+            profile_data["role"] = team_check.data[0].get("role")
+        else:
+            profile_data["has_team"] = False
+            profile_data["role"] = None
         
         return profile_data
         

@@ -12,6 +12,7 @@ export interface UserProfile {
     plan: 'free' | 'pro' | 'enterprise';
     theme: 'light' | 'dark' | 'system';
     has_team?: boolean;
+    role?: 'admin' | 'editor' | 'viewer';
     created_at: string;
     updated_at: string;
 }

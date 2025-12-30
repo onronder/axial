@@ -58,7 +58,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Document } from "@/types";
 import { useDocuments } from "@/hooks/useDocuments";
-import { useTeamMembers } from "@/hooks/useTeamMembers";
+import { useProfile } from "@/hooks/useProfile";
 import { StorageMeter } from "@/components/documents/StorageMeter";
 import { cn } from "@/lib/utils";
 
@@ -112,8 +112,9 @@ const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
 
 export function DocumentsTable() {
   const { documents, isLoading: isRefreshing, refresh: handleRefresh, deleteDocument } = useDocuments();
-  const { currentMember } = useTeamMembers();
-  const isViewer = currentMember?.role === 'viewer';
+
+  const { profile } = useProfile();
+  const isViewer = profile?.role === 'viewer';
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<SortField>("addedAt");
