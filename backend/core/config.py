@@ -85,14 +85,23 @@ class Settings(BaseSettings):
     # Payment Integration (Polar.sh)
     # =========================================================================
     
+    # API Key for Polar operations (e.g. creating checkout sessions)
+    POLAR_ACCESS_TOKEN: Optional[str] = None
+    POLAR_ORGANIZATION_ID: Optional[str] = None
+
     # Webhook secret for signature verification
     POLAR_WEBHOOK_SECRET: Optional[str] = None
     
     # Product ID mappings (Polar Product UUID -> Internal Plan Name)
     # These are placeholders - replace with real Polar product IDs in .env
-    POLAR_STARTER_PRODUCT_ID: Optional[str] = None
-    POLAR_PRO_PRODUCT_ID: Optional[str] = None
-    POLAR_ENTERPRISE_PRODUCT_ID: Optional[str] = None
+    POLAR_PRODUCT_ID_STARTER_MONTHLY: Optional[str] = None
+    POLAR_PRODUCT_ID_PRO_MONTHLY: Optional[str] = None
+    POLAR_PRODUCT_ID_ENTERPRISE: Optional[str] = None
+    
+    # Internal plan name constants
+    PLAN_STARTER: str = "starter"
+    PLAN_PRO: str = "pro"
+    PLAN_ENTERPRISE: str = "enterprise"
 
     # Pydantic V2 settings configuration
     model_config = SettingsConfigDict(
@@ -108,12 +117,12 @@ def get_polar_product_mapping() -> dict:
     Only includes products that are configured (not None).
     """
     mapping = {}
-    if settings.POLAR_STARTER_PRODUCT_ID:
-        mapping[settings.POLAR_STARTER_PRODUCT_ID] = "starter"
-    if settings.POLAR_PRO_PRODUCT_ID:
-        mapping[settings.POLAR_PRO_PRODUCT_ID] = "pro"
-    if settings.POLAR_ENTERPRISE_PRODUCT_ID:
-        mapping[settings.POLAR_ENTERPRISE_PRODUCT_ID] = "enterprise"
+    if settings.POLAR_PRODUCT_ID_STARTER_MONTHLY:
+        mapping[settings.POLAR_PRODUCT_ID_STARTER_MONTHLY] = settings.PLAN_STARTER
+    if settings.POLAR_PRODUCT_ID_PRO_MONTHLY:
+        mapping[settings.POLAR_PRODUCT_ID_PRO_MONTHLY] = settings.PLAN_PRO
+    if settings.POLAR_PRODUCT_ID_ENTERPRISE:
+        mapping[settings.POLAR_PRODUCT_ID_ENTERPRISE] = settings.PLAN_ENTERPRISE
     return mapping
 
 
