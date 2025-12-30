@@ -41,7 +41,7 @@ class SubscriptionService:
             # Some events might not have team_id (like generic product updates), ignore them safely.
             return {"status": "ignored", "reason": "no team_id in metadata"}
 
-        if event_type in ["subscription.created", "subscription.updated", "subscription.active"]:
+        if event_type in ["subscription.created", "subscription.updated", "subscription.active", "subscription.uncanceled"]:
             product_id = body.get("product_id")
             plan = settings.POLAR_PRODUCT_MAPPING.get(product_id, "free") if hasattr(settings, 'POLAR_PRODUCT_MAPPING') else "free"
             
