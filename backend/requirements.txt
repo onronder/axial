@@ -21,7 +21,6 @@ pydantic-settings==2.1.0
 
 # AI/LLM - LangChain 0.1.x ecosystem (all must be compatible)
 langchain==0.1.0
-langchain-core>=0.1.7,<0.2
 langchain-community==0.0.9
 langchain-openai==0.0.2
 langchain-text-splitters==0.0.1
