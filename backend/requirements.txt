@@ -1,76 +1,56 @@
-# FastAPI Core
+# --- CORE FRAMEWORK ---
 fastapi==0.109.2
 uvicorn==0.27.1
-starlette==0.36.3
-python-multipart==0.0.9
-
-# Database
 sqlalchemy==2.0.27
 alembic==1.13.1
-psycopg2-binary==2.9.9
-sqlmodel==0.0.16
-
-# Authentication
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-pyjwt>=2.8.0
-
-# Pydantic (pydantic-settings 2.1.0 requires pydantic>=2.3.0)
 pydantic==2.6.1
 pydantic-settings==2.1.0
 
-# AI/LLM - LangChain 0.1.x ecosystem (all must be compatible)
-langchain==0.1.0
-langchain-community==0.0.9
-langchain-openai==0.0.2
-langchain-text-splitters==0.0.1
-langchain-groq==0.0.1
-tiktoken>=0.5.2,<0.6.0
-
-# AI/LLM - Providers
-openai==1.12.0
-groq
-
-# Supabase (controls httpx version to <0.28)
+# --- AUTH & DB ---
+# Supabase 2.10.0 is stable and manages httpx version well
 supabase==2.10.0
-
-# Task Queue
-celery==5.3.6
+psycopg2-binary==2.9.9
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
 redis==5.0.1
+sqlmodel==0.0.16
 
-# Email
+# --- AI & LANGCHAIN ECOSYSTEM (UNPINNED) ---
+# We use >= to let pip resolve the complex dependency graph automatically
+openai>=1.12.0
+langchain>=0.1.10
+langchain-openai>=0.0.5
+langchain-community>=0.0.20
+langchain-groq
+groq
+tiktoken>=0.5.2
+
+# --- UTILITIES ---
+celery==5.3.6
 resend==0.7.0
-
-# Document Parsing
+sentry-sdk==1.40.3
+async-lru==2.0.4
+tenacity==8.2.3
+python-docx==1.1.0
+PyPDF2==3.0.1
+beautifulsoup4==4.12.3
 unstructured==0.11.0
 pdfminer.six==20231228
 docx2txt==0.8
-python-docx==1.1.0
-PyPDF2==3.0.1
+markdown==3.5.2
 python-magic==0.4.27
-
-# Web Scraping
-beautifulsoup4==4.12.3
-trafilatura
-lxml
-ultimate-sitemap-parser
-youtube-transcript-api
-
-# Google APIs
+email-validator==2.1.0.post1
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
-
-# Utilities
-markdown==3.5.2
-email-validator==2.1.0.post1
 cryptography
 jinja2
-async-lru==2.0.4
-tenacity==8.2.3
-
-# Monitoring
-sentry-sdk==1.40.3
-
-# Rate Limiting
 slowapi
+trafilatura
+ultimate-sitemap-parser
+youtube-transcript-api
+lxml
+
+# NOTE: polar-sdk is REMOVED to avoid httpx conflicts. 
+# We use raw HTTP requests for billing.
