@@ -55,6 +55,15 @@ class UserIntegration(SQLModel, table=True):
 # Pydantic Response Schemas (API)
 # =============================================================================
 
+class User(BaseModel):
+    """User model for dependency injection."""
+    id: str
+
+class TeamMember(BaseModel):
+    """Team member model."""
+    team_id: UUID
+
+
 class ConnectorDefinitionResponse(BaseModel):
     """API response for a connector definition."""
     id: str

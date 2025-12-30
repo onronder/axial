@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+from typing import Dict, Any, Optional
 
 
 class Settings(BaseSettings):
@@ -35,73 +35,45 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_DEFAULT: str = "50/minute"
     
-    # =========================================================================
-    # AI & Multi-Model Configuration
-    # =========================================================================
-    
-    # Primary Model (High Intelligence - GPT-4o)
-    # Used for: complex reasoning, summarization, final answers
+    # AI & Multi-Model
     PRIMARY_MODEL_PROVIDER: str = "openai"
     PRIMARY_MODEL_NAME: str = "gpt-4o"
-    
-    # Secondary Model (High Speed/Low Cost - Llama 3.3 70B via Groq)
-    # Used for: fast responses, bulk processing, cost optimization
     SECONDARY_MODEL_PROVIDER: str = "groq"
     SECONDARY_MODEL_NAME: str = "llama-3.3-70b-versatile"
-    
-    # Guardrail Model (Ultra Fast - Llama 3.1 8B via Groq)
-    # Used for: input validation, classification, quick checks
     GUARDRAIL_MODEL_PROVIDER: str = "groq"
     GUARDRAIL_MODEL_NAME: str = "llama-3.1-8b-instant"
-    
-    # Groq API Key (for secondary/guardrail models)
-    # Groq API Key (for secondary/guardrail models)
-    # RAG Settings
-    RAG_SIMILARITY_THRESHOLD: float = 0.70  # Minimum cosine similarity for context injection
+    RAG_SIMILARITY_THRESHOLD: float = 0.70
 
-    # =========================================================================
-    # COMMERCIALIZATION & TIER LIMITS (Phase 6)
-    # =========================================================================
-    
-    # Model Abstraction (Internal Mapping)
-    # Frontend sends "fast" -> Maps to SECONDARY_MODEL_NAME (e.g. Llama/Mini)
-    # Frontend sends "smart" -> Maps to PRIMARY_MODEL_NAME (e.g. GPT-4o)
+    # COMMERCIALIZATION
     MODEL_ALIAS_FAST: str = "fast"
     MODEL_ALIAS_SMART: str = "smart"
-    
-    # Storage Limits (File Counts)
     LIMITS_STARTER_FILES: int = 50
     LIMITS_PRO_FILES: int = 2000
-    
-    # Storage Limits (Total Size in MB) - Enforcement logic needs bytes (MB * 1024 * 1024)
     LIMITS_STARTER_MB: int = 100
-    LIMITS_PRO_MB: int = 10240  # 10 GB
-    
-    # Marketing & Upsell Messages
-    MSG_UPSELL_SMART: str = "⚡ This answer used 'Axio Fast'. Upgrade to Pro for 'Axio Pro' intelligence."
-    MSG_UPSELL_FILES: str = "🔒 You have reached your file limit. Upgrade to Pro for 10GB storage."
-    
-    # =========================================================================
-    # Payment Integration (Polar.sh)
-    # =========================================================================
-    
-    # API Key for Polar operations (e.g. creating checkout sessions)
-    POLAR_ACCESS_TOKEN: Optional[str] = None
-    POLAR_ORGANIZATION_ID: Optional[str] = None
+    LIMITS_PRO_MB: int = 10240
+    MSG_UPSELL_SMART: str = "⚡ Upgrade to Pro."
+    MSG_UPSELL_FILES: str = "🔒 Upgrade to Pro."
 
-    # Webhook secret for signature verification
-    POLAR_WEBHOOK_SECRET: Optional[str] = None
+    # POLAR.SH CONFIGURATION
+    POLAR_ACCESS_TOKEN: str = ""
+    POLAR_WEBHOOK_SECRET: str = ""
+    POLAR_ORGANIZATION_ID: str = ""
+    POLAR_PRODUCT_ID_STARTER_MONTHLY: str = ""
+    POLAR_PRODUCT_ID_PRO_MONTHLY: str = ""
+    POLAR_PRODUCT_ID_ENTERPRISE: str = ""
     
-    # Product ID mappings (Polar Product UUID -> Internal Plan Name)
-    # These are placeholders - replace with real Polar product IDs in .env
-    POLAR_PRODUCT_ID_STARTER_MONTHLY: Optional[str] = None
-    POLAR_PRODUCT_ID_PRO_MONTHLY: Optional[str] = None
-    POLAR_PRODUCT_ID_ENTERPRISE: Optional[str] = None
-    
-    # Internal plan name constants
+    # Deprecated fields but kept for compat just in case
     PLAN_STARTER: str = "starter"
     PLAN_PRO: str = "pro"
     PLAN_ENTERPRISE: str = "enterprise"
+
+    @property
+    def POLAR_PRODUCT_MAPPING(self) -> Dict[str, str]:
+        return {
+            self.POLAR_PRODUCT_ID_STARTER_MONTHLY: "starter",
+            self.POLAR_PRODUCT_ID_PRO_MONTHLY: "pro",
+            self.POLAR_PRODUCT_ID_ENTERPRISE: "enterprise",
+        }
 
     # Pydantic V2 settings configuration
     model_config = SettingsConfigDict(

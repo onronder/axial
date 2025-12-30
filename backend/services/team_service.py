@@ -314,6 +314,29 @@ class TeamService:
             # On error, fail open but log
             return {"allowed": True, "reason": "error", "plan": "free", "error": str(e)}
     
+    async def get_user_team_member(self, user_id: str) -> Optional[Any]:
+        """
+        Get team member object for billing logic.
+        Returns a TeamMember-like object with team_id.
+        """
+        try:
+            supabase = get_supabase()
+            response = supabase.table("team_members").select(
+                "team_id, member_user_id"
+            ).eq("member_user_id", user_id).limit(1).execute()
+            
+            if response.data:
+                from models import TeamMember
+                data = response.data[0]
+                return TeamMember(
+                    team_id=data["team_id"],
+                    member_user_id=data["member_user_id"]
+                )
+            return None
+        except Exception as e:
+            logger.error(f"[TeamService] get_user_team_member failed: {e}")
+            return None
+
     async def get_user_team(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Get the team a user belongs to.
