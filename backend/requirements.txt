@@ -1,48 +1,77 @@
+# FastAPI Core
 fastapi==0.109.2
 uvicorn==0.27.1
+starlette==0.36.3
+python-multipart==0.0.9
+
+# Database
 sqlalchemy==2.0.27
 alembic==1.13.1
 psycopg2-binary==2.9.9
+sqlmodel==0.0.16
+
+# Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
+pyjwt>=2.8.0
+
+# Pydantic (pydantic-settings 2.1.0 requires pydantic>=2.3.0)
 pydantic==2.6.1
 pydantic-settings==2.1.0
+
+# AI/LLM - LangChain 0.1.x ecosystem (all must be compatible)
+langchain==0.1.0
+langchain-core>=0.1.7,<0.2
+langchain-community==0.0.9
+langchain-openai==0.0.2
+langchain-text-splitters==0.0.1
+langchain-groq==0.0.1
+tiktoken>=0.5.2,<0.6.0
+
+# AI/LLM - Providers
 openai==1.12.0
+groq
+
+# Supabase (controls httpx version to <0.28)
+supabase==2.10.0
+
+# Task Queue
 celery==5.3.6
 redis==5.0.1
-# CORE: Supabase defines the httpx version (likely 0.27.x)
-supabase==2.10.0
-# NOTE: polar-sdk REMOVED to fix build
-sqlmodel==0.0.16
-langchain==0.1.0
-langchain-openai==0.0.2
-langchain-community==0.0.9
-langchain-text-splitters
+
+# Email
 resend==0.7.0
+
+# Document Parsing
 unstructured==0.11.0
 pdfminer.six==20231228
 docx2txt==0.8
-markdown==3.5.2
-python-magic==0.4.27
-email-validator==2.1.0.post1
-# Extras
 python-docx==1.1.0
 PyPDF2==3.0.1
+python-magic==0.4.27
+
+# Web Scraping
 beautifulsoup4==4.12.3
-tiktoken>=0.5.2,<0.6.0
-sentry-sdk==1.40.3
-async-lru==2.0.4
-tenacity==8.2.3
+trafilatura
+lxml
+ultimate-sitemap-parser
+youtube-transcript-api
+
+# Google APIs
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
+
+# Utilities
+markdown==3.5.2
+email-validator==2.1.0.post1
 cryptography
 jinja2
+async-lru==2.0.4
+tenacity==8.2.3
+
+# Monitoring
+sentry-sdk==1.40.3
+
+# Rate Limiting
 slowapi
-trafilatura
-ultimate-sitemap-parser
-youtube-transcript-api
-lxml
-groq
-langchain-groq
