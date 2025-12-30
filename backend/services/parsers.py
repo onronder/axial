@@ -15,8 +15,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 
-# LangChain imports (use langchain_text_splitters package)
-from langchain_text_splitters import (
+# LangChain imports (text_splitter moved to langchain package in newer versions)
+from langchain.text_splitter import (
     RecursiveCharacterTextSplitter,
     Language,
     MarkdownHeaderTextSplitter,
