@@ -75,7 +75,7 @@ async def handle_polar_webhook(request: Request):
         result = await subscription_service.handle_webhook_event(
             payload=raw_body,
             signature=signature,
-            parsed_payload=payload
+            data=payload
         )
         
         # Handle different result statuses

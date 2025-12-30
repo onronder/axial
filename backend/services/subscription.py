@@ -39,11 +39,11 @@ class SubscriptionService:
 
         if not team_id:
             # Some events might not have team_id (like generic product updates), ignore them safely.
-            return
+            return {"status": "ignored", "reason": "no team_id in metadata"}
 
         if event_type in ["subscription.created", "subscription.updated", "subscription.active"]:
             product_id = body.get("product_id")
-            plan = settings.POLAR_PRODUCT_MAPPING.get(product_id, "free")
+            plan = settings.POLAR_PRODUCT_MAPPING.get(product_id, "free") if hasattr(settings, 'POLAR_PRODUCT_MAPPING') else "free"
             
             supabase = get_supabase()
             
@@ -61,6 +61,7 @@ class SubscriptionService:
             
             team_service.invalidate_plan_cache(team_id)
             logger.info(f"SUCCESS: Team {team_id} plan updated to {plan}")
+            return {"status": "processed", "team_id": team_id, "plan": plan}
 
         elif event_type in ["subscription.canceled", "subscription.revoked"]:
             supabase = get_supabase()
@@ -70,5 +71,8 @@ class SubscriptionService:
             
             team_service.invalidate_plan_cache(team_id)
             logger.info(f"Team {team_id} subscription canceled")
+            return {"status": "processed", "team_id": team_id, "action": "canceled"}
+
+        return {"status": "acknowledged", "event_type": event_type}
 
 subscription_service = SubscriptionService()
