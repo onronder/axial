@@ -10,13 +10,16 @@ import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
 
 export function PaywallGuard({ children }: { children: React.ReactNode }) {
-    const { isPro, isLoading: isUsageLoading } = useUsage();
+    const { plan: currentPlan, isLoading: isUsageLoading } = useUsage();
     const { plans, isLoading: isPlansLoading } = usePlans();
     const { toast } = useToast();
     const [isCheckoutLoading, setIsCheckoutLoading] = useState<string | null>(null);
 
     // Global loading state
     const isLoading = isUsageLoading || isPlansLoading;
+
+    // Check if user is on pro or enterprise plan
+    const isPro = currentPlan === 'pro' || currentPlan === 'enterprise';
 
     if (isLoading) {
         return (
