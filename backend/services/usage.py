@@ -75,16 +75,19 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
     """
     supabase = get_supabase()
     
-    # Get user's plan and status from user_profiles
+    # Default values
+    plan = "free"
+    subscription_status = "active"
+    
+    # Get user's plan from user_profiles (subscription_status comes from subscriptions table)
     # Wrap in try/except to handle race condition where profile doesn't exist yet (PGRST116)
     try:
-        profile_result = supabase.table("user_profiles").select("plan, subscription_status").eq(
+        profile_result = supabase.table("user_profiles").select("plan").eq(
             "user_id", str(user_id)
         ).single().execute()
         
         if profile_result.data:
             plan = profile_result.data.get("plan", "free")
-            subscription_status = profile_result.data.get("subscription_status", "active")
     except Exception as e:
         error_msg = str(e)
         # Check specifically for PGRST116 (0 rows) or empty result error
@@ -103,6 +106,26 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
         # Re-raise other unexpected errors
         logger.error(f"Error fetching user profile for {user_id}: {e}")
         raise e
+    
+    # Get subscription status from subscriptions table via team membership
+    try:
+        # First get user's team_id from team_members
+        team_result = supabase.table("team_members").select("team_id").eq(
+            "user_id", str(user_id)
+        ).limit(1).execute()
+        
+        if team_result.data:
+            team_id = team_result.data[0].get("team_id")
+            # Then get subscription status for that team
+            sub_result = supabase.table("subscriptions").select("status").eq(
+                "team_id", str(team_id)
+            ).limit(1).execute()
+            
+            if sub_result.data:
+                subscription_status = sub_result.data[0].get("status", "active")
+    except Exception as e:
+        # Non-critical - default to active if we can't fetch subscription
+        logger.warning(f"Could not fetch subscription status for {user_id}: {e}")
     
     # Calculate usage from documents table (accurate, not cached)
     # Using raw SQL via RPC for aggregate functions
