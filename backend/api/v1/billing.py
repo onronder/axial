@@ -69,3 +69,62 @@ async def create_checkout_session(
 async def create_portal_session(current_user: str = Depends(get_current_user)):
     # Direct link to Polar Customer Portal (simplest integration)
     return {"url": "https://polar.sh/settings"}
+
+
+@router.get("/plans")
+async def get_plans():
+    """
+    Fetch available plans and prices directly from Polar.
+    This ensures prices are always in sync with Polar dashboard.
+    No authentication required - pricing is public.
+    """
+    if not settings.POLAR_ACCESS_TOKEN or not settings.POLAR_ORGANIZATION_ID:
+        logger.error("Polar configuration missing")
+        raise HTTPException(500, "Billing configuration error")
+
+    # Fetch products from Polar API
+    polar_url = f"https://api.polar.sh/v1/products?organization_id={settings.POLAR_ORGANIZATION_ID}"
+    headers = {
+        "Authorization": f"Bearer {settings.POLAR_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(polar_url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Transform Polar response into frontend-friendly format
+            plans = []
+            for product in data.get("items", []):
+                # Get the first price (usually monthly)
+                prices = product.get("prices", [])
+                price_info = prices[0] if prices else {}
+                
+                # Extract price amount (Polar returns cents)
+                amount_cents = price_info.get("price_amount", 0)
+                amount_dollars = amount_cents / 100 if amount_cents else 0
+                
+                plans.append({
+                    "id": product.get("id"),
+                    "name": product.get("name"),
+                    "description": product.get("description"),
+                    "price": amount_dollars,
+                    "currency": price_info.get("price_currency", "usd"),
+                    "interval": price_info.get("recurring_interval", "month"),
+                    "features": [b.get("description") for b in product.get("benefits", [])],
+                    "is_highlighted": product.get("is_highlighted", False),
+                })
+            
+            # Sort by price
+            plans.sort(key=lambda x: x["price"])
+            
+            return {"plans": plans}
+            
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Polar API Error: {e.response.text}")
+            raise HTTPException(500, "Failed to fetch plans")
+        except Exception as e:
+            logger.error(f"Unexpected error fetching plans: {str(e)}")
+            raise HTTPException(500, "Failed to fetch plans")
