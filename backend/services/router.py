@@ -27,6 +27,7 @@ from typing import Literal
 
 from core.config import settings
 from core.quotas import get_plan_limits
+# Refactored to use get_plan_limits exclusively
 
 logger = logging.getLogger(__name__)
 
