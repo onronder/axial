@@ -4,6 +4,7 @@ import { ErrorBoundary, FallbackProps } from "react-error-boundary";
 import { ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import * as Sentry from "@sentry/nextjs";
 
 interface AppErrorBoundaryProps {
     children: ReactNode;
@@ -35,7 +36,6 @@ function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
     );
 }
 
-import * as Sentry from "@sentry/nextjs";
 
 /**
  * Reusable error boundary wrapper for isolating component failures.
@@ -94,6 +94,14 @@ export function SidebarErrorBoundary({ children }: { children: ReactNode }) {
     return (
         <ErrorBoundary
             FallbackComponent={MinimalFallback}
+            onError={(error, info) => {
+                Sentry.captureException(error, {
+                    extra: {
+                        componentStack: info.componentStack,
+                        boundaryName: "SidebarErrorBoundary",
+                    }
+                });
+            }}
             onReset={() => window.location.reload()}
         >
             {children}

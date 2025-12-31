@@ -48,17 +48,15 @@ class WebConnector(BaseConnector):
     async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
         """
         List previously crawled URLs.
-        
-        Future: Query web_crawl_configs table to show crawl history.
+        Queries web_crawl_configs table to show crawl history.
         """
         try:
             from core.db import get_supabase
             supabase = get_supabase()
             
             # Query crawl history from DB
-            response = supabase.table("web_crawl_configs").select(
-                "id, root_url, status, crawl_type, total_pages_found, created_at"
-            ).eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
+            # Note: supabase-py client is synchronous, so .execute() blocks.
+            response = supabase.table("web_crawl_configs").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
             
             items = []
             if response.data:
@@ -71,7 +69,8 @@ class WebConnector(BaseConnector):
                             "status": config.get("status", "unknown"),
                             "pages_found": config.get("total_pages_found", 0),
                             "crawl_type": config.get("crawl_type", "single"),
-                            "created_at": config.get("created_at")
+                            "created_at": config.get("created_at"),
+                            "depth": config.get("depth", 1)
                         }
                     ))
             

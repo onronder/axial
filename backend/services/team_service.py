@@ -666,10 +666,11 @@ class TeamService:
             
             if response.data:
                 member = response.data[0]
+                invite_token = member["id"]  # Use the durable Member UUID as the token
                 logger.info(f"[TeamService] Invited {email} to team {team_id[:8]}...")
                 
-                # Send invite email (through email service)
-                await self._send_invite_email(email, name or email.split("@")[0], team["name"], invite_token)
+                # Send invite email
+                await self.send_invite_email(email, name or email.split("@")[0], team["name"], invite_token)
                 
                 return {
                     "success": True,
@@ -683,7 +684,7 @@ class TeamService:
             logger.error(f"[TeamService] invite_member failed: {e}")
             return {"success": False, "error": str(e), "code": "INTERNAL_ERROR"}
     
-    async def _send_invite_email(
+    async def send_invite_email(
         self, 
         to_email: str, 
         name: str, 
@@ -692,31 +693,66 @@ class TeamService:
     ) -> bool:
         """
         Send team invitation email.
-        
-        For MVP, this just logs the invite link.
         """
         try:
-            # Construct invite link
             from core.config import settings
+            # Construct invite link using the token (which is the member_id)
             invite_link = f"{settings.APP_URL}/invite/{invite_token}"
-            
-            logger.info(
-                f"[TeamService] 📧 INVITE EMAIL (MVP Console Output)\n"
-                f"  To: {to_email}\n"
-                f"  Name: {name}\n"
-                f"  Team: {team_name}\n"
-                f"  Link: {invite_link}"
-            )
             
             # Send actual email
             from services.email import email_service
-            email_service.send_team_invite(to_email, name, team_name, invite_link)
+            email_sent = await email_service.send_team_invite(
+                to_email=to_email,
+                invite_link=invite_link,
+                team_name=team_name
+            )
+            
+            if not email_sent:
+                logger.warning(f"Failed to send invite email to {to_email}, but invite record was created.")
             
             return True
             
         except Exception as e:
-            logger.warning(f"[TeamService] _send_invite_email failed: {e}")
+            logger.warning(f"[TeamService] send_invite_email failed: {e}")
             return False
+
+    async def resend_invite(self, member_id: str, owner_id: str) -> Dict[str, Any]:
+        """
+        Resend invitation to a pending member.
+        """
+        try:
+            supabase = get_supabase()
+            
+            # Verify member exists and belongs to user
+            response = supabase.table("team_members").select(
+                "*, teams(name)"
+            ).eq("id", member_id).eq("owner_user_id", owner_id).eq("status", "pending").execute()
+            
+            if not response.data:
+                return {"success": False, "error": "Pending member not found"}
+            
+            member = response.data[0]
+            team_name = member.get("teams", {}).get("name", "Axial Team")
+            
+            # Update invited_at
+            from datetime import datetime, timezone
+            supabase.table("team_members").update({
+                "invited_at": datetime.now(timezone.utc).isoformat()
+            }).eq("id", member_id).execute()
+            
+            # Send email
+            await self.send_invite_email(
+                to_email=member["email"],
+                name=member["name"],
+                team_name=team_name,
+                invite_token=member["id"]
+            )
+            
+            return {"success": True}
+            
+        except Exception as e:
+            logger.error(f"[TeamService] resend_invite failed: {e}")
+            return {"success": False, "error": str(e)}
 
     async def bulk_invite_csv(
         self, 

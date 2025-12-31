@@ -406,31 +406,15 @@ async def resend_invitation(
     user_id: str = Depends(get_current_user)
 ):
     """Resend invitation to a pending member."""
-    supabase = get_supabase()
+    # Delegate to service which handles logic and email
+    result = await team_service.resend_invite(member_id, user_id)
     
-    try:
-        # Verify member exists and belongs to user
-        response = supabase.table("team_members")\
-            .select("*")\
-            .eq("id", member_id)\
-            .eq("owner_user_id", user_id)\
-            .eq("status", "pending")\
-            .execute()
-        
-        if not response.data or len(response.data) == 0:
-            raise HTTPException(status_code=404, detail="Pending member not found")
-        
-        # Update invited_at timestamp
-        supabase.table("team_members")\
-            .update({"invited_at": datetime.now(timezone.utc).isoformat()})\
-            .eq("id", member_id)\
-            .execute()
-        
-        # In a real implementation, send email here
-        
-        return {"status": "success", "message": "Invitation resent"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to resend: {str(e)}")
+    if not result.get("success"):
+        # Map service errors to HTTP codes
+        error = result.get("error", "Unknown error")
+        if error == "Pending member not found":
+            raise HTTPException(status_code=404, detail=error)
+        else:
+            raise HTTPException(status_code=500, detail=error)
+    
+    return {"status": "success", "message": "Invitation resent"}

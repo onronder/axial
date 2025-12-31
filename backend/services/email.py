@@ -233,49 +233,44 @@ class EmailService:
             return False
 
 
-    def send_team_invite(
+    async def send_team_invite(
         self,
         to_email: str,
-        name: str,
-        team_name: str,
-        invite_link: str
+        invite_link: str,
+        team_name: str
     ) -> bool:
         """
-        Send team invitation email.
-        
-        Args:
-            to_email: Invitation recipient
-            name: Invitee name
-            team_name: Name of the team
-            invite_link: Acceptance URL
-            
-        Returns:
-            True if sent successfully
+        Sends a team invitation email.
         """
         if not self.enabled:
             logger.debug("📧 Email not sent: service not enabled")
             return False
-            
+
         try:
+            # Render HTML template using established helper
+            # Note: User request allowed manual loading, but _render_template is safer/cleaner abstraction
+            # checking if template exists is handled inside _render_template
             html_content = self._render_template(
                 "team_invite.html",
-                name=name,
                 team_name=team_name,
                 invite_link=invite_link,
                 app_url=self.app_url
             )
             
             if not html_content:
+                # Fallback to plain text if template fails
                 html_content = f"""
-                <p>Hello {name},</p>
+                <p>Hello,</p>
                 <p>You have been invited to join the team <strong>{team_name}</strong> on Axio Hub.</p>
                 <p><a href="{invite_link}">Click here to join</a></p>
                 """
             
+            # Helper to wrap sync resend call if we wanted true async, but for now simple awaitable wrapper
+            # Use self.send_email equivalent logic
             params = {
                 "from": f"Axio Hub <{self.from_email}>",
                 "to": [to_email],
-                "subject": f"Invitation to join {team_name} on Axio Hub",
+                "subject": f"Invitation to join {team_name}",
                 "html": html_content,
             }
             
