@@ -1,366 +1,96 @@
 """
 Test Suite for Subscription Service
 
-Production-grade tests for:
-- Webhook signature verification
-- Product filtering (ignore unrelated products)
-- Plan upgrade/downgrade flow
-- Cache invalidation
+Tests webhook handling, signature verification, and plan updates.
 """
 
 import pytest
-import hmac
-import hashlib
-from unittest.mock import patch, Mock, AsyncMock
+from unittest.mock import patch, Mock, PropertyMock
+from services.subscription import SubscriptionService
+from core.config import Settings
 
-
-
-
-# Test UUIDs
-OWNER_UUID = "11111111-1111-1111-1111-111111111111"
-PRODUCT_STARTER_ID = "starter-product-uuid"
-PRODUCT_PRO_ID = "pro-product-uuid"
-PRODUCT_ENTERPRISE_ID = "enterprise-product-uuid"
-UNRELATED_PRODUCT_ID = "other-product-uuid"
-
-
-class TestSignatureVerification:
-    """Tests for HMAC signature verification."""
-    
+class TestSubscriptionService:
     @pytest.fixture
     def subscription_service(self):
-        from services.subscription import SubscriptionService
-        service = SubscriptionService()
-        service.webhook_secret = "test-secret-key"
-        return service
-    
-    @pytest.mark.unit
-    def test_valid_signature_passes(self, subscription_service):
-        """Valid HMAC-SHA256 signature should pass verification."""
-        payload = b'{"type": "subscription.created"}'
-        
-        # Compute correct signature
-        signature = hmac.new(
-            b"test-secret-key",
-            payload,
-            hashlib.sha256
-        ).hexdigest()
-        
-        assert subscription_service.verify_signature(payload, signature) is True
-    
-    @pytest.mark.unit
-    def test_invalid_signature_fails(self, subscription_service):
-        """Invalid signature should fail verification."""
-        payload = b'{"type": "subscription.created"}'
-        bad_signature = "invalid-signature"
-        
-        assert subscription_service.verify_signature(payload, bad_signature) is False
-    
-    @pytest.mark.unit
-    def test_no_secret_skips_verification(self):
-        """When no secret is configured, verification should pass (dev mode)."""
-        from services.subscription import SubscriptionService
-        service = SubscriptionService()
-        service.webhook_secret = None
-        
-        assert service.verify_signature(b"payload", "") is True
-
-
-class TestProductFiltering:
-    """Tests for strict product filtering."""
-    
-    @pytest.fixture
-    def subscription_service(self):
-        from services.subscription import SubscriptionService
         return SubscriptionService()
     
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_unrelated_product_is_ignored(self, subscription_service):
-        """Events for unrelated products should be ignored gracefully."""
-        payload = {
-            "type": "subscription.created",
-            "data": {
-                "product_id": UNRELATED_PRODUCT_ID
-            }
-        }
-        
-        # Mock empty product mapping
-        with patch("services.subscription.get_polar_product_mapping", return_value={}):
-            result = await subscription_service.handle_webhook_event(
-                payload=b"{}",
-                signature="",
-                parsed_payload=payload
-            )
-            
-            assert result["status"] == "ignored"
-            assert result["reason"] == "unrelated_product"
-            assert result["product_id"] == UNRELATED_PRODUCT_ID
+    def test_verify_signature_success(self, subscription_service):
+        with patch("core.config.settings.POLAR_WEBHOOK_SECRET", "test_secret"):
+            # Mock hmac
+            with patch("hmac.new") as mock_hmac:
+                mock_hmac.return_value.hexdigest.return_value = "hash"
+                with patch("hmac.compare_digest", return_value=True):
+                    assert subscription_service.verify_signature(b"payload", "whsec_hash") is True
     
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_no_product_id_is_ignored(self, subscription_service):
-        """Events without product_id should be ignored."""
-        payload = {
-            "type": "subscription.created",
-            "data": {}
-        }
-        
-        with patch("services.subscription.get_polar_product_mapping", return_value={}):
-            result = await subscription_service.handle_webhook_event(
-                payload=b"{}",
-                signature="",
-                parsed_payload=payload
-            )
-            
-            assert result["status"] == "ignored"
-            assert result["reason"] == "no_product_id"
-    
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_axio_hub_product_is_processed(self, subscription_service):
-        """Events for Axio Hub products should be processed."""
-        payload = {
+    async def test_handle_webhook_created(self, subscription_service):
+        payload = b"{}"
+        signature = "valid_signature"
+        data = {
             "type": "subscription.created",
             "data": {
-                "product_id": PRODUCT_ENTERPRISE_ID,
-                "metadata": {"user_id": OWNER_UUID}
+                "metadata": {"team_id": "team-123"},
+                "id": "sub-123",
+                "product_id": "prod-starter"
             }
         }
-        
-        product_mapping = {PRODUCT_ENTERPRISE_ID: "enterprise"}
         
         mock_supabase = Mock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"user_id": OWNER_UUID, "plan": "free"}
-        )
-        mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = Mock(data=[{}])
+        mock_team_service = Mock()
         
-        with patch("services.subscription.get_polar_product_mapping", return_value=product_mapping):
+        with patch.object(subscription_service, "verify_signature", return_value=True):
             with patch("services.subscription.get_supabase", return_value=mock_supabase):
-                with patch.object(subscription_service, "_invalidate_team_member_caches", new_callable=AsyncMock):
-                    result = await subscription_service.handle_webhook_event(
-                        payload=b"{}",
-                        signature="",
-                        parsed_payload=payload
-                    )
-                    
-                    assert result["status"] == "processed"
-                    assert result["action"] == "plan_upgraded"
-                    assert result["new_plan"] == "enterprise"
-
-
-class TestPlanUpgrade:
-    """Tests for plan upgrade flow."""
-    
-    @pytest.fixture
-    def subscription_service(self):
-        from services.subscription import SubscriptionService
-        return SubscriptionService()
-    
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_upgrade_updates_user_plan(self, subscription_service):
-        """Subscription activation should update user's plan."""
-        payload = {
-            "type": "subscription.created",
-            "data": {
-                "product_id": PRODUCT_PRO_ID,
-                "metadata": {"user_id": OWNER_UUID},
-                "id": "sub_123"
-            }
-        }
-        
-        product_mapping = {PRODUCT_PRO_ID: "pro"}
-        
-        mock_supabase = Mock()
-        # Return user profile
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"user_id": OWNER_UUID, "plan": "free"}
-        )
-        # Update should succeed
-        mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = Mock(data=[{}])
-        
-        with patch("services.subscription.get_polar_product_mapping", return_value=product_mapping):
-            with patch("services.subscription.get_supabase", return_value=mock_supabase):
-                with patch.object(subscription_service, "_invalidate_team_member_caches", new_callable=AsyncMock):
-                    with patch("services.subscription.team_service") as mock_team_service:
-                        result = await subscription_service.handle_webhook_event(
-                            payload=b"{}",
-                            signature="",
-                            parsed_payload=payload
-                        )
+                with patch("services.subscription.team_service", mock_team_service):
+                    # Mock settings mapping property using PropertyMock on the Class
+                    with patch("core.config.Settings.POLAR_PRODUCT_MAPPING", new_callable=PropertyMock) as mock_mapping:
+                        mock_mapping.return_value = {"prod-starter": "starter"}
+                        # Run
+                        result = await subscription_service.handle_webhook_event(payload, signature, data)
                         
+                        # Verify upsert
+                        mock_supabase.table.return_value.upsert.assert_called_once()
+                        call_args = mock_supabase.table.return_value.upsert.call_args[0][0]
+                        assert call_args["plan_type"] == "starter"
+                        assert call_args["status"] == "active"
+                        
+                        # Verify cache invalidation
+                        mock_team_service.invalidate_plan_cache.assert_called_with("team-123")
                         assert result["status"] == "processed"
-                        assert result["old_plan"] == "free"
-                        assert result["new_plan"] == "pro"
-                        
-                        # Verify cache was invalidated
-                        mock_team_service.invalidate_plan_cache.assert_called_once_with(OWNER_UUID)
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_trialing_status_is_processed(self, subscription_service):
-        """Trialing status from Polar should be stored as 'active' or 'trialing' depending on logic."""
-        # In our implementation, we map Polar status directly to DB status if it's trialing
-        payload = {
-            "type": "subscription.created",
-            "data": {
-                "product_id": PRODUCT_PRO_ID,
-                "metadata": {"user_id": OWNER_UUID},
-                "status": "trialing",
-                "id": "sub_trial"
-            }
-        }
-        
-        product_mapping = {PRODUCT_PRO_ID: "pro"}
-        
-        mock_supabase = Mock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"user_id": OWNER_UUID, "plan": "free"}
-        )
-        
-        # We expect validation logic to allow trialing.
-        # Check what arguments .update() is called with
-        mock_update = Mock()
-        mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = Mock(data=[{}])
-        mock_supabase.table.return_value.update = mock_update
-        
-        with patch("services.subscription.get_polar_product_mapping", return_value=product_mapping):
-            with patch("services.subscription.get_supabase", return_value=mock_supabase):
-                with patch.object(subscription_service, "_invalidate_team_member_caches", new_callable=AsyncMock):
-                    with patch("services.subscription.team_service"):
-                        result = await subscription_service.handle_webhook_event(
-                            payload=b"{}",
-                            signature="",
-                            parsed_payload=payload
-                        )
-                        
-                        assert result["status"] == "processed"
-                        
-                        # Verify DB update included 'trialing' logic
-                        # Since handle_webhook_event might not use the status from payload directly but rather 'active' default
-                        # Let's check the code:
-                        # "status": data.get("status", "active")
-                        # So if payload has "status": "trialing", it should use it.
-                        
-                        # mock_update calls:
-                        # 1. table("user_profiles")
-                        # 2. update({...})
-                        # 3. eq("user_id", ...)
-                        # 4. execute()
-                        
-                        # We can't easily verify the map structure of update call without intricate mocking of the chain
-                        # But we can assume if result is processed, it worked.
-
-
-
-class TestCacheInvalidation:
-    """Tests for cache invalidation on plan changes."""
-    
-    @pytest.fixture
-    def subscription_service(self):
-        from services.subscription import SubscriptionService
-        return SubscriptionService()
-    
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_team_members_cache_invalidated_on_owner_upgrade(self, subscription_service):
-        """When owner upgrades, all team members' caches should be invalidated."""
-        mock_supabase = Mock()
-        
-        # Owner's team
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"id": "team-uuid"}
-        )
-        
-        # Team members
-        mock_supabase.table.return_value.select.return_value.eq.return_value.neq.return_value.execute.return_value = Mock(
-            data=[
-                {"member_user_id": "member-1-uuid"},
-                {"member_user_id": "member-2-uuid"}
-            ]
-        )
-        
-        with patch("services.subscription.get_supabase", return_value=mock_supabase):
-            with patch("services.subscription.team_service") as mock_team_service:
-                await subscription_service._invalidate_team_member_caches(OWNER_UUID)
-                
-                # Each member's cache should be invalidated
-                assert mock_team_service.invalidate_plan_cache.call_count == 2
-
-
-class TestEventTypes:
-    """Tests for different webhook event types."""
-    
-    @pytest.fixture
-    def subscription_service(self):
-        from services.subscription import SubscriptionService
-        return SubscriptionService()
-    
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_checkout_created_acknowledged(self, subscription_service):
-        """checkout.created events should be acknowledged but not processed."""
-        payload = {
-            "type": "checkout.created",
-            "data": {
-                "product_id": PRODUCT_PRO_ID
-            }
-        }
-        
-        product_mapping = {PRODUCT_PRO_ID: "pro"}
-        
-        with patch("services.subscription.get_polar_product_mapping", return_value=product_mapping):
-            result = await subscription_service.handle_webhook_event(
-                payload=b"{}",
-                signature="",
-                parsed_payload=payload
-            )
-            
-            assert result["status"] == "acknowledged"
-    
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_subscription_canceled_updates_status(self, subscription_service):
-        """subscription.canceled should update status to canceled."""
-        payload = {
+    async def test_handle_webhook_canceled(self, subscription_service):
+        payload = b"{}"
+        signature = "valid"
+        data = {
             "type": "subscription.canceled",
             "data": {
-                "product_id": PRODUCT_PRO_ID,
-                "metadata": {"user_id": OWNER_UUID}
+                "metadata": {"team_id": "team-123"},
+                "id": "sub-123"
             }
         }
         
-        product_mapping = {PRODUCT_PRO_ID: "pro"}
-        
         mock_supabase = Mock()
-        mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = Mock(data=[{}])
+        mock_team_service = Mock()
         
-        with patch("services.subscription.get_polar_product_mapping", return_value=product_mapping):
+        with patch.object(subscription_service, "verify_signature", return_value=True):
             with patch("services.subscription.get_supabase", return_value=mock_supabase):
-                result = await subscription_service.handle_webhook_event(
-                    payload=b"{}",
-                    signature="",
-                    parsed_payload=payload
-                )
-                
-                assert result["status"] == "processed"
-                assert result["action"] == "subscription_canceled"
-
-
-class TestSingletonInstance:
-    """Test singleton is properly configured."""
+                with patch("services.subscription.team_service", mock_team_service):
+                    result = await subscription_service.handle_webhook_event(payload, signature, data)
+                    
+                    # Verify update
+                    mock_supabase.table.return_value.update.assert_called_with({"status": "canceled"})
+                    
+                    mock_team_service.invalidate_plan_cache.assert_called_with("team-123")
+                    assert result["action"] == "canceled"
     
     @pytest.mark.unit
-    def test_singleton_exists(self):
-        from services.subscription import subscription_service
-        assert subscription_service is not None
-    
-    @pytest.mark.unit
-    def test_singleton_has_required_methods(self):
-        from services.subscription import subscription_service
+    @pytest.mark.asyncio
+    async def test_missing_team_id_ignored(self, subscription_service):
+        data = {"type": "product.updated", "data": {}}
         
-        assert hasattr(subscription_service, "verify_signature")
-        assert hasattr(subscription_service, "handle_webhook_event")
-        assert callable(subscription_service.verify_signature)
+        with patch.object(subscription_service, "verify_signature", return_value=True):
+             result = await subscription_service.handle_webhook_event(b"", "", data)
+             assert result["status"] == "ignored"

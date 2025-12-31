@@ -8,11 +8,11 @@ File parsing is delegated to the centralized DocumentParser service.
 
 import logging
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
@@ -122,7 +122,7 @@ class DriveConnector(BaseConnector):
                 supabase.table("user_integrations").update({
                     "access_token": encrypt_token(creds.token),
                     "expires_at": creds.expiry.isoformat() if creds.expiry else None,
-                    "updated_at": datetime.utcnow().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }).eq("id", integration["id"]).execute()
                 
                 logger.info(f"🔄 [DriveConnector] ✅ Token refreshed and saved")
@@ -485,7 +485,7 @@ class DriveConnector(BaseConnector):
                         "file_id": file_meta['id'],
                         "mime_type": file_meta.get('mimeType', 'unknown')
                     },
-                    "created_at": datetime.utcnow().isoformat()
+                    "created_at": datetime.now(timezone.utc).isoformat()
                 }
                 
                 doc_res = supabase.table("documents").insert(parent_doc_data).execute()
@@ -530,8 +530,8 @@ class DriveConnector(BaseConnector):
         
         # 5. Update last_sync_at
         supabase.table("user_integrations").update({
-            "last_sync_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat()
+            "last_sync_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", integration_id).execute()
         
         logger.info(f"🔄 [DriveSync] ✅ Sync complete: {processed_files} files, {total_chunks} chunks")

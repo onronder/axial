@@ -7,7 +7,7 @@ These run in a separate worker process to avoid blocking the FastAPI server.
 
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from core.celery_app import celery_app
@@ -29,7 +29,7 @@ def update_job_status(supabase, job_id: str, status: str, processed_files: int =
     try:
         update_data = {
             "status": status,
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
         if processed_files is not None:
             update_data["processed_files"] = processed_files
@@ -77,7 +77,7 @@ def create_notification(
             "is_read": False,
             # Serialize dict as JSON string for extra_data column
             "extra_data": json.dumps(meta) if meta else None,
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
         
         supabase.table("notifications").insert(notification_data).execute()
@@ -642,7 +642,7 @@ def update_crawl_status(
 ):
     """Helper to update web crawl config status."""
     try:
-        update_data = {"updated_at": datetime.utcnow().isoformat()}
+        update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
         
         if status:
             update_data["status"] = status
@@ -655,7 +655,7 @@ def update_crawl_status(
         if error_message:
             update_data["error_message"] = error_message
         if status == "completed":
-            update_data["completed_at"] = datetime.utcnow().isoformat()
+            update_data["completed_at"] = datetime.now(timezone.utc).isoformat()
             
         supabase.table("web_crawl_configs").update(update_data).eq("id", crawl_id).execute()
         logger.info(f"🕸️ [Crawl:{crawl_id}] Status: {status}, Ingested: {pages_ingested}")
@@ -1188,7 +1188,7 @@ def check_scheduled_crawls(self):
     logger.info(f"⏰ [Scheduler:{task_id}] Checking for scheduled re-crawls...")
     
     supabase = get_supabase()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     try:
         # Find crawls that are due for refresh
@@ -1645,7 +1645,7 @@ def cleanup_old_jobs(self):
     Deletes jobs older than 30 days that are no longer active.
     """
     from core.db import get_supabase
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     
     task_id = self.request.id[:8] if self.request.id else "cleanup"
     logger.info(f"🧹 [Cleanup:{task_id}] Starting database cleanup...")
@@ -1654,7 +1654,7 @@ def cleanup_old_jobs(self):
         supabase = get_supabase()
         
         # Calculate cutoff date (30 days ago)
-        cutoff_date = (datetime.utcnow() - timedelta(days=30)).isoformat()
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         
         # Delete old completed jobs
         completed_result = supabase.table("ingestion_jobs")\

@@ -447,13 +447,44 @@ class TestEnterpriseGatekeeping:
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_invite_blocked_for_pro_plan(self, team_service):
-        """Pro plan users cannot invite team members (max_team_seats=1)."""
+        """Pro plan users cannot invite team members (max_team_seats=5, BUT checks seat limit later)."""
+        # Wait, Pro plan DOES allow team members (max_team_seats=5 > 1).
+        # So check_team_feature_access returns True.
+        # Then it calls get_user_team.
+        # Then check seat limit.
+        
+        # We want to test that it proceeds or fails at a later stage, OR update the test logic 
+        # if Pro plan is supposed to be blocked from *inviting* despite having seats?
+        # The code says: checks _check_team_feature_access (max_team_seats > 1).
+        # Pro has 5 seats. So it IS allowed to invite generally.
+        # This test title says "invite blocked for pro", which contradict Pro plan definition of having 5 seats.
+        # However, checking quotas.py: Pro has max_team_seats=5.
+        # So "test_invite_blocked_for_pro_plan" is likely invalid for Pro plan unless we overload seats.
+        # Let's change this test to "test_invite_allowed_for_pro_plan" or verify seat limit check.
+        
         mock_supabase = Mock()
         
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"plan": "pro"}
-        )
+        # 1. Profile check (Pro plan)
+        profile_mock = Mock(data={"plan": "pro"})
         
+        # 2. Team lookup
+        team_mock = Mock(data=[{ "team_id": "team-123", "role": "owner" }]) # For get_user_team member lookup
+        team_details_mock = Mock(data={ "id": "team-123", "owner_id": OWNER_UUID, "name": "Test Team" }) # For get_user_team details
+        
+        # 3. Member count check (Full team)
+        count_mock = Mock(count=5) # 5 members already
+        
+        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+            profile_mock, # check_team_feature_access -> user_profiles
+            team_details_mock # get_user_team -> teams
+        ]
+        
+        # For get_user_team -> team_members list
+        mock_supabase.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = team_mock
+        
+        # For _get_current_member_count
+        mock_supabase.table.return_value.select.return_value.eq.return_value.neq.return_value.execute.return_value = count_mock
+
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
             result = await team_service.invite_member(
                 owner_id=OWNER_UUID,
@@ -461,8 +492,9 @@ class TestEnterpriseGatekeeping:
                 role="viewer"
             )
             
+            # Should fail due to seat limit, NOT upgrade required
             assert result["success"] is False
-            assert result["code"] == "UPGRADE_REQUIRED"
+            assert result["code"] == "SEAT_LIMIT"
     
     @pytest.mark.unit
     @pytest.mark.asyncio

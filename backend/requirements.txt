@@ -53,4 +53,7 @@ youtube-transcript-api
 lxml
 
 # NOTE: polar-sdk is REMOVED to avoid httpx conflicts. 
-# We use raw HTTP requests for billing.
+# We use raw HTTP requests for billing.beautifulsoup4
+lxml
+youtube-transcript-api
+jinja2

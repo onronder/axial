@@ -7,6 +7,20 @@ import { IngestModal } from '@/components/ingest-modal'
 // Mock fetch
 global.fetch = vi.fn()
 
+// Mock useDataSources hook
+const mockConnect = vi.fn();
+const mockIsConnected = vi.fn();
+
+vi.mock('@/hooks/useDataSources', () => ({
+    useDataSources: () => ({
+        connect: mockConnect,
+        disconnect: vi.fn(),
+        isConnected: mockIsConnected,
+        loading: false,
+        integrations: []
+    })
+}));
+
 // Mock Supabase client
 vi.mock('@/lib/supabase/client', () => ({
     createClient: () => ({
@@ -50,15 +64,14 @@ describe('IngestModal', () => {
             expect(screen.getByPlaceholderText('https://example.com/article')).toBeInTheDocument()
         })
 
-        it('should switch to Notion tab and show token/page inputs', async () => {
+        it('should switch to Notion tab and show connect button', async () => {
             render(<IngestModal isOpen={true} onClose={mockOnClose} />)
 
             const notionTab = screen.getByText('Notion')
             await userEvent.click(notionTab)
 
-            expect(screen.getByText('Integration Token')).toBeInTheDocument()
-            expect(screen.getByText('Page ID')).toBeInTheDocument()
-            expect(screen.getByPlaceholderText('secret_xxxxxxxxxxxxx')).toBeInTheDocument()
+            expect(screen.getByText('Connect Notion Workspace')).toBeInTheDocument()
+            expect(screen.getByText('Connect Notion')).toBeInTheDocument()
         })
     })
 
@@ -80,7 +93,7 @@ describe('IngestModal', () => {
 
             await waitFor(() => {
                 expect(global.fetch).toHaveBeenCalledWith(
-                    '/api/py/api/v1/ingest',
+                    '/api/py/ingest',
                     expect.objectContaining({
                         method: 'POST',
                         headers: { 'Authorization': 'Bearer test-token' }
@@ -109,49 +122,28 @@ describe('IngestModal', () => {
     })
 
     describe('Notion Submission', () => {
-        it('should submit Notion page ID and token correctly', async () => {
+        it('should trigger connect when clicking Connect Notion', async () => {
             render(<IngestModal isOpen={true} onClose={mockOnClose} />)
 
-            // Switch to Notion tab
             const notionTab = screen.getByText('Notion')
             await userEvent.click(notionTab)
 
-            // Enter token
-            const tokenInput = screen.getByPlaceholderText('secret_xxxxxxxxxxxxx')
-            await userEvent.type(tokenInput, 'secret_test_token_12345')
+            const connectButton = screen.getByText('Connect Notion')
+            await userEvent.click(connectButton)
 
-            // Enter page ID
-            const pageIdInput = screen.getByPlaceholderText('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')
-            await userEvent.type(pageIdInput, 'abc123-def456-789')
-
-            // Submit
-            const submitButton = screen.getByText('Ingest')
-            await userEvent.click(submitButton)
-
-            await waitFor(() => {
-                expect(global.fetch).toHaveBeenCalled()
-            })
-
-            // Check FormData contains notion fields
-            const fetchCall = (global.fetch as Mock).mock.calls[0]
-            const formData = fetchCall[1].body as FormData
-            expect(formData.get('notion_page_id')).toBe('abc123-def456-789')
-            expect(formData.get('notion_token')).toBe('secret_test_token_12345')
+            expect(mockConnect).toHaveBeenCalledWith('notion')
         })
 
-        it('should show help tooltip when clicking help icon', async () => {
+        it('should show connected state when connected', async () => {
+            mockIsConnected.mockReturnValue(true) // Mock connected state
+
             render(<IngestModal isOpen={true} onClose={mockOnClose} />)
 
             const notionTab = screen.getByText('Notion')
             await userEvent.click(notionTab)
 
-            // Find and click help icon
-            const helpButton = screen.getByTitle('How to get a Notion Token?')
-            await userEvent.click(helpButton)
-
-            // Check help content is visible
-            expect(screen.getByText('How to get a Notion Token:')).toBeInTheDocument()
-            expect(screen.getByText(/notion.so\/my-integrations/)).toBeInTheDocument()
+            expect(screen.getByText('Notion Connected')).toBeInTheDocument()
+            expect(screen.getByText('Manage in Notion')).toBeInTheDocument()
         })
     })
 

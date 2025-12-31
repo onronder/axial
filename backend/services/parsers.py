@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 
 # LangChain imports (text_splitter moved to langchain package in newer versions)
-from langchain.text_splitter import (
+# LangChain imports (text_splitter moved to langchain_text_splitters)
+from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
     Language,
     MarkdownHeaderTextSplitter,

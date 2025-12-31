@@ -40,7 +40,7 @@ class TestModelTierEnforcement:
         
         assert result.provider == "groq"
         assert "llama" in result.model.lower()
-        assert "Basic tier" in result.reason
+        assert "Standard tier" in result.reason
     
     @pytest.mark.unit
     def test_basic_tier_blocks_gpt4o_for_complex_query(self, router):
@@ -115,13 +115,17 @@ class TestModelTierEnforcement:
     # =========================================================================
     
     @pytest.mark.unit
-    def test_premium_tier_always_returns_intelligence_model(self, router):
-        """PREMIUM tier should always get GPT-4o for best quality."""
-        result = router.select_model(plan="enterprise", complexity="SIMPLE")
+    def test_premium_tier_uses_hybrid_routing(self, router):
+        """PREMIUM tier should use Hybrid routing (Speed for Simple, Intelligence for Complex)."""
+        # Simple -> Speed
+        result_simple = router.select_model(plan="enterprise", complexity="SIMPLE")
+        assert result_simple.provider == "groq"
+        assert "llama" in result_simple.model.lower()
         
-        assert result.provider == "openai"
-        assert "gpt" in result.model.lower()
-        assert "premium" in result.reason.lower()
+        # Complex -> Intelligence
+        result_complex = router.select_model(plan="enterprise", complexity="COMPLEX")
+        assert result_complex.provider == "openai"
+        assert "gpt" in result_complex.model.lower()
     
     @pytest.mark.unit
     def test_premium_tier_complex_uses_gpt4o(self, router):
@@ -220,12 +224,12 @@ class TestGetModelForPlan:
         return LLMRouter()
     
     @pytest.mark.unit
-    def test_premium_plan_gets_intelligence_model(self, router):
-        """PREMIUM tier should get GPT-4o as default."""
+    def test_premium_plan_gets_default_model(self, router):
+        """get_model_for_plan defaults to speed model for efficiency."""
         result = router.get_model_for_plan("enterprise")
         
-        assert result.provider == "openai"
-        assert "gpt" in result.model.lower()
+        assert result.provider == "groq"
+        assert "llama" in result.model.lower()
     
     @pytest.mark.unit
     def test_non_premium_plan_gets_speed_model(self, router):

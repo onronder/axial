@@ -14,6 +14,8 @@ import os
 # Add backend to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+import services.email  # Ensure module is loaded for patching
+
 
 class TestEmailServiceInitialization:
     """Tests for EmailService initialization."""

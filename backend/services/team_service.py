@@ -599,7 +599,7 @@ class TeamService:
             PermissionError: If plan doesn't allow team management
         """
         import uuid
-        from datetime import datetime
+        from datetime import datetime, timezone
         
         # Step 1: Check plan allows team feature
         allowed, error_msg, limits = await self._check_team_feature_access(owner_id)
@@ -644,7 +644,7 @@ class TeamService:
             
             # Generate invite token
             invite_token = str(uuid.uuid4())
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             
             # Validate role
             if role not in ["admin", "editor", "viewer"]:

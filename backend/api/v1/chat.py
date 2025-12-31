@@ -14,7 +14,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import json
 import sentry_sdk
@@ -69,7 +69,7 @@ async def create_conversation(
     """Create a new conversation."""
     supabase = get_supabase()
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     data = {
         "user_id": user_id,
         "title": payload.title,
@@ -113,7 +113,7 @@ async def update_conversation(
     try:
         response = supabase.table("conversations").update({
             "title": payload.title,
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", conversation_id).eq("user_id", user_id).execute()
         
         if not response.data:
@@ -657,7 +657,7 @@ def save_messages(supabase, conversation_id: str, query: str, answer: str, sourc
         return None
     
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         # Save user message
         supabase.table("messages").insert({

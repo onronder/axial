@@ -86,6 +86,17 @@ class Settings(BaseSettings):
     PLAN_STARTER: str = "starter"
     PLAN_PRO: str = "pro"
     PLAN_ENTERPRISE: str = "enterprise"
+    
+    @property
+    def POLAR_PRODUCT_MAPPING(self) -> dict:
+        mapping = {}
+        if self.POLAR_PRODUCT_ID_STARTER_MONTHLY:
+            mapping[self.POLAR_PRODUCT_ID_STARTER_MONTHLY] = self.PLAN_STARTER
+        if self.POLAR_PRODUCT_ID_PRO_MONTHLY:
+            mapping[self.POLAR_PRODUCT_ID_PRO_MONTHLY] = self.PLAN_PRO
+        if self.POLAR_PRODUCT_ID_ENTERPRISE:
+            mapping[self.POLAR_PRODUCT_ID_ENTERPRISE] = self.PLAN_ENTERPRISE
+        return mapping
 
     model_config = SettingsConfigDict(
         env_file=[".env", "../.env"],

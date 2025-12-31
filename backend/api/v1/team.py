@@ -10,7 +10,7 @@ from typing import List, Optional
 from core.security import get_current_user
 from core.db import get_supabase
 from services.team_service import team_service
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -422,7 +422,7 @@ async def resend_invitation(
         
         # Update invited_at timestamp
         supabase.table("team_members")\
-            .update({"invited_at": datetime.utcnow().isoformat()})\
+            .update({"invited_at": datetime.now(timezone.utc).isoformat()})\
             .eq("id", member_id)\
             .execute()
         

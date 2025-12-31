@@ -144,6 +144,8 @@ class AccountCleanupService:
         except Exception as e:
             logger.error(f"❌ [DocCleanup] Failed for {doc_id}: {e}")
             raise e
+    
+    async def _cleanup_vectors(self, user_id: str) -> dict:
         """
         Delete all vector embeddings belonging to the user.
         

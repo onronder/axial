@@ -7,7 +7,7 @@ Tracks operation lifecycle events (success, warning, error, info).
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from core.security import get_current_user
 from core.db import get_supabase
@@ -52,7 +52,7 @@ def create_notification(
         "is_read": False,
         # Serialize dict to JSON string for extra_data column
         "extra_data": json.dumps(metadata) if metadata else None,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     try:

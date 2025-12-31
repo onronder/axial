@@ -120,8 +120,8 @@ async def ingest_document(
             "max_depth": max_depth,
             "respect_robots_txt": respect_robots,
             "status": "pending",
-            "created_at": dt.utcnow().isoformat(),
-            "updated_at": dt.utcnow().isoformat()
+            "created_at": dt.now(datetime.timezone.utc).isoformat(),
+            "updated_at": dt.now(datetime.timezone.utc).isoformat()
         }
         
         crawl_res = supabase.table("web_crawl_configs").insert(crawl_config_data).execute()
@@ -172,8 +172,8 @@ async def ingest_document(
             "total_files": 1,
             "processed_files": 0,
             "status": "pending",
-            "created_at": datetime.datetime.utcnow().isoformat(),
-            "updated_at": datetime.datetime.utcnow().isoformat()
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
         
         job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
@@ -281,8 +281,8 @@ async def ingest_document(
             "total_files": 1,
             "processed_files": 0,
             "status": "pending",
-            "created_at": datetime.datetime.utcnow().isoformat(),
-            "updated_at": datetime.datetime.utcnow().isoformat()
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
         
         job_res = supabase.table("ingestion_jobs").insert(job_data).execute()

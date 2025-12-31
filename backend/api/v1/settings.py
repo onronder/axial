@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from core.security import get_current_user
 from core.db import get_supabase
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -101,8 +101,8 @@ async def get_profile(user_id: str = Depends(get_current_user)):
                 "last_name": last_name,
                 "plan": "free",
                 "theme": "system",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
             
             # Handle potential race condition with trigger using upsert or ignoring error
@@ -158,7 +158,7 @@ async def update_profile(
     
     try:
         # Build update data (only include non-None fields)
-        update_data = {"updated_at": datetime.utcnow().isoformat()}
+        update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
         
         if payload.first_name is not None:
             update_data["first_name"] = payload.first_name
@@ -289,8 +289,8 @@ async def get_notification_settings(user_id: str = Depends(get_current_user)):
                 {
                     "user_id": user_id,
                     **setting,
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat()
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }
                 for setting in DEFAULT_NOTIFICATION_SETTINGS
             ]
@@ -319,7 +319,7 @@ async def update_notification_setting(
         response = supabase.table("user_notification_settings")\
             .update({
                 "enabled": payload.enabled,
-                "updated_at": datetime.utcnow().isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             })\
             .eq("user_id", user_id)\
             .eq("setting_key", payload.setting_key)\

@@ -11,7 +11,7 @@ from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
 from google_auth_oauthlib.flow import Flow
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 import logging
 import httpx
@@ -180,10 +180,10 @@ async def exchange_google_token(
         if creds.expiry:
             expires_at = creds.expiry.isoformat()
         else:
-            expires_at = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+            expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
     except Exception as e:
         logger.warning(f"🔐 [OAuth] Could not set expiry: {e}")
-        expires_at = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
     # 4. Upsert to user_integrations using the unique constraint
     # Encrypt tokens before storage for security
@@ -196,7 +196,7 @@ async def exchange_google_token(
         "access_token": encrypted_access_token,
         "refresh_token": encrypted_refresh_token,
         "expires_at": expires_at,
-        "updated_at": datetime.utcnow().isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }
     
     logger.info(f"🔐 [OAuth] Tokens encrypted before storage")
@@ -325,7 +325,7 @@ async def exchange_notion_token(
             "workspace_name": workspace_name,
             "bot_id": bot_id
         },
-        "updated_at": datetime.utcnow().isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }
     
     logger.info(f"🔐 [OAuth] Token encrypted before storage")
@@ -386,8 +386,8 @@ async def exchange_notion_token(
                 "total_files": len(items),
                 "processed_files": 0,
                 "status": "pending",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
             job_response = supabase.table("ingestion_jobs").insert(job_data).execute()
             
@@ -546,8 +546,8 @@ async def ingest_provider_items(
             "total_files": len(request.item_ids),
             "processed_files": 0,
             "status": "pending",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
         
         job_response = supabase.table("ingestion_jobs").insert(job_data).execute()
