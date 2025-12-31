@@ -34,7 +34,7 @@ async def list_plans():
     polar_url = "https://api.polar.sh/v1/products?is_archived=false"
     headers = {"Authorization": f"Bearer {settings.POLAR_ACCESS_TOKEN}"}
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         try:
             response = await client.get(polar_url, headers=headers)
             if response.status_code != 200:
