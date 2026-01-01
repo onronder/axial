@@ -3,7 +3,6 @@ import hashlib
 import base64
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime, timezone
 
 from core.config import settings
 from core.db import get_supabase
@@ -16,88 +15,99 @@ class SubscriptionService:
     Handles subscription logic via Polar.sh webhooks.
     """
 
-    def verify_signature(self, payload: bytes, header: str, secret: str) -> bool:
+    def verify_signature(
+        self, 
+        payload: bytes, 
+        header: str, 
+        secret: str, 
+        timestamp: Optional[str] = None, 
+        msg_id: Optional[str] = None
+    ) -> bool:
         """
-        Verifies the Polar webhook signature.
-        Includes extensive logging and multi-format secret trial to resolve 401 errors.
+        Verifies Standard Webhooks (Svix style).
+        Header format expected: "v1,signature_base64"
         """
         try:
-            # 1. Extensive Debug Logging
-            # SECURITY WARNING: masking part of the secret for logs
-            safe_secret_preview = secret[:5] + "..." if secret else "None"
-            logger.info(f"🔍 [Webhook Debug] Incoming Header: '{header}'")
-            logger.info(f"🔍 [Webhook Debug] Payload Length: {len(payload)} bytes")
-            logger.info(f"🔍 [Webhook Debug] Secret Preview: {safe_secret_preview}")
-
             if not header or not secret:
-                logger.error("❌ [Webhook Verify] Missing header or secret configuration.")
                 return False
 
-            # 2. Parse Header (Standard Webhook Format: t=TIMESTAMP,v1=SIGNATURE)
-            pairs = {}
+            # 1. Extract Signature from Header
+            # Header is usually "v1,gH7..." or multiple "v1,sig1 v1,sig2"
+            provided_sig = None
+            
+            # Try splitting by space for multiple signatures
+            parts = header.split(" ")
+            for part in parts:
+                if part.startswith("v1,"):
+                    provided_sig = part.split(",", 1)[1]
+                    break
+            
+            if not provided_sig:
+                logger.error(f"[Webhook Verify] Could not extract v1 signature from: {header}")
+                return False
+
+            # 2. Validate Timestamp
+            if not timestamp:
+                logger.error("[Webhook Verify] No timestamp provided in headers.")
+                return False
+
+            # 3. Construct Candidates for Signing
+            # Standard Webhooks can be signed as: "msgId.timestamp.payload" (Svix Spec)
+            # Or sometimes: "timestamp.payload"
+            # We try both to be robust.
+            messages_to_try = []
+            
+            # Format A: msgId.timestamp.payload (Strict Svix)
+            if msg_id:
+                msg_a = f"{msg_id}.{timestamp}.".encode("utf-8") + payload
+                messages_to_try.append(msg_a)
+            
+            # Format B: timestamp.payload (Common fallback)
+            msg_b = f"{timestamp}.".encode("utf-8") + payload
+            messages_to_try.append(msg_b)
+
+            # 4. Prepare Secret Candidates
+            # The secret might be Base64 encoded (standard) or raw
+            secret_candidates = []
+            
+            # Base64 Decode
             try:
-                for part in header.split(","):
-                    if "=" in part:
-                        k, v = part.split("=", 1)
-                        pairs[k.strip()] = v.strip()
-            except Exception as e:
-                logger.error(f"❌ [Webhook Verify] Failed to parse header string: {e}")
-                return False
-
-            timestamp = pairs.get("t")
-            signature = pairs.get("v1")
-
-            if not timestamp or not signature:
-                logger.error(f"❌ [Webhook Verify] Missing 't' or 'v1' in header. Parsed: {pairs}")
-                return False
-
-            # 3. Construct Message (timestamp + "." + raw_payload)
-            # Ensure timestamp is bytes
-            to_sign = f"{timestamp}.".encode("utf-8") + payload
-
-            # 4. Prepare Candidate Secrets
-            # We try multiple formats because env vars often get copy-pasted differently
-            candidate_keys = []
-
-            # Method A: Base64 Decoded (Standard Spec)
-            try:
-                decoded = base64.b64decode(secret)
-                candidate_keys.append(("Base64_Decoded", decoded))
+                secret_candidates.append(("Base64", base64.b64decode(secret)))
             except:
                 pass
             
-            # Method B: Raw UTF-8 (Fallback)
-            candidate_keys.append(("Raw_String", secret.encode("utf-8")))
+            # Raw Bytes
+            secret_candidates.append(("Raw", secret.encode("utf-8")))
 
-            # Method C: 'whsec_' Prefix Handling (Common in some setups)
+            # Whsec prefix handling (strip 'whsec_' and decode)
             if secret.startswith("whsec_"):
                 try:
                     stripped = secret.replace("whsec_", "")
-                    decoded_stripped = base64.b64decode(stripped)
-                    candidate_keys.append(("Whsec_Stripped_Base64", decoded_stripped))
+                    secret_candidates.append(("Whsec_Base64", base64.b64decode(stripped)))
                 except:
                     pass
 
-            # 5. Brute-force Verification
-            for key_name, key_bytes in candidate_keys:
-                try:
-                    mac = hmac.new(key_bytes, to_sign, hashlib.sha256)
-                    computed_sig = base64.b64encode(mac.digest()).decode("utf-8")
+            # 5. Brute-Force Verify
+            for msg_bytes in messages_to_try:
+                for key_name, key_bytes in secret_candidates:
+                    try:
+                        mac = hmac.new(key_bytes, msg_bytes, hashlib.sha256)
+                        computed = base64.b64encode(mac.digest()).decode("utf-8")
+                        
+                        if hmac.compare_digest(computed, provided_sig):
+                            logger.info(f"[Webhook Verify] ✅ Signature Verified! (Key: {key_name})")
+                            return True
+                    except Exception:
+                        continue
 
-                    if hmac.compare_digest(computed_sig, signature):
-                        logger.info(f"✅ [Webhook Verify] SUCCESS! Matched using '{key_name}' logic.")
-                        return True
-                    else:
-                        # Log mismatched for debugging (only showing first 10 chars to avoid log spam)
-                        logger.debug(f"⚠️ [Webhook Verify] Failed {key_name}. Computed: {computed_sig[:10]}... != Expected: {signature[:10]}...")
-                except Exception as e:
-                    logger.warning(f"⚠️ [Webhook Verify] Error checking {key_name}: {e}")
-
-            logger.error("❌ [Webhook Verify] All signature verification attempts failed.")
+            logger.warning(
+                f"[Webhook Verify] Failed. TS={timestamp}, Sig={provided_sig[:10]}... "
+                f"Tried {len(messages_to_try)} msg formats & {len(secret_candidates)} key formats."
+            )
             return False
 
         except Exception as e:
-            logger.error(f"❌ [Webhook Verify] Fatal Code Error: {e}")
+            logger.error(f"[Webhook Verify] Fatal Error: {e}")
             return False
 
     async def handle_webhook(self, event_data: Dict[str, Any]):
@@ -115,15 +125,15 @@ class SubscriptionService:
             elif event_type == "subscription.updated":
                 await self._handle_subscription_updated(data)
             elif event_type == "subscription.active":
-                await self._handle_subscription_updated(data) # Treat active as updated
+                await self._handle_subscription_updated(data)
             elif event_type == "subscription.uncanceled":
-                await self._handle_subscription_updated(data) # Treat uncanceled as updated
+                await self._handle_subscription_updated(data)
             elif event_type == "subscription.canceled":
                 await self._handle_subscription_canceled(data)
             elif event_type == "subscription.revoked":
                 await self._handle_subscription_revoked(data)
             else:
-                logger.info(f"ℹ️ [SubscriptionService] Unhandled event type: {event_type}")
+                logger.info(f"ℹ️ [SubscriptionService] Ignored event type: {event_type}")
         except Exception as e:
              logger.error(f"❌ [SubscriptionService] Logic Error: {e}")
     
@@ -140,7 +150,6 @@ class SubscriptionService:
         await self._cancel_subscription(data, "revoked")
 
     async def _upsert_subscription(self, body: Dict[str, Any]):
-        # Logic extracted from previous implementation
         # Safe extraction of team_id from different possible locations
         metadata = body.get("metadata") or body.get("checkout", {}).get("metadata") or {}
         team_id = metadata.get("team_id")
@@ -177,7 +186,6 @@ class SubscriptionService:
         logger.info(f"SUCCESS: Team {team_id} plan updated to {plan}")
 
     async def _cancel_subscription(self, body: Dict[str, Any], action: str):
-        # Logic extracted from previous implementation
         metadata = body.get("metadata") or body.get("checkout", {}).get("metadata") or {}
         team_id = metadata.get("team_id")
         
