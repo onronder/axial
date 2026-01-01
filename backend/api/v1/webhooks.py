@@ -54,8 +54,8 @@ async def handle_polar_webhook(request: Request):
         # Get raw body for signature verification
         raw_body = await request.body()
         
-        # Get signature header
-        signature = request.headers.get("polar-webhook-signature", "")
+        # Get signature header (check both standard and Polar-specific names)
+        signature = request.headers.get("polar-webhook-signature") or request.headers.get("webhook-signature", "")
         
         # DEBUG: Log headers to identify why signature might be missing
         if not signature:
