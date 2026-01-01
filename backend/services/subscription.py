@@ -1,5 +1,6 @@
 import hmac
 import hashlib
+import base64
 import logging
 from core.config import settings
 from core.db import get_supabase
@@ -12,30 +13,39 @@ class SubscriptionService:
         secret = settings.POLAR_WEBHOOK_SECRET
         if not secret:
             logger.error("Verify Signature Failed: POLAR_WEBHOOK_SECRET is missing/empty")
-            return False # Changed from True to False for security, though original was True? Code view said True.
+            return False
         
         try:
-            expected = hmac.new(
-                secret.encode(), payload, hashlib.sha256
-            ).hexdigest()
+            # Compute Base64 Signature (Standard Polar v1)
+            mac = hmac.new(secret.encode(), payload, hashlib.sha256)
+            computed_base64 = base64.b64encode(mac.digest()).decode()
+            expected_v1 = f"v1,{computed_base64}"
             
-            # Debug logging (masked secret)
+            # Compute Hex Signature (Legacy/Alternative)
+            computed_hex = mac.hexdigest()
+            expected_whsec = f"whsec_{computed_hex}"
+            
+            # Debug logging
             masked_secret = secret[:10] + "..." if secret and len(secret) > 10 else "SHORT"
             logger.info(
-                f"[Webhook Debug] Secret='{masked_secret}' (len={len(secret if secret else '')}), "
+                f"[Webhook Debug] Secret='{masked_secret}', "
                 f"PayloadLen={len(payload)}, "
                 f"HeaderSig='{signature}', "
-                f"Computed='whsec_{expected}'"
+                f"ComputedV1='{expected_v1}', "
+                f"ComputedWhsec='{expected_whsec}'"
             )
             
-            # Check both formats (with and without prefix)
-            match = hmac.compare_digest(f"whsec_{expected}", signature) or \
-                   hmac.compare_digest(expected, signature)
+            # Check matches
+            if hmac.compare_digest(expected_v1, signature):
+                return True
+            if hmac.compare_digest(expected_whsec, signature):
+                return True
+            if hmac.compare_digest(computed_hex, signature): # Check raw hex just in case
+                return True
                    
-            if not match:
-                logger.warning(f"[Webhook Debug] Signature Mismatch! Expected: whsec_{expected} vs Received: {signature}")
-                
-            return match
+            logger.warning(f"[Webhook Debug] Signature Mismatch!")
+            return False
+            
         except Exception as e:
             logger.error(f"Signature verification error: {e}")
             return False
