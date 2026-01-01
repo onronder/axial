@@ -16,19 +16,29 @@ class SubscriptionService:
             return False
         
         try:
-            # 1. Compute Base64 Signature (Raw Payload - Previous Attempt)
-            mac = hmac.new(secret.encode(), payload, hashlib.sha256)
-            computed_base64 = base64.b64encode(mac.digest()).decode()
-            expected_v1 = f"v1,{computed_base64}"
+            # 1. Parse the signature (strip 'v1,')
+            if signature.startswith("v1,"):
+                actual_signature = signature.split(",")[1]
+            else:
+                actual_signature = signature
             
-            # 2. Compute Timestamped Signature (Polar/Standard Webhooks: v1,hmac(timestamp.payload))
-            expected_ts = None
-            if timestamp:
-                to_sign = f"{timestamp}.".encode() + payload
-                mac_ts = hmac.new(secret.encode(), to_sign, hashlib.sha256)
-                computed_ts_base64 = base64.b64encode(mac_ts.digest()).decode()
-                expected_ts = f"v1,{computed_ts_base64}"
+            if not timestamp:
+                logger.error("[Webhook] Missing timestamp for signature verification")
+                return False
 
+            # 2. Construct the message: timestamp + "." + raw_payload
+            to_sign = f"{timestamp}.".encode("utf-8") + payload
+            
+            # 3. Prepare the secret (Try Base64 first, fallback to Raw)
+            try:
+                secret_bytes = base64.b64decode(secret)
+            except Exception:
+                secret_bytes = secret.encode("utf-8")
+
+            # 4. Compute HMAC-SHA256
+            mac = hmac.new(secret_bytes, to_sign, hashlib.sha256)
+            computed_sig = base64.b64encode(mac.digest()).decode("utf-8")
+            
             # Debug logging
             masked_secret = secret[:10] + "..." if secret and len(secret) > 10 else "SHORT"
             logger.info(
@@ -36,17 +46,24 @@ class SubscriptionService:
                 f"PayloadLen={len(payload)}, "
                 f"Timestamp='{timestamp}', "
                 f"HeaderSig='{signature}', "
-                f"ComputedV1='{expected_v1}', "
-                f"ComputedTS='{expected_ts}'"
+                f"ExtractedSig='{actual_signature}', "
+                f"ComputedSig='{computed_sig}'"
             )
             
-            # Check matches
-            if hmac.compare_digest(expected_v1, signature):
+            # 5. Compare (Timing-safe)
+            if hmac.compare_digest(computed_sig, actual_signature):
                 return True
-            if expected_ts and hmac.compare_digest(expected_ts, signature):
-                logger.info("[Webhook DEBUG] Matched Timestamped Signature!")
+                
+            # Fallback: Try verifying with raw secret bytes if base64 failed or vice-versa?
+            # Actually, let's try computing with RAW secret if the first attempt failed
+            # This covers the case where the secret LOOKS like base64 but is actually raw
+            mac_raw = hmac.new(secret.encode("utf-8"), to_sign, hashlib.sha256)
+            computed_sig_raw = base64.b64encode(mac_raw.digest()).decode("utf-8")
+            
+            if hmac.compare_digest(computed_sig_raw, actual_signature):
+                logger.info("[Webhook DEBUG] Matched with RAW secret encoding")
                 return True
-                   
+
             logger.warning(f"[Webhook Debug] Signature Mismatch!")
             return False
             
