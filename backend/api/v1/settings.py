@@ -49,6 +49,7 @@ class NotificationSettingUpdate(BaseModel):
 # ============================================================
 # PROFILE ENDPOINTS
 # ============================================================
+@router.get("/settings/profile", response_model=ProfileResponse)
 async def get_profile(user_id: str = Depends(get_current_user)):
     """Get user profile, creating one if it doesn't exist."""
     supabase = get_supabase()
