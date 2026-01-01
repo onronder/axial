@@ -9,38 +9,42 @@ from services.team_service import team_service
 logger = logging.getLogger(__name__)
 
 class SubscriptionService:
-    def verify_signature(self, payload: bytes, signature: str) -> bool:
+    def verify_signature(self, payload: bytes, signature: str, timestamp: str = None, webhook_id: str = None) -> bool:
         secret = settings.POLAR_WEBHOOK_SECRET
         if not secret:
             logger.error("Verify Signature Failed: POLAR_WEBHOOK_SECRET is missing/empty")
             return False
         
         try:
-            # Compute Base64 Signature (Standard Polar v1)
+            # 1. Compute Base64 Signature (Raw Payload - Previous Attempt)
             mac = hmac.new(secret.encode(), payload, hashlib.sha256)
             computed_base64 = base64.b64encode(mac.digest()).decode()
             expected_v1 = f"v1,{computed_base64}"
             
-            # Compute Hex Signature (Legacy/Alternative)
-            computed_hex = mac.hexdigest()
-            expected_whsec = f"whsec_{computed_hex}"
-            
+            # 2. Compute Timestamped Signature (Polar/Standard Webhooks: v1,hmac(timestamp.payload))
+            expected_ts = None
+            if timestamp:
+                to_sign = f"{timestamp}.".encode() + payload
+                mac_ts = hmac.new(secret.encode(), to_sign, hashlib.sha256)
+                computed_ts_base64 = base64.b64encode(mac_ts.digest()).decode()
+                expected_ts = f"v1,{computed_ts_base64}"
+
             # Debug logging
             masked_secret = secret[:10] + "..." if secret and len(secret) > 10 else "SHORT"
             logger.info(
                 f"[Webhook Debug] Secret='{masked_secret}', "
                 f"PayloadLen={len(payload)}, "
+                f"Timestamp='{timestamp}', "
                 f"HeaderSig='{signature}', "
                 f"ComputedV1='{expected_v1}', "
-                f"ComputedWhsec='{expected_whsec}'"
+                f"ComputedTS='{expected_ts}'"
             )
             
             # Check matches
             if hmac.compare_digest(expected_v1, signature):
                 return True
-            if hmac.compare_digest(expected_whsec, signature):
-                return True
-            if hmac.compare_digest(computed_hex, signature): # Check raw hex just in case
+            if expected_ts and hmac.compare_digest(expected_ts, signature):
+                logger.info("[Webhook DEBUG] Matched Timestamped Signature!")
                 return True
                    
             logger.warning(f"[Webhook Debug] Signature Mismatch!")
@@ -50,8 +54,8 @@ class SubscriptionService:
             logger.error(f"Signature verification error: {e}")
             return False
 
-    async def handle_webhook_event(self, payload: bytes, signature: str, data: dict):
-        if not self.verify_signature(payload, signature):
+    async def handle_webhook_event(self, payload: bytes, signature: str, data: dict, timestamp: str = None, webhook_id: str = None):
+        if not self.verify_signature(payload, signature, timestamp, webhook_id):
             raise ValueError("Invalid Webhook Signature")
 
         event_type = data.get("type")

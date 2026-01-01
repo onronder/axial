@@ -56,6 +56,8 @@ async def handle_polar_webhook(request: Request):
         
         # Get signature header (check both standard and Polar-specific names)
         signature = request.headers.get("polar-webhook-signature") or request.headers.get("webhook-signature", "")
+        timestamp = request.headers.get("webhook-timestamp", "")
+        webhook_id = request.headers.get("webhook-id", "")
         
         # DEBUG: Log headers to identify why signature might be missing
         if not signature:
@@ -63,7 +65,6 @@ async def handle_polar_webhook(request: Request):
                 f"[Webhooks Debug] Missing 'polar-webhook-signature'. "
                 f"Available Headers: {list(request.headers.keys())}"
             )
-
         
         # Parse JSON payload
         try:
@@ -83,7 +84,9 @@ async def handle_polar_webhook(request: Request):
         result = await subscription_service.handle_webhook_event(
             payload=raw_body,
             signature=signature,
-            data=payload
+            data=payload,
+            timestamp=timestamp,
+            webhook_id=webhook_id
         )
         
         # Handle different result statuses
