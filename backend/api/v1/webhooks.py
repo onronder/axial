@@ -9,6 +9,7 @@ import logging
 from fastapi import APIRouter, Request, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
+import json
 
 from services.subscription import subscription_service
 
@@ -42,7 +43,7 @@ async def handle_polar_webhook(request: Request):
     Events for other products are acknowledged but ignored.
     
     Security:
-    - Validates HMAC-SHA256 signature from polar-webhook-signature header
+    - Validates HMAC-SHA256 signature using robust Standard Webhooks logic
     - Returns 401 if signature is invalid
     
     Returns:
@@ -51,45 +52,50 @@ async def handle_polar_webhook(request: Request):
     - 500: Processing error
     """
     try:
-        # Get raw body for signature verification
-        raw_body = await request.body()
+        # 1. Get RAW Body Bytes (Critical for signature verification)
+        payload_bytes = await request.body()
         
-        # Get signature header (check both standard and Polar-specific names)
-        signature = request.headers.get("polar-webhook-signature") or request.headers.get("webhook-signature", "")
-        timestamp = request.headers.get("webhook-timestamp", "")
-        webhook_id = request.headers.get("webhook-id", "")
+        # 2. Get Signature Header
+        # Standard Webhooks usually puts everything in "webhook-signature" or "polar-webhook-signature"
+        # We need the full header string explicitly for verification logic which parses t=... and v1=...
+        webhook_signature = request.headers.get("webhook-signature") or request.headers.get("polar-webhook-signature")
         
-        # DEBUG: Log headers to identify why signature might be missing
-        if not signature:
-            logger.warning(
-                f"[Webhooks Debug] Missing 'polar-webhook-signature'. "
-                f"Available Headers: {list(request.headers.keys())}"
-            )
-        
-        # Parse JSON payload
-        try:
-            payload = await request.json()
-        except Exception as e:
-            logger.warning(f"[Webhooks] Invalid JSON payload: {e}")
+        if not webhook_signature:
+            logger.warning("[Webhooks] Missing webhook-signature header")
+            # DEBUG: Log available headers to debug why it's missing
+            logger.warning(f"Available headers: {list(request.headers.keys())}")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid JSON payload"
+                status_code=status.HTTP_401_UNAUTHORIZED, 
+                detail="Missing Webhook Signature"
             )
-        
-        # Log incoming event (without sensitive data)
-        event_type = payload.get("type", "unknown")
-        logger.info(f"[Webhooks] Received Polar event: {event_type}")
-        
-        # Process the webhook
-        result = await subscription_service.handle_webhook_event(
-            payload=raw_body,
-            signature=signature,
-            data=payload,
-            timestamp=timestamp,
-            webhook_id=webhook_id
+
+        # 3. Verify Signature
+        is_valid = subscription_service.verify_signature(
+            payload=payload_bytes,
+            header=webhook_signature,
+            secret=settings.POLAR_WEBHOOK_SECRET
         )
+
+        if not is_valid:
+            logger.warning("[Webhooks] Invalid signature from Polar")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, 
+                detail="Invalid Webhook Signature"
+            )
+
+        # 4. Parse JSON only AFTER verification
+        try:
+            event_data = json.loads(payload_bytes)
+        except json.JSONDecodeError:
+            logger.error("[Webhooks] Failed to decode JSON from verified payload")
+            raise HTTPException(status_code=400, detail="Invalid JSON format")
         
-        # Handle different result statuses
+        logger.info(f"[Webhooks] Received Polar event: {event_data.get('type')}")
+
+        # 5. Process the event
+        result = await subscription_service.handle_webhook(data=event_data)
+
+        # Handle different result statuses (map result dict to WebhookResponse)
         result_status = result.get("status", "unknown")
         
         if result_status == "processed":
@@ -99,22 +105,13 @@ async def handle_polar_webhook(request: Request):
                 message="Subscription updated successfully",
                 details=result
             )
-        
         elif result_status == "ignored":
-            reason = result.get("reason", "unknown")
-            logger.info(f"[Webhooks] Event ignored: {reason}")
+            logger.info(f"[Webhooks] Event ignored: {result.get('reason')}")
             return WebhookResponse(
                 status="ignored",
-                message=f"Event ignored: {reason}",
+                message=f"Ignored:{result.get('reason')}",
                 details=result
             )
-        
-        elif result_status == "acknowledged":
-            return WebhookResponse(
-                status="acknowledged",
-                message="Event received"
-            )
-        
         elif result_status == "error":
             logger.error(f"[Webhooks] Processing error: {result}")
             return WebhookResponse(
@@ -122,26 +119,20 @@ async def handle_polar_webhook(request: Request):
                 message=result.get("reason", "Unknown error"),
                 details=result
             )
-        
         else:
             return WebhookResponse(
                 status=result_status,
+                message="Event handled",
                 details=result
             )
-            
-    except ValueError as e:
-        # Signature verification failed
-        logger.warning(f"[Webhooks] Signature verification failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook signature"
-        )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"[Webhooks] Unexpected error: {e}")
+        logger.error(f"[Webhooks] Error processing Polar webhook: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Webhook processing failed: {str(e)}"
+            detail="Internal Server Error"
         )
 
 

@@ -9,71 +9,78 @@ from services.team_service import team_service
 logger = logging.getLogger(__name__)
 
 class SubscriptionService:
-    def verify_signature(self, payload: bytes, signature: str, timestamp: str = None, webhook_id: str = None) -> bool:
-        secret = settings.POLAR_WEBHOOK_SECRET
-        if not secret:
-            logger.error("Verify Signature Failed: POLAR_WEBHOOK_SECRET is missing/empty")
-            return False
+    def verify_signature(self, payload: bytes, header: str, secret: str) -> bool:
+        """
+        Verifies the Polar webhook signature using robust Standard Webhooks logic.
         
+        The Standard Webhooks protocol (used by Polar) requires:
+        1. The secret key to be Base64 decoded.
+        2. The message to be "timestamp.raw_payload".
+        3. HMAC-SHA256 hashing.
+        """
         try:
-            # 1. Parse the signature (strip 'v1,')
-            if signature.startswith("v1,"):
-                actual_signature = signature.split(",")[1]
-            else:
-                actual_signature = signature
-            
-            if not timestamp:
-                logger.error("[Webhook] Missing timestamp for signature verification")
+            if not header or not secret:
                 return False
 
-            # 2. Construct the message: timestamp + "." + raw_payload
+            # 1. Parse the Header (e.g., "t=12345,v1=abcdef...")
+            pairs = {}
+            for part in header.split(","):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    pairs[k.strip()] = v.strip()
+
+            timestamp = pairs.get("t")
+            signature = pairs.get("v1")
+
+            if not timestamp or not signature:
+                logger.error("[Webhook] Missing timestamp or signature in header")
+                return False
+
+            # 2. Construct the Message
+            # Format must be: <timestamp>.<raw_body>
+            # payload MUST be the exact raw bytes from the request
             to_sign = f"{timestamp}.".encode("utf-8") + payload
+
+            # 3. Determine the Secret Key Bytes
+            # We try two approaches to be safe:
+            # A) Base64 Decode (Standard approach for "whsec_..." keys)
+            # B) Raw UTF-8 (Fallback if the secret is just a random string)
+            candidate_keys = []
             
-            # 3. Prepare the secret (Try Base64 first, fallback to Raw)
             try:
-                secret_bytes = base64.b64decode(secret)
+                candidate_keys.append(("Base64", base64.b64decode(secret)))
             except Exception:
-                secret_bytes = secret.encode("utf-8")
-
-            # 4. Compute HMAC-SHA256
-            mac = hmac.new(secret_bytes, to_sign, hashlib.sha256)
-            computed_sig = base64.b64encode(mac.digest()).decode("utf-8")
+                pass # Not valid base64
             
-            # Debug logging
-            masked_secret = secret[:10] + "..." if secret and len(secret) > 10 else "SHORT"
-            logger.info(
-                f"[Webhook Debug] Secret='{masked_secret}', "
-                f"PayloadLen={len(payload)}, "
-                f"Timestamp='{timestamp}', "
-                f"HeaderSig='{signature}', "
-                f"ExtractedSig='{actual_signature}', "
-                f"ComputedSig='{computed_sig}'"
+            candidate_keys.append(("Raw", secret.encode("utf-8")))
+
+            # 4. Verify
+            for key_name, key_bytes in candidate_keys:
+                try:
+                    mac = hmac.new(key_bytes, to_sign, hashlib.sha256)
+                    computed_sig = base64.b64encode(mac.digest()).decode("utf-8")
+
+                    if hmac.compare_digest(computed_sig, signature):
+                        # Valid signature found
+                        return True
+                except Exception:
+                    continue
+
+            # 5. Log failure if no match found
+            logger.warning(
+                f"[Webhook] Signature Verification Failed.\n"
+                f"Timestamp: {timestamp}\n"
+                f"Provided Sig: {signature}\n"
+                f"Computed Sig (using {candidate_keys[0][0]} method): {computed_sig if 'computed_sig' in locals() else 'N/A'}"
             )
-            
-            # 5. Compare (Timing-safe)
-            if hmac.compare_digest(computed_sig, actual_signature):
-                return True
-                
-            # Fallback: Try verifying with raw secret bytes if base64 failed or vice-versa?
-            # Actually, let's try computing with RAW secret if the first attempt failed
-            # This covers the case where the secret LOOKS like base64 but is actually raw
-            mac_raw = hmac.new(secret.encode("utf-8"), to_sign, hashlib.sha256)
-            computed_sig_raw = base64.b64encode(mac_raw.digest()).decode("utf-8")
-            
-            if hmac.compare_digest(computed_sig_raw, actual_signature):
-                logger.info("[Webhook DEBUG] Matched with RAW secret encoding")
-                return True
-
-            logger.warning(f"[Webhook Debug] Signature Mismatch!")
             return False
-            
+
         except Exception as e:
-            logger.error(f"Signature verification error: {e}")
+            logger.error(f"[Webhook] Verification Fatal Error: {e}")
             return False
 
-    async def handle_webhook_event(self, payload: bytes, signature: str, data: dict, timestamp: str = None, webhook_id: str = None):
-        if not self.verify_signature(payload, signature, timestamp, webhook_id):
-            raise ValueError("Invalid Webhook Signature")
+    async def handle_webhook(self, data: dict):
+
 
         event_type = data.get("type")
         body = data.get("data", {})
