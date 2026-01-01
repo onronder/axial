@@ -18,8 +18,8 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
     // Global loading state
     const isLoading = isUsageLoading || isPlansLoading;
 
-    // Check if user is on pro or enterprise plan
-    const isPro = currentPlan === 'pro' || currentPlan === 'enterprise';
+    // Check if user has a valid paid plan (Starter, Pro, or Enterprise)
+    const hasAccess = ['starter', 'pro', 'enterprise'].includes(currentPlan || '');
 
     if (isLoading) {
         return (
@@ -29,8 +29,8 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
         );
     }
 
-    // If user has access (isPro), render the content
-    if (isPro) {
+    // If user has access, render the content
+    if (hasAccess) {
         return <>{children}</>;
     }
 
@@ -75,60 +75,63 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
 
             <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto items-start">
                 {/* Dynamic Plans from Polar */}
-                {plans.map((plan) => (
-                    <Card key={plan.id} className={`relative flex flex-col h-full ${plan.type === 'pro' ? 'border-primary shadow-2xl scale-105 z-10' : 'border-border'}`}>
-                        {plan.type === 'pro' && (
-                            <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                                <span className="bg-primary text-primary-foreground text-sm font-medium px-4 py-1 rounded-full shadow-sm">
-                                    Most Popular
-                                </span>
-                            </div>
-                        )}
-                        <CardHeader>
-                            <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                            <div className="mt-2 flex items-baseline">
-                                <span className="text-4xl font-bold">
-                                    {plan.price_amount > 0
-                                        ? new Intl.NumberFormat('en-US', { style: 'currency', currency: plan.price_currency }).format(plan.price_amount / 100)
-                                        : '$0'}
-                                </span>
-                                <span className="text-muted-foreground ml-1">/{plan.interval}</span>
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-2 min-h-[40px]">{plan.description}</p>
-                        </CardHeader>
-                        <CardContent className="flex-1">
-                            <ul className="space-y-3 text-sm">
-                                {plan.type === 'starter' && (
-                                    <>
-                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> 50 Files Storage</li>
-                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Standard AI Chat</li>
-                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Basic Support</li>
-                                    </>
-                                )}
-                                {plan.type === 'pro' && (
-                                    <>
-                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>2,000 Files</strong> Storage</li>
-                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>Deep Research</strong> Agent</li>
-                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Advanced Reasoning Models</li>
-                                        <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Priority Support</li>
-                                    </>
-                                )}
-                            </ul>
-                        </CardContent>
-                        <CardFooter>
-                            <Button
-                                className="w-full"
-                                size="lg"
-                                variant={plan.type === 'pro' ? 'default' : 'outline'}
-                                onClick={() => handleUpgrade(plan.type)}
-                                disabled={!!isCheckoutLoading || plan.type === 'starter'}
-                            >
-                                {isCheckoutLoading === plan.type && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                {plan.type === 'starter' ? 'Current Plan' : 'Upgrade to Pro'}
-                            </Button>
-                        </CardFooter>
-                    </Card>
-                ))}
+                {plans.map((plan) => {
+                    const isCurrentPlan = currentPlan === plan.type;
+                    return (
+                        <Card key={plan.id} className={`relative flex flex-col h-full ${plan.type === 'pro' ? 'border-primary shadow-2xl scale-105 z-10' : 'border-border'}`}>
+                            {plan.type === 'pro' && (
+                                <div className="absolute -top-4 left-0 right-0 flex justify-center">
+                                    <span className="bg-primary text-primary-foreground text-sm font-medium px-4 py-1 rounded-full shadow-sm">
+                                        Most Popular
+                                    </span>
+                                </div>
+                            )}
+                            <CardHeader>
+                                <CardTitle className="text-2xl">{plan.name}</CardTitle>
+                                <div className="mt-2 flex items-baseline">
+                                    <span className="text-4xl font-bold">
+                                        {plan.price_amount > 0
+                                            ? new Intl.NumberFormat('en-US', { style: 'currency', currency: plan.price_currency }).format(plan.price_amount / 100)
+                                            : '$0'}
+                                    </span>
+                                    <span className="text-muted-foreground ml-1">/{plan.interval}</span>
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-2 min-h-[40px]">{plan.description}</p>
+                            </CardHeader>
+                            <CardContent className="flex-1">
+                                <ul className="space-y-3 text-sm">
+                                    {plan.type === 'starter' && (
+                                        <>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> 50 Files Storage</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Standard AI Chat</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Basic Support</li>
+                                        </>
+                                    )}
+                                    {plan.type === 'pro' && (
+                                        <>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>2,000 Files</strong> Storage</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>Deep Research</strong> Agent</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Advanced Reasoning Models</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Priority Support</li>
+                                        </>
+                                    )}
+                                </ul>
+                            </CardContent>
+                            <CardFooter>
+                                <Button
+                                    className="w-full"
+                                    size="lg"
+                                    variant={plan.type === 'pro' ? 'default' : 'outline'}
+                                    onClick={() => handleUpgrade(plan.type)}
+                                    disabled={!!isCheckoutLoading || isCurrentPlan}
+                                >
+                                    {isCheckoutLoading === plan.type && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    {isCurrentPlan ? 'Current Plan' : `Upgrade to ${plan.name}`}
+                                </Button>
+                            </CardFooter>
+                        </Card>
+                    )
+                })}
 
                 {/* Static Enterprise Card */}
                 <Card className="flex flex-col h-full border-dashed bg-muted/20">
