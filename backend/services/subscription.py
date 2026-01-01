@@ -9,17 +9,33 @@ logger = logging.getLogger(__name__)
 
 class SubscriptionService:
     def verify_signature(self, payload: bytes, signature: str) -> bool:
-        if not settings.POLAR_WEBHOOK_SECRET:
-            return True
+        secret = settings.POLAR_WEBHOOK_SECRET
+        if not secret:
+            logger.error("Verify Signature Failed: POLAR_WEBHOOK_SECRET is missing/empty")
+            return False # Changed from True to False for security, though original was True? Code view said True.
         
         try:
             expected = hmac.new(
-                settings.POLAR_WEBHOOK_SECRET.encode(), payload, hashlib.sha256
+                secret.encode(), payload, hashlib.sha256
             ).hexdigest()
             
-            # Check both formats (with and without prefix) to be safe
-            return hmac.compare_digest(f"whsec_{expected}", signature) or \
+            # Debug logging (masked secret)
+            masked_secret = secret[:10] + "..." if secret and len(secret) > 10 else "SHORT"
+            logger.info(
+                f"[Webhook Debug] Secret='{masked_secret}' (len={len(secret if secret else '')}), "
+                f"PayloadLen={len(payload)}, "
+                f"HeaderSig='{signature}', "
+                f"Computed='whsec_{expected}'"
+            )
+            
+            # Check both formats (with and without prefix)
+            match = hmac.compare_digest(f"whsec_{expected}", signature) or \
                    hmac.compare_digest(expected, signature)
+                   
+            if not match:
+                logger.warning(f"[Webhook Debug] Signature Mismatch! Expected: whsec_{expected} vs Received: {signature}")
+                
+            return match
         except Exception as e:
             logger.error(f"Signature verification error: {e}")
             return False
