@@ -18,95 +18,114 @@ class SubscriptionService:
 
     def verify_signature(self, payload: bytes, header: str, secret: str) -> bool:
         """
-        Verifies the Polar webhook signature using robust Standard Webhooks logic.
-        Tries both Base64-decoded secret (Spec compliant) and Raw secret (Fallback).
+        Verifies the Polar webhook signature.
+        Includes extensive logging and multi-format secret trial to resolve 401 errors.
         """
         try:
+            # 1. Extensive Debug Logging
+            # SECURITY WARNING: masking part of the secret for logs
+            safe_secret_preview = secret[:5] + "..." if secret else "None"
+            logger.info(f"🔍 [Webhook Debug] Incoming Header: '{header}'")
+            logger.info(f"🔍 [Webhook Debug] Payload Length: {len(payload)} bytes")
+            logger.info(f"🔍 [Webhook Debug] Secret Preview: {safe_secret_preview}")
+
             if not header or not secret:
+                logger.error("❌ [Webhook Verify] Missing header or secret configuration.")
                 return False
 
-            # 1. Parse Header
-            # Header format example: "t=12345,v1=abcdef..."
+            # 2. Parse Header (Standard Webhook Format: t=TIMESTAMP,v1=SIGNATURE)
             pairs = {}
-            for part in header.split(","):
-                if "=" in part:
-                    k, v = part.split("=", 1)
-                    pairs[k.strip()] = v.strip()
+            try:
+                for part in header.split(","):
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        pairs[k.strip()] = v.strip()
+            except Exception as e:
+                logger.error(f"❌ [Webhook Verify] Failed to parse header string: {e}")
+                return False
 
             timestamp = pairs.get("t")
             signature = pairs.get("v1")
 
             if not timestamp or not signature:
-                logger.error("[Webhook] Missing timestamp or signature in header")
+                logger.error(f"❌ [Webhook Verify] Missing 't' or 'v1' in header. Parsed: {pairs}")
                 return False
 
-            # 2. Construct Message: timestamp + "." + payload
-            # CRITICAL: Payload must be the exact raw bytes from the request body
-            # Timestamp must be encoded to bytes
+            # 3. Construct Message (timestamp + "." + raw_payload)
+            # Ensure timestamp is bytes
             to_sign = f"{timestamp}.".encode("utf-8") + payload
 
-            # 3. Candidate Secrets (Try strict Base64 first, then Raw)
+            # 4. Prepare Candidate Secrets
+            # We try multiple formats because env vars often get copy-pasted differently
             candidate_keys = []
-            
-            # Option A: Base64 Decoded (Standard approach)
+
+            # Method A: Base64 Decoded (Standard Spec)
             try:
                 decoded = base64.b64decode(secret)
-                candidate_keys.append(("Base64", decoded))
-            except Exception:
+                candidate_keys.append(("Base64_Decoded", decoded))
+            except:
                 pass
+            
+            # Method B: Raw UTF-8 (Fallback)
+            candidate_keys.append(("Raw_String", secret.encode("utf-8")))
 
-            # Option B: Raw String (If the provided secret is just a plain string)
-            candidate_keys.append(("Raw", secret.encode("utf-8")))
+            # Method C: 'whsec_' Prefix Handling (Common in some setups)
+            if secret.startswith("whsec_"):
+                try:
+                    stripped = secret.replace("whsec_", "")
+                    decoded_stripped = base64.b64decode(stripped)
+                    candidate_keys.append(("Whsec_Stripped_Base64", decoded_stripped))
+                except:
+                    pass
 
-            # 4. Verify against candidates
+            # 5. Brute-force Verification
             for key_name, key_bytes in candidate_keys:
                 try:
-                    # Compute HMAC-SHA256
                     mac = hmac.new(key_bytes, to_sign, hashlib.sha256)
                     computed_sig = base64.b64encode(mac.digest()).decode("utf-8")
 
                     if hmac.compare_digest(computed_sig, signature):
-                        logger.info(f"[Webhook] Signature Verified using {key_name} key logic.")
+                        logger.info(f"✅ [Webhook Verify] SUCCESS! Matched using '{key_name}' logic.")
                         return True
+                    else:
+                        # Log mismatched for debugging (only showing first 10 chars to avoid log spam)
+                        logger.debug(f"⚠️ [Webhook Verify] Failed {key_name}. Computed: {computed_sig[:10]}... != Expected: {signature[:10]}...")
                 except Exception as e:
-                    continue
+                    logger.warning(f"⚠️ [Webhook Verify] Error checking {key_name}: {e}")
 
-            # 5. Debug Logging (Only if all failed)
-            logger.warning(
-                f"[Webhook] Signature Mismatch.\n"
-                f"Timestamp: {timestamp}\n"
-                f"Provided Sig: {signature}\n"
-                f"Computed (last attempt): {computed_sig if 'computed_sig' in locals() else 'Error'}"
-            )
+            logger.error("❌ [Webhook Verify] All signature verification attempts failed.")
             return False
 
         except Exception as e:
-            logger.error(f"[Webhook] Verification Fatal Error: {e}")
+            logger.error(f"❌ [Webhook Verify] Fatal Code Error: {e}")
             return False
 
     async def handle_webhook(self, event_data: Dict[str, Any]):
         """
         Process the validated webhook event.
         """
-        event_type = event_data.get("type")
-        data = event_data.get("data", {})
-        
-        logger.info(f"[SubscriptionService] Processing event: {event_type}")
+        try:
+            event_type = event_data.get("type")
+            data = event_data.get("data", {})
+            
+            logger.info(f"📨 [SubscriptionService] Processing event: {event_type}")
 
-        if event_type == "subscription.created":
-            await self._handle_subscription_created(data)
-        elif event_type == "subscription.updated":
-            await self._handle_subscription_updated(data)
-        elif event_type == "subscription.active":
-            await self._handle_subscription_updated(data) # Treat active as updated
-        elif event_type == "subscription.uncanceled":
-            await self._handle_subscription_updated(data) # Treat uncanceled as updated
-        elif event_type == "subscription.canceled":
-            await self._handle_subscription_canceled(data)
-        elif event_type == "subscription.revoked":
-            await self._handle_subscription_revoked(data)
-        else:
-            logger.info(f"[SubscriptionService] Ignored event type: {event_type}")
+            if event_type == "subscription.created":
+                await self._handle_subscription_created(data)
+            elif event_type == "subscription.updated":
+                await self._handle_subscription_updated(data)
+            elif event_type == "subscription.active":
+                await self._handle_subscription_updated(data) # Treat active as updated
+            elif event_type == "subscription.uncanceled":
+                await self._handle_subscription_updated(data) # Treat uncanceled as updated
+            elif event_type == "subscription.canceled":
+                await self._handle_subscription_canceled(data)
+            elif event_type == "subscription.revoked":
+                await self._handle_subscription_revoked(data)
+            else:
+                logger.info(f"ℹ️ [SubscriptionService] Unhandled event type: {event_type}")
+        except Exception as e:
+             logger.error(f"❌ [SubscriptionService] Logic Error: {e}")
     
     async def _handle_subscription_created(self, data: Dict[str, Any]):
         await self._upsert_subscription(data)
