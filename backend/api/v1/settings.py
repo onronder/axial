@@ -130,7 +130,7 @@ async def get_profile(user_id: str = Depends(get_current_user)):
         # We assume if they are in a team, they completed onboarding or were invited.
         team_check = supabase.table("team_members")\
             .select("id, role")\
-            .eq("user_id", user_id)\
+            .eq("member_user_id", user_id)\
             .limit(1)\
             .execute()
             
