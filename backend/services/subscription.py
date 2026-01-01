@@ -2,6 +2,9 @@ import hmac
 import hashlib
 import base64
 import logging
+from typing import Dict, Any, Optional
+from datetime import datetime, timezone
+
 from core.config import settings
 from core.db import get_supabase
 from services.team_service import team_service
@@ -9,20 +12,21 @@ from services.team_service import team_service
 logger = logging.getLogger(__name__)
 
 class SubscriptionService:
+    """
+    Handles subscription logic via Polar.sh webhooks.
+    """
+
     def verify_signature(self, payload: bytes, header: str, secret: str) -> bool:
         """
         Verifies the Polar webhook signature using robust Standard Webhooks logic.
-        
-        The Standard Webhooks protocol (used by Polar) requires:
-        1. The secret key to be Base64 decoded.
-        2. The message to be "timestamp.raw_payload".
-        3. HMAC-SHA256 hashing.
+        Tries both Base64-decoded secret (Spec compliant) and Raw secret (Fallback).
         """
         try:
             if not header or not secret:
                 return False
 
-            # 1. Parse the Header (e.g., "t=12345,v1=abcdef...")
+            # 1. Parse Header
+            # Header format example: "t=12345,v1=abcdef..."
             pairs = {}
             for part in header.split(","):
                 if "=" in part:
@@ -36,42 +40,43 @@ class SubscriptionService:
                 logger.error("[Webhook] Missing timestamp or signature in header")
                 return False
 
-            # 2. Construct the Message
-            # Format must be: <timestamp>.<raw_body>
-            # payload MUST be the exact raw bytes from the request
+            # 2. Construct Message: timestamp + "." + payload
+            # CRITICAL: Payload must be the exact raw bytes from the request body
+            # Timestamp must be encoded to bytes
             to_sign = f"{timestamp}.".encode("utf-8") + payload
 
-            # 3. Determine the Secret Key Bytes
-            # We try two approaches to be safe:
-            # A) Base64 Decode (Standard approach for "whsec_..." keys)
-            # B) Raw UTF-8 (Fallback if the secret is just a random string)
+            # 3. Candidate Secrets (Try strict Base64 first, then Raw)
             candidate_keys = []
             
+            # Option A: Base64 Decoded (Standard approach)
             try:
-                candidate_keys.append(("Base64", base64.b64decode(secret)))
+                decoded = base64.b64decode(secret)
+                candidate_keys.append(("Base64", decoded))
             except Exception:
-                pass # Not valid base64
-            
+                pass
+
+            # Option B: Raw String (If the provided secret is just a plain string)
             candidate_keys.append(("Raw", secret.encode("utf-8")))
 
-            # 4. Verify
+            # 4. Verify against candidates
             for key_name, key_bytes in candidate_keys:
                 try:
+                    # Compute HMAC-SHA256
                     mac = hmac.new(key_bytes, to_sign, hashlib.sha256)
                     computed_sig = base64.b64encode(mac.digest()).decode("utf-8")
 
                     if hmac.compare_digest(computed_sig, signature):
-                        # Valid signature found
+                        logger.info(f"[Webhook] Signature Verified using {key_name} key logic.")
                         return True
-                except Exception:
+                except Exception as e:
                     continue
 
-            # 5. Log failure if no match found
+            # 5. Debug Logging (Only if all failed)
             logger.warning(
-                f"[Webhook] Signature Verification Failed.\n"
+                f"[Webhook] Signature Mismatch.\n"
                 f"Timestamp: {timestamp}\n"
                 f"Provided Sig: {signature}\n"
-                f"Computed Sig (using {candidate_keys[0][0]} method): {computed_sig if 'computed_sig' in locals() else 'N/A'}"
+                f"Computed (last attempt): {computed_sig if 'computed_sig' in locals() else 'Error'}"
             )
             return False
 
@@ -79,62 +84,95 @@ class SubscriptionService:
             logger.error(f"[Webhook] Verification Fatal Error: {e}")
             return False
 
-    async def handle_webhook(self, data: dict):
-
-
-        event_type = data.get("type")
-        body = data.get("data", {})
+    async def handle_webhook(self, event_data: Dict[str, Any]):
+        """
+        Process the validated webhook event.
+        """
+        event_type = event_data.get("type")
+        data = event_data.get("data", {})
         
+        logger.info(f"[SubscriptionService] Processing event: {event_type}")
+
+        if event_type == "subscription.created":
+            await self._handle_subscription_created(data)
+        elif event_type == "subscription.updated":
+            await self._handle_subscription_updated(data)
+        elif event_type == "subscription.active":
+            await self._handle_subscription_updated(data) # Treat active as updated
+        elif event_type == "subscription.uncanceled":
+            await self._handle_subscription_updated(data) # Treat uncanceled as updated
+        elif event_type == "subscription.canceled":
+            await self._handle_subscription_canceled(data)
+        elif event_type == "subscription.revoked":
+            await self._handle_subscription_revoked(data)
+        else:
+            logger.info(f"[SubscriptionService] Ignored event type: {event_type}")
+    
+    async def _handle_subscription_created(self, data: Dict[str, Any]):
+        await self._upsert_subscription(data)
+        
+    async def _handle_subscription_updated(self, data: Dict[str, Any]):
+        await self._upsert_subscription(data)
+
+    async def _handle_subscription_canceled(self, data: Dict[str, Any]):
+        await self._cancel_subscription(data, "canceled")
+        
+    async def _handle_subscription_revoked(self, data: Dict[str, Any]):
+        await self._cancel_subscription(data, "revoked")
+
+    async def _upsert_subscription(self, body: Dict[str, Any]):
+        # Logic extracted from previous implementation
         # Safe extraction of team_id from different possible locations
         metadata = body.get("metadata") or body.get("checkout", {}).get("metadata") or {}
         team_id = metadata.get("team_id")
         
-        logger.info(f"Webhook Received: {event_type} for Team: {team_id}")
-
         if not team_id:
-            # Some events might not have team_id (like generic product updates), ignore them safely.
-            return {"status": "ignored", "reason": "no team_id in metadata"}
+            logger.warning("[SubscriptionService] No team_id in metadata, ignoring upsert.")
+            return
 
-        if event_type in ["subscription.created", "subscription.updated", "subscription.active", "subscription.uncanceled"]:
-            product_id = body.get("product_id")
-            
-            mapping = settings.POLAR_PRODUCT_MAPPING if hasattr(settings, 'POLAR_PRODUCT_MAPPING') else {}
-            plan = mapping.get(product_id)
-            
-            if not plan:
-                # IMPORTANT: Do not default to "free". If we don't recognize the product, ignore it.
-                # Defaulting to free would downgrade users who bought a valid but unconfigured product.
-                logger.warning(f"Webhook Product ID {product_id} not found in configuration mapping. Ignored.")
-                return {"status": "ignored", "reason": f"Unknown product_id {product_id}"}
-            
-            supabase = get_supabase()
-            
-            # Logic: If Enterprise Product ID matches, force enterprise
-            if product_id == settings.POLAR_PRODUCT_ID_ENTERPRISE:
-                plan = "enterprise"
+        product_id = body.get("product_id")
+        
+        mapping = settings.POLAR_PRODUCT_MAPPING if hasattr(settings, 'POLAR_PRODUCT_MAPPING') else {}
+        plan = mapping.get(product_id)
+        
+        if not plan:
+            # IMPORTANT: Do not default to "free". If we don't recognize the product, ignore it.
+            logger.warning(f"Webhook Product ID {product_id} not found in configuration mapping. Ignored.")
+            return
+        
+        supabase = get_supabase()
+        
+        # Logic: If Enterprise Product ID matches, force enterprise
+        if product_id == settings.POLAR_PRODUCT_ID_ENTERPRISE:
+            plan = "enterprise"
 
-            supabase.table("subscriptions").upsert({
-                "team_id": team_id,
-                "polar_id": body.get("id"),
-                "status": "active",
-                "plan_type": plan,
-                "seats": 1  # Default to 1, future: body.get("quantity", 1)
-            }, on_conflict="team_id").execute()
-            
-            team_service.invalidate_plan_cache(team_id)
-            logger.info(f"SUCCESS: Team {team_id} plan updated to {plan}")
-            return {"status": "processed", "team_id": team_id, "plan": plan}
+        supabase.table("subscriptions").upsert({
+            "team_id": team_id,
+            "polar_id": body.get("id"),
+            "status": "active",
+            "plan_type": plan,
+            "seats": 1  # Default to 1, future: body.get("quantity", 1)
+        }, on_conflict="team_id").execute()
+        
+        team_service.invalidate_plan_cache(team_id)
+        logger.info(f"SUCCESS: Team {team_id} plan updated to {plan}")
 
-        elif event_type in ["subscription.canceled", "subscription.revoked"]:
-            supabase = get_supabase()
-            supabase.table("subscriptions").update({
-                "status": "canceled"
-            }).eq("team_id", team_id).execute()
-            
-            team_service.invalidate_plan_cache(team_id)
-            logger.info(f"Team {team_id} subscription canceled")
-            return {"status": "processed", "team_id": team_id, "action": "canceled"}
+    async def _cancel_subscription(self, body: Dict[str, Any], action: str):
+        # Logic extracted from previous implementation
+        metadata = body.get("metadata") or body.get("checkout", {}).get("metadata") or {}
+        team_id = metadata.get("team_id")
+        
+        if not team_id:
+             logger.warning(f"[SubscriptionService] No team_id in metadata, ignoring {action}.")
+             return
 
-        return {"status": "acknowledged", "event_type": event_type}
+        supabase = get_supabase()
+        supabase.table("subscriptions").update({
+            "status": "canceled"
+        }).eq("team_id", team_id).execute()
+        
+        team_service.invalidate_plan_cache(team_id)
+        logger.info(f"Team {team_id} subscription {action}")
 
+# Singleton instance
 subscription_service = SubscriptionService()
