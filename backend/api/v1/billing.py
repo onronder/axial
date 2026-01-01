@@ -95,7 +95,11 @@ async def create_checkout_session(
     async with httpx.AsyncClient() as client:
         res = await client.post(
             "https://api.polar.sh/v1/checkouts/custom/",
-            json={"product_id": product_id, "metadata": {"team_id": team_id}},
+            json={
+                "product_id": product_id, 
+                "success_url": f"{settings.APP_URL}/dashboard?checkout=success",
+                "metadata": {"team_id": team_id}
+            },
             headers={"Authorization": f"Bearer {settings.POLAR_ACCESS_TOKEN}"}
         )
         res.raise_for_status()
