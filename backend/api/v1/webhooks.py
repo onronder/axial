@@ -57,6 +57,14 @@ async def handle_polar_webhook(request: Request):
         # Get signature header
         signature = request.headers.get("polar-webhook-signature", "")
         
+        # DEBUG: Log headers to identify why signature might be missing
+        if not signature:
+            logger.warning(
+                f"[Webhooks Debug] Missing 'polar-webhook-signature'. "
+                f"Available Headers: {list(request.headers.keys())}"
+            )
+
+        
         # Parse JSON payload
         try:
             payload = await request.json()
