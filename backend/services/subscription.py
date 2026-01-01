@@ -43,7 +43,15 @@ class SubscriptionService:
 
         if event_type in ["subscription.created", "subscription.updated", "subscription.active", "subscription.uncanceled"]:
             product_id = body.get("product_id")
-            plan = settings.POLAR_PRODUCT_MAPPING.get(product_id, "free") if hasattr(settings, 'POLAR_PRODUCT_MAPPING') else "free"
+            
+            mapping = settings.POLAR_PRODUCT_MAPPING if hasattr(settings, 'POLAR_PRODUCT_MAPPING') else {}
+            plan = mapping.get(product_id)
+            
+            if not plan:
+                # IMPORTANT: Do not default to "free". If we don't recognize the product, ignore it.
+                # Defaulting to free would downgrade users who bought a valid but unconfigured product.
+                logger.warning(f"Webhook Product ID {product_id} not found in configuration mapping. Ignored.")
+                return {"status": "ignored", "reason": f"Unknown product_id {product_id}"}
             
             supabase = get_supabase()
             
