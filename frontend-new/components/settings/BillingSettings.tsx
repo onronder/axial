@@ -28,6 +28,7 @@ import { AxioLogo } from "@/components/branding/AxioLogo";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
 
 // ============================================================
 // STATIC PLANS - Always show 3 plans (Starter, Pro, Enterprise)
@@ -138,6 +139,7 @@ export function BillingSettings() {
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
   const [isPortalLoading, setIsPortalLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [isEnterpriseModalOpen, setIsEnterpriseModalOpen] = useState(false);
 
   const currentPlan = effectivePlan || profile?.plan || "free";
   const planInfo = planDetails[currentPlan] || planDetails.free;
@@ -160,9 +162,9 @@ export function BillingSettings() {
   }, [fetchInvoices]);
 
   const handleUpgrade = async (planType: string) => {
-    // Enterprise: open email directly without loading state
+    // Enterprise: open contact form modal
     if (planType === "enterprise") {
-      window.open("mailto:sales@axiohub.io?subject=Enterprise%20Plan%20Inquiry&body=Hi%2C%20I'm%20interested%20in%20the%20Enterprise%20plan.%0A%0APlease%20contact%20me%20to%20discuss%20pricing%20and%20features.", "_self");
+      setIsEnterpriseModalOpen(true);
       return;
     }
 
@@ -457,6 +459,12 @@ export function BillingSettings() {
           )}
         </CardContent>
       </Card>
+
+      {/* Enterprise Contact Modal */}
+      <EnterpriseContactModal
+        open={isEnterpriseModalOpen}
+        onOpenChange={setIsEnterpriseModalOpen}
+      />
     </div>
   );
 }

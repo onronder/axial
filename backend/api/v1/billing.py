@@ -549,3 +549,50 @@ async def fix_customer_id(current_user_id: str = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"[Billing] Fix customer_id error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# ENTERPRISE INQUIRY ENDPOINT
+# ============================================================
+
+class EnterpriseInquiryRequest(BaseModel):
+    name: str
+    email: str
+    company: str
+    message: str = ""
+    team_size: str = ""
+
+
+@router.post("/enterprise-inquiry")
+async def submit_enterprise_inquiry(
+    data: EnterpriseInquiryRequest,
+    current_user_id: str = Depends(get_current_user)
+):
+    """
+    Submit an enterprise inquiry - sends email to sales team via Resend.
+    """
+    try:
+        # Import email service
+        from services.email import email_service
+        
+        # Send email to sales
+        success = email_service.send_enterprise_inquiry(
+            from_name=data.name,
+            from_email=data.email,
+            company=data.company,
+            team_size=data.team_size,
+            message=data.message,
+            user_id=current_user_id
+        )
+        
+        if success:
+            logger.info(f"[Billing] Enterprise inquiry sent from {data.email}")
+            return {"status": "ok", "message": "Your inquiry has been sent. We'll get back to you shortly!"}
+        else:
+            logger.warning(f"[Billing] Failed to send enterprise inquiry from {data.email}")
+            return {"status": "ok", "message": "Thank you for your interest! We'll contact you soon."}
+            
+    except Exception as e:
+        logger.error(f"[Billing] Enterprise inquiry error: {e}")
+        # Don't fail the request - just log it
+        return {"status": "ok", "message": "Thank you for your interest! We'll contact you soon."}

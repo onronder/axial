@@ -8,6 +8,7 @@ import { usePlans } from "@/hooks/usePlans";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
+import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
 
 // Static plan definitions with actual Polar prices
 const STATIC_PLANS = [
@@ -74,6 +75,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
     const { plans: apiPlans, isLoading: isPlansLoading } = usePlans();
     const { toast } = useToast();
     const [isCheckoutLoading, setIsCheckoutLoading] = useState<string | null>(null);
+    const [isEnterpriseModalOpen, setIsEnterpriseModalOpen] = useState(false);
 
     const isLoading = isUsageLoading || isPlansLoading;
 
@@ -111,9 +113,9 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
     });
 
     const handleUpgrade = async (planType: string) => {
-        // Enterprise: open email directly without loading state
+        // Enterprise: open contact form modal
         if (planType === 'enterprise') {
-            window.open("mailto:sales@axiohub.io?subject=Enterprise%20Plan%20Inquiry&body=Hi%2C%20I'm%20interested%20in%20the%20Enterprise%20plan.%0A%0APlease%20contact%20me%20to%20discuss%20pricing%20and%20features.", "_self");
+            setIsEnterpriseModalOpen(true);
             return;
         }
 
@@ -221,6 +223,12 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
                     );
                 })}
             </div>
+
+            {/* Enterprise Contact Modal */}
+            <EnterpriseContactModal
+                open={isEnterpriseModalOpen}
+                onOpenChange={setIsEnterpriseModalOpen}
+            />
         </div>
     );
 }

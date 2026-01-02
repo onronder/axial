@@ -282,6 +282,89 @@ class EmailService:
             logger.error(f"📧 Failed to send team invite to {to_email}: {e}")
             return False
 
+    def send_enterprise_inquiry(
+        self,
+        from_name: str,
+        from_email: str,
+        company: str,
+        team_size: str = "",
+        message: str = "",
+        user_id: str = ""
+    ) -> bool:
+        """
+        Send enterprise inquiry email to sales team.
+        
+        Args:
+            from_name: Name of the person inquiring
+            from_email: Their email address
+            company: Company name
+            team_size: Expected team size
+            message: Additional message
+            user_id: Axio Hub user ID
+        """
+        if not self.enabled:
+            logger.warning("📧 Email service not enabled - enterprise inquiry not sent")
+            return False
+        
+        try:
+            html_content = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h1 style="color: #1a1a2e; margin-bottom: 20px;">🏢 New Enterprise Inquiry</h1>
+                    
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold; width: 120px;">Name:</td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee;">{from_name}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">Email:</td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee;"><a href="mailto:{from_email}">{from_email}</a></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">Company:</td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee;">{company}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">Team Size:</td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee;">{team_size or 'Not specified'}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">User ID:</td>
+                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-family: monospace; font-size: 12px;">{user_id[:8]}...</td>
+                        </tr>
+                    </table>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                        <strong>Message:</strong>
+                        <p style="margin: 10px 0 0 0; white-space: pre-wrap;">{message or 'No additional message'}</p>
+                    </div>
+                    
+                    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 12px;">
+                        Sent from Axio Hub Enterprise Contact Form
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            params = {
+                "from": self.from_email,
+                "to": ["sales@axiohub.io"],  # Send to sales team
+                "reply_to": from_email,  # Reply goes to the person inquiring
+                "subject": f"🏢 Enterprise Inquiry from {from_name} at {company}",
+                "html": html_content
+            }
+            
+            response = resend.Emails.send(params)
+            logger.info(f"📧 Sent enterprise inquiry from {from_email}, id={response.get('id', 'unknown')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"📧 Failed to send enterprise inquiry: {e}")
+            return False
+
 
 # Singleton instance for easy import
 email_service = EmailService()
