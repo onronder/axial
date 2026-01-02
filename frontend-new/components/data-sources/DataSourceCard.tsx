@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Check, X, Lock, Bell, ExternalLink, Clock } from "lucide-react";
+import { Loader2, Check, X, Lock, Bell, ExternalLink, Clock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useDataSources } from "@/hooks/useDataSources";
@@ -33,9 +33,10 @@ function formatLastSync(lastSyncAt: string | null): string {
 }
 
 export function DataSourceCard({ source, onBrowse }: DataSourceCardProps) {
-  const { connect, disconnect } = useDataSources();
+  const { connect, disconnect, syncIntegration } = useDataSources();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleConnect = async () => {
     setIsLoading(true);
@@ -68,6 +69,26 @@ export function DataSourceCard({ source, onBrowse }: DataSourceCardProps) {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    if (!source.integrationId) return;
+    setIsSyncing(true);
+    try {
+      await syncIntegration(source.integrationId);
+      toast({
+        title: "Sync Started",
+        description: `Started syncing ${source.name}. You'll be notified when complete.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Sync Failed",
+        description: err.message || "Could not start sync.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -128,17 +149,31 @@ export function DataSourceCard({ source, onBrowse }: DataSourceCardProps) {
               size="sm"
               className="flex-1 gap-2"
               onClick={onBrowse}
-              disabled={isLoading}
+              disabled={isLoading || isSyncing}
             >
               <ExternalLink className="h-4 w-4" />
               Browse
             </Button>
+
+            {/* Sync Button */}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-primary hover:border-primary/50 hover:bg-primary/5"
+              onClick={handleSync}
+              disabled={isLoading || isSyncing}
+              title="Sync Now"
+            >
+              <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
+            </Button>
+
             <Button
               variant="outline"
               size="icon"
               className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10"
               onClick={handleDisconnect}
-              disabled={isLoading}
+              disabled={isLoading || isSyncing}
+              title="Disconnect"
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
             </Button>

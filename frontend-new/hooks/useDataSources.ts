@@ -206,6 +206,23 @@ export const useDataSources = () => {
         }
     }, []);
 
+    // Sync an integration manually
+    const syncIntegration = useCallback(async (integrationId: string) => {
+        console.log('📦 [useDataSources] Syncing integration:', integrationId);
+        try {
+            const res = await api.post(`/integrations/${integrationId}/sync`);
+            console.log('📦 [useDataSources] ✅ Sync started:', res.data);
+            return { success: true, jobId: res.data.job_id };
+        } catch (err: any) {
+            console.error('📦 [useDataSources] ❌ Sync failed:', err.message);
+            // Handle 429 specifically if needed
+            if (err.response?.status === 429) {
+                throw new Error("Sync already in progress");
+            }
+            throw err;
+        }
+    }, []);
+
     // Refresh data
     const refresh = useCallback(() => {
         hasFetched.current = false;
@@ -239,6 +256,7 @@ export const useDataSources = () => {
         disconnect,
         getFiles,
         ingestFiles,
+        syncIntegration,
 
         // Legacy compatibility
         connectedSources,

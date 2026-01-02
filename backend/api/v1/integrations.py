@@ -6,7 +6,7 @@ Provides dynamic connector discovery, OAuth handling, and integration management
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
-from core.security import get_current_user, encrypt_token
+from core.security import get_current_user, encrypt_token, decrypt_token
 from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
@@ -210,11 +210,11 @@ async def exchange_google_token(
             on_conflict="user_id,connector_definition_id"
         ).execute()
         
-        logger.info(f"🔐 [OAuth] ✅ Upsert result: {upsert_res.data}")
-        
         if not upsert_res.data:
             logger.error("🔐 [OAuth] ❌ Upsert returned no data!")
             raise HTTPException(status_code=500, detail="Database upsert returned no data")
+         
+        logger.info(f"🔐 [OAuth] ✅ Upsert successful for integration ID: {upsert_res.data[0]['id']}")
         
     except HTTPException:
         raise
@@ -338,11 +338,11 @@ async def exchange_notion_token(
             on_conflict="user_id,connector_definition_id"
         ).execute()
         
-        logger.info(f"🔐 [OAuth] ✅ Upsert result: {upsert_res.data}")
-        
         if not upsert_res.data:
             logger.error("🔐 [OAuth] ❌ Upsert returned no data!")
             raise HTTPException(status_code=500, detail="Database upsert returned no data")
+
+        logger.info(f"🔐 [OAuth] ✅ Upsert successful for integration ID: {upsert_res.data[0]['id']}")
         
     except HTTPException:
         raise
@@ -452,7 +452,10 @@ async def disconnect_provider(
     provider: str,
     user_id: str = Depends(get_current_user)
 ):
-    """Disconnect a provider integration."""
+    """
+    Disconnect a provider integration.
+    Attempts to revoke the OAuth token with the provider before deleting records.
+    """
     supabase = get_supabase()
     
     try:
@@ -462,8 +465,40 @@ async def disconnect_provider(
             raise HTTPException(status_code=404, detail="Unknown provider")
         
         connector_def_id = def_res.data["id"]
+
+        # 1. Fetch credentials before deletion to perform revocation
+        try:
+            int_res = supabase.table("user_integrations").select("access_token").eq(
+                "user_id", user_id
+            ).eq("connector_definition_id", connector_def_id).single().execute()
+            
+            if int_res.data and int_res.data.get("access_token"):
+                encrypted_token = int_res.data["access_token"]
+                token = decrypt_token(encrypted_token)
+                
+                if token:
+                    logger.info(f"🔌 [Disconnect] Attempting to revoke {provider} token...")
+                    async with httpx.AsyncClient() as client:
+                        if provider == "google_drive":
+                            # Google Revocation
+                            await client.post(
+                                "https://oauth2.googleapis.com/revoke",
+                                params={"token": token},
+                                timeout=5.0
+                            )
+                            logger.info(f"🔌 [Disconnect] Google token revoked")
+                            
+                        elif provider == "notion":
+                            # Notion doesn't have a standardized revoke endpoint for simple OAuth, 
+                            # but we attempt standard best practices or just log.
+                            # Notion revocation usually implies removing the bot from workspace UI.
+                            pass
+                            
+        except Exception as e:
+            # Non-blocking failure - continue to delete from our DB
+            logger.warning(f"⚠️ [Disconnect] Revocation attempt failed (continuing): {e}")
         
-        # Delete the user integration
+        # 2. Delete the user integration
         supabase.table("user_integrations").delete().eq(
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
@@ -583,5 +618,125 @@ async def ingest_provider_items(
     except Exception as e:
         logger.error(f"❌ [Ingest] Failed to queue task: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to queue ingestion: {str(e)}")
+
+
+# =============================================================================
+# SYNC WORKER (Background Task)
+# =============================================================================
+
+async def run_background_sync(job_id: str, provider: str, user_id: str, integration_id: str):
+    """
+    Background wrapper to run connector.sync() and update job status.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # 1. Update status to processing
+        supabase.table("ingestion_jobs").update({
+            "status": "processing",
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }).eq("id", job_id).execute()
+        
+        # 2. Get Connector
+        from connectors.factory import get_connector
+        try:
+            connector = get_connector(provider)
+        except Exception:
+            logger.error(f"❌ [SyncJob] Connector factory failed for {provider}")
+            raise
+        
+        # 3. Run Sync (Async)
+        # Note: Notion connector might not implement sync yet, handle gracefully
+        if not hasattr(connector, 'sync'):
+            logger.warning(f"⚠️ [SyncJob] Sync not implemented for {provider}")
+            raise NotImplementedError(f"Sync not implemented for {provider}")
+            
+        result = await connector.sync(user_id, integration_id)
+        
+        # 4. Update status to completed
+        status = result.get("status", "completed")
+        processed = result.get("files_processed", 0)
+        
+        supabase.table("ingestion_jobs").update({
+            "status": "completed" if status == "success" else "failed",
+            "processed_files": processed,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }).eq("id", job_id).execute()
+        
+        logger.info(f"✅ [SyncJob] Completed {job_id}: {processed} files")
+        
+    except Exception as e:
+        logger.error(f"❌ [SyncJob] Failed {job_id}: {e}")
+        supabase.table("ingestion_jobs").update({
+            "status": "failed",
+            "error_message": str(e),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }).eq("id", job_id).execute()
+
+
+@router.post("/integrations/{integration_id}/sync")
+async def sync_integration(
+    integration_id: str,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Trigger a manual sync for an integration.
+    Creates an ingestion job and runs sync in background.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # 1. Verify ownership and get provider type
+        int_res = supabase.table("user_integrations").select(
+            "id, connector_definition_id, connector_definitions(type)"
+        ).eq("id", integration_id).eq("user_id", user_id).single().execute()
+        
+        if not int_res.data:
+            raise HTTPException(status_code=404, detail="Integration not found")
+        
+        provider = int_res.data["connector_definitions"]["type"]
+        
+        # 2. Rate limit check (simple check for pending jobs)
+        existing_jobs = supabase.table("ingestion_jobs").select("id").eq(
+            "user_id", user_id
+        ).eq("provider", provider).eq("status", "pending").execute()
+        
+        if len(existing_jobs.data) > 0:
+            # Allow retry for debugging, but typically block
+            # raise HTTPException(status_code=429, detail="A sync is already pending")
+            pass 
+        
+        # 3. Create ingestion job
+        job_data = {
+            "user_id": user_id,
+            "provider": provider,
+            "total_files": 0,
+            "processed_files": 0,
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
+        if not job_res.data:
+            raise HTTPException(status_code=500, detail="Failed to create ingestion job")
+        
+        job_id = job_res.data[0]["id"]
+        
+        # 4. Dispatch Background Task
+        background_tasks.add_task(run_background_sync, job_id, provider, user_id, integration_id)
+        
+        return {
+            "status": "accepted", 
+            "job_id": job_id, 
+            "message": f"Sync started for {provider}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [Sync] Failed to trigger sync: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger sync: {str(e)}")
 
 

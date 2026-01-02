@@ -8,9 +8,11 @@ import {
   ChevronRight,
   Loader2,
   Check,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -50,11 +52,16 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [ingesting, setIngesting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([
     { id: "root", name: "Home" },
   ]);
 
   const currentFolderId = breadcrumbs[breadcrumbs.length - 1].id;
+
+  const filteredFiles = files.filter((f: any) =>
+    f.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   useEffect(() => {
     loadFiles();
@@ -142,7 +149,7 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}>
             <ArrowLeft className="h-5 w-5" />
@@ -153,6 +160,17 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
               {source.name}
             </h2>
           </div>
+        </div>
+
+        {/* Search */}
+        <div className="relative w-64">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search files..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8"
+          />
         </div>
       </div>
 
@@ -198,14 +216,14 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
                   <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                 </TableCell>
               </TableRow>
-            ) : files.length === 0 ? (
+            ) : filteredFiles.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
-                  This folder is empty
+                  {searchQuery ? "No matching files found" : "This folder is empty"}
                 </TableCell>
               </TableRow>
             ) : (
-              files.map((file) => (
+              filteredFiles.map((file) => (
                 <TableRow
                   key={file.id}
                   className={`cursor-pointer transition-colors ${selectedIds.has(file.id) ? "bg-muted/50" : ""
