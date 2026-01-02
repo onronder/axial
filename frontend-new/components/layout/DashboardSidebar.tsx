@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
+import { useUsage } from "@/hooks/useUsage";
 import { useTheme } from "@/hooks/useTheme";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { Settings, LogOut, User, Moon, Sun, ChevronUp, MessageSquarePlus } from "lucide-react";
@@ -32,6 +33,7 @@ export function DashboardSidebar() {
     const router = useRouter();
     const { user, logout } = useAuth();
     const { profile } = useProfile();
+    const { plan: effectivePlan } = useUsage();
     const { theme, setTheme, resolvedTheme } = useTheme();
 
     const displayName = profile?.first_name && profile?.last_name
@@ -117,7 +119,7 @@ export function DashboardSidebar() {
                             <div className="flex flex-1 flex-col items-start text-left text-sm">
                                 <span className="font-medium">{displayName}</span>
                                 <Badge variant="secondary" className="mt-0.5 h-4 px-1 text-[10px] bg-sidebar-accent">
-                                    {user?.plan}
+                                    {effectivePlan ? effectivePlan.charAt(0).toUpperCase() + effectivePlan.slice(1) : 'Free'}
                                 </Badge>
                             </div>
                             <ChevronUp className="h-4 w-4 text-sidebar-muted" />
