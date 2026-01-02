@@ -17,7 +17,7 @@ const FALLBACK_PLANS: PricingPlan[] = [
         id: 'starter',
         name: 'Starter',
         description: 'Perfect for trying out Axio Hub',
-        price_amount: 0,  // $0 - Free tier per original design
+        price_amount: 499,  // $4.99 in cents
         price_currency: 'usd',
         interval: 'month',
         type: 'starter'
@@ -26,7 +26,7 @@ const FALLBACK_PLANS: PricingPlan[] = [
         id: 'pro',
         name: 'Pro',
         description: 'For professionals who need more',
-        price_amount: 2900,  // $29 per original design
+        price_amount: 2900,  // $29 in cents
         price_currency: 'usd',
         interval: 'month',
         type: 'pro'

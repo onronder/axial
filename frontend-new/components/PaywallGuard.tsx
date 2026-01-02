@@ -9,14 +9,14 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
 
-// Static plan definitions matching the original "Simple pricing" design
+// Static plan definitions with actual Polar prices
 const STATIC_PLANS = [
     {
         id: "starter",
         type: "starter",
         name: "Starter",
         description: "Perfect for trying out Axio Hub",
-        price: "$0",
+        price: "$4.99",
         interval: "month",
         icon: Zap,
         features: [
@@ -53,7 +53,7 @@ const STATIC_PLANS = [
         type: "enterprise",
         name: "Enterprise",
         description: "For organizations at scale",
-        price: "Custom",
+        price: "Contact Us",
         interval: "",
         icon: Building2,
         features: [
