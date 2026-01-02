@@ -87,6 +87,19 @@ class BulkInviteResponse(BaseModel):
     code: Optional[str] = None
 
 
+class AcceptInviteRequest(BaseModel):
+    """Request to accept a team invitation."""
+    token: str  # The invite token (member_id from the URL)
+
+
+class AcceptInviteResponse(BaseModel):
+    """Response from accept invite operation."""
+    success: bool
+    team_name: Optional[str] = None
+    team_id: Optional[str] = None
+    error: Optional[str] = None
+
+
 # ============================================================
 # TEAM ENDPOINTS
 # ============================================================
@@ -424,3 +437,67 @@ async def resend_invitation(
             raise HTTPException(status_code=500, detail=error)
     
     return {"status": "success", "message": "Invitation resent"}
+
+
+@router.post("/team/accept", response_model=AcceptInviteResponse)
+async def accept_invite(
+    payload: AcceptInviteRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Accept a team invitation.
+    
+    The token is the member_id from the invite URL.
+    This endpoint:
+    1. Validates the invite token (member_id)
+    2. Updates the team_member record with the accepting user's ID
+    3. Sets status to 'active' and records joined_at
+    4. Invalidates plan cache for the user
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Step 1: Find the pending invite by token (which is the member_id)
+        invite_response = supabase.table("team_members").select(
+            "id, team_id, email, status, teams(id, name)"
+        ).eq("id", payload.token).eq("status", "pending").execute()
+        
+        if not invite_response.data or len(invite_response.data) == 0:
+            raise HTTPException(
+                status_code=404, 
+                detail="Invalid or expired invite link"
+            )
+        
+        invite = invite_response.data[0]
+        team_info = invite.get("teams", {})
+        team_name = team_info.get("name", "Team")
+        team_id = invite.get("team_id")
+        
+        # Step 2: Update the member record - link to accepting user
+        now = datetime.now(timezone.utc).isoformat()
+        
+        update_response = supabase.table("team_members").update({
+            "member_user_id": user_id,
+            "status": "active",
+            "joined_at": now
+        }).eq("id", payload.token).execute()
+        
+        if not update_response.data:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to accept invitation"
+            )
+        
+        # Step 3: Invalidate plan cache for the new member
+        team_service.invalidate_plan_cache(user_id)
+        
+        return AcceptInviteResponse(
+            success=True,
+            team_name=team_name,
+            team_id=team_id
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to accept invite: {str(e)}")
