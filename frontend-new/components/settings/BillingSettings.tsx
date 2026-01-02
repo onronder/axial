@@ -12,7 +12,6 @@ import {
   ExternalLink,
   Receipt,
   Calendar,
-  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,39 +30,18 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 // ============================================================
-// TYPES
+// STATIC PLANS - Always show 3 plans (Starter, Pro, Enterprise)
 // ============================================================
 
-interface PolarPlan {
-  id: string;
-  name: string;
-  description: string;
-  price_amount: number; // in cents
-  price_currency: string;
-  interval: string;
-  type: string; // 'starter', 'pro', 'enterprise'
-}
-
-interface Invoice {
-  id: string;
-  order_id: string;
-  amount: number;
-  currency: string;
-  status: string;
-  created_at: string;
-  product_name: string;
-  invoice_url?: string;
-}
-
-// ============================================================
-// STATIC PLAN FEATURES (Matches the original "Simple pricing" design)
-// ============================================================
-
-const planFeatures: Record<
-  string,
-  { features: string[]; notIncluded: string[]; icon: typeof Zap; popular?: boolean }
-> = {
-  starter: {
+const STATIC_PLANS = [
+  {
+    id: "starter",
+    type: "starter",
+    name: "Starter",
+    description: "Perfect for trying out Axio Hub",
+    price: "$4.99",
+    priceAmount: 499,
+    interval: "month",
     icon: Zap,
     features: [
       "100 queries/month",
@@ -71,9 +49,16 @@ const planFeatures: Record<
       "Basic RAG search",
       "Community support",
     ],
-    notIncluded: [],
+    buttonText: "Get Started",
   },
-  pro: {
+  {
+    id: "pro",
+    type: "pro",
+    name: "Pro",
+    description: "For professionals who need more",
+    price: "$29",
+    priceAmount: 2900,
+    interval: "month",
     icon: Sparkles,
     popular: true,
     features: [
@@ -84,9 +69,16 @@ const planFeatures: Record<
       "API access",
       "Team sharing (3 seats)",
     ],
-    notIncluded: [],
+    buttonText: "Upgrade to Pro",
   },
-  enterprise: {
+  {
+    id: "enterprise",
+    type: "enterprise",
+    name: "Enterprise",
+    description: "For organizations at scale",
+    price: "Contact Us",
+    priceAmount: 0,
+    interval: "",
     icon: Building2,
     features: [
       "Everything in Pro",
@@ -96,9 +88,19 @@ const planFeatures: Record<
       "SLA guarantee",
       "On-premise option",
     ],
-    notIncluded: [],
+    buttonText: "Contact Sales",
   },
-};
+];
+
+interface Invoice {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  created_at: string;
+  product_name: string;
+  invoice_url?: string;
+}
 
 const planDetails: Record<string, { name: string; description: string }> = {
   free: { name: "Free", description: "Basic features with limited usage" },
@@ -106,10 +108,6 @@ const planDetails: Record<string, { name: string; description: string }> = {
   pro: { name: "Pro", description: "For professionals and power users" },
   enterprise: { name: "Enterprise", description: "For teams and organizations" },
 };
-
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
 
 function formatPrice(amountCents: number, currency: string): string {
   const amount = amountCents / 100;
@@ -132,18 +130,11 @@ function formatDate(dateString: string): string {
   }
 }
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
-
 export function BillingSettings() {
   const { profile, isLoading: profileLoading } = useProfile();
   const { plan: effectivePlan, isPlanInherited } = useUsage();
 
-  // State for API data
-  const [plans, setPlans] = useState<PolarPlan[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [isLoadingPlans, setIsLoadingPlans] = useState(true);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
   const [isPortalLoading, setIsPortalLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
@@ -151,26 +142,12 @@ export function BillingSettings() {
   const currentPlan = effectivePlan || profile?.plan || "free";
   const planInfo = planDetails[currentPlan] || planDetails.free;
 
-  // Fetch plans from Polar API
-  const fetchPlans = useCallback(async () => {
-    try {
-      setIsLoadingPlans(true);
-      const response = await api.get("/billing/plans");
-      setPlans(response.data);
-    } catch (error) {
-      console.error("[Billing] Failed to fetch plans:", error);
-      toast.error("Failed to load pricing information");
-    } finally {
-      setIsLoadingPlans(false);
-    }
-  }, []);
-
   // Fetch billing history
   const fetchInvoices = useCallback(async () => {
     try {
       setIsLoadingInvoices(true);
       const response = await api.get("/billing/invoices");
-      setInvoices(response.data);
+      setInvoices(response.data || []);
     } catch (error) {
       console.error("[Billing] Failed to fetch invoices:", error);
     } finally {
@@ -178,22 +155,24 @@ export function BillingSettings() {
     }
   }, []);
 
-  // Load data on mount
   useEffect(() => {
-    fetchPlans();
     fetchInvoices();
-  }, [fetchPlans, fetchInvoices]);
+  }, [fetchInvoices]);
 
-  // Handle upgrade button click
   const handleUpgrade = async (planType: string) => {
     try {
       setCheckoutLoading(planType);
-      const response = await api.post("/billing/checkout", { plan: planType });
 
+      if (planType === "enterprise") {
+        window.location.href = "mailto:sales@axiohub.io?subject=Enterprise%20Inquiry";
+        return;
+      }
+
+      const response = await api.post("/billing/checkout", { plan: planType });
       if (response.data?.url) {
         window.location.href = response.data.url;
       } else {
-        throw new Error("No checkout URL returned");
+        throw new Error("No checkout URL");
       }
     } catch (error) {
       console.error("[Billing] Checkout failed:", error);
@@ -203,7 +182,6 @@ export function BillingSettings() {
     }
   };
 
-  // Handle manage subscription click
   const handleManageSubscription = async () => {
     try {
       setIsPortalLoading(true);
@@ -290,106 +268,91 @@ export function BillingSettings() {
         </CardContent>
       </Card>
 
-      {/* Pricing Cards */}
+      {/* Available Plans - Always 3 cards */}
       <div>
         <h2 className="text-lg font-semibold mb-4">Available Plans</h2>
-        {isLoadingPlans ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : plans.length === 0 ? (
-          <Card className="p-8 text-center">
-            <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-            <p className="text-muted-foreground">Unable to load pricing. Please refresh.</p>
-          </Card>
-        ) : (
-          <div className="grid gap-6 md:grid-cols-3">
-            {plans.map((plan) => {
-              const isCurrentPlan = currentPlan === plan.type;
-              const features = planFeatures[plan.type] || planFeatures.starter;
-              const Icon = features.icon;
-              const isPopular = features.popular;
+        <div className="grid gap-6 md:grid-cols-3">
+          {STATIC_PLANS.map((plan) => {
+            const isCurrentPlan = currentPlan === plan.type;
+            const Icon = plan.icon;
+            const isPopular = plan.popular;
+            const isEnterprise = plan.type === "enterprise";
 
-              return (
-                <Card
-                  key={plan.id}
-                  className={cn(
-                    "relative overflow-hidden transition-all",
-                    isPopular && "border-primary shadow-lg",
-                    isCurrentPlan && "ring-2 ring-primary/50"
-                  )}
-                >
-                  {isPopular && (
-                    <div className="absolute top-0 right-0 bg-primary text-primary-foreground text-xs font-medium px-3 py-1 rounded-bl-lg">
-                      Most Popular
-                    </div>
-                  )}
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={cn(
-                          "flex h-10 w-10 items-center justify-center rounded-lg",
-                          isPopular ? "bg-primary/10" : "bg-muted"
-                        )}
-                      >
-                        <Icon
-                          className={cn(
-                            "h-5 w-5",
-                            isPopular ? "text-primary" : "text-muted-foreground"
-                          )}
-                        />
-                      </div>
-                      <div>
-                        <CardTitle className="text-lg">{plan.name}</CardTitle>
-                        <CardDescription className="text-xs">
-                          {plan.description || planDetails[plan.type]?.description}
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <span className="text-3xl font-bold">
-                        {formatPrice(plan.price_amount, plan.price_currency)}
-                      </span>
-                      <span className="text-muted-foreground">/{plan.interval}</span>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <ul className="space-y-2">
-                      {features.features.map((feature) => (
-                        <li key={feature} className="flex items-center gap-2 text-sm">
-                          <Check className="h-4 w-4 text-success shrink-0" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                      {features.notIncluded.map((feature) => (
-                        <li
-                          key={feature}
-                          className="flex items-center gap-2 text-sm text-muted-foreground/50"
-                        >
-                          <span className="h-4 w-4 shrink-0" />
-                          <span className="line-through">{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <Button
-                      className="w-full"
-                      variant={
-                        isCurrentPlan ? "outline" : isPopular ? "gradient" : "default"
-                      }
-                      disabled={isCurrentPlan || checkoutLoading === plan.type}
-                      onClick={() => handleUpgrade(plan.type)}
+            return (
+              <Card
+                key={plan.id}
+                className={cn(
+                  "relative overflow-hidden transition-all flex flex-col",
+                  isPopular && "border-primary shadow-lg",
+                  isCurrentPlan && "ring-2 ring-primary/50",
+                  isEnterprise && "border-dashed"
+                )}
+              >
+                {isPopular && (
+                  <div className="absolute top-0 right-0 bg-gradient-to-r from-cyan-500 to-purple-500 text-white text-xs font-medium px-3 py-1 rounded-bl-lg">
+                    Most Popular
+                  </div>
+                )}
+                <CardHeader className="flex-none">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        "flex h-10 w-10 items-center justify-center rounded-lg",
+                        isPopular ? "bg-primary/10" : "bg-muted"
+                      )}
                     >
-                      {checkoutLoading === plan.type ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : null}
-                      {isCurrentPlan ? "Current Plan" : "Upgrade"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
+                      <Icon
+                        className={cn(
+                          "h-5 w-5",
+                          isPopular ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{plan.name}</CardTitle>
+                      <CardDescription className="text-xs">
+                        {plan.description}
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <span className="text-3xl font-bold">{plan.price}</span>
+                    {plan.interval && (
+                      <span className="text-muted-foreground">/{plan.interval}</span>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col">
+                  <ul className="space-y-2 flex-1">
+                    {plan.features.map((feature) => (
+                      <li key={feature} className="flex items-center gap-2 text-sm">
+                        <Check className={cn(
+                          "h-4 w-4 shrink-0",
+                          isPopular ? "text-primary" : "text-green-500"
+                        )} />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    className={cn(
+                      "w-full mt-4",
+                      isPopular && "bg-gradient-to-r from-cyan-500 to-purple-500 hover:opacity-90"
+                    )}
+                    variant={isCurrentPlan ? "outline" : isEnterprise ? "ghost" : isPopular ? "default" : "outline"}
+                    disabled={isCurrentPlan || checkoutLoading === plan.type}
+                    onClick={() => handleUpgrade(plan.type)}
+                  >
+                    {checkoutLoading === plan.type && (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    )}
+                    {isCurrentPlan ? "Current Plan" : plan.buttonText}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
 
       {/* Payment Methods */}
