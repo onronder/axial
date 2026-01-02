@@ -95,7 +95,9 @@ class TeamService:
         """
         Direct database query for effective plan (fallback).
         
-        Includes subscription status checks and team lockout enforcement.
+        PRIORITY ORDER:
+        1. Check subscriptions table (populated by Polar webhooks) 
+        2. Fallback to user_profiles.plan (legacy/default)
         
         Used when RPC is unavailable or fails.
         """
@@ -110,7 +112,28 @@ class TeamService:
             if member_response.data and member_response.data[0].get("team_id"):
                 team_id = member_response.data[0]["team_id"]
                 
-                # Step 2: Get team owner
+                # Step 2: Check subscriptions table FIRST (source of truth from Polar webhooks)
+                subscription_response = supabase.table("subscriptions").select(
+                    "plan_type, status"
+                ).eq("team_id", team_id).limit(1).execute()
+                
+                if subscription_response.data and subscription_response.data[0]:
+                    sub_data = subscription_response.data[0]
+                    sub_status = sub_data.get("status", "")
+                    sub_plan = sub_data.get("plan_type", "free")
+                    
+                    # Check subscription status
+                    if sub_status == "active":
+                        logger.info(f"[TeamService] User {user_id[:8]}... has active subscription: {sub_plan}")
+                        return sub_plan
+                    elif sub_status == "canceled":
+                        logger.info(f"[TeamService] User {user_id[:8]}... subscription canceled, returning 'free'")
+                        return "free"
+                    # Other statuses (trialing, etc.) - still grant access
+                    elif sub_status in ["trialing"]:
+                        return sub_plan
+                
+                # Step 3: Fallback to legacy user_profiles.plan (for users without subscription record)
                 team_response = supabase.table("teams").select(
                     "owner_id"
                 ).eq("id", team_id).single().execute()
@@ -119,7 +142,6 @@ class TeamService:
                     owner_id = team_response.data["owner_id"]
                     is_owner = (owner_id == user_id)
                     
-                    # Step 3: Get owner's profile with plan AND subscription status
                     profile_response = supabase.table("user_profiles").select(
                         "plan, subscription_status"
                     ).eq("user_id", owner_id).single().execute()
@@ -128,49 +150,44 @@ class TeamService:
                         owner_plan = profile_response.data.get("plan", "free")
                         subscription_status = profile_response.data.get("subscription_status", "active")
                         
-                        # Check 1: Subscription Status
-                        # Allow only active and trialing statuses
                         allowed_statuses = ["active", "trialing"]
                         if subscription_status not in allowed_statuses:
-                            logger.info(
-                                f"[TeamService] Owner {owner_id[:8]}... has status={subscription_status}, "
-                                f"forcing 'none' (paywall) for user {user_id[:8]}..."
-                            )
+                            logger.info(f"[TeamService] Owner {owner_id[:8]}... has status={subscription_status}, forcing 'none'")
                             return "none"
                         
-                        # Check 2: Team Lockout (MVP)
-                        # If user is NOT the owner, check if owner's plan allows team members
                         if not is_owner:
                             plan_limits = get_plan_limits(owner_plan)
-                            
                             if plan_limits.max_team_seats <= 1:
-                                # Owner downgraded to a plan without team support
-                                # Team members lose access (return 'free' plan)
-                                logger.warning(
-                                    f"[TeamService] Team lockout: Owner {owner_id[:8]}... "
-                                    f"has {owner_plan} (max_seats=1), "
-                                    f"member {user_id[:8]}... gets 'free'"
-                                )
+                                logger.warning(f"[TeamService] Team lockout for member {user_id[:8]}...")
                                 return "free"
                         
-                        logger.debug(f"[TeamService] User {user_id[:8]}... inherits plan: {owner_plan}")
                         return owner_plan
             
-            # Fallback: Get user's own plan
+            # Fallback: Get user's own plan from subscription or profile
+            # First check if user has their own subscription via their team
+            own_team = supabase.table("teams").select("id").eq("owner_id", user_id).limit(1).execute()
+            if own_team.data and own_team.data[0].get("id"):
+                own_team_id = own_team.data[0]["id"]
+                own_sub = supabase.table("subscriptions").select(
+                    "plan_type, status"
+                ).eq("team_id", own_team_id).limit(1).execute()
+                
+                if own_sub.data and own_sub.data[0]:
+                    if own_sub.data[0].get("status") == "active":
+                        return own_sub.data[0].get("plan_type", "free")
+            
+            # Final fallback: user_profiles.plan
             own_profile = supabase.table("user_profiles").select(
                 "plan, subscription_status"
             ).eq("user_id", user_id).single().execute()
             
             if own_profile.data:
                 subscription_status = own_profile.data.get("subscription_status", "active")
-                
-                # Check subscription status for solo users too
                 allowed_statuses = ["active", "trialing"]
                 if subscription_status not in allowed_statuses:
                     logger.info(f"[TeamService] User {user_id[:8]}... has status={subscription_status}, forcing 'none'")
                     return "none"
-                
-                return own_profile.data.get("plan", "none")
+                return own_profile.data.get("plan", "free")
             
             return "free"
             

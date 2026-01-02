@@ -182,6 +182,19 @@ class SubscriptionService:
             "seats": 1  # Default to 1, future: body.get("quantity", 1)
         }, on_conflict="team_id").execute()
         
+        # ALSO UPDATE user_profiles.plan for the team owner (keeps both tables in sync)
+        try:
+            team_response = supabase.table("teams").select("owner_id").eq("id", team_id).single().execute()
+            if team_response.data and team_response.data.get("owner_id"):
+                owner_id = team_response.data["owner_id"]
+                supabase.table("user_profiles").update({
+                    "plan": plan,
+                    "subscription_status": "active"
+                }).eq("user_id", owner_id).execute()
+                logger.info(f"[SubscriptionService] Updated user_profiles.plan for owner {owner_id[:8]}... to {plan}")
+        except Exception as e:
+            logger.warning(f"[SubscriptionService] Failed to update user_profiles: {e}")
+        
         team_service.invalidate_plan_cache(team_id)
         logger.info(f"SUCCESS: Team {team_id} plan updated to {plan}")
 
