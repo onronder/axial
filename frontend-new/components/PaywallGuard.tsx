@@ -111,13 +111,14 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
     });
 
     const handleUpgrade = async (planType: string) => {
+        // Enterprise: open email directly without loading state
+        if (planType === 'enterprise') {
+            window.open("mailto:sales@axiohub.io?subject=Enterprise%20Plan%20Inquiry&body=Hi%2C%20I'm%20interested%20in%20the%20Enterprise%20plan.%0A%0APlease%20contact%20me%20to%20discuss%20pricing%20and%20features.", "_self");
+            return;
+        }
+
         try {
             setIsCheckoutLoading(planType);
-
-            if (planType === 'enterprise') {
-                window.location.href = "mailto:sales@axiohub.io?subject=Enterprise%20Inquiry";
-                return;
-            }
 
             const response = await api.post('/billing/checkout', { plan: planType });
             if (response.data?.url) {
