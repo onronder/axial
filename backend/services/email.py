@@ -58,12 +58,28 @@ class EmailService:
             logger.warning(f"📧 EmailService: Templates directory not found at {TEMPLATES_DIR}")
     
     def _render_template(self, template_name: str, **context) -> Optional[str]:
-        """Render an HTML template with context."""
+        """
+        Render an HTML template with context.
+        
+        Automatically injects global branding variables:
+        - logo_url: Official Axio Hub logo
+        - app_url: Application URL
+        - company_name: "Axio Hub"
+        - current_year: Current year for copyright
+        """
         if not self.jinja_env:
             logger.error(f"📧 Cannot render template: Jinja environment not initialized")
             return None
         
         try:
+            from datetime import datetime
+            
+            # Global context injection - available to all templates
+            context.setdefault("logo_url", settings.LOGO_URL if hasattr(settings, 'LOGO_URL') else "")
+            context.setdefault("app_url", self.app_url)
+            context.setdefault("company_name", "Axio Hub")
+            context.setdefault("current_year", datetime.now().year)
+            
             template = self.jinja_env.get_template(template_name)
             return template.render(**context)
         except Exception as e:

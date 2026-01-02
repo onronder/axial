@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     EMAILS_FROM_EMAIL: str = "noreply@axiohub.io"
     APP_URL: str = "https://axiohub.io"
     
+    # Branding
+    LOGO_URL: str = "https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/public/assets/axio-hub-full-light.png"
+    
     # CORS (Critical for Production)
     ALLOWED_ORIGINS: str = ""
     
