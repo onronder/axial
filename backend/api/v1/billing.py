@@ -278,7 +278,7 @@ async def create_portal_session(current_user_id: str = Depends(get_current_user)
                 detail="No subscription found. Please subscribe first."
             )
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.post(
                 f"{POLAR_API_BASE}/customer-sessions",
                 json={
