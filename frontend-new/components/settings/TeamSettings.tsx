@@ -101,6 +101,10 @@ export function TeamSettings() {
   const [inviteRole, setInviteRole] = useState<Role>("viewer");
   const [isInviting, setIsInviting] = useState(false);
 
+  // Email validation
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isEmailValid = EMAIL_REGEX.test(inviteEmail.trim());
+
   // Bulk CSV import state
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
@@ -186,7 +190,7 @@ export function TeamSettings() {
   }, [filteredMembers, currentPage, pageSize]);
 
   const handleInvite = async () => {
-    if (!inviteEmail.trim()) return;
+    if (!inviteEmail.trim() || !isEmailValid) return;
 
     setIsInviting(true);
     const success = await inviteMember(inviteEmail, inviteRole);
@@ -394,7 +398,7 @@ export function TeamSettings() {
               <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleInvite} className="gap-2" disabled={isInviting}>
+              <Button onClick={handleInvite} className="gap-2" disabled={isInviting || !inviteEmail.trim() || !isEmailValid}>
                 {isInviting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -578,9 +582,20 @@ export function TeamSettings() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={roleStyles[member.role]}>
-                        {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
-                      </Badge>
+                      <Select
+                        value={member.role}
+                        onValueChange={(value) => updateMemberRole(member.id, value as Role)}
+                        disabled={member.role === 'admin' && members.filter(m => m.role === 'admin' && m.status === 'active').length === 1}
+                      >
+                        <SelectTrigger className="w-[110px] h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="editor">Editor</SelectItem>
+                          <SelectItem value="viewer">Viewer</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={status.className}>
