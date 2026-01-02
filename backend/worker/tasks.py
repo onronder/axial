@@ -371,8 +371,7 @@ def ingest_file_task(
             "Ingestion Complete",
             f"Successfully processed {filename} ({len(chunks)} chunks)",
             "success",
-            {"job_id": job_id, "document_id": str(doc_id)},
-            check_setting_key="inapp_on_ingestion_complete"
+            {"job_id": job_id, "document_id": str(doc_id)}
         )
         
         send_email_notification(supabase, user_id, 1)
@@ -389,8 +388,7 @@ def ingest_file_task(
             "Ingestion Failed",
             f"Failed to process {filename}: {str(e)[:200]}",
             "error",
-            {"job_id": job_id, "error": str(e)},
-            check_setting_key="inapp_on_ingestion_failed"
+            {"job_id": job_id, "error": str(e)}
         )
         
         # Send failure email (fail-safe, respects user preferences)
@@ -620,8 +618,7 @@ def ingest_connector_task(
             f"Ingestion Complete",
             f"Successfully processed {len(results)} documents from {connector_type.replace('_', ' ').title()}",
             "success",
-            {"job_id": job_id, "connector": connector_type, "document_count": len(results)},
-            check_setting_key="inapp_on_ingestion_complete"
+            {"job_id": job_id, "connector": connector_type, "document_count": len(results)}
         )
         
         # Send email notification (fail-safe, respects user preferences)
@@ -644,8 +641,7 @@ def ingest_connector_task(
             f"Ingestion Failed",
             f"Failed to process files from {connector_type.replace('_', ' ').title()}: {str(e)[:200]}",
             "error",
-            {"job_id": job_id, "connector": connector_type, "error": str(e)},
-            check_setting_key="inapp_on_ingestion_failed"
+            {"job_id": job_id, "connector": connector_type, "error": str(e)}
         )
         
         # Re-raise for Celery retry mechanism

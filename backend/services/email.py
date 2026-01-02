@@ -197,25 +197,21 @@ class EmailService:
             # Truncate error message for safety
             safe_error = str(error_message)[:500] if error_message else "Unknown error"
             
-            html_content = f"""
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #dc2626;">⚠️ Ingestion Failed</h2>
+            html_content = self._render_template(
+                "ingestion_failed.html",
+                name=name,
+                filename=filename,
+                error_message=safe_error,
+                app_url=self.app_url
+            )
+            
+            if not html_content:
+                # Fallback if template fails
+                html_content = f"""
                 <p>Hello {name},</p>
-                <p>Unfortunately, we couldn't process your document:</p>
-                <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; margin: 15px 0;">
-                    <strong>File:</strong> {filename}<br>
-                    <strong>Reason:</strong> {safe_error}
-                </div>
-                <p>What you can try:</p>
-                <ul>
-                    <li>Check if the file is corrupted or password-protected</li>
-                    <li>Ensure the file format is supported (PDF, DOCX, TXT, MD)</li>
-                    <li>Try uploading a smaller file if it's very large</li>
-                </ul>
-                <p><a href="{self.app_url}/dashboard" style="background: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Dashboard</a></p>
-                <p style="color: #6b7280; font-size: 12px;">If this keeps happening, contact our support team.</p>
-            </div>
-            """
+                <p>Processing failed for: {filename}</p>
+                <p>Reason: {safe_error}</p>
+                """
             
             params = {
                 "from": f"Axio Hub <{self.from_email}>",
@@ -307,47 +303,28 @@ class EmailService:
             return False
         
         try:
-            html_content = f"""
-            <html>
-            <body style="font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5;">
-                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <h1 style="color: #1a1a2e; margin-bottom: 20px;">🏢 New Enterprise Inquiry</h1>
-                    
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold; width: 120px;">Name:</td>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee;">{from_name}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">Email:</td>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee;"><a href="mailto:{from_email}">{from_email}</a></td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">Company:</td>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee;">{company}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">Team Size:</td>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee;">{team_size or 'Not specified'}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">User ID:</td>
-                            <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-family: monospace; font-size: 12px;">{user_id[:8]}...</td>
-                        </tr>
-                    </table>
-                    
-                    <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
-                        <strong>Message:</strong>
-                        <p style="margin: 10px 0 0 0; white-space: pre-wrap;">{message or 'No additional message'}</p>
-                    </div>
-                    
-                    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 12px;">
-                        Sent from Axio Hub Enterprise Contact Form
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
+            from datetime import datetime
+            
+            html_content = self._render_template(
+                "enterprise_lead.html",
+                name=from_name,
+                user_email=from_email,
+                company_name=company,
+                team_size=team_size or "Not specified",
+                message=message or "No additional message provided.",
+                user_id=user_id[:8] + "..." if user_id else "Unknown",
+                submitted_at=datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+            )
+            
+            if not html_content:
+                # Fallback if template fails
+                html_content = f"""
+                <h2>New Enterprise Inquiry</h2>
+                <p><strong>Name:</strong> {from_name}</p>
+                <p><strong>Email:</strong> {from_email}</p>
+                <p><strong>Company:</strong> {company}</p>
+                <p><strong>Message:</strong> {message or 'None'}</p>
+                """
             
             params = {
                 "from": self.from_email,
