@@ -17,7 +17,7 @@ const FALLBACK_PLANS: PricingPlan[] = [
         id: 'starter',
         name: 'Starter',
         description: 'For individuals building a second brain.',
-        price_amount: 0,
+        price_amount: 499,  // $4.99 in cents
         price_currency: 'usd',
         interval: 'month',
         type: 'starter'
@@ -26,7 +26,7 @@ const FALLBACK_PLANS: PricingPlan[] = [
         id: 'pro',
         name: 'Pro',
         description: 'For power users and teams.',
-        price_amount: 2900,
+        price_amount: 1999,  // $19.99 in cents
         price_currency: 'usd',
         interval: 'month',
         type: 'pro'

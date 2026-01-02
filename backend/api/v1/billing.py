@@ -235,8 +235,8 @@ async def create_portal_session(current_user_id: str = Depends(get_current_user)
     # The best option is to redirect customers to polar.sh where they can manage
     # their subscriptions by logging in with the same email.
     
-    # Option 1: Direct to Polar settings (user must log in)
-    portal_url = "https://polar.sh/purchases/subscriptions"
+    # The correct URL is the purchases page where customers can see their subscriptions
+    portal_url = "https://polar.sh/~"  # User's dashboard after login
     
     logger.info(f"[Billing] Portal redirect for user {current_user_id[:8]}...")
     return PortalResponse(url=portal_url)
@@ -395,3 +395,91 @@ async def _get_orders_fallback(subscription_id: str) -> List[InvoiceResponse]:
     except Exception as e:
         logger.error(f"[Billing] Orders fallback failed: {e}")
         return []
+
+
+# ============================================================
+# INVOICE/RECEIPT DOWNLOAD ENDPOINT
+# ============================================================
+
+@router.post("/invoices/{order_id}/generate")
+async def generate_invoice(
+    order_id: str,
+    current_user_id: str = Depends(get_current_user)
+):
+    """
+    Trigger invoice generation for an order.
+    
+    Polar requires generating an invoice before it can be downloaded.
+    This is a two-step process: generate (POST) then retrieve (GET).
+    """
+    if not settings.POLAR_ACCESS_TOKEN:
+        raise HTTPException(status_code=500, detail="Billing not configured")
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Step 1: Generate the invoice
+            generate_url = f"https://api.polar.sh/v1/orders/{order_id}/invoice"
+            response = await client.post(generate_url, headers=get_polar_headers())
+            
+            if response.status_code == 202:
+                # Invoice generation scheduled
+                logger.info(f"[Billing] Invoice generation scheduled for order {order_id}")
+                return {"status": "generating", "message": "Invoice generation started. Please wait a moment."}
+            elif response.status_code == 200:
+                # Invoice already exists
+                return {"status": "ready", "message": "Invoice is ready for download."}
+            else:
+                logger.error(f"[Billing] Invoice generation failed: {response.text}")
+                raise HTTPException(status_code=400, detail="Failed to generate invoice")
+                
+    except httpx.HTTPError as e:
+        logger.error(f"[Billing] Invoice generation HTTP error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate invoice")
+
+
+@router.get("/invoices/{order_id}/download")
+async def download_invoice(
+    order_id: str,
+    current_user_id: str = Depends(get_current_user)
+):
+    """
+    Get the invoice/receipt download URL for an order.
+    
+    Returns a URL to download the PDF invoice.
+    If invoice hasn't been generated, returns instructions to generate it first.
+    """
+    if not settings.POLAR_ACCESS_TOKEN:
+        raise HTTPException(status_code=500, detail="Billing not configured")
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Try to get the invoice
+            invoice_url = f"https://api.polar.sh/v1/orders/{order_id}/invoice"
+            response = await client.get(invoice_url, headers=get_polar_headers())
+            
+            if response.status_code == 200:
+                invoice_data = response.json()
+                download_url = invoice_data.get("url")
+                
+                if download_url:
+                    logger.info(f"[Billing] Invoice download URL retrieved for order {order_id}")
+                    return {"url": download_url}
+                else:
+                    # Invoice exists but no URL - try to get from response
+                    return {"url": invoice_data.get("invoice_url", f"https://polar.sh/purchases")}
+                    
+            elif response.status_code == 404:
+                # Invoice not generated yet
+                return {
+                    "error": "not_generated",
+                    "message": "Invoice not yet generated. Please generate it first.",
+                    "generate_url": f"/billing/invoices/{order_id}/generate"
+                }
+            else:
+                logger.warning(f"[Billing] Invoice retrieval failed: {response.status_code}")
+                # Fallback to Polar purchases page
+                return {"url": "https://polar.sh/~"}
+                
+    except Exception as e:
+        logger.error(f"[Billing] Invoice download failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve invoice")
