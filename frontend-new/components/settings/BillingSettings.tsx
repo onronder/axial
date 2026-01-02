@@ -56,7 +56,7 @@ interface Invoice {
 }
 
 // ============================================================
-// STATIC PLAN FEATURES (Features are not in Polar API)
+// STATIC PLAN FEATURES (Matches the original "Simple pricing" design)
 // ============================================================
 
 const planFeatures: Record<
@@ -66,35 +66,35 @@ const planFeatures: Record<
   starter: {
     icon: Zap,
     features: [
-      "50 documents",
-      "500 MB storage",
-      "GPT-4o Mini",
-      "Email support",
+      "100 queries/month",
+      "2 connected sources",
+      "Basic RAG search",
+      "Community support",
     ],
-    notIncluded: ["Team access", "Priority support", "Custom integrations"],
+    notIncluded: [],
   },
   pro: {
     icon: Sparkles,
     popular: true,
     features: [
-      "500 documents",
-      "5 GB storage",
-      "GPT-4o (full)",
-      "Web crawling",
-      "Priority email support",
+      "Unlimited queries",
+      "Unlimited sources",
+      "Hybrid RAG + semantic",
+      "Priority support",
+      "API access",
+      "Team sharing (3 seats)",
     ],
-    notIncluded: ["Team access", "Custom integrations"],
+    notIncluded: [],
   },
   enterprise: {
     icon: Building2,
     features: [
-      "Unlimited documents",
-      "Unlimited storage",
-      "GPT-4o + Claude",
-      "Team access (20 seats)",
-      "Dedicated support",
+      "Everything in Pro",
+      "SSO & SAML",
       "Custom integrations",
-      "SSO (coming soon)",
+      "Dedicated support",
+      "SLA guarantee",
+      "On-premise option",
     ],
     notIncluded: [],
   },

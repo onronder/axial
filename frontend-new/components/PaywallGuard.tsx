@@ -102,17 +102,20 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
                                 <ul className="space-y-3 text-sm">
                                     {plan.type === 'starter' && (
                                         <>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> 50 Files Storage</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Standard AI Chat</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Basic Support</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> 100 queries/month</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> 2 connected sources</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Basic RAG search</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Community support</li>
                                         </>
                                     )}
                                     {plan.type === 'pro' && (
                                         <>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>2,000 Files</strong> Storage</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>Deep Research</strong> Agent</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Advanced Reasoning Models</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Priority Support</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>Unlimited</strong> queries</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>Unlimited</strong> sources</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Hybrid RAG + semantic</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Priority support</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> API access</li>
+                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Team sharing (3 seats)</li>
                                         </>
                                     )}
                                 </ul>

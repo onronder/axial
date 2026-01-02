@@ -174,9 +174,14 @@ class SubscriptionService:
         if product_id == settings.POLAR_PRODUCT_ID_ENTERPRISE:
             plan = "enterprise"
 
+        # Extract customer_id from webhook data (needed for Customer Portal sessions)
+        customer = body.get("customer", {})
+        customer_id = customer.get("id") if isinstance(customer, dict) else None
+
         supabase.table("subscriptions").upsert({
             "team_id": team_id,
             "polar_id": body.get("id"),
+            "customer_id": customer_id,  # Store for Customer Portal API
             "status": "active",
             "plan_type": plan,
             "seats": 1  # Default to 1, future: body.get("quantity", 1)

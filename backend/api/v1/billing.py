@@ -227,19 +227,88 @@ async def create_portal_session(current_user_id: str = Depends(get_current_user)
     """
     Create a Polar customer portal session for subscription management.
     
-    Note: Polar uses a shared portal at polar.sh/settings for customers.
-    For a more integrated experience, we redirect to the organization's
-    Polar page where customers can manage their subscriptions.
+    Uses Polar's Customer Sessions API to create a pre-authenticated portal URL
+    where customers can manage their subscriptions, payment methods, and view invoices.
     """
-    # Polar currently doesn't have a dedicated customer portal API like Stripe.
-    # The best option is to redirect customers to polar.sh where they can manage
-    # their subscriptions by logging in with the same email.
+    if not settings.POLAR_ACCESS_TOKEN:
+        raise HTTPException(status_code=500, detail="Billing not configured")
     
-    # The correct URL is the purchases page where customers can see their subscriptions
-    portal_url = "https://polar.sh/~"  # User's dashboard after login
+    try:
+        # Get the user's team and subscription to find the Polar customer_id
+        team_member = await team_service.get_user_team_member(current_user_id)
+        if not team_member:
+            # Fallback for users without team
+            logger.warning(f"[Billing] User {current_user_id[:8]}... has no team, using fallback portal")
+            return PortalResponse(url="https://polar.sh/~")
+        
+        team_id = str(team_member.team_id)
+        
+        # Get subscription from our database to find Polar customer/subscription info
+        supabase = get_supabase()
+        sub_response = supabase.table("subscriptions").select(
+            "polar_id, customer_id"
+        ).eq("team_id", team_id).limit(1).execute()
+        
+        # Check if we have a customer_id stored
+        customer_id = None
+        if sub_response.data and sub_response.data[0]:
+            customer_id = sub_response.data[0].get("customer_id")
+        
+        if not customer_id:
+            # Try to get customer_id from Polar subscription
+            polar_sub_id = sub_response.data[0].get("polar_id") if sub_response.data else None
+            if polar_sub_id:
+                customer_id = await _get_customer_id_from_subscription(polar_sub_id)
+        
+        if customer_id:
+            # Create a Customer Portal session using Polar API
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://api.polar.sh/v1/customer-sessions",
+                    json={
+                        "customer_id": customer_id,
+                        "return_url": f"{settings.APP_URL}/settings?tab=billing"
+                    },
+                    headers=get_polar_headers()
+                )
+                
+                if response.status_code in [200, 201]:
+                    session_data = response.json()
+                    portal_url = session_data.get("customer_portal_url")
+                    
+                    if portal_url:
+                        logger.info(f"[Billing] Created customer portal session for user {current_user_id[:8]}...")
+                        return PortalResponse(url=portal_url)
+                
+                logger.warning(f"[Billing] Customer session API returned: {response.status_code}")
+        
+        # Fallback: Direct to Polar's generic purchases page
+        logger.info(f"[Billing] Using fallback portal for user {current_user_id[:8]}...")
+        return PortalResponse(url="https://polar.sh/purchases")
+        
+    except Exception as e:
+        logger.error(f"[Billing] Portal session creation failed: {e}")
+        # Fallback to generic portal
+        return PortalResponse(url="https://polar.sh/purchases")
+
+
+async def _get_customer_id_from_subscription(subscription_id: str) -> Optional[str]:
+    """Fetch customer_id from Polar subscription details."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"https://api.polar.sh/v1/subscriptions/{subscription_id}",
+                headers=get_polar_headers()
+            )
+            
+            if response.status_code == 200:
+                sub_data = response.json()
+                customer = sub_data.get("customer", {})
+                return customer.get("id")
+    except Exception as e:
+        logger.warning(f"[Billing] Failed to get customer_id: {e}")
     
-    logger.info(f"[Billing] Portal redirect for user {current_user_id[:8]}...")
-    return PortalResponse(url=portal_url)
+    return None
 
 
 # ============================================================
