@@ -472,3 +472,80 @@ async def download_invoice(
     except Exception as e:
         logger.error(f"[Billing] Invoice download error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get invoice")
+
+
+# ============================================================
+# ADMIN: FIX CUSTOMER_ID FOR EXISTING SUBSCRIPTIONS
+# ============================================================
+
+@router.post("/fix-customer-id")
+async def fix_customer_id(current_user_id: str = Depends(get_current_user)):
+    """
+    Fetch and update customer_id from Polar for the current user's subscription.
+    
+    This is needed for subscriptions created before customer_id was stored.
+    """
+    if not settings.POLAR_ACCESS_TOKEN:
+        raise HTTPException(status_code=500, detail="Billing not configured")
+    
+    try:
+        team_member = await team_service.get_user_team_member(current_user_id)
+        if not team_member:
+            raise HTTPException(status_code=400, detail="No team found")
+        
+        team_id = str(team_member.team_id)
+        
+        supabase = get_supabase()
+        sub_response = supabase.table("subscriptions").select(
+            "polar_id, customer_id"
+        ).eq("team_id", team_id).limit(1).execute()
+        
+        if not sub_response.data:
+            raise HTTPException(status_code=400, detail="No subscription found")
+        
+        sub = sub_response.data[0]
+        polar_id = sub.get("polar_id")
+        
+        if not polar_id:
+            raise HTTPException(status_code=400, detail="No Polar subscription ID")
+        
+        # Already has customer_id?
+        if sub.get("customer_id"):
+            return {"status": "ok", "customer_id": sub["customer_id"], "message": "Already has customer_id"}
+        
+        # Fetch from Polar
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{POLAR_API_BASE}/subscriptions/{polar_id}",
+                headers=get_polar_headers()
+            )
+            
+            logger.info(f"[Billing] Polar subscription response: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                customer = data.get("customer", {})
+                customer_id = customer.get("id")
+                
+                if customer_id:
+                    # Update database
+                    supabase.table("subscriptions").update({
+                        "customer_id": customer_id
+                    }).eq("team_id", team_id).execute()
+                    
+                    logger.info(f"[Billing] Updated customer_id for team {team_id}: {customer_id}")
+                    return {"status": "ok", "customer_id": customer_id, "message": "Fixed!"}
+                else:
+                    return {"status": "error", "message": "No customer in subscription data", "data": data}
+            else:
+                return {
+                    "status": "error", 
+                    "message": f"Polar API error: {response.status_code}",
+                    "response": response.text
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Billing] Fix customer_id error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
