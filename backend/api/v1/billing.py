@@ -184,11 +184,11 @@ async def get_customer_id_for_user(user_id: str) -> Optional[str]:
         
         # Fetch user email using Admin API (reliable)
         try:
-             user_data = supabase.auth.admin.get_user_by_id(user_id)
-                 if user_data and user_data.user:
-                     user_email = user_data.user.email
-             except Exception as e:
-                 logger.warning(f"[Billing] Failed to fetch user email: {e}")
+            user_data = supabase.auth.admin.get_user_by_id(user_id)
+            if user_data and user_data.user:
+                user_email = user_data.user.email
+        except Exception as e:
+            logger.warning(f"[Billing] Failed to fetch user email: {e}")
 
         if user_email:
              async with httpx.AsyncClient(timeout=30.0) as client:
