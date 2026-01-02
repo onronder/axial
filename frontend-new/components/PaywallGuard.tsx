@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, Zap, Sparkles, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useUsage } from "@/hooks/useUsage";
@@ -9,16 +9,75 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
 
+// Static plan definitions matching the original "Simple pricing" design
+const STATIC_PLANS = [
+    {
+        id: "starter",
+        type: "starter",
+        name: "Starter",
+        description: "Perfect for trying out Axio Hub",
+        price: "$0",
+        interval: "month",
+        icon: Zap,
+        features: [
+            "100 queries/month",
+            "2 connected sources",
+            "Basic RAG search",
+            "Community support",
+        ],
+        buttonText: "Get Started",
+        buttonVariant: "outline" as const,
+    },
+    {
+        id: "pro",
+        type: "pro",
+        name: "Pro",
+        description: "For professionals who need more",
+        price: "$29",
+        interval: "month",
+        icon: Sparkles,
+        popular: true,
+        features: [
+            "Unlimited queries",
+            "Unlimited sources",
+            "Hybrid RAG + semantic",
+            "Priority support",
+            "API access",
+            "Team sharing (3 seats)",
+        ],
+        buttonText: "Start Free Trial",
+        buttonVariant: "default" as const,
+    },
+    {
+        id: "enterprise",
+        type: "enterprise",
+        name: "Enterprise",
+        description: "For organizations at scale",
+        price: "Custom",
+        interval: "",
+        icon: Building2,
+        features: [
+            "Everything in Pro",
+            "SSO & SAML",
+            "Custom integrations",
+            "Dedicated support",
+            "SLA guarantee",
+            "On-premise option",
+        ],
+        buttonText: "Contact Sales",
+        buttonVariant: "ghost" as const,
+    },
+];
+
 export function PaywallGuard({ children }: { children: React.ReactNode }) {
     const { plan: currentPlan, isLoading: isUsageLoading } = useUsage();
-    const { plans, isLoading: isPlansLoading } = usePlans();
+    const { plans: apiPlans, isLoading: isPlansLoading } = usePlans();
     const { toast } = useToast();
     const [isCheckoutLoading, setIsCheckoutLoading] = useState<string | null>(null);
 
-    // Global loading state
     const isLoading = isUsageLoading || isPlansLoading;
 
-    // Check if user has a valid paid plan (Starter, Pro, or Enterprise)
+    // Check if user has a valid paid plan
     const hasAccess = ['starter', 'pro', 'enterprise'].includes(currentPlan || '');
 
     if (isLoading) {
@@ -29,29 +88,42 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
         );
     }
 
-    // If user has access, render the content
     if (hasAccess) {
         return <>{children}</>;
     }
 
-    // --- PAYWALL UI LOGIC ---
+    // Merge API prices with static plans (API prices take precedence)
+    const displayPlans = STATIC_PLANS.map(staticPlan => {
+        const apiPlan = apiPlans.find(p => p.type === staticPlan.type);
+        if (apiPlan && apiPlan.price_amount !== undefined) {
+            return {
+                ...staticPlan,
+                price: apiPlan.price_amount === 0
+                    ? "$0"
+                    : new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: apiPlan.price_currency
+                    }).format(apiPlan.price_amount / 100),
+                interval: apiPlan.interval || staticPlan.interval,
+            };
+        }
+        return staticPlan;
+    });
 
     const handleUpgrade = async (planType: string) => {
         try {
             setIsCheckoutLoading(planType);
 
-            // Enterprise: Email link
             if (planType === 'enterprise') {
                 window.location.href = "mailto:sales@axiohub.io?subject=Enterprise%20Inquiry";
                 return;
             }
 
-            // Starter/Pro: Create Checkout Session
             const response = await api.post('/billing/checkout', { plan: planType });
-            if (response.data && response.data.url) {
+            if (response.data?.url) {
                 window.location.href = response.data.url;
-            } else if (response.data && response.data.error) {
-                throw new Error(response.data.error);
+            } else {
+                throw new Error(response.data?.error || "No checkout URL");
             }
         } catch (error) {
             toast({
@@ -65,100 +137,88 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <div className="space-y-8 p-8 min-h-screen bg-background/50">
-            <div className="text-center space-y-4 pt-8">
-                <h2 className="text-4xl font-extrabold tracking-tight">Unlock Full Power</h2>
-                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-                    You've reached the limits of the free tier. Upgrade to Pro to process more files, use advanced AI models, and collaborate with your team.
+        <div className="min-h-screen bg-background/50 py-16 px-4">
+            {/* Header - matches original "Simple pricing" design */}
+            <div className="text-center space-y-4 mb-12">
+                <h1 className="text-5xl font-extrabold tracking-tight">
+                    <span className="text-white">Simple </span>
+                    <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
+                        pricing
+                    </span>
+                </h1>
+                <p className="text-muted-foreground text-lg">
+                    Start free. Scale as you grow.
                 </p>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto items-start">
-                {/* Dynamic Plans from Polar */}
-                {plans.map((plan) => {
+            {/* Pricing Cards */}
+            <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto items-stretch">
+                {displayPlans.map((plan) => {
+                    const Icon = plan.icon;
                     const isCurrentPlan = currentPlan === plan.type;
+                    const isPro = plan.type === 'pro';
+
                     return (
-                        <Card key={plan.id} className={`relative flex flex-col h-full ${plan.type === 'pro' ? 'border-primary shadow-2xl scale-105 z-10' : 'border-border'}`}>
-                            {plan.type === 'pro' && (
+                        <Card
+                            key={plan.id}
+                            className={`
+                                relative flex flex-col h-full
+                                ${isPro ? 'border-primary shadow-2xl scale-105 z-10' : 'border-border'}
+                                ${plan.type === 'enterprise' ? 'border-dashed bg-muted/10' : ''}
+                            `}
+                        >
+                            {/* Most Popular Badge */}
+                            {plan.popular && (
                                 <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                                    <span className="bg-primary text-primary-foreground text-sm font-medium px-4 py-1 rounded-full shadow-sm">
+                                    <span className="bg-gradient-to-r from-cyan-500 to-purple-500 text-white text-sm font-medium px-4 py-1 rounded-full shadow-lg flex items-center gap-1">
+                                        <Sparkles className="h-3 w-3" />
                                         Most Popular
                                     </span>
                                 </div>
                             )}
-                            <CardHeader>
-                                <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                                <div className="mt-2 flex items-baseline">
-                                    <span className="text-4xl font-bold">
-                                        {plan.price_amount > 0
-                                            ? new Intl.NumberFormat('en-US', { style: 'currency', currency: plan.price_currency }).format(plan.price_amount / 100)
-                                            : '$0'}
-                                    </span>
-                                    <span className="text-muted-foreground ml-1">/{plan.interval}</span>
+
+                            <CardHeader className="pt-8">
+                                <CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    {plan.description}
+                                </p>
+                                <div className="mt-4 flex items-baseline">
+                                    <span className="text-4xl font-bold">{plan.price}</span>
+                                    {plan.interval && (
+                                        <span className="text-muted-foreground ml-1">/{plan.interval}</span>
+                                    )}
                                 </div>
-                                <p className="text-sm text-muted-foreground mt-2 min-h-[40px]">{plan.description}</p>
                             </CardHeader>
+
                             <CardContent className="flex-1">
                                 <ul className="space-y-3 text-sm">
-                                    {plan.type === 'starter' && (
-                                        <>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> 100 queries/month</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> 2 connected sources</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Basic RAG search</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-green-500 flex-shrink-0" /> Community support</li>
-                                        </>
-                                    )}
-                                    {plan.type === 'pro' && (
-                                        <>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>Unlimited</strong> queries</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <strong>Unlimited</strong> sources</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Hybrid RAG + semantic</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Priority support</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> API access</li>
-                                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Team sharing (3 seats)</li>
-                                        </>
-                                    )}
+                                    {plan.features.map((feature, idx) => (
+                                        <li key={idx} className="flex items-center">
+                                            <Check className={`mr-2 h-4 w-4 flex-shrink-0 ${isPro ? 'text-primary' : 'text-green-500'
+                                                }`} />
+                                            <span>{feature}</span>
+                                        </li>
+                                    ))}
                                 </ul>
                             </CardContent>
-                            <CardFooter>
+
+                            <CardFooter className="pt-4">
                                 <Button
-                                    className="w-full"
+                                    className={`w-full ${isPro ? 'bg-gradient-to-r from-cyan-500 to-purple-500 hover:opacity-90' : ''}`}
                                     size="lg"
-                                    variant={plan.type === 'pro' ? 'default' : 'outline'}
+                                    variant={plan.buttonVariant}
                                     onClick={() => handleUpgrade(plan.type)}
                                     disabled={!!isCheckoutLoading || isCurrentPlan}
                                 >
-                                    {isCheckoutLoading === plan.type && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    {isCurrentPlan ? 'Current Plan' : `Upgrade to ${plan.name}`}
+                                    {isCheckoutLoading === plan.type && (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    )}
+                                    {isCurrentPlan ? 'Current Plan' : plan.buttonText}
                                 </Button>
                             </CardFooter>
                         </Card>
-                    )
+                    );
                 })}
-
-                {/* Static Enterprise Card */}
-                <Card className="flex flex-col h-full border-dashed bg-muted/20">
-                    <CardHeader>
-                        <CardTitle className="text-2xl">Enterprise</CardTitle>
-                        <div className="mt-2 flex items-baseline">
-                            <span className="text-4xl font-bold">Custom</span>
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-2 min-h-[40px]">For large organizations with strict security needs.</p>
-                    </CardHeader>
-                    <CardContent className="flex-1">
-                        <ul className="space-y-3 text-sm">
-                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0" /> Unlimited Files</li>
-                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0" /> SSO & SAML</li>
-                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0" /> Dedicated Account Manager</li>
-                            <li className="flex items-center"><Check className="mr-2 h-4 w-4 text-muted-foreground flex-shrink-0" /> Custom SLAs</li>
-                        </ul>
-                    </CardContent>
-                    <CardFooter>
-                        <Button className="w-full" size="lg" variant="ghost" onClick={() => handleUpgrade('enterprise')}>
-                            Contact Sales
-                        </Button>
-                    </CardFooter>
-                </Card>
             </div>
         </div>
     );

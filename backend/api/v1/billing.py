@@ -1,13 +1,22 @@
 """
-Billing API Router
+Billing API Router - Production Grade
 
-Endpoints for subscription management, checkout, and billing history.
-Integrates with Polar.sh for payment processing.
+Integrates with Polar.sh for:
+- Plan listing with real prices
+- Checkout session creation
+- Customer Portal session (pre-authenticated)
+- Subscription management
+- Order/Invoice history
+
+Polar API Reference:
+- POST /v1/customer-sessions - Create authenticated portal session
+- GET /v1/subscriptions/?customer_id={id} - List customer subscriptions
+- GET /v1/orders/?customer_id={id} - List customer orders
+- GET /v1/customers/{id} - Get customer details
 """
 import httpx
 import logging
 from typing import List, Optional
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from services.team_service import team_service
@@ -17,6 +26,8 @@ from core.db import get_supabase
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+POLAR_API_BASE = "https://api.polar.sh/v1"
 
 
 # ============================================================
@@ -40,7 +51,6 @@ class PlanResponse(BaseModel):
 
 class InvoiceResponse(BaseModel):
     id: str
-    order_id: str
     amount: int  # in cents
     currency: str
     status: str
@@ -49,10 +59,13 @@ class InvoiceResponse(BaseModel):
     invoice_url: Optional[str] = None
 
 
-class SubscriptionResponse(BaseModel):
+class SubscriptionDetailResponse(BaseModel):
     id: str
     status: str
     plan_name: str
+    price_amount: int
+    price_currency: str
+    interval: str
     current_period_start: Optional[str] = None
     current_period_end: Optional[str] = None
     cancel_at_period_end: bool = False
@@ -67,23 +80,61 @@ class PortalResponse(BaseModel):
 # ============================================================
 
 def get_polar_headers() -> dict:
-    """Get authorization headers for Polar API calls."""
+    """Authorization headers for Polar Core API."""
     return {
         "Authorization": f"Bearer {settings.POLAR_ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
 
 
-async def get_team_subscription_id(team_id: str) -> Optional[str]:
-    """Get Polar subscription ID from our database."""
-    supabase = get_supabase()
-    response = supabase.table("subscriptions").select(
-        "polar_id"
-    ).eq("team_id", team_id).limit(1).execute()
+async def get_customer_id_for_user(user_id: str) -> Optional[str]:
+    """
+    Get Polar customer_id for a user.
     
-    if response.data and response.data[0].get("polar_id"):
-        return response.data[0]["polar_id"]
-    return None
+    Strategy:
+    1. Check our subscriptions table for stored customer_id
+    2. If not found, try to find customer by email via Polar API
+    """
+    try:
+        # Get user's team
+        team_member = await team_service.get_user_team_member(user_id)
+        if not team_member:
+            return None
+        
+        team_id = str(team_member.team_id)
+        
+        # Check our database first
+        supabase = get_supabase()
+        sub_response = supabase.table("subscriptions").select(
+            "customer_id, polar_id"
+        ).eq("team_id", team_id).limit(1).execute()
+        
+        if sub_response.data and sub_response.data[0].get("customer_id"):
+            return sub_response.data[0]["customer_id"]
+        
+        # If no customer_id but we have polar_id, fetch from Polar
+        if sub_response.data and sub_response.data[0].get("polar_id"):
+            polar_sub_id = sub_response.data[0]["polar_id"]
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{POLAR_API_BASE}/subscriptions/{polar_sub_id}",
+                    headers=get_polar_headers()
+                )
+                if response.status_code == 200:
+                    sub_data = response.json()
+                    customer_id = sub_data.get("customer", {}).get("id")
+                    if customer_id:
+                        # Cache it in our database
+                        supabase.table("subscriptions").update({
+                            "customer_id": customer_id
+                        }).eq("team_id", team_id).execute()
+                        return customer_id
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"[Billing] Failed to get customer_id: {e}")
+        return None
 
 
 # ============================================================
@@ -93,21 +144,21 @@ async def get_team_subscription_id(team_id: str) -> Optional[str]:
 @router.get("/plans", response_model=List[PlanResponse])
 async def list_plans():
     """
-    Fetch available plans from Polar.
-    Returns pricing information for Starter, Pro, and Enterprise plans.
+    Fetch available plans from Polar with real prices.
     """
     if not settings.POLAR_ACCESS_TOKEN:
         logger.warning("[Billing] Polar token not configured")
         return []
 
-    polar_url = "https://api.polar.sh/v1/products?is_archived=false"
-    
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         try:
-            response = await client.get(polar_url, headers=get_polar_headers())
+            response = await client.get(
+                f"{POLAR_API_BASE}/products?is_archived=false",
+                headers=get_polar_headers()
+            )
             
             if response.status_code != 200:
-                logger.error(f"[Billing] Polar API Error: {response.status_code} - {response.text}")
+                logger.error(f"[Billing] Polar API Error: {response.status_code}")
                 return []
             
             data = response.json()
@@ -120,7 +171,6 @@ async def list_plans():
                 settings.POLAR_PRODUCT_ID_PRO_MONTHLY: "pro",
             }
             
-            # Add enterprise if configured
             if hasattr(settings, 'POLAR_PRODUCT_ID_ENTERPRISE') and settings.POLAR_PRODUCT_ID_ENTERPRISE:
                 product_mapping[settings.POLAR_PRODUCT_ID_ENTERPRISE] = "enterprise"
 
@@ -131,9 +181,7 @@ async def list_plans():
                     if not prices:
                         continue
                     
-                    # Get the first (primary) price
                     price = prices[0]
-                    
                     plans.append(PlanResponse(
                         id=product_id,
                         name=item.get("name", ""),
@@ -144,16 +192,12 @@ async def list_plans():
                         type=product_mapping[product_id]
                     ))
             
-            # Sort: starter first, then pro, then enterprise
+            # Sort: starter, pro, enterprise
             order = {"starter": 0, "pro": 1, "enterprise": 2}
             plans.sort(key=lambda x: order.get(x.type, 99))
             
-            logger.info(f"[Billing] Fetched {len(plans)} plans from Polar")
             return plans
             
-        except httpx.TimeoutException:
-            logger.error("[Billing] Polar API timeout")
-            return []
         except Exception as e:
             logger.error(f"[Billing] Failed to fetch plans: {e}")
             return []
@@ -170,19 +214,16 @@ async def create_checkout_session(
 ):
     """
     Create a Polar checkout session for plan upgrade.
-    Returns a URL to redirect the user to Polar's checkout page.
     """
     if not settings.POLAR_ACCESS_TOKEN:
         raise HTTPException(status_code=500, detail="Billing not configured")
 
-    # Get user's team
     team_member = await team_service.get_user_team_member(current_user_id)
     if not team_member:
         raise HTTPException(status_code=400, detail="User has no team")
     
     team_id = str(team_member.team_id)
     
-    # Map plan to product ID
     product_map = {
         "starter": getattr(settings, 'POLAR_PRODUCT_ID_STARTER_MONTHLY', None),
         "pro": getattr(settings, 'POLAR_PRODUCT_ID_PRO_MONTHLY', None),
@@ -196,7 +237,7 @@ async def create_checkout_session(
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             response = await client.post(
-                "https://api.polar.sh/v1/checkouts/custom/",
+                f"{POLAR_API_BASE}/checkouts/custom/",
                 json={
                     "product_id": product_id,
                     "success_url": f"{settings.APP_URL}/settings?tab=billing&checkout=success",
@@ -205,17 +246,11 @@ async def create_checkout_session(
                 headers=get_polar_headers()
             )
             response.raise_for_status()
-            checkout_data = response.json()
+            return {"url": response.json()["url"]}
             
-            logger.info(f"[Billing] Created checkout for team {team_id[:8]}... - plan: {data.plan}")
-            return {"url": checkout_data["url"]}
-            
-        except httpx.HTTPStatusError as e:
-            logger.error(f"[Billing] Checkout creation failed: {e.response.text}")
-            raise HTTPException(status_code=500, detail="Failed to create checkout session")
         except Exception as e:
             logger.error(f"[Billing] Checkout error: {e}")
-            raise HTTPException(status_code=500, detail="Failed to create checkout session")
+            raise HTTPException(status_code=500, detail="Failed to create checkout")
 
 
 # ============================================================
@@ -225,136 +260,114 @@ async def create_checkout_session(
 @router.post("/portal", response_model=PortalResponse)
 async def create_portal_session(current_user_id: str = Depends(get_current_user)):
     """
-    Create a Polar customer portal session for subscription management.
+    Create a Polar Customer Portal session.
     
-    Uses Polar's Customer Sessions API to create a pre-authenticated portal URL
-    where customers can manage their subscriptions, payment methods, and view invoices.
+    Uses POST /v1/customer-sessions with customer_id to get a 
+    pre-authenticated customer_portal_url.
     """
     if not settings.POLAR_ACCESS_TOKEN:
         raise HTTPException(status_code=500, detail="Billing not configured")
     
     try:
-        # Get the user's team and subscription to find the Polar customer_id
-        team_member = await team_service.get_user_team_member(current_user_id)
-        if not team_member:
-            # Fallback for users without team
-            logger.warning(f"[Billing] User {current_user_id[:8]}... has no team, using fallback portal")
-            return PortalResponse(url="https://polar.sh/~")
-        
-        team_id = str(team_member.team_id)
-        
-        # Get subscription from our database to find Polar customer/subscription info
-        supabase = get_supabase()
-        sub_response = supabase.table("subscriptions").select(
-            "polar_id, customer_id"
-        ).eq("team_id", team_id).limit(1).execute()
-        
-        # Check if we have a customer_id stored
-        customer_id = None
-        if sub_response.data and sub_response.data[0]:
-            customer_id = sub_response.data[0].get("customer_id")
+        customer_id = await get_customer_id_for_user(current_user_id)
         
         if not customer_id:
-            # Try to get customer_id from Polar subscription
-            polar_sub_id = sub_response.data[0].get("polar_id") if sub_response.data else None
-            if polar_sub_id:
-                customer_id = await _get_customer_id_from_subscription(polar_sub_id)
+            logger.warning(f"[Billing] No customer_id for user {current_user_id[:8]}...")
+            raise HTTPException(
+                status_code=400, 
+                detail="No subscription found. Please subscribe first."
+            )
         
-        if customer_id:
-            # Create a Customer Portal session using Polar API
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    "https://api.polar.sh/v1/customer-sessions",
-                    json={
-                        "customer_id": customer_id,
-                        "return_url": f"{settings.APP_URL}/settings?tab=billing"
-                    },
-                    headers=get_polar_headers()
-                )
-                
-                if response.status_code in [200, 201]:
-                    session_data = response.json()
-                    portal_url = session_data.get("customer_portal_url")
-                    
-                    if portal_url:
-                        logger.info(f"[Billing] Created customer portal session for user {current_user_id[:8]}...")
-                        return PortalResponse(url=portal_url)
-                
-                logger.warning(f"[Billing] Customer session API returned: {response.status_code}")
-        
-        # Fallback: Direct to Polar's generic purchases page
-        logger.info(f"[Billing] Using fallback portal for user {current_user_id[:8]}...")
-        return PortalResponse(url="https://polar.sh/purchases")
-        
-    except Exception as e:
-        logger.error(f"[Billing] Portal session creation failed: {e}")
-        # Fallback to generic portal
-        return PortalResponse(url="https://polar.sh/purchases")
-
-
-async def _get_customer_id_from_subscription(subscription_id: str) -> Optional[str]:
-    """Fetch customer_id from Polar subscription details."""
-    try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                f"https://api.polar.sh/v1/subscriptions/{subscription_id}",
+            response = await client.post(
+                f"{POLAR_API_BASE}/customer-sessions",
+                json={
+                    "customer_id": customer_id,
+                    "return_url": f"{settings.APP_URL}/settings?tab=billing"
+                },
                 headers=get_polar_headers()
             )
             
-            if response.status_code == 200:
-                sub_data = response.json()
-                customer = sub_data.get("customer", {})
-                return customer.get("id")
+            if response.status_code in [200, 201]:
+                session_data = response.json()
+                portal_url = session_data.get("customer_portal_url")
+                
+                if portal_url:
+                    logger.info(f"[Billing] Portal session created for {current_user_id[:8]}...")
+                    return PortalResponse(url=portal_url)
+            
+            logger.error(f"[Billing] Customer session failed: {response.status_code} - {response.text}")
+            raise HTTPException(status_code=500, detail="Failed to create portal session")
+            
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.warning(f"[Billing] Failed to get customer_id: {e}")
-    
-    return None
+        logger.error(f"[Billing] Portal error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create portal session")
 
 
 # ============================================================
-# SUBSCRIPTION STATUS ENDPOINT
+# SUBSCRIPTION STATUS ENDPOINT  
 # ============================================================
 
-@router.get("/subscription", response_model=Optional[SubscriptionResponse])
+@router.get("/subscription", response_model=Optional[SubscriptionDetailResponse])
 async def get_current_subscription(current_user_id: str = Depends(get_current_user)):
     """
-    Get the current user's subscription details from our database.
+    Get current subscription details from Polar.
+    
+    Uses GET /v1/subscriptions/?customer_id={id}
     """
+    if not settings.POLAR_ACCESS_TOKEN:
+        return None
+    
     try:
-        # Get user's team
-        team_member = await team_service.get_user_team_member(current_user_id)
-        if not team_member:
+        customer_id = await get_customer_id_for_user(current_user_id)
+        
+        if not customer_id:
             return None
         
-        team_id = str(team_member.team_id)
-        
-        # Get subscription from our database
-        supabase = get_supabase()
-        response = supabase.table("subscriptions").select(
-            "polar_id, status, plan_type, created_at, updated_at"
-        ).eq("team_id", team_id).limit(1).execute()
-        
-        if not response.data:
-            return None
-        
-        sub = response.data[0]
-        
-        return SubscriptionResponse(
-            id=sub.get("polar_id", ""),
-            status=sub.get("status", "inactive"),
-            plan_name=sub.get("plan_type", "free"),
-            current_period_start=sub.get("created_at"),
-            current_period_end=None,  # Would need to fetch from Polar
-            cancel_at_period_end=False
-        )
-        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{POLAR_API_BASE}/subscriptions/",
+                params={"customer_id": customer_id, "active": True},
+                headers=get_polar_headers()
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"[Billing] Subscription fetch failed: {response.status_code}")
+                return None
+            
+            data = response.json()
+            items = data.get("items", [])
+            
+            if not items:
+                return None
+            
+            # Get first active subscription
+            sub = items[0]
+            product = sub.get("product", {})
+            prices = product.get("prices", [{}])
+            price = prices[0] if prices else {}
+            
+            return SubscriptionDetailResponse(
+                id=sub.get("id", ""),
+                status=sub.get("status", "unknown"),
+                plan_name=product.get("name", "Unknown"),
+                price_amount=price.get("price_amount", 0),
+                price_currency=price.get("price_currency", "usd"),
+                interval=price.get("recurring_interval", "month"),
+                current_period_start=sub.get("current_period_start"),
+                current_period_end=sub.get("current_period_end"),
+                cancel_at_period_end=sub.get("cancel_at_period_end", False)
+            )
+            
     except Exception as e:
-        logger.error(f"[Billing] Failed to get subscription: {e}")
+        logger.error(f"[Billing] Subscription error: {e}")
         return None
 
 
 # ============================================================
-# BILLING HISTORY / INVOICES ENDPOINT
+# BILLING HISTORY / ORDERS ENDPOINT
 # ============================================================
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
@@ -362,149 +375,57 @@ async def get_billing_history(current_user_id: str = Depends(get_current_user)):
     """
     Get billing history (orders) from Polar.
     
-    Uses the Polar Orders API to fetch past purchases for the customer.
+    Uses GET /v1/orders/?customer_id={id}
     """
     if not settings.POLAR_ACCESS_TOKEN:
         return []
     
     try:
-        # Get user's team and subscription info
-        team_member = await team_service.get_user_team_member(current_user_id)
-        if not team_member:
+        customer_id = await get_customer_id_for_user(current_user_id)
+        
+        if not customer_id:
             return []
         
-        team_id = str(team_member.team_id)
-        
-        # Get subscription from our database to find customer context
-        supabase = get_supabase()
-        sub_response = supabase.table("subscriptions").select(
-            "polar_id"
-        ).eq("team_id", team_id).limit(1).execute()
-        
-        if not sub_response.data or not sub_response.data[0].get("polar_id"):
-            # No subscription record = no billing history
-            return []
-        
-        polar_subscription_id = sub_response.data[0]["polar_id"]
-        
-        # Fetch orders from Polar using subscription ID
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Try to get orders associated with this subscription
-            orders_url = f"https://api.polar.sh/v1/orders?subscription_id={polar_subscription_id}"
-            
-            response = await client.get(orders_url, headers=get_polar_headers())
+            response = await client.get(
+                f"{POLAR_API_BASE}/orders/",
+                params={"customer_id": customer_id},
+                headers=get_polar_headers()
+            )
             
             if response.status_code != 200:
-                logger.warning(f"[Billing] Failed to fetch orders: {response.status_code}")
-                # Fallback: Try getting subscription details instead
-                return await _get_orders_fallback(polar_subscription_id)
+                logger.warning(f"[Billing] Orders fetch failed: {response.status_code}")
+                return []
             
-            orders_data = response.json()
-            items = orders_data.get("items", [])
+            data = response.json()
+            items = data.get("items", [])
             
             invoices = []
             for item in items:
-                # Extract product name from the order
                 product = item.get("product", {})
-                product_name = product.get("name", "Subscription")
                 
                 invoices.append(InvoiceResponse(
                     id=item.get("id", ""),
-                    order_id=item.get("id", ""),
-                    amount=item.get("total_amount", 0),
+                    amount=item.get("amount", 0),
                     currency=item.get("currency", "usd"),
                     status=item.get("status", "unknown"),
                     created_at=item.get("created_at", ""),
-                    product_name=product_name,
-                    invoice_url=item.get("invoice_url")  # May need to generate
+                    product_name=product.get("name", "Subscription"),
+                    invoice_url=item.get("invoice_url")
                 ))
             
-            # Sort by date descending (most recent first)
+            # Sort by date (most recent first)
             invoices.sort(key=lambda x: x.created_at, reverse=True)
-            
-            logger.info(f"[Billing] Fetched {len(invoices)} orders for team {team_id[:8]}...")
             return invoices
             
     except Exception as e:
-        logger.error(f"[Billing] Failed to fetch billing history: {e}")
-        return []
-
-
-async def _get_orders_fallback(subscription_id: str) -> List[InvoiceResponse]:
-    """
-    Fallback method to get order info from subscription details.
-    Used when direct orders query fails.
-    """
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            sub_url = f"https://api.polar.sh/v1/subscriptions/{subscription_id}"
-            response = await client.get(sub_url, headers=get_polar_headers())
-            
-            if response.status_code != 200:
-                return []
-            
-            sub_data = response.json()
-            product = sub_data.get("product", {})
-            
-            # Create a single "invoice" from subscription data
-            prices = product.get("prices", [{}])
-            price = prices[0] if prices else {}
-            
-            return [InvoiceResponse(
-                id=subscription_id,
-                order_id=subscription_id,
-                amount=price.get("price_amount", 0),
-                currency=price.get("price_currency", "usd"),
-                status=sub_data.get("status", "active"),
-                created_at=sub_data.get("created_at", ""),
-                product_name=product.get("name", "Subscription"),
-                invoice_url=None
-            )]
-            
-    except Exception as e:
-        logger.error(f"[Billing] Orders fallback failed: {e}")
+        logger.error(f"[Billing] Orders error: {e}")
         return []
 
 
 # ============================================================
-# INVOICE/RECEIPT DOWNLOAD ENDPOINT
+# INVOICE DOWNLOAD ENDPOINT
 # ============================================================
-
-@router.post("/invoices/{order_id}/generate")
-async def generate_invoice(
-    order_id: str,
-    current_user_id: str = Depends(get_current_user)
-):
-    """
-    Trigger invoice generation for an order.
-    
-    Polar requires generating an invoice before it can be downloaded.
-    This is a two-step process: generate (POST) then retrieve (GET).
-    """
-    if not settings.POLAR_ACCESS_TOKEN:
-        raise HTTPException(status_code=500, detail="Billing not configured")
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # Step 1: Generate the invoice
-            generate_url = f"https://api.polar.sh/v1/orders/{order_id}/invoice"
-            response = await client.post(generate_url, headers=get_polar_headers())
-            
-            if response.status_code == 202:
-                # Invoice generation scheduled
-                logger.info(f"[Billing] Invoice generation scheduled for order {order_id}")
-                return {"status": "generating", "message": "Invoice generation started. Please wait a moment."}
-            elif response.status_code == 200:
-                # Invoice already exists
-                return {"status": "ready", "message": "Invoice is ready for download."}
-            else:
-                logger.error(f"[Billing] Invoice generation failed: {response.text}")
-                raise HTTPException(status_code=400, detail="Failed to generate invoice")
-                
-    except httpx.HTTPError as e:
-        logger.error(f"[Billing] Invoice generation HTTP error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate invoice")
-
 
 @router.get("/invoices/{order_id}/download")
 async def download_invoice(
@@ -512,43 +433,42 @@ async def download_invoice(
     current_user_id: str = Depends(get_current_user)
 ):
     """
-    Get the invoice/receipt download URL for an order.
+    Get invoice download URL for an order.
     
-    Returns a URL to download the PDF invoice.
-    If invoice hasn't been generated, returns instructions to generate it first.
+    Uses GET /v1/orders/{id}/invoice
     """
     if not settings.POLAR_ACCESS_TOKEN:
         raise HTTPException(status_code=500, detail="Billing not configured")
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Try to get the invoice
-            invoice_url = f"https://api.polar.sh/v1/orders/{order_id}/invoice"
-            response = await client.get(invoice_url, headers=get_polar_headers())
+            # First try to get the invoice
+            response = await client.get(
+                f"{POLAR_API_BASE}/orders/{order_id}/invoice",
+                headers=get_polar_headers()
+            )
             
             if response.status_code == 200:
                 invoice_data = response.json()
-                download_url = invoice_data.get("url")
-                
-                if download_url:
-                    logger.info(f"[Billing] Invoice download URL retrieved for order {order_id}")
-                    return {"url": download_url}
-                else:
-                    # Invoice exists but no URL - try to get from response
-                    return {"url": invoice_data.get("invoice_url", f"https://polar.sh/purchases")}
-                    
+                return {"url": invoice_data.get("url")}
+            
             elif response.status_code == 404:
-                # Invoice not generated yet
-                return {
-                    "error": "not_generated",
-                    "message": "Invoice not yet generated. Please generate it first.",
-                    "generate_url": f"/billing/invoices/{order_id}/generate"
-                }
-            else:
-                logger.warning(f"[Billing] Invoice retrieval failed: {response.status_code}")
-                # Fallback to Polar purchases page
-                return {"url": "https://polar.sh/~"}
+                # Invoice not generated, generate it
+                gen_response = await client.post(
+                    f"{POLAR_API_BASE}/orders/{order_id}/invoice",
+                    headers=get_polar_headers()
+                )
                 
+                if gen_response.status_code == 202:
+                    return {
+                        "status": "generating",
+                        "message": "Invoice is being generated. Please try again in a few seconds."
+                    }
+                    
+            raise HTTPException(status_code=404, detail="Invoice not found")
+            
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"[Billing] Invoice download failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve invoice")
+        logger.error(f"[Billing] Invoice download error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get invoice")
