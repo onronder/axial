@@ -161,7 +161,6 @@ async def get_customer_id_for_user(user_id: str) -> Optional[str]:
         if sub_response.data and sub_response.data[0].get("customer_id"):
             return sub_response.data[0]["customer_id"]
         
-        # If no customer_id but we have polar_id, fetch from Polar
         if sub_response.data and sub_response.data[0].get("polar_id"):
             polar_sub_id = sub_response.data[0]["polar_id"]
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -179,10 +178,39 @@ async def get_customer_id_for_user(user_id: str) -> Optional[str]:
                         }).eq("team_id", team_id).execute()
                         return customer_id
         
+        # 3. Fallback: Search Polar by Email (Self-healing)
+        # If we have no local record, check if they exist in Polar (e.g. they bought it, webhook failed)
+        user_email = None
+        
+        # Fetch user email using Admin API (reliable)
+        try:
+             user_data = supabase.auth.admin.get_user_by_id(user_id)
+                 if user_data and user_data.user:
+                     user_email = user_data.user.email
+             except Exception as e:
+                 logger.warning(f"[Billing] Failed to fetch user email: {e}")
+
+        if user_email:
+             async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{POLAR_API_BASE}/customers",
+                    params={"email": user_email, "limit": 1},
+                    headers=get_polar_headers()
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    items = data.get("items", [])
+                    if items:
+                         customer_id = items[0].get("id")
+                         logger.info(f"[Billing] Found customer_id via email lookup: {customer_id}")
+                         # Cache it (requires creating/updating subscription row likely, or just return for now)
+                         # We'll return it so billing history works, next webhook/sync will fix DB.
+                         return customer_id
+
         return None
         
     except Exception as e:
-        logger.error(f"[Billing] Failed to get customer_id: {e}")
+        logger.error(f"[Billing] Failed to get_customer_id_for_user: {e}")
         return None
 
 
