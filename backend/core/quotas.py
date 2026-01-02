@@ -13,6 +13,9 @@ class PlanLimits(BaseModel):
     max_team_seats: int = 1
     allow_web_crawl: bool = False
     model_tier: str = "standard" # standard, hybrid, premium
+    
+    # Silence Pydantic warning about "model_" prefix
+    model_config = {"protected_namespaces": ()}
 
     @property
     def max_storage_mb(self):
