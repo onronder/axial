@@ -26,6 +26,13 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy application code
 COPY . .
 
+# Create a non-root user and switch to it
+# This prevents Celery security warnings and improves container security
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 # Run the application
 # Railway injects PORT environment variable - we must use it
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}

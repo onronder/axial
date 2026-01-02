@@ -142,8 +142,9 @@ export function DataSourceCard({ source, onBrowse }: DataSourceCardProps) {
         </div>
 
         {/* Actions */}
+        {/* Actions - Wrapped to fallback gracefully on small screens */}
         {source.isConnected ? (
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap sm:flex-nowrap">
             <Button
               variant="gradient"
               size="sm"
