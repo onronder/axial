@@ -180,10 +180,16 @@ async def list_team_members(
 
 @router.get("/team/stats", response_model=TeamStatsResponse)
 async def get_team_stats(user_id: str = Depends(get_current_user)):
-    """Get team statistics."""
+    """Get team statistics with dynamic seat limits based on plan."""
+    from core.quotas import get_plan_limits
+    
     supabase = get_supabase()
     
     try:
+        # Get user's effective plan for dynamic seat limits
+        effective_plan = await team_service.get_effective_plan(user_id)
+        plan_limits = get_plan_limits(effective_plan)
+        
         response = supabase.table("team_members")\
             .select("status")\
             .eq("owner_user_id", user_id)\
@@ -195,7 +201,7 @@ async def get_team_stats(user_id: str = Depends(get_current_user)):
         pending = sum(1 for m in members if m.get("status") == "pending")
         
         return TeamStatsResponse(
-            total_seats=20,
+            total_seats=plan_limits.max_team_seats,
             active_members=active,
             pending_invites=pending
         )

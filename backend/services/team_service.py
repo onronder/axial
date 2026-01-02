@@ -674,7 +674,7 @@ class TeamService:
                 "email": email,
                 "name": name or email.split("@")[0],
                 "role": role,
-                "status": "invited",
+                "status": "pending",
                 "created_at": now,
                 "invited_at": now
             }
