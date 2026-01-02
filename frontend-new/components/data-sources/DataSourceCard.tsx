@@ -143,12 +143,13 @@ export function DataSourceCard({ source, onBrowse }: DataSourceCardProps) {
 
         {/* Actions */}
         {/* Actions - Wrapped to fallback gracefully on small screens */}
+        {/* Actions - Wrapped to fallback gracefully on small screens */}
         {source.isConnected ? (
-          <div className="flex gap-2 flex-wrap sm:flex-nowrap">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Button
               variant="gradient"
               size="sm"
-              className="flex-1 gap-2"
+              className="flex-1 gap-2 w-full"
               onClick={onBrowse}
               disabled={isLoading || isSyncing}
             >
@@ -156,28 +157,32 @@ export function DataSourceCard({ source, onBrowse }: DataSourceCardProps) {
               Browse
             </Button>
 
-            {/* Sync Button */}
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-primary hover:border-primary/50 hover:bg-primary/5"
-              onClick={handleSync}
-              disabled={isLoading || isSyncing}
-              title="Sync Now"
-            >
-              <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
-            </Button>
+            <div className="flex gap-2 w-full sm:w-auto">
+              {/* Sync Button */}
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-full sm:w-9 shrink-0 text-muted-foreground hover:text-primary hover:border-primary/50 hover:bg-primary/5"
+                onClick={handleSync}
+                disabled={isLoading || isSyncing}
+                title="Sync Now"
+              >
+                <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
+                <span className="ml-2 sm:hidden">Sync</span>
+              </Button>
 
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10"
-              onClick={handleDisconnect}
-              disabled={isLoading || isSyncing}
-              title="Disconnect"
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-            </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-full sm:w-9 shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10"
+                onClick={handleDisconnect}
+                disabled={isLoading || isSyncing}
+                title="Disconnect"
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                <span className="ml-2 sm:hidden">Disconnect</span>
+              </Button>
+            </div>
           </div>
         ) : (
           <Button

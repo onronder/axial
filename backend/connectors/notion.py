@@ -7,6 +7,7 @@ Updated to support Universal Connector Architecture (Sync Ingest).
 
 import logging
 from typing import List, Optional, Dict, Any
+from datetime import datetime, timezone
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.resilience import with_retry_sync

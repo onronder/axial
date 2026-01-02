@@ -111,7 +111,7 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
     try:
         # First get user's team_id from team_members
         team_result = supabase.table("team_members").select("team_id").eq(
-            "user_id", str(user_id)
+            "member_user_id", str(user_id)
         ).limit(1).execute()
         
         if team_result.data:
