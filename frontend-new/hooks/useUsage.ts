@@ -18,34 +18,37 @@ export const useUsage = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchUsage = useCallback(async () => {
+    const fetchAll = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         try {
-            const data = await getUsageStats();
-            setUsage(data);
+            // Fetch both in parallel to avoid race conditions
+            const [usageData, planData] = await Promise.all([
+                getUsageStats().catch(err => {
+                    console.error('Failed to fetch usage:', err);
+                    return null;
+                }),
+                getEffectivePlan().catch(err => {
+                    console.error('Failed to fetch effective plan:', err);
+                    return null;
+                })
+            ]);
+
+            if (usageData) setUsage(usageData);
+            if (planData) setEffectivePlan(planData);
+
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Failed to fetch usage';
-            console.error('Failed to fetch usage:', err);
+            const message = err instanceof Error ? err.message : 'Failed to fetch user data';
+            console.error('Failed to fetch user data:', err);
             setError(message);
         } finally {
             setIsLoading(false);
         }
     }, []);
 
-    const fetchEffectivePlan = useCallback(async () => {
-        try {
-            const data = await getEffectivePlan();
-            setEffectivePlan(data);
-        } catch (err) {
-            console.error('Failed to fetch effective plan:', err);
-        }
-    }, []);
-
     useEffect(() => {
-        fetchUsage();
-        fetchEffectivePlan();
-    }, [fetchUsage, fetchEffectivePlan]);
+        fetchAll();
+    }, [fetchAll]);
 
     // Derived values for convenience
     const plan: PlanType = effectivePlan?.plan ?? usage?.plan ?? 'free';
@@ -89,8 +92,8 @@ export const useUsage = () => {
         teamEnabled,
 
         // Actions
-        refresh: fetchUsage,
-        refreshPlan: fetchEffectivePlan,
+        refresh: fetchAll,
+        refreshPlan: fetchAll,
     };
 };
 
