@@ -9,7 +9,7 @@ import { ChatArea } from "@/components/chat/ChatArea";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { generateSmartTitle } from "@/lib/chat-utils";
+import { generateSmartTitle, streamChatResponse } from "@/lib/chat-utils";
 import { ModelId } from "@/lib/types";
 
 /**
@@ -74,17 +74,7 @@ export default function ChatPage() {
         loadMessages();
     }, [chatId, isNewChat, getMessagesById]);
 
-    // Simulate streaming for visual effect
-    const simulateStreaming = useCallback(async (fullText: string): Promise<string> => {
-        const words = fullText.split(" ");
-        let currentText = "";
-        for (let i = 0; i < words.length; i++) {
-            currentText += (i > 0 ? " " : "") + words[i];
-            setStreamingMessage(currentText);
-            await new Promise((resolve) => setTimeout(resolve, 20 + Math.random() * 60));
-        }
-        return currentText;
-    }, []);
+
 
     // Handle sending a message
     const handleSendMessage = async (content: string) => {
@@ -98,8 +88,8 @@ export default function ChatPage() {
                 conversationId = await createNewChat(title);
                 console.log('💬 [ChatPage] Created chat:', conversationId);
 
-                // Navigate to the new chat URL (this won't remount, just update URL)
-                router.replace(`/dashboard/chat/${conversationId}`);
+                // Update URL without navigation
+                window.history.replaceState(null, '', `/dashboard/chat/${conversationId}`);
             } catch (error) {
                 console.error('💬 [ChatPage] Failed to create chat:', error);
                 return;
@@ -116,33 +106,49 @@ export default function ChatPage() {
         setMessages(prev => [...prev, userMessage]);
         setIsTyping(true);
 
+        // Prepare placeholder for AI response
+        const aiMessageId = (Date.now() + 1).toString();
+        let aiContent = "";
+
+        // Only set streaming message if NOT using simulateStreaming (which we are deleting)
+        setStreamingMessage("");
+
         try {
-            // Call chat API
-            const { data } = await api.post('/chat', {
+            // Stream the response
+            const generator = streamChatResponse({
                 query: content,
                 conversation_id: conversationId,
                 history: messages.slice(-10).map(m => ({
                     role: m.role,
                     content: m.content
                 })),
-                model: selectedModel // Pass selected model
+                model: selectedModel
             });
 
+            for await (const event of generator) {
+                if (event.type === 'token') {
+                    aiContent += event.content;
+                    setStreamingMessage(aiContent);
+                } else if (event.type === 'sources') {
+                    // Update sources logic if needed, or store for final message
+                    // For now, we attach to final message update
+                } else if (event.type === 'error') {
+                    throw new Error(event.message);
+                }
+            }
+
+            // Stream complete
             setIsTyping(false);
-
-            // Stream the response
-            await simulateStreaming(data.answer);
-
-            // Add AI message
-            const aiMessage: Message = {
-                id: data.message_id || (Date.now() + 1).toString(),
-                role: "assistant",
-                content: data.answer,
-                created_at: new Date().toISOString(),
-                sources: data.sources,
-            };
-
             setStreamingMessage(null);
+
+            // Add final AI message to state
+            const aiMessage: Message = {
+                id: aiMessageId,
+                role: "assistant",
+                content: aiContent,
+                created_at: new Date().toISOString(),
+                // sources: data.sources // TODO: Capture sources from event
+            };
             setMessages(prev => [...prev, aiMessage]);
 
         } catch (error) {

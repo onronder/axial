@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
@@ -14,7 +15,7 @@ import { HelpTrigger } from "@/components/help/HelpTrigger";
 import { HelpModal } from "@/components/help/HelpModal";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { DeterministicAvatar } from "@/components/ui/DeterministicAvatar"; // New import
 import { Badge } from "@/components/ui/badge";
 import {
     DropdownMenu,
@@ -110,19 +111,25 @@ export function DashboardSidebar() {
             <div className="p-2 border-t border-sidebar-border/50">
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <button className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-sidebar-accent/50 transition-colors">
-                            <Avatar className="h-6 w-6">
-                                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-indigo-500 text-white text-xs">
-                                    {displayName?.split(" ").map((n) => n[0]).join("").toUpperCase() || "U"}
-                                </AvatarFallback>
-                            </Avatar>
-                            <div className="flex flex-1 flex-col items-start text-left text-sm">
-                                <span className="font-medium">{displayName}</span>
-                                <Badge variant="secondary" className="mt-0.5 h-4 px-1 text-[10px] bg-sidebar-accent">
-                                    {effectivePlan ? effectivePlan.charAt(0).toUpperCase() + effectivePlan.slice(1) : 'Free'}
-                                </Badge>
+                        <button className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-sidebar-accent/50 transition-colors group">
+                            <DeterministicAvatar name={displayName} className="h-8 w-8 text-xs" />
+                            <div className="flex flex-1 flex-col items-start text-left text-sm overflow-hidden">
+                                <span className="font-medium truncate w-full">{displayName}</span>
+
+                                <Link
+                                    href="/dashboard/settings/billing"
+                                    className="z-10 mt-0.5" // z-10 to ensure it catches clicks above the button
+                                    onClick={(e) => e.stopPropagation()} // Prevent dropdown toggle
+                                >
+                                    <Badge
+                                        variant="secondary"
+                                        className="h-4 px-1.5 text-[10px] bg-sidebar-accent hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer border border-transparent hover:border-primary/30"
+                                    >
+                                        {effectivePlan ? effectivePlan.charAt(0).toUpperCase() + effectivePlan.slice(1) : 'Free'}
+                                    </Badge>
+                                </Link>
                             </div>
-                            <ChevronUp className="h-4 w-4 text-sidebar-muted" />
+                            <ChevronUp className="h-4 w-4 text-sidebar-muted group-hover:text-sidebar-foreground transition-colors" />
                         </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="top" align="start" className="w-56 z-[100]">

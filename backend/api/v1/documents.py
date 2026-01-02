@@ -89,29 +89,44 @@ async def get_document_stats(
 # Document CRUD Endpoints
 # =============================================================================
 
+from fastapi import Response
+
 @router.get("/documents", response_model=List[DocumentDTO])
 @limiter.limit("60/minute")
 async def list_documents(
     request: Request,
+    response: Response,
     user_id: str = Depends(validate_team_access),  # Validates team access
     limit: int = 50,
-    offset: int = 0
+    offset: int = 0,
+    q: Optional[str] = None
 ):
     supabase = get_supabase()
     
     try:
-        # Fetch documents for user
+        # Build query
+        query = supabase.table("documents")\
+            .select("*", count="exact")\
+            .eq("user_id", user_id)
+            
+        # Apply search filter
+        if q and q.strip():
+            query = query.ilike("title", f"%{q.strip()}%")
+            
+        # Execute with pagination
         # Note: Order by created_at desc
-        response = supabase.table("documents")\
-            .select("*")\
-            .eq("user_id", user_id)\
+        db_res = query\
             .order("created_at", desc=True)\
             .range(offset, offset + limit - 1)\
             .execute()
             
+        # Set pagination header
+        if db_res.count is not None:
+             response.headers["X-Total-Count"] = str(db_res.count)
+            
         # Enrich with status if not present in DB
         docs = []
-        for d in response.data:
+        for d in db_res.data:
             d['status'] = d.get('status', 'indexed')
             # Fallback for size if not top-level
             if 'size' not in d or d['size'] is None:

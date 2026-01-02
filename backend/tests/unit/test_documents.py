@@ -9,6 +9,7 @@ Tests for:
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
+from fastapi import Request, Response
 
 
 class TestDocumentStatsEndpoint:
@@ -48,7 +49,7 @@ class TestDocumentStatsEndpoint:
         mock_supabase_with_stats.table.return_value.execute.return_value.count = 5
         
         # Verify the query uses count="exact" parameter
-        with patch('core.db.get_supabase', return_value=mock_supabase_with_stats):
+        with patch('api.v1.documents.get_supabase', return_value=mock_supabase_with_stats):
             from api.v1.documents import get_document_stats
             # The test validates that select is called with count parameter
             # In actual implementation: .select("id", count="exact")
@@ -59,7 +60,7 @@ class TestDocumentStatsEndpoint:
         """New users should have 0 documents."""
         mock_supabase_with_stats.table.return_value.execute.return_value.count = 0
         
-        with patch('core.db.get_supabase', return_value=mock_supabase_with_stats):
+        with patch('api.v1.documents.get_supabase', return_value=mock_supabase_with_stats):
             # Test would call the endpoint and verify count is 0
             pass
     
@@ -80,14 +81,102 @@ class TestDocumentListEndpoint:
         pass
     
     @pytest.mark.unit
-    def test_list_documents_supports_pagination(self):
+    def test_list_documents_pagination(self):
         """List endpoint should support limit and offset."""
-        pass
+        # Mock dependencies
+        mock_supabase = MagicMock()
+        mock_request = MagicMock(spec=Request)
+        mock_response = MagicMock(spec=Response)
+        mock_response.headers = {}
+        
+        # Setup chain for query builder
+        query = mock_supabase.table.return_value
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.order.return_value = query
+        query.range.return_value = query
+        
+        # Mock execution result
+        db_res = MagicMock()
+        db_res.data = [{"id": "1", "title": "Doc 1"}]
+        db_res.count = 100
+        query.execute.return_value = db_res
+        
+        with patch('api.v1.documents.get_supabase', return_value=mock_supabase):
+            from api.v1.documents import list_documents
+            import asyncio
+            
+            # Execute async test
+            result = asyncio.run(list_documents(
+                request=mock_request,
+                response=mock_response,
+                user_id="test-user",
+                limit=10,
+                offset=20
+            ))
+            
+            # Verify pagination calls
+            query.range.assert_called_with(20, 20 + 10 - 1)
+            
+            # Verify headers
+            assert mock_response.headers["X-Total-Count"] == "100"
+            assert len(result) == 1
+
+    @pytest.mark.unit
+    def test_list_documents_search(self):
+        """List endpoint should support search query."""
+        mock_supabase = MagicMock()
+        mock_request = MagicMock(spec=Request)
+        mock_response = MagicMock(spec=Response)
+        
+        # Setup chain
+        query = mock_supabase.table.return_value
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.ilike.return_value = query # Critical: verify ilike needed
+        query.order.return_value = query
+        query.range.return_value = query
+        query.execute.return_value = MagicMock(data=[], count=0)
+        
+        with patch('api.v1.documents.get_supabase', return_value=mock_supabase):
+            from api.v1.documents import list_documents
+            import asyncio
+            
+            asyncio.run(list_documents(
+                request=mock_request,
+                response=mock_response,
+                user_id="test-user",
+                q="budget report"
+            ))
+            
+            # Verify search filter applied
+            query.ilike.assert_called_with("title", "%budget report%")
     
     @pytest.mark.unit
     def test_list_documents_ordered_by_created_at_desc(self):
         """Most recent documents should appear first."""
-        pass
+        mock_supabase = MagicMock()
+        mock_response = MagicMock(spec=Response)
+        
+        query = mock_supabase.table.return_value
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.order.return_value = query
+        query.range.return_value = query
+        query.execute.return_value = MagicMock(data=[], count=0)
+        
+        with patch('api.v1.documents.get_supabase', return_value=mock_supabase):
+            from api.v1.documents import list_documents
+            import asyncio
+            
+            asyncio.run(list_documents(
+                request=MagicMock(spec=Request),
+                response=mock_response,
+                user_id="test-user"
+            ))
+            
+            # Verify ordering
+            query.order.assert_called_with("created_at", desc=True)
 
 
 class TestDocumentDeleteEndpoint:

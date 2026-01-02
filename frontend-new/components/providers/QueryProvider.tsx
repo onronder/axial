@@ -1,11 +1,26 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useState, ReactNode } from "react";
+import { toast } from "sonner"; // Using sonner as per package.json
+import { AxiosError } from "axios";
 
 interface QueryProviderProps {
     children: ReactNode;
+}
+
+/**
+ * Handle global API errors (e.g., 500 Internal Server Error)
+ */
+function handleGlobalError(error: unknown) {
+    if (error instanceof AxiosError) {
+        if (error.response?.status === 500) {
+            toast.error("Something went wrong on our end.", {
+                description: "Our team has been notified. Please try again later.",
+            });
+        }
+    }
 }
 
 /**
@@ -16,11 +31,19 @@ interface QueryProviderProps {
  * - Background refetching on window focus
  * - Retry logic with exponential backoff
  * - DevTools in development
+ * - GLOBAL ERROR HANDLING (500s)
  */
 export function QueryProvider({ children }: QueryProviderProps) {
     const [queryClient] = useState(
         () =>
             new QueryClient({
+                // Global Error Handling
+                queryCache: new QueryCache({
+                    onError: handleGlobalError,
+                }),
+                mutationCache: new MutationCache({
+                    onError: handleGlobalError,
+                }),
                 defaultOptions: {
                     queries: {
                         // Cache data for 5 minutes before marking stale

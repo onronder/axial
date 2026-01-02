@@ -502,6 +502,10 @@ class DriveConnector(BaseConnector):
                 # =====================================================
                 chunk_records = []
                 for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
+                    if embedding is None:
+                        logger.warning(f"⚠️ [DriveSync] Skipping empty chunk {i} for {file_meta['name']}")
+                        continue
+                        
                     chunk_records.append({
                         "document_id": parent_doc_id,  # FK to documents
                         "content": chunk_text,

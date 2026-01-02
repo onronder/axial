@@ -102,6 +102,11 @@ class TestGetEffectivePlan:
         mock_eq = mock_supabase.table.return_value.select.return_value.eq.return_value
         mock_eq.neq.return_value.limit.return_value.execute.return_value = Mock(data=[])
 
+        # Mock own_team check (step 2) to be empty so it falls to step 3
+        # Direct query uses: supabase.table("teams").select("id").eq("owner_id", user_id).limit(1)
+        # This matches mock_eq.limit.return_value (since eq() is used)
+        mock_eq.limit.return_value.execute.return_value = Mock(data=[])
+
         # Mock profile lookup - uses single()
         mock_eq.single.return_value.execute.return_value = Mock(
             data={"plan": "pro", "subscription_status": "trialing"}
@@ -148,6 +153,10 @@ class TestGetEffectivePlan:
         # Mock direct query fallback also returning nothing
         mock_eq = mock_supabase.table.return_value.select.return_value.eq.return_value
         mock_eq.neq.return_value.limit.return_value.execute.return_value = Mock(data=[])
+        
+        # Mock own_team check (empty)
+        mock_eq.limit.return_value.execute.return_value = Mock(data=[])
+
         mock_eq.single.return_value.execute.return_value = Mock(data=None)
         
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
@@ -174,6 +183,9 @@ class TestGetEffectivePlan:
         mock_eq.single.return_value.execute.return_value = Mock(
             data={"owner_id": OWNER_UUID}
         )
+        
+        # Mock own_team check (empty)
+        mock_eq.limit.return_value.execute.return_value = Mock(data=[])
         
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
             # The fallback should work

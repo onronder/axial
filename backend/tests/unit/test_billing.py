@@ -57,10 +57,10 @@ async def test_list_plans_success(mock_settings):
         plans = await list_plans()
 
     assert len(plans) == 2
-    assert plans[0]["type"] == "starter"
-    assert plans[1]["type"] == "pro"
-    assert plans[0]["price_amount"] == 1000
-    assert plans[1]["price_amount"] == 2000
+    assert plans[0].type == "starter"
+    assert plans[1].type == "pro"
+    assert plans[0].price_amount == 1000
+    assert plans[1].price_amount == 2000
 
 @pytest.mark.asyncio
 async def test_list_plans_no_token():

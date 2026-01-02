@@ -10,6 +10,10 @@ export interface PricingPlan {
     price_currency: string;
     interval: string;
     type: 'starter' | 'pro' | 'enterprise';
+    features: string[];
+    button_text: string;
+    button_variant: 'default' | 'outline' | 'ghost';
+    popular: boolean;
 }
 
 const FALLBACK_PLANS: PricingPlan[] = [
@@ -17,19 +21,27 @@ const FALLBACK_PLANS: PricingPlan[] = [
         id: 'starter',
         name: 'Starter',
         description: 'Perfect for trying out Axio Hub',
-        price_amount: 499,  // $4.99 in cents
+        price_amount: 499,
         price_currency: 'usd',
         interval: 'month',
-        type: 'starter'
+        type: 'starter',
+        features: ["100 queries/month", "2 connected sources", "Basic RAG search"],
+        button_text: "Get Started",
+        button_variant: "outline",
+        popular: false
     },
     {
         id: 'pro',
         name: 'Pro',
         description: 'For professionals who need more',
-        price_amount: 2900,  // $29 in cents
+        price_amount: 2900,
         price_currency: 'usd',
         interval: 'month',
-        type: 'pro'
+        type: 'pro',
+        features: ["Unlimited queries", "Unlimited sources", "Hybrid RAG + semantic", "Priority support"],
+        button_text: "Start Free Trial",
+        button_variant: "default",
+        popular: true
     }
 ];
 

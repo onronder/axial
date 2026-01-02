@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Search,
   RefreshCw,
@@ -110,64 +110,39 @@ type SortDirection = "asc" | "desc";
 
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
 
+// ... imports ...
+
 export function DocumentsTable() {
-  const { documents, isLoading: isRefreshing, refresh: handleRefresh, deleteDocument } = useDocuments();
-
-  const { profile } = useProfile();
-  const isViewer = profile?.role === 'viewer';
-
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortField, setSortField] = useState<SortField>("addedAt");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const filteredAndSortedDocuments = useMemo(() => {
-    const result = documents.filter((doc) =>
-      doc.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1); // Reset to page 1 on search
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-    result.sort((a, b) => {
-      let comparison = 0;
-      switch (sortField) {
-        case "name":
-          comparison = a.name.localeCompare(b.name);
-          break;
-        case "source":
-          comparison = a.source.localeCompare(b.source);
-          break;
-        case "status":
-          comparison = a.status.localeCompare(b.status);
-          break;
-        case "addedAt":
-          comparison = new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime();
-          break;
-        case "size":
-          comparison = (a.size || 0) - (b.size || 0);
-          break;
-      }
-      return sortDirection === "asc" ? comparison : -comparison;
-    });
+  const {
+    documents,
+    totalCount,
+    isLoading: isRefreshing,
+    refresh: handleRefresh,
+    deleteDocument
+  } = useDocuments(currentPage, pageSize, debouncedSearch);
 
-    return result;
-  }, [documents, searchQuery, sortField, sortDirection]);
+  const { profile } = useProfile();
+  const isViewer = profile?.role === 'viewer';
 
-  const totalPages = Math.ceil(filteredAndSortedDocuments.length / pageSize);
-  const paginatedDocuments = filteredAndSortedDocuments.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+  const totalPages = Math.ceil(totalCount / pageSize);
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortDirection("asc");
-    }
-    setCurrentPage(1);
-  };
+  // NOTE: Server-side pagination is used, so valid documents are just 'documents'
+  const paginatedDocuments = documents;
 
   const handleDelete = async () => {
     if (deleteId) {
@@ -190,35 +165,6 @@ export function DocumentsTable() {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return null;
-    return sortDirection === "asc" ? (
-      <ChevronUp className="h-3 w-3 ml-1" />
-    ) : (
-      <ChevronDown className="h-3 w-3 ml-1" />
-    );
-  };
-
-  const SortableHeader = ({
-    field,
-    children,
-    className,
-  }: {
-    field: SortField;
-    children: React.ReactNode;
-    className?: string;
-  }) => (
-    <TableHead className={className}>
-      <button
-        onClick={() => handleSort(field)}
-        className="flex items-center hover:text-foreground transition-colors font-medium text-xs uppercase tracking-wider"
-      >
-        {children}
-        <SortIcon field={field} />
-      </button>
-    </TableHead>
-  );
 
   return (
     <div className="space-y-8">
@@ -275,11 +221,11 @@ export function DocumentsTable() {
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow className="hover:bg-transparent border-b border-border/60">
-                <SortableHeader field="name" className="pl-6 w-[40%]">Name</SortableHeader>
-                <SortableHeader field="source" className="w-[15%]">Source</SortableHeader>
-                <SortableHeader field="status" className="w-[15%]">Status</SortableHeader>
-                <SortableHeader field="size" className="w-[10%] text-right">Size</SortableHeader>
-                <SortableHeader field="addedAt" className="w-[15%] text-right pr-6">Added</SortableHeader>
+                <TableHead className="pl-6 w-[40%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Name</TableHead>
+                <TableHead className="w-[15%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Source</TableHead>
+                <TableHead className="w-[15%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[10%] text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">Size</TableHead>
+                <TableHead className="w-[15%] text-right pr-6 font-medium text-xs uppercase tracking-wider text-muted-foreground">Added</TableHead>
                 <TableHead className="w-[5%]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -415,8 +361,8 @@ export function DocumentsTable() {
 
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span>
-              {filteredAndSortedDocuments.length > 0
-                ? `${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, filteredAndSortedDocuments.length)} of ${filteredAndSortedDocuments.length}`
+              {totalCount > 0
+                ? `${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalCount)} of ${totalCount}`
                 : "0 documents"
               }
             </span>

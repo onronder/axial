@@ -31,6 +31,51 @@ POLAR_API_BASE = "https://api.polar.sh/v1"
 
 
 # ============================================================
+# CONSTANTS & METADATA
+# ============================================================
+
+PLAN_METADATA = {
+    "starter": {
+        "features": [
+            "100 queries/month",
+            "2 connected sources",
+            "Basic RAG search",
+            "Community support",
+        ],
+        "button_text": "Get Started",
+        "button_variant": "outline",
+        "popular": False
+    },
+    "pro": {
+        "features": [
+            "Unlimited queries",
+            "Unlimited sources",
+            "Hybrid RAG + semantic",
+            "Priority support",
+            "API access",
+            "Team sharing (3 seats)",
+        ],
+        "button_text": "Start Free Trial",
+        "button_variant": "default",
+        "popular": True
+    },
+    "enterprise": {
+        "features": [
+            "Everything in Pro",
+            "SSO & SAML",
+            "Custom integrations",
+            "Dedicated support",
+            "SLA guarantee",
+            "On-premise option",
+        ],
+        "button_text": "Contact Sales",
+        "button_variant": "ghost",
+        "popular": False
+    }
+}
+
+
+# ============================================================
 # MODELS
 # ============================================================
 
@@ -47,6 +92,10 @@ class PlanResponse(BaseModel):
     price_currency: str
     interval: str
     type: str  # 'starter', 'pro', 'enterprise'
+    features: List[str] = []
+    button_text: str = "Subscribe"
+    button_variant: str = "default"  # 'default', 'outline', 'ghost'
+    popular: bool = False
 
 
 class InvoiceResponse(BaseModel):
@@ -182,6 +231,9 @@ async def list_plans():
                         continue
                     
                     price = prices[0]
+                    plan_type = product_mapping[product_id]
+                    meta = PLAN_METADATA.get(plan_type, {})
+                    
                     plans.append(PlanResponse(
                         id=product_id,
                         name=item.get("name", ""),
@@ -189,12 +241,35 @@ async def list_plans():
                         price_amount=price.get("price_amount", 0),
                         price_currency=price.get("price_currency", "usd"),
                         interval=price.get("recurring_interval", "month"),
-                        type=product_mapping[product_id]
+                        type=plan_type,
+                        features=meta.get("features", []),
+                        button_text=meta.get("button_text", "Subscribe"),
+                        button_variant=meta.get("button_variant", "default"),
+                        popular=meta.get("popular", False)
                     ))
             
             # Sort: starter, pro, enterprise
             order = {"starter": 0, "pro": 1, "enterprise": 2}
             plans.sort(key=lambda x: order.get(x.type, 99))
+
+            # Ensure Enterprise is present even if not in Polar (as "Contact Us" fallback)
+            # This is optional but good if Enterprise is not a real Polar product yet
+            has_enterprise = any(p.type == "enterprise" for p in plans)
+            if not has_enterprise:
+                ent_meta = PLAN_METADATA["enterprise"]
+                plans.append(PlanResponse(
+                    id="enterprise-contact-us",
+                    name="Enterprise",
+                    description="For organizations at scale",
+                    price_amount=0,
+                    price_currency="usd",
+                    interval="",
+                    type="enterprise",
+                    features=ent_meta["features"],
+                    button_text=ent_meta["button_text"],
+                    button_variant=ent_meta["button_variant"],
+                    popular=ent_meta["popular"]
+                ))
             
             return plans
             

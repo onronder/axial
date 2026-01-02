@@ -308,22 +308,21 @@ def ingest_file_task(
         logger.info(f"📄 [Worker:{task_id}] {result.file_type}: {len(result.chunks)} chunks, {result.total_tokens} tokens")
         
         # ========== STEP 3: Embed ==========
-        from langchain_openai import OpenAIEmbeddings
-        
-        embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=settings.OPENAI_API_KEY
-        )
+        from services.embeddings import generate_embeddings_batch
         
         # Get chunk texts for embedding
         chunk_texts = [chunk.content for chunk in result.chunks]
-        chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+        chunk_embeddings = generate_embeddings_batch(chunk_texts)
         logger.info(f"🔢 [Worker:{task_id}] Embedded {len(chunk_texts)} chunks")
         
         # ========== STEP 4: Atomic RPC Insert ==========
         # Prepare chunks payload with enriched metadata
         chunks_payload = []
         for chunk, embedding in zip(result.chunks, chunk_embeddings):
+            if embedding is None:
+                logger.warning(f"⚠️ [Worker:{task_id}] Skipping empty chunk {chunk.chunk_index}")
+                continue
+
             chunks_payload.append({
                 "content": chunk.content,
                 "embedding": embedding,
@@ -496,12 +495,7 @@ def ingest_connector_task(
         
         # 3. Process each document through DocumentProcessorFactory
         from services.parsers import DocumentProcessorFactory
-        from langchain_openai import OpenAIEmbeddings
-        
-        embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=settings.OPENAI_API_KEY
-        )
+        from services.embeddings import generate_embeddings_batch
         
         # Map connector to source_type enum
         CONNECTOR_TYPE_TO_ENUM = {
@@ -557,11 +551,15 @@ def ingest_connector_task(
             
             # Embed chunks
             chunk_texts = [chunk.content for chunk in result.chunks]
-            chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+            chunk_embeddings = generate_embeddings_batch(chunk_texts)
             
             # Build chunks payload with enriched metadata
             chunks_payload = []
             for chunk, embedding in zip(result.chunks, chunk_embeddings):
+                if embedding is None:
+                     logger.warning(f"⚠️ [Worker:{task_id}] Skipping empty chunk {chunk.chunk_index}")
+                     continue
+
                 chunks_payload.append({
                     "content": chunk.content,
                     "embedding": embedding,

@@ -19,9 +19,10 @@ class TestSubscriptionService:
         with patch("core.config.settings.POLAR_WEBHOOK_SECRET", "test_secret"):
             # Mock hmac
             with patch("hmac.new") as mock_hmac:
+                mock_hmac.return_value.digest.return_value = b"hashed_val"
                 mock_hmac.return_value.hexdigest.return_value = "hash"
                 with patch("hmac.compare_digest", return_value=True):
-                    assert subscription_service.verify_signature(b"payload", "whsec_hash") is True
+                    assert subscription_service.verify_signature(b"payload", "v1,whsec_hash", "test_secret", timestamp="1234567890") is True
     
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -47,7 +48,7 @@ class TestSubscriptionService:
                     with patch("core.config.Settings.POLAR_PRODUCT_MAPPING", new_callable=PropertyMock) as mock_mapping:
                         mock_mapping.return_value = {"prod-starter": "starter"}
                         # Run
-                        result = await subscription_service.handle_webhook_event(payload, signature, data)
+                        await subscription_service.handle_webhook(data)
                         
                         # Verify upsert
                         mock_supabase.table.return_value.upsert.assert_called_once()
@@ -57,7 +58,6 @@ class TestSubscriptionService:
                         
                         # Verify cache invalidation
                         mock_team_service.invalidate_plan_cache.assert_called_with("team-123")
-                        assert result["status"] == "processed"
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -78,13 +78,12 @@ class TestSubscriptionService:
         with patch.object(subscription_service, "verify_signature", return_value=True):
             with patch("services.subscription.get_supabase", return_value=mock_supabase):
                 with patch("services.subscription.team_service", mock_team_service):
-                    result = await subscription_service.handle_webhook_event(payload, signature, data)
+                    await subscription_service.handle_webhook(data)
                     
                     # Verify update
                     mock_supabase.table.return_value.update.assert_called_with({"status": "canceled"})
                     
                     mock_team_service.invalidate_plan_cache.assert_called_with("team-123")
-                    assert result["action"] == "canceled"
     
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -92,5 +91,5 @@ class TestSubscriptionService:
         data = {"type": "product.updated", "data": {}}
         
         with patch.object(subscription_service, "verify_signature", return_value=True):
-             result = await subscription_service.handle_webhook_event(b"", "", data)
-             assert result["status"] == "ignored"
+             await subscription_service.handle_webhook(data)
+             # No side effects to check, just ensuring no crash

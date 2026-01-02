@@ -10,68 +10,15 @@ import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
 import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
 
-// Static plan definitions with actual Polar prices
-const STATIC_PLANS = [
-    {
-        id: "starter",
-        type: "starter",
-        name: "Starter",
-        description: "Perfect for trying out Axio Hub",
-        price: "$4.99",
-        interval: "month",
-        icon: Zap,
-        features: [
-            "100 queries/month",
-            "2 connected sources",
-            "Basic RAG search",
-            "Community support",
-        ],
-        buttonText: "Get Started",
-        buttonVariant: "outline" as const,
-    },
-    {
-        id: "pro",
-        type: "pro",
-        name: "Pro",
-        description: "For professionals who need more",
-        price: "$29",
-        interval: "month",
-        icon: Sparkles,
-        popular: true,
-        features: [
-            "Unlimited queries",
-            "Unlimited sources",
-            "Hybrid RAG + semantic",
-            "Priority support",
-            "API access",
-            "Team sharing (3 seats)",
-        ],
-        buttonText: "Start Free Trial",
-        buttonVariant: "default" as const,
-    },
-    {
-        id: "enterprise",
-        type: "enterprise",
-        name: "Enterprise",
-        description: "For organizations at scale",
-        price: "Contact Us",
-        interval: "",
-        icon: Building2,
-        features: [
-            "Everything in Pro",
-            "SSO & SAML",
-            "Custom integrations",
-            "Dedicated support",
-            "SLA guarantee",
-            "On-premise option",
-        ],
-        buttonText: "Contact Sales",
-        buttonVariant: "ghost" as const,
-    },
-];
+const PLAN_ICONS: Record<string, any> = {
+    starter: Zap,
+    pro: Sparkles,
+    enterprise: Building2
+};
 
 export function PaywallGuard({ children }: { children: React.ReactNode }) {
     const { plan: currentPlan, isLoading: isUsageLoading } = useUsage();
+    // usePlans now returns fully hydrated plans with features/buttons from backend
     const { plans: apiPlans, isLoading: isPlansLoading } = usePlans();
     const { toast } = useToast();
     const [isCheckoutLoading, setIsCheckoutLoading] = useState<string | null>(null);
@@ -93,24 +40,6 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
     if (hasAccess) {
         return <>{children}</>;
     }
-
-    // Merge API prices with static plans (API prices take precedence)
-    const displayPlans = STATIC_PLANS.map(staticPlan => {
-        const apiPlan = apiPlans.find(p => p.type === staticPlan.type);
-        if (apiPlan && apiPlan.price_amount !== undefined) {
-            return {
-                ...staticPlan,
-                price: apiPlan.price_amount === 0
-                    ? "$0"
-                    : new Intl.NumberFormat('en-US', {
-                        style: 'currency',
-                        currency: apiPlan.price_currency
-                    }).format(apiPlan.price_amount / 100),
-                interval: apiPlan.interval || staticPlan.interval,
-            };
-        }
-        return staticPlan;
-    });
 
     const handleUpgrade = async (planType: string) => {
         // Enterprise: open contact form modal
@@ -156,10 +85,18 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
 
             {/* Pricing Cards */}
             <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto items-stretch">
-                {displayPlans.map((plan) => {
-                    const Icon = plan.icon;
+                {apiPlans.map((plan) => {
+                    const Icon = PLAN_ICONS[plan.type] || Zap;
                     const isCurrentPlan = currentPlan === plan.type;
                     const isPro = plan.type === 'pro';
+
+                    // Format price
+                    const formattedPrice = plan.price_amount === 0
+                        ? plan.name === 'Enterprise' ? 'Contact Us' : '$0'
+                        : new Intl.NumberFormat('en-US', {
+                            style: 'currency',
+                            currency: plan.price_currency
+                        }).format(plan.price_amount / 100);
 
                     return (
                         <Card
@@ -186,7 +123,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
                                     {plan.description}
                                 </p>
                                 <div className="mt-4 flex items-baseline">
-                                    <span className="text-4xl font-bold">{plan.price}</span>
+                                    <span className="text-4xl font-bold">{formattedPrice}</span>
                                     {plan.interval && (
                                         <span className="text-muted-foreground ml-1">/{plan.interval}</span>
                                     )}
@@ -209,14 +146,14 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
                                 <Button
                                     className={`w-full ${isPro ? 'bg-gradient-to-r from-cyan-500 to-purple-500 hover:opacity-90' : ''}`}
                                     size="lg"
-                                    variant={plan.buttonVariant}
+                                    variant={plan.button_variant}
                                     onClick={() => handleUpgrade(plan.type)}
                                     disabled={!!isCheckoutLoading || isCurrentPlan}
                                 >
                                     {isCheckoutLoading === plan.type && (
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                     )}
-                                    {isCurrentPlan ? 'Current Plan' : plan.buttonText}
+                                    {isCurrentPlan ? 'Current Plan' : plan.button_text}
                                 </Button>
                             </CardFooter>
                         </Card>

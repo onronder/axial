@@ -239,7 +239,9 @@ async def health_check():
     - Database (PostgreSQL via Supabase)
     - Redis (Celery broker)
     
-    Returns 200 if healthy, 503 if degraded.
+    Rules:
+    - Database DOWN -> 503 Service Unavailable (Critical)
+    - Redis DOWN -> 200 OK (Degraded - Chat/Read APIs still work)
     """
     status = {
         "status": "healthy",
@@ -248,38 +250,47 @@ async def health_check():
         "services": {
             "database": "unknown",
             "redis": "unknown"
-        }
+        },
+        "issues": []
     }
     
-    is_healthy = True
-    
-    # Check Database connectivity
+    # 1. Check Database (CRITICAL)
+    db_healthy = False
     try:
         supabase = get_supabase()
         # Lightweight query to verify connection
         supabase.table("documents").select("id").limit(1).execute()
         status["services"]["database"] = "up"
+        db_healthy = True
     except Exception as e:
         status["services"]["database"] = "down"
-        status["status"] = "degraded"
-        is_healthy = False
+        status["status"] = "unhealthy"
         logger.error(f"❌ Health check - Database: {e}")
     
-    # Check Redis connectivity
+    # 2. Check Redis (NON-CRITICAL for Read API)
+    redis_healthy = False
     try:
         import redis
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         r = redis.from_url(redis_url)
         r.ping()
         status["services"]["redis"] = "up"
+        redis_healthy = True
     except Exception as e:
         status["services"]["redis"] = "down"
-        status["status"] = "degraded"
-        is_healthy = False
+        # Only downgrade to degraded if DB is otherwise fine
+        if status["status"] != "unhealthy":
+            status["status"] = "degraded"
+        status["issues"].append("redis_down")
         logger.error(f"❌ Health check - Redis: {e}")
     
-    if is_healthy:
-        return status
+    # Decision Matrix:
+    # DB Down -> 503 (Unhealthy)
+    # DB Up + Redis Down -> 200 (Degraded)
+    # DB Up + Redis Up -> 200 (Healthy)
+    
+    if db_healthy:
+        return status  # Returns 200 even if degraded
     else:
         return JSONResponse(status_code=503, content=status)
 

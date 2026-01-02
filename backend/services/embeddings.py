@@ -34,7 +34,7 @@ def get_embeddings_model() -> OpenAIEmbeddings:
 
 
 @with_retry_sync(max_attempts=3)
-def generate_embedding(text: str) -> List[float]:
+def generate_embedding(text: str) -> Optional[List[float]]:
     """
     Generate an embedding vector for a single text string.
     
@@ -42,14 +42,11 @@ def generate_embedding(text: str) -> List[float]:
         text: The text to embed
         
     Returns:
-        List of floats representing the embedding vector (1536 dimensions)
-        
-    Raises:
-        Exception: If embedding generation fails after retries
+        List of floats representing the embedding vector, or None if text is empty.
     """
     if not text or not text.strip():
-        logger.warning("📊 [Embeddings] Empty text provided, returning zero vector")
-        return [0.0] * 1536  # Return zero vector for empty text
+        logger.warning("📊 [Embeddings] Empty text provided, returning None")
+        return None
     
     try:
         model = get_embeddings_model()
@@ -61,16 +58,15 @@ def generate_embedding(text: str) -> List[float]:
 
 
 @with_retry_sync(max_attempts=3)
-def generate_embeddings_batch(texts: List[str]) -> List[List[float]]:
+def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     """
     Generate embeddings for a batch of texts.
-    More efficient than calling generate_embedding in a loop.
     
     Args:
         texts: List of texts to embed
         
     Returns:
-        List of embedding vectors
+        List of embedding vectors (or None for empty texts)
     """
     if not texts:
         return []
@@ -84,14 +80,14 @@ def generate_embeddings_batch(texts: List[str]) -> List[List[float]]:
             valid_indices.append(i)
     
     if not valid_texts:
-        return [[0.0] * 1536 for _ in texts]
+        return [None for _ in texts]
     
     try:
         model = get_embeddings_model()
         embeddings = model.embed_documents(valid_texts)
         
-        # Reconstruct full result list with zero vectors for empty texts
-        result = [[0.0] * 1536 for _ in texts]
+        # Reconstruct full result list with None for empty texts
+        result = [None for _ in texts]
         for i, emb in zip(valid_indices, embeddings):
             result[i] = emb
         

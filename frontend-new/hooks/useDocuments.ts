@@ -22,11 +22,34 @@ function mapDocument(d: any): Document {
 }
 
 /**
- * Fetch all documents from the API.
+ * Fetch document parameters
  */
-async function fetchDocuments(): Promise<Document[]> {
-    const response = await api.get("/documents");
-    return response.data.map(mapDocument);
+interface FetchDocsParams {
+    page: number;
+    pageSize: number;
+    search?: string;
+}
+
+/**
+ * Fetch documents from the API with pagination.
+ */
+async function fetchDocuments({ page, pageSize, search }: FetchDocsParams): Promise<{ documents: Document[], total: number }> {
+    const response = await api.get("/documents", {
+        params: {
+            limit: pageSize,
+            offset: (page - 1) * pageSize,
+            q: search
+        }
+    });
+
+    // Check for X-Total-Count header
+    const totalHeader = response.headers['x-total-count'];
+    const total = totalHeader ? parseInt(totalHeader, 10) : response.data.length;
+
+    return {
+        documents: response.data.map(mapDocument),
+        total
+    };
 }
 
 /**
@@ -40,27 +63,34 @@ async function deleteDocumentApi(id: string): Promise<void> {
  * Hook for managing documents with React Query.
  * 
  * Features:
+ * - Server-side pagination & search
  * - Automatic caching (5 min stale time)
- * - Background refetching on window focus
  * - Optimistic delete with rollback on error
- * - Request deduplication
  */
-export const useDocuments = () => {
+export const useDocuments = (
+    page: number = 1,
+    pageSize: number = 10,
+    search: string = ""
+) => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
     // Query for fetching documents
     const {
-        data: documents = [],
+        data,
         isLoading,
         error,
         refetch
     } = useQuery({
-        queryKey: ["documents"],
-        queryFn: fetchDocuments,
-        staleTime: 5 * 60 * 1000, // 5 minutes
-        gcTime: 10 * 60 * 1000,   // 10 minutes cache
+        queryKey: ["documents", page, pageSize, search],
+        queryFn: () => fetchDocuments({ page, pageSize, search }),
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+        placeholderData: (previousData) => previousData // Keep prev data while fetching
     });
+
+    const documents = data?.documents || [];
+    const totalCount = data?.total || 0;
 
     // Mutation for deleting documents
     const deleteMutation = useMutation({
@@ -105,6 +135,7 @@ export const useDocuments = () => {
 
     return {
         documents,
+        totalCount,
         isLoading,
         error: error ? (error as Error).message : null,
         refresh: refetch,
