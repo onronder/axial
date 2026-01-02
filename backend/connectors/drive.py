@@ -102,13 +102,17 @@ class DriveConnector(BaseConnector):
         access_token = decrypt_token(integration['access_token']) if integration.get('access_token') else None
         refresh_token = decrypt_token(integration.get('refresh_token')) if integration.get('refresh_token') else None
         
+        # explicit cast to list/str to ensure correct types for Google Auth
+        scopes = ['https://www.googleapis.com/auth/drive.readonly']
+        
         creds = Credentials(
             token=access_token,
             refresh_token=refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
             client_id=settings.GOOGLE_CLIENT_ID,
             client_secret=settings.GOOGLE_CLIENT_SECRET,
-            scopes=['https://www.googleapis.com/auth/drive.readonly']
+            scopes=scopes,
+            quota_project_id=None
         )
         
         # Refresh if expired

@@ -667,9 +667,19 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
         
     except Exception as e:
         logger.error(f"❌ [SyncJob] Failed {job_id}: {e}")
+        
+        # Determine strict error message
+        error_msg = str(e)
+        if "invalid_grant" in error_msg or "Token has been expired" in error_msg or "reconnection" in error_msg:
+            error_msg = "Authentication failed. Please reconnect integration."
+            
+            # Since we can't update user_integrations.status (no column), we just log heavily
+            # Ideally we would set user_integrations.connected = False or similar if schema allowed
+            logger.critical(f"🚨 [SyncJob] Auth failure for provider {provider}. User interaction required.")
+
         supabase.table("ingestion_jobs").update({
             "status": "failed",
-            "error_message": str(e),
+            "error_message": error_msg,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", job_id).execute()
 

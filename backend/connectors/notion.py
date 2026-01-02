@@ -476,6 +476,13 @@ class NotionConnector(BaseConnector):
                 "errors": errors
             }
 
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                logger.error(f"❌ [NotionSync] Authentication failed: {e}")
+                # We can't update status='error' due to schema, but we raise specific message
+                raise Exception("Integration requires reconnection (Token Expired/Revoked)") from e
+            logger.error(f"❌ [NotionSync] HTTP Error: {e}")
+            raise e
         except Exception as e:
             logger.error(f"❌ [NotionSync] Sync failed: {e}")
             raise e
