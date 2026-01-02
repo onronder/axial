@@ -257,16 +257,16 @@ DEFAULT_NOTIFICATION_SETTINGS = [
         "enabled": False
     },
     {
-        "setting_key": "ingestion-completed",
+        "setting_key": "inapp_on_ingestion_complete",
         "setting_label": "Ingestion Completed",
-        "setting_description": "Get notified when a file finishes processing",
+        "setting_description": "Show in-app notification when files finish processing",
         "category": "system",
         "enabled": True
     },
     {
-        "setting_key": "ingestion-failed",
+        "setting_key": "inapp_on_ingestion_failed",
         "setting_label": "Ingestion Failed",
-        "setting_description": "Get notified if a connector fails",
+        "setting_description": "Show in-app notification if processing fails",
         "category": "system",
         "enabled": True
     }

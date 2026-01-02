@@ -49,7 +49,8 @@ def create_notification(
     message: str = None,
     notification_type: str = "info",
     metadata: dict = None,
-    action_url: str = None
+    action_url: str = None,
+    check_setting_key: str = None
 ):
     """
     Create a notification for the user.
@@ -62,8 +63,28 @@ def create_notification(
         notification_type: 'info', 'success', 'warning', 'error'
         metadata: Optional extra data
         action_url: Optional URL to navigate to when clicked (e.g., '/dashboard/chat')
+        check_setting_key: Optional setting key to check. If user has this
+                          setting disabled, notification will not be created.
     """
     try:
+        # Check user preference if setting key provided
+        if check_setting_key:
+            try:
+                pref = supabase.table("user_notification_settings")\
+                    .select("enabled")\
+                    .eq("user_id", user_id)\
+                    .eq("setting_key", check_setting_key)\
+                    .maybeSingle()\
+                    .execute()
+                
+                # If preference exists and is explicitly False, skip notification
+                if pref.data and pref.data.get("enabled") is False:
+                    logger.info(f"🔕 [Notification] Skipped for {user_id}: {check_setting_key} is disabled")
+                    return
+            except Exception as e:
+                # Fail open - don't block notifications on preference check errors
+                logger.warning(f"⚠️ [Notification] Failed to check preference: {e}")
+        
         # Include action_url in metadata if provided
         meta = metadata.copy() if metadata else {}
         if action_url:
@@ -350,7 +371,8 @@ def ingest_file_task(
             "Ingestion Complete",
             f"Successfully processed {filename} ({len(chunks)} chunks)",
             "success",
-            {"job_id": job_id, "document_id": str(doc_id)}
+            {"job_id": job_id, "document_id": str(doc_id)},
+            check_setting_key="inapp_on_ingestion_complete"
         )
         
         send_email_notification(supabase, user_id, 1)
@@ -367,7 +389,8 @@ def ingest_file_task(
             "Ingestion Failed",
             f"Failed to process {filename}: {str(e)[:200]}",
             "error",
-            {"job_id": job_id, "error": str(e)}
+            {"job_id": job_id, "error": str(e)},
+            check_setting_key="inapp_on_ingestion_failed"
         )
         
         # Send failure email (fail-safe, respects user preferences)
@@ -597,7 +620,8 @@ def ingest_connector_task(
             f"Ingestion Complete",
             f"Successfully processed {len(results)} documents from {connector_type.replace('_', ' ').title()}",
             "success",
-            {"job_id": job_id, "connector": connector_type, "document_count": len(results)}
+            {"job_id": job_id, "connector": connector_type, "document_count": len(results)},
+            check_setting_key="inapp_on_ingestion_complete"
         )
         
         # Send email notification (fail-safe, respects user preferences)
@@ -620,7 +644,8 @@ def ingest_connector_task(
             f"Ingestion Failed",
             f"Failed to process files from {connector_type.replace('_', ' ').title()}: {str(e)[:200]}",
             "error",
-            {"job_id": job_id, "connector": connector_type, "error": str(e)}
+            {"job_id": job_id, "connector": connector_type, "error": str(e)},
+            check_setting_key="inapp_on_ingestion_failed"
         )
         
         # Re-raise for Celery retry mechanism
