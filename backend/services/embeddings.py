@@ -5,6 +5,7 @@ Provides centralized embedding generation using OpenAI's text-embedding-3-small 
 """
 
 import logging
+import time
 from typing import List, Optional
 from langchain_openai import OpenAIEmbeddings
 from core.config import settings
@@ -26,7 +27,9 @@ def get_embeddings_model() -> OpenAIEmbeddings:
     if _embeddings_model is None:
         _embeddings_model = OpenAIEmbeddings(
             model="text-embedding-3-small",
-            api_key=settings.OPENAI_API_KEY
+            api_key=settings.OPENAI_API_KEY,
+            request_timeout=60,
+            max_retries=2
         )
         logger.info("📊 [Embeddings] Initialized OpenAI embeddings model (text-embedding-3-small)")
     
@@ -102,8 +105,10 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
             batch_embeddings = model.embed_documents(batch_texts)
             all_embeddings.extend(batch_embeddings)
             
+            # Rate Limit Protection: Sleep 0.5s between batches to respect OpenAI TPM
             if batch_end < len(valid_texts):
                 logger.info(f"📊 [Embeddings] Processed batch {batch_start//BATCH_SIZE + 1}: {len(batch_texts)} texts")
+                time.sleep(0.5)
         
         # Reconstruct full result list with None for empty texts
         result = [None for _ in texts]
