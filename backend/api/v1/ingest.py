@@ -323,3 +323,179 @@ async def ingest_document(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Either 'file', 'url', 'drive_id', or 'notion_page_id' must be provided."
     )
+
+
+# =============================================================================
+# PRESIGNED URL UPLOAD ARCHITECTURE
+# =============================================================================
+
+from pydantic import BaseModel
+
+
+class UploadUrlRequest(BaseModel):
+    """Request body for generating a presigned upload URL."""
+    filename: str
+    file_type: str  # MIME type
+    file_size: int  # Size in bytes for quota check
+
+
+class UploadUrlResponse(BaseModel):
+    """Response containing the presigned upload URL."""
+    upload_url: str
+    storage_path: str
+    expires_in: int  # Seconds until URL expires
+
+
+class FileReferenceRequest(BaseModel):
+    """Request body for ingesting an already-uploaded file."""
+    storage_path: str
+    filename: str
+    file_size: int
+    metadata: dict = {}
+
+
+@router.post("/upload-url", response_model=UploadUrlResponse)
+@limiter.limit("20/minute")
+async def generate_upload_url(
+    request: Request,
+    body: UploadUrlRequest,
+    user_id: str = Depends(validate_team_access)
+):
+    """
+    Generate a presigned URL for direct-to-storage file upload.
+    
+    This enables large file uploads to bypass the API server entirely,
+    going directly to Supabase Storage.
+    
+    Flow:
+    1. Frontend calls this endpoint to get a presigned URL
+    2. Frontend uploads directly to Supabase Storage using the URL
+    3. Frontend calls POST /file/reference to trigger ingestion
+    """
+    supabase = get_supabase()
+    
+    # 1. Validate file type
+    if body.file_type.lower() not in [m.lower() for m in ALLOWED_MIME_TYPES.keys()]:
+        allowed = ", ".join(ALLOWED_MIME_TYPES.keys())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {body.file_type}. Allowed: {allowed}"
+        )
+    
+    # 2. Check quota before generating URL
+    can_upload, reason = await check_can_upload(user_id, body.file_size)
+    if not can_upload:
+        raise HTTPException(status_code=403, detail=reason)
+    
+    # 3. Generate unique storage path
+    unique_id = str(uuid.uuid4())
+    storage_path = f"uploads/{user_id}/{unique_id}/{body.filename}"
+    
+    # 4. Generate signed upload URL (valid for 1 hour)
+    try:
+        # Use create_signed_upload_url for direct uploads
+        result = supabase.storage.from_(STAGING_BUCKET).create_signed_upload_url(storage_path)
+        
+        if not result or not result.get("signedURL"):
+            raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+        
+        logger.info(f"📤 [Upload] Generated presigned URL for {body.filename} ({storage_path})")
+        
+        return UploadUrlResponse(
+            upload_url=result["signedURL"],
+            storage_path=storage_path,
+            expires_in=3600  # 1 hour
+        )
+    except Exception as e:
+        logger.error(f"❌ [Upload] Failed to generate presigned URL: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
+
+
+@router.post("/file/reference", response_model=IngestResponse)
+@limiter.limit("10/minute")
+async def ingest_file_reference(
+    request: Request,
+    body: FileReferenceRequest,
+    user_id: str = Depends(validate_team_access)
+):
+    """
+    Trigger ingestion for a file that was already uploaded to storage.
+    
+    This is the second step of the presigned URL upload flow:
+    1. Frontend uploads file directly to storage using presigned URL
+    2. Frontend calls this endpoint to trigger ingestion
+    
+    The storage_path must match what was returned by POST /upload-url.
+    """
+    supabase = get_supabase()
+    
+    # 1. Verify file exists in storage
+    try:
+        # Try to get file info to verify it exists
+        file_list = supabase.storage.from_(STAGING_BUCKET).list(
+            path="/".join(body.storage_path.split("/")[:-1])  # Parent directory
+        )
+        filename = body.storage_path.split("/")[-1]
+        file_exists = any(f.get("name") == filename for f in file_list)
+        
+        if not file_exists:
+            raise HTTPException(
+                status_code=404, 
+                detail="File not found in storage. Upload may have failed or expired."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"⚠️ [Ingest] Could not verify file existence: {e}")
+        # Continue anyway - worker will fail if file doesn't exist
+    
+    # 2. Check quota (double-check)
+    can_upload, reason = await check_can_upload(user_id, body.file_size)
+    if not can_upload:
+        # Cleanup the uploaded file
+        try:
+            supabase.storage.from_(STAGING_BUCKET).remove([body.storage_path])
+        except:
+            pass
+        raise HTTPException(status_code=403, detail=reason)
+    
+    # 3. Create ingestion job
+    job_data = {
+        "user_id": user_id,
+        "provider": "file",
+        "total_files": 1,
+        "processed_files": 0,
+        "status": "pending",
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }
+    
+    job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
+    if not job_res.data:
+        raise HTTPException(status_code=500, detail="Failed to create ingestion job")
+    
+    job_id = str(job_res.data[0]["id"])
+    
+    # 4. Dispatch to worker (same task as regular file upload)
+    from worker.tasks import ingest_file_task
+    try:
+        task = ingest_file_task.delay(
+            user_id=user_id,
+            job_id=job_id,
+            storage_path=body.storage_path,
+            filename=body.filename,
+            metadata=body.metadata
+        )
+    except Exception as e:
+        logger.error(f"❌ [Ingest] Failed to dispatch file reference task: {e}")
+        try:
+            supabase.storage.from_(STAGING_BUCKET).remove([body.storage_path])
+        except:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Task queue unavailable. Please try again later."
+        )
+    
+    logger.info(f"📄 [Ingest] File reference task queued: {body.filename}, task={task.id}")
+    return IngestResponse(status="queued", doc_id=job_id)
