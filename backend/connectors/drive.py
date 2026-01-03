@@ -76,7 +76,11 @@ class DriveConnector(BaseConnector):
     }
     
     async def authorize(self, user_id: str) -> bool:
-        """Check if user has connected Google Drive."""
+        """Async wrapper for authorization check."""
+        return await run_in_threadpool(self._authorize_implementation, user_id)
+
+    def _authorize_implementation(self, user_id: str) -> bool:
+        """Synchronous implementation of authorize."""
         supabase = get_supabase()
         
         # Lookup connector definition
@@ -160,7 +164,11 @@ class DriveConnector(BaseConnector):
         return self._get_credentials_by_integration(res.data[0])
 
     async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
-        """List files and folders in Google Drive."""
+        """Async wrapper for listing items."""
+        return await run_in_threadpool(self._list_items_implementation, user_id, parent_id)
+
+    def _list_items_implementation(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
+        """Synchronous implementation of list_items."""
         creds = self._get_credentials(user_id)
         service = build('drive', 'v3', credentials=creds)
         
@@ -186,12 +194,7 @@ class DriveConnector(BaseConnector):
             ))
         return items
 
-from starlette.concurrency import run_in_threadpool
 
-# ... existing imports ...
-
-class DriveConnector(BaseConnector):
-    # ... existing class code ...
 
 
     async def ingest(self, config: Dict[str, Any]) -> "AsyncIterator[ConnectorDocument]":
