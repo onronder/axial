@@ -1,4 +1,5 @@
 from supabase import create_client, Client
+from functools import lru_cache
 from core.config import settings
 import logging
 
@@ -12,8 +13,15 @@ except Exception as e:
     logger.error(f"Failed to initialize Supabase client: {e}")
     raise
 
+
+@lru_cache()
 def get_supabase() -> Client:
-    """Returns the Supabase client instance."""
+    """
+    Returns the Supabase client instance.
+    
+    Uses lru_cache to ensure the module-level singleton is always returned,
+    preventing accidental re-initialization and connection pool exhaustion.
+    """
     return supabase
 
 async def check_connection() -> bool:

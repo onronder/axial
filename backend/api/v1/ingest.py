@@ -29,9 +29,43 @@ import uuid
 import datetime
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename to prevent path traversal attacks.
+    
+    Only allows alphanumeric characters, dots, dashes, and underscores.
+    Replaces all other characters (including path separators) with underscores.
+    
+    Security: Prevents attacks like "../../etc/passwd" or "%2e%2e/secret.txt"
+    """
+    if not filename:
+        return "unnamed_file"
+    
+    # Decode any URL encoding first
+    try:
+        from urllib.parse import unquote
+        filename = unquote(filename)
+    except:
+        pass
+    
+    # Extract just the basename (remove any path components)
+    filename = filename.split('/')[-1].split('\\')[-1]
+    
+    # Replace dangerous characters with underscore
+    clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+    
+    # Ensure we don't have empty filename or just dots
+    if not clean_name or clean_name.strip('.') == '':
+        return "unnamed_file"
+    
+    # Limit length
+    return clean_name[:255]
 
 # Rate limiter instance
 limiter = Limiter(key_func=get_remote_address)
@@ -392,9 +426,10 @@ async def generate_upload_url(
     if not can_upload:
         raise HTTPException(status_code=403, detail=reason)
     
-    # 3. Generate unique storage path
+    # 3. Generate unique storage path (SECURITY: sanitize filename to prevent path traversal)
     unique_id = str(uuid.uuid4())
-    storage_path = f"uploads/{user_id}/{unique_id}/{body.filename}"
+    safe_filename = sanitize_filename(body.filename)
+    storage_path = f"uploads/{user_id}/{unique_id}/{safe_filename}"
     
     # 4. Generate signed upload URL (valid for 1 hour)
     try:

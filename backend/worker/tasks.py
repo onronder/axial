@@ -1143,7 +1143,13 @@ def process_page_task(
         
         # Build chunks payload with enriched metadata
         chunks_payload = []
+        failed_chunks = 0
         for chunk, embedding in zip(result.chunks, chunk_embeddings):
+            if embedding is None:
+                failed_chunks += 1
+                logger.warning(f"⚠️ [Page:{task_id}] Skipped chunk {chunk.chunk_index} for {url} due to failed embedding")
+                continue
+                
             chunks_payload.append({
                 "content": chunk.content,
                 "embedding": embedding,
@@ -1153,6 +1159,12 @@ def process_page_task(
                     "token_count": chunk.token_count,
                 }
             })
+        
+        # Check for partial failure
+        if failed_chunks > 0:
+            total_chunks = len(result.chunks)
+            if failed_chunks / total_chunks > 0.5:
+                logger.error(f"❌ [Page:{task_id}] High embedding failure rate: {failed_chunks}/{total_chunks} chunks failed for {url}")
         
         # Document metadata
         doc_metadata = {
