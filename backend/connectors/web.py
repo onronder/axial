@@ -14,7 +14,7 @@ The connector provides discovery capabilities; looping logic is in the Celery wo
 
 import re
 import logging
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Iterator, AsyncIterator
 from urllib.parse import urlparse, urljoin
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 import trafilatura
@@ -321,20 +321,25 @@ class WebConnector(BaseConnector):
     # INGESTION
     # =========================================================================
     
-    def ingest(self, config: Dict[str, Any]) -> List[ConnectorDocument]:
+
+    async def ingest(self, config: Dict[str, Any]) -> "AsyncIterator[ConnectorDocument]":
+        """Async wrapper for ingestion (Streaming)."""
+        from starlette.concurrency import iterate_in_threadpool
+        return iterate_in_threadpool(self._ingest_implementation(config))
+
+    def _ingest_implementation(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
         """
-        Ingests web pages or YouTube videos.
+        Ingests web pages or YouTube videos (Generator).
         
         Config keys:
             - 'item_ids': List of URLs to ingest
             - 'respect_robots': bool (default True)
         
-        Returns:
-            List of ConnectorDocument objects
+        Yields:
+            ConnectorDocument objects
         """
         urls = config.get("item_ids", [])
         respect_robots = config.get("respect_robots", True)
-        documents = []
         
         for url in urls:
             try:
@@ -347,10 +352,10 @@ class WebConnector(BaseConnector):
                 if self.is_youtube_url(url):
                     transcript = self.fetch_youtube_transcript(url)
                     if transcript:
-                        documents.append(ConnectorDocument(
+                        yield ConnectorDocument(
                             page_content=transcript,
                             metadata=self.get_youtube_metadata(url)
-                        ))
+                        )
                     continue
                 
                 # Standard web page
@@ -367,7 +372,7 @@ class WebConnector(BaseConnector):
                     
                     if text and text.strip():
                         title = metadata.title if metadata and metadata.title else url
-                        documents.append(ConnectorDocument(
+                        yield ConnectorDocument(
                             page_content=text,
                             metadata={
                                 "source": "web",
@@ -376,7 +381,7 @@ class WebConnector(BaseConnector):
                                 "author": metadata.author if metadata else None,
                                 "date": str(metadata.date) if metadata and metadata.date else None,
                             }
-                        ))
+                        )
                         logger.info(f"✅ [Web] Scraped: {url}")
                     else:
                         logger.warning(f"⚠️ [Web] No text extracted from: {url}")
@@ -386,7 +391,7 @@ class WebConnector(BaseConnector):
             except Exception as e:
                 logger.error(f"❌ [Web] Failed to scrape {url}: {e}")
         
-        return documents
+        logger.info(f"📥 [WebConnector] Ingestion stream ended")
     
     def fetch_html(self, url: str) -> Optional[str]:
         """

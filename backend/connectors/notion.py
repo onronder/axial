@@ -6,7 +6,7 @@ Updated to support Universal Connector Architecture (Sync Ingest).
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
 from datetime import datetime, timezone
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
@@ -94,16 +94,28 @@ class NotionConnector(BaseConnector):
         response.raise_for_status()
         return response.json()
     
+from starlette.concurrency import run_in_threadpool
+# ... imports ...
+
+
+class NotionConnector(BaseConnector):
+    # ... existing code ...
+
     async def list_items(
         self,
         user_id: str,
         parent_id: Optional[str] = None
     ) -> List[ConnectorItem]:
+        """Async wrapper for listing items."""
+        return await run_in_threadpool(self._list_items_implementation, user_id, parent_id)
+
+    def _list_items_implementation(
+        self,
+        user_id: str,
+        parent_id: Optional[str] = None
+    ) -> List[ConnectorItem]:
         """
-        List Notion pages with proper folder structure.
-        
-        - If parent_id is None or "root": Return TOP-LEVEL pages only (parent.type = "workspace")
-        - If parent_id is a Page ID: Return child pages/databases of that page
+        List Notion pages with proper folder structure (Synchronous).
         """
         access_token = self._get_access_token(user_id)
         items = []
@@ -218,11 +230,10 @@ class NotionConnector(BaseConnector):
 
 
     def _extract_text_from_blocks(self, blocks: List[Dict]) -> str:
-        """Helper to convert blocks to markdown text."""
+        # ... existing helper ...
         text_parts = []
         for block in blocks:
             block_type = block.get("type")
-            # Handle common text blocks
             if block_type in ["paragraph", "heading_1", "heading_2", "heading_3", 
                              "bulleted_list_item", "numbered_list_item", "quote", "callout", "toggle"]:
                 rich_text = block.get(block_type, {}).get("rich_text", [])
@@ -248,12 +259,15 @@ class NotionConnector(BaseConnector):
         
         return "\n".join(text_parts)
 
-    def ingest(self, config: Dict[str, Any]) -> List[ConnectorDocument]:
+
+    async def ingest(self, config: Dict[str, Any]) -> "AsyncIterator[ConnectorDocument]":
+        """Async wrapper for ingestion (Streaming)."""
+        from starlette.concurrency import iterate_in_threadpool
+        return iterate_in_threadpool(self._ingest_implementation(config))
+
+    def _ingest_implementation(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
         """
-        Synchronous ingestion for Worker.
-        Config keys: 'user_id', 'item_ids', 'credentials' (optional)
-        
-        Recursively ingests pages and their child pages.
+        Synchronous ingestion for Worker (Generator).
         """
         user_id = config.get("user_id")
         item_ids = config.get("item_ids", [])
@@ -269,10 +283,9 @@ class NotionConnector(BaseConnector):
         else:
             raise ValueError("No credentials or user_id provided for Notion ingestion")
 
-        documents = []
         processed_ids = set()  # Prevent infinite loops from circular references
         
-        def ingest_page_recursive(page_id: str, depth: int = 0):
+        def ingest_page_recursive(page_id: str, depth: int = 0) -> "Iterator[ConnectorDocument]":
             """Recursively ingest a page and its children."""
             if page_id in processed_ids or depth > 10:  # Max depth to prevent runaway recursion
                 return
@@ -322,7 +335,7 @@ class NotionConnector(BaseConnector):
                 content = self._extract_text_from_blocks(all_blocks)
                 
                 if content.strip():
-                    documents.append(ConnectorDocument(
+                    doc = ConnectorDocument(
                         page_content=content,
                         metadata={
                             "source": "notion",
@@ -330,42 +343,37 @@ class NotionConnector(BaseConnector):
                             "page_id": page_id,
                             "source_url": page.get("url"),
                         }
-                    ))
+                    )
                     logger.info(f"✅ [Notion] Ingested: {title}")
+                    yield doc
                 
                 # Recursively process child pages
                 for child_id in child_page_ids:
-                    ingest_page_recursive(child_id, depth + 1)
+                    yield from ingest_page_recursive(child_id, depth + 1)
                     
             except Exception as e:
                 logger.error(f"❌ [Notion] Failed to ingest {page_id}: {e}")
         
         # Process all requested pages
         for page_id in item_ids:
-            ingest_page_recursive(page_id)
+            yield from ingest_page_recursive(page_id)
                 
-        logger.info(f"📥 [Notion] Completed ingestion: {len(documents)} documents from {len(item_ids)} initial items")
-        return documents
+        logger.info(f"📥 [Notion] Completed ingestion stream for {len(item_ids)} initial items")
 
     async def sync(self, user_id: str, integration_id: str) -> dict:
+        """Async wrapper for sync."""
+        return await run_in_threadpool(self._sync_implementation, user_id, integration_id)
+
+    def _sync_implementation(self, user_id: str, integration_id: str) -> dict:
         """
         Full sync operation: fetch ALL pages/databases and ingest them.
-        
-        Args:
-            user_id: The user's ID
-            integration_id: The user_integrations record ID (unused but required by interface)
-            
-        Returns:
-            dict with sync statistics
         """
         logger.info(f"🔄 [NotionSync] Starting sync for user {user_id}")
         
         try:
             # 1. Fetch all accessible pages (using empty parent_id = recursive search)
-            # Actually list_items only does one level, but ingest is recursive.
-            # We want to start ingestion from ROOT pages.
-            
-            root_items = await self.list_items(user_id, parent_id="root")
+            # Use the synchronous implementation!
+            root_items = self._list_items_implementation(user_id, parent_id="root")
             root_ids = [item.id for item in root_items]
             
             if not root_ids:
@@ -374,24 +382,13 @@ class NotionConnector(BaseConnector):
             
             logger.info(f"🔄 [NotionSync] Found {len(root_ids)} root items to sync")
             
-            # 2. Re-use ingest method (synchronous)
-            # Note: The worker already wraps this in async, so calling it directly is fine 
-            # or we can wrap it if needed. ingest is sync, so we just call it.
-            
+            # 2. Ingest synchronously
             config = {
                 "user_id": user_id,
                 "item_ids": root_ids
             }
             
-            # Ingest returns list of documents. We need to persist them using Embedding Service 
-            # similar to DriveConnector.sync. 
-            # Wait, `ingest` in NotionConnector returns `ConnectorDocument` objects but DOES NOT save to DB?
-            # Checking `ingest` method... yes, it returns `documents`.
-            # We need to implement the saving logic here or refactor `ingest` to save.
-            # `DriveConnector.sync` implements saving logic completely separately from `ingest`.
-            # Let's implement full sync logic here similar to DriveConnector.
-            
-            documents = self.ingest(config)
+            documents = self._ingest_implementation(config)
             
             if not documents:
                  return {"status": "success", "files_processed": 0, "chunks_created": 0}
@@ -477,9 +474,9 @@ class NotionConnector(BaseConnector):
             }
 
         except requests.exceptions.HTTPError as e:
+            # ... existing error handling ...
             if e.response.status_code == 401:
                 logger.error(f"❌ [NotionSync] Authentication failed: {e}")
-                # We can't update status='error' due to schema, but we raise specific message
                 raise Exception("Integration requires reconnection (Token Expired/Revoked)") from e
             logger.error(f"❌ [NotionSync] HTTP Error: {e}")
             raise e

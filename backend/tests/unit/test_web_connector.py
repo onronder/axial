@@ -293,7 +293,8 @@ class TestIngest:
             "item_ids": ["https://example.com/page"],
             "respect_robots": False
         }
-        docs = connector.ingest(config)
+        # Consume generator
+        docs = list(connector._ingest_implementation(config))
         
         assert len(docs) >= 0  # May be 0 or more depending on implementation
     
@@ -309,7 +310,8 @@ class TestIngest:
             "item_ids": ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
             "respect_robots": False
         }
-        docs = connector.ingest(config)
+        # Consume generator
+        docs = list(connector._ingest_implementation(config))
         
         # Should have called fetch_youtube_transcript
         assert mock_fetch.called or len(docs) >= 0
@@ -321,6 +323,7 @@ class TestIngest:
             "item_ids": [],
             "respect_robots": False
         }
-        docs = connector.ingest(config)
+        # Consume generator
+        docs = list(connector._ingest_implementation(config))
         
         assert docs == []

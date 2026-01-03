@@ -9,7 +9,7 @@ Tests the Store-Forward-Process-Delete architecture:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock, mock_open
+from unittest.mock import Mock, patch, MagicMock, mock_open, AsyncMock
 from datetime import datetime
 import tempfile
 import os
@@ -83,6 +83,59 @@ class TestIngestFileTask:
 class TestIngestConnectorTask:
     """Test the connector ingestion task (Drive/Notion)."""
     
+
+    @patch('worker.tasks.get_connector')
+    @patch('worker.tasks.get_supabase')
+    @patch('worker.tasks.generate_embeddings_batch')
+    @patch('worker.tasks.DocumentProcessorFactory')
+    def test_executes_drive_ingestion(self, mock_factory, mock_embeddings, mock_supabase, mock_get_connector):
+        """Should execute drive ingestion using asyncio."""
+        from worker.tasks import ingest_connector_task
+        from connectors.base import ConnectorDocument
+        
+        # Mock connector with AsyncMock for ingest
+        mock_connector = Mock()
+        
+        # Create an async iterator mock
+        async def async_gen():
+            yield ConnectorDocument(page_content="test", metadata={"title": "test"})
+            
+        # ingest is async and returns the async generator
+        # It must be an AsyncMock to be awaitable
+        mock_connector.ingest = AsyncMock(return_value=async_gen())
+        
+        mock_get_connector.return_value = mock_connector
+        
+        # Mock Supabase
+        mock_supabase.return_value.rpc.return_value.execute.return_value = Mock(data="doc-id")
+        
+        # Mock Embeddings
+        mock_embeddings.return_value = [[0.1, 0.2]]
+        
+        # Mock Processor
+        mock_result = Mock()
+        mock_result.file_type = "txt"
+        mock_result.total_tokens = 10
+        mock_result.metadata = {}
+        mock_result.chunks = [Mock(content="test chunk", chunk_index=0, metadata={}, token_count=5)]
+        mock_factory.process.return_value = mock_result
+        mock_factory.process_web_content.return_value = mock_result
+        
+        # Execute task
+        ingest_connector_task(
+            user_id="user-123",
+            job_id="job-123",
+            connector_type="drive",
+            item_id="file-123"
+        )
+        
+        # Verify ingest was called
+        mock_connector.ingest.assert_called_once()
+        mock_factory.process.assert_called()  # Drive uses generic process
+        mock_embeddings.assert_called()
+    
+    # helper _async_return removed as it is replaced by async_gen closure
+
     def test_drive_ingestion(self):
         """Should ingest from Google Drive."""
         connector_type = "drive"
@@ -95,14 +148,12 @@ class TestIngestConnectorTask:
     
     def test_handles_empty_results(self):
         """Should handle connectors returning no documents."""
-        # Should return "skipped" status
         result = {"status": "skipped", "message": "No content processed"}
         assert result["status"] == "skipped"
     
     def test_decrypts_credentials(self):
         """Should decrypt OAuth credentials before use."""
         from worker.tasks import decrypt_token
-        # Verify decrypt is designed for credential values
         assert callable(decrypt_token)
 
 

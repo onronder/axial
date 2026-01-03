@@ -33,7 +33,7 @@ Example folder ingestion pattern:
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncIterator
 from pydantic import BaseModel
 
 
@@ -114,13 +114,15 @@ class BaseConnector(ABC):
         pass
 
     @abstractmethod
-    def ingest(self, config: Dict[str, Any]) -> List[ConnectorDocument]:
+    async def ingest(self, config: Dict[str, Any]) -> "AsyncIterator[ConnectorDocument]":
         """
-        Worker-side ingestion (Synchronous).
+        Worker-side ingestion (Async Wrapper).
         
         IMPORTANT BEHAVIOR:
-        - If an item_id is a FOLDER: Recursively fetch ALL nested files (max depth: 10)
-        - If an item_id is a FILE: Process that single file
+        - Must be implemented as an async wrapper returning an iterator (stream)
+        - use iterate_in_threadpool to stream results from blocking implementation
+        - If an item_id is a FOLDER: Recursively yield nested files (max depth: 10)
+        - If an item_id is a FILE: Yield that single file
         - Track processed IDs to prevent infinite loops from circular references
         
         Args:
@@ -131,6 +133,6 @@ class BaseConnector(ABC):
                 - 'provider': Provider type string
                 
         Returns:
-            List of ConnectorDocument objects with extracted text content
+            AsyncIterator yielding ConnectorDocument objects
         """
         pass

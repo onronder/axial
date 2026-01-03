@@ -14,8 +14,10 @@ from core.celery_app import celery_app
 from core.db import get_supabase
 from core.config import settings
 from core.security import decrypt_token
-from services.parsers import DocumentParser
+from services.parsers import DocumentParser, DocumentProcessorFactory
 from services.email import email_service
+from connectors.factory import get_connector
+from services.embeddings import generate_embeddings_batch
 
 logger = logging.getLogger(__name__)
 
@@ -473,8 +475,8 @@ def ingest_connector_task(
                 else:
                     decrypted_creds[key] = value
         
+
         # 2. Get connector and ingest
-        from connectors.factory import get_connector
         connector = get_connector(connector_type)
         
         # Prepare config for standardized ingest interface
@@ -484,18 +486,6 @@ def ingest_connector_task(
             "credentials": decrypted_creds,
             "provider": connector_type
         }
-        
-        # Call synchronous ingest (worker-compatible)
-        docs = connector.ingest(ingest_config)
-        
-        if not docs:
-            logger.warning(f"📥 [Worker:{task_id}] No content processed")
-            update_job_status(supabase, job_id, "completed", 1)
-            return {"status": "skipped", "message": "No content processed"}
-        
-        # 3. Process each document through DocumentProcessorFactory
-        from services.parsers import DocumentProcessorFactory
-        from services.embeddings import generate_embeddings_batch
         
         # Map connector to source_type enum
         CONNECTOR_TYPE_TO_ENUM = {
@@ -508,106 +498,122 @@ def ingest_connector_task(
         }
         source_type_enum = CONNECTOR_TYPE_TO_ENUM.get(connector_type, "file")
         
-        results = []
-        processed_count = 0
-        
-        for doc in docs:
-            doc_title = doc.metadata.get('title', 'Untitled')
-            doc_content = doc.page_content
-            source_url = doc.metadata.get('source_url')
+        # Define async stream consumer
+        async def process_stream():
+            stream = await connector.ingest(ingest_config)
+            processed_docs = []
             
-            # Route through appropriate processor based on connector type
-            if connector_type in ["notion"]:
-                # Notion: Treat as markdown (has headers, lists, etc.)
-                result = DocumentProcessorFactory.process_web_content(
-                    doc_content,
-                    source_url or doc_title
-                )
-            else:
-                # Drive and others: Use extension/mime_type routing
-                content_bytes = doc_content.encode('utf-8')
-                mime_type = doc.metadata.get('mime_type', 'text/plain')
+            async for doc in stream:
+                # Route through appropriate processor based on connector type
+                doc_title = doc.metadata.get('title', 'Untitled')
+                doc_content = doc.page_content
+                source_url = doc.metadata.get('source_url')
                 
-                # Try to get file extension from title
-                filename = doc_title
-                if not any(filename.endswith(ext) for ext in ['.pdf', '.docx', '.md', '.txt', '.py', '.js']):
-                    # Add extension based on mime type
-                    if 'pdf' in mime_type:
-                        filename = f"{doc_title}.pdf"
-                    elif 'markdown' in mime_type:
-                        filename = f"{doc_title}.md"
-                    elif 'document' in mime_type:
-                        filename = f"{doc_title}.docx"
+                if connector_type in ["notion"]:
+                    # Notion: Treat as markdown (has headers, lists, etc.)
+                    result = DocumentProcessorFactory.process_web_content(
+                        doc_content,
+                        source_url or doc_title
+                    )
+                else:
+                    # Drive and others: Use extension/mime_type routing
+                    content_bytes = doc_content.encode('utf-8')
+                    mime_type = doc.metadata.get('mime_type', 'text/plain')
+                    
+                    # Try to get file extension from title
+                    filename = doc_title
+                    if not any(filename.endswith(ext) for ext in ['.pdf', '.docx', '.md', '.txt', '.py', '.js']):
+                        # Add extension based on mime type
+                        if 'pdf' in mime_type:
+                            filename = f"{doc_title}.pdf"
+                        elif 'markdown' in mime_type:
+                            filename = f"{doc_title}.md"
+                        elif 'document' in mime_type:
+                            filename = f"{doc_title}.docx"
+                    
+                    result = DocumentProcessorFactory.process(
+                        content=content_bytes,
+                        filename=filename,
+                        mime_type=mime_type
+                    )
                 
-                result = DocumentProcessorFactory.process(
-                    content=content_bytes,
-                    filename=filename,
-                    mime_type=mime_type
-                )
-            
-            if not result.chunks:
-                logger.warning(f"⚠️ [Worker:{task_id}] No chunks from: {doc_title}")
-                continue
-            
-            # Embed chunks
-            chunk_texts = [chunk.content for chunk in result.chunks]
-            chunk_embeddings = generate_embeddings_batch(chunk_texts)
-            
-            # Build chunks payload with enriched metadata
-            chunks_payload = []
-            for chunk, embedding in zip(result.chunks, chunk_embeddings):
-                if embedding is None:
-                     logger.warning(f"⚠️ [Worker:{task_id}] Skipping empty chunk {chunk.chunk_index}")
-                     continue
+                if not result.chunks:
+                    logger.warning(f"⚠️ [Worker:{task_id}] No chunks from: {doc_title}")
+                    continue
+                
+                # Embed chunks
+                chunk_texts = [chunk.content for chunk in result.chunks]
+                chunk_embeddings = generate_embeddings_batch(chunk_texts)
+                
+                # Build chunks payload with enriched metadata
+                chunks_payload = []
+                for chunk, embedding in zip(result.chunks, chunk_embeddings):
+                    if embedding is None:
+                            logger.warning(f"⚠️ [Worker:{task_id}] Skipping empty chunk {chunk.chunk_index}")
+                            continue
 
-                chunks_payload.append({
-                    "content": chunk.content,
-                    "embedding": embedding,
-                    "chunk_index": chunk.chunk_index,
-                    "metadata": {
-                        **chunk.metadata,
-                        "token_count": chunk.token_count,
-                    }
-                })
-            
-            # Calculate file size for quota tracking
-            content_size = len(doc_content.encode('utf-8'))
-            
-            # Document metadata
-            doc_metadata = {
-                **doc.metadata,
-                "file_type": result.file_type,
-                "total_tokens": result.total_tokens,
-                "total_chunks": len(result.chunks),
-                **(result.metadata or {}),
-            }
-            
-            # ATOMIC RPC: Insert document with all chunks and file size
-            rpc_result = supabase.rpc("ingest_document_with_chunks", {
-                "p_user_id": user_id,
-                "p_doc_title": doc_title,
-                "p_source_type": source_type_enum,
-                "p_source_url": source_url,
-                "p_metadata": json.dumps(doc_metadata),
-                "p_chunks": json.dumps(chunks_payload),
-                "p_file_size_bytes": content_size
-            }).execute()
-            
-            if rpc_result.data:
-                doc_id = rpc_result.data
-                results.append(str(doc_id))
-                logger.info(f"📄 [Worker:{task_id}] {doc_title}: {len(result.chunks)} chunks via {result.file_type}")
-            else:
-                logger.warning(f"⚠️ [Worker:{task_id}] RPC returned no data for {doc_title}")
-            
-            # Update progress
-            processed_count += 1
-            if job_id:
-                update_job_status(supabase, job_id, "processing", processed_count)
+                    chunks_payload.append({
+                        "content": chunk.content,
+                        "embedding": embedding,
+                        "chunk_index": chunk.chunk_index,
+                        "metadata": {
+                            **chunk.metadata,
+                            "token_count": chunk.token_count,
+                        }
+                    })
+                
+                # Calculate file size for quota tracking
+                content_size = len(doc_content.encode('utf-8'))
+                
+                # Document metadata
+                doc_metadata = {
+                    **doc.metadata,
+                    "file_type": result.file_type,
+                    "total_tokens": result.total_tokens,
+                    "total_chunks": len(result.chunks),
+                    **(result.metadata or {}),
+                }
+                
+                # ATOMIC RPC: Insert document with all chunks and file size
+                rpc_result = supabase.rpc("ingest_document_with_chunks", {
+                    "p_user_id": user_id,
+                    "p_doc_title": doc_title,
+                    "p_source_type": source_type_enum,
+                    "p_source_url": source_url,
+                    "p_metadata": json.dumps(doc_metadata),
+                    "p_chunks": json.dumps(chunks_payload),
+                    "p_file_size_bytes": content_size
+                }).execute()
+                
+                if rpc_result.data:
+                    doc_id = rpc_result.data
+                    processed_docs.append(str(doc_id))
+                    logger.info(f"📄 [Worker:{task_id}] {doc_title}: {len(result.chunks)} chunks via {result.file_type}")
+                    
+                    # Update progress per document
+                    if job_id:
+                        update_job_status(supabase, job_id, "processing", len(processed_docs))
+
+                else:
+                    logger.warning(f"⚠️ [Worker:{task_id}] RPC returned no data for {doc_title}")
+                    
+            return processed_docs
+
+        # Execute stream processing
+        import asyncio
+        
+        # 3. Process each document through DocumentProcessorFactory
+        
+        results = asyncio.run(process_stream())
+        
+        if not results:
+            logger.warning(f"📥 [Worker:{task_id}] No content processed")
+            update_job_status(supabase, job_id, "completed", 0)
+            return {"status": "skipped", "message": "No content processed"}
         
         # Mark job as completed
         if job_id:
-            update_job_status(supabase, job_id, "completed", 1)
+            update_job_status(supabase, job_id, "completed", len(results))
         
         # Create "success" notification
         create_notification(
@@ -624,6 +630,26 @@ def ingest_connector_task(
         
         logger.info(f"✅ [Worker:{task_id}] Ingestion complete: {len(results)} documents (via DocumentProcessorFactory)")
         return {"status": "success", "ingested_ids": results, "task_id": task_id, "job_id": job_id}
+        
+    except Exception as e:
+        logger.error(f"❌ [Worker:{task_id}] Ingestion failed: {e}")
+        
+        # Update job status to failed
+        if job_id:
+            update_job_status(supabase, job_id, "failed", 0, str(e))
+        
+        # Create "error" notification
+        create_notification(
+            supabase,
+            user_id,
+            f"Ingestion Failed",
+            f"Failed to process files from {connector_type.replace('_', ' ').title()}: {str(e)[:200]}",
+            "error",
+            {"job_id": job_id, "connector": connector_type, "error": str(e)}
+        )
+        
+        # Re-raise for Celery retry mechanism
+        raise
         
     except Exception as e:
         logger.error(f"❌ [Worker:{task_id}] Ingestion failed: {e}")
