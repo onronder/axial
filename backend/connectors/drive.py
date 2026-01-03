@@ -34,6 +34,76 @@ class DriveConnector(BaseConnector):
     - Multiple file formats via DocumentParser service
     """
     
+    def _download_file_content(self, service, file_meta):
+        """
+        Download file content. Returns (content_bytes, export_mime_type, filename).
+        Handles Google Doc export vs Binary download.
+        """
+        file_id = file_meta['id']
+        mime_type = file_meta.get('mimeType')
+        name = file_meta.get('name')
+        
+        # 1. Handle Google Native formats (Export)
+        if mime_type in self.EXPORT_MIME_TYPES:
+            export_info = self.EXPORT_MIME_TYPES[mime_type]
+            export_mime = export_info['export_mime']
+            ext = export_info['extension']
+            filename = f"{name}{ext}"
+            
+            try:
+                request = service.files().export_media(fileId=file_id, mimeType=export_mime)
+                content = request.execute()
+                return content, export_mime, filename
+            except Exception as e:
+                logger.warning(f"⚠️ [Drive] Export failed for {name}: {e}")
+                return None, None, None
+
+        # 2. Handle Binary files (Direct Download)
+        elif mime_type == 'application/vnd.google-apps.folder':
+            return None, None, None
+        else:
+            # Default to binary download
+            try:
+                request = service.files().get_media(fileId=file_id)
+                content = request.execute()
+                return content, mime_type, name
+            except Exception as e:
+                logger.warning(f"⚠️ [Drive] Download failed for {name}: {e}")
+                return None, None, None
+
+    def _get_all_files_recursive(self, service, parent_id: str) -> Iterator[Dict]:
+        """
+        Recursively fetch all files in a folder (Generator).
+        Yields file metadata objects.
+        """
+        query = f"'{parent_id}' in parents and trashed=false"
+        
+        # Paginator for large folders
+        page_token = None
+        while True:
+            try:
+                results = service.files().list(
+                    q=query,
+                    fields="nextPageToken, files(id, name, mimeType, webViewLink, size)",
+                    pageSize=1000,
+                    pageToken=page_token
+                ).execute()
+                
+                files = results.get('files', [])
+                for f in files:
+                    if f['mimeType'] == 'application/vnd.google-apps.folder':
+                        # Recurse
+                        yield from self._get_all_files_recursive(service, f['id'])
+                    else:
+                        yield f
+                
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+            except Exception as e:
+                logger.error(f"❌ [Drive] Error listing folder {parent_id}: {e}")
+                break
+    
     # Text splitter for chunking documents
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -177,7 +247,8 @@ class DriveConnector(BaseConnector):
         results = service.files().list(
             q=f"'{query_parent}' in parents and trashed=false",
             fields="files(id, name, mimeType, iconLink, thumbnailLink, size)",
-            orderBy="folder,name"
+            orderBy="folder,name",
+            pageSize=1000
         ).execute()
 
         files = results.get('files', [])
