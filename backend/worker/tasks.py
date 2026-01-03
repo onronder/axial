@@ -863,14 +863,10 @@ def crawl_web_task(
         if documents:
             logger.info(f"🔢 [Crawl] Embedding {len(documents)} documents...")
             
-            from langchain_openai import OpenAIEmbeddings
-            embeddings_model = OpenAIEmbeddings(
-                model="text-embedding-3-small",
-                api_key=settings.OPENAI_API_KEY
-            )
+            from services.embeddings import generate_embeddings_batch
             
             chunk_texts = [d.page_content for d in documents]
-            chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+            chunk_embeddings = generate_embeddings_batch(chunk_texts)
             
             # Store in database using ATOMIC RPC
             for i, doc in enumerate(documents):
@@ -1140,14 +1136,10 @@ def process_page_task(
             return {"status": "skipped", "url": url}
         
         # Embed
-        from langchain_openai import OpenAIEmbeddings
-        embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=settings.OPENAI_API_KEY
-        )
+        from services.embeddings import generate_embeddings_batch
         
         chunk_texts = [chunk.content for chunk in result.chunks]
-        chunk_embeddings = embeddings_model.embed_documents(chunk_texts)
+        chunk_embeddings = generate_embeddings_batch(chunk_texts)
         
         # Build chunks payload with enriched metadata
         chunks_payload = []
@@ -1436,14 +1428,11 @@ def process_page_task(
             return {"status": "skipped", "url": url}
         
         # Embed
-        from langchain_openai import OpenAIEmbeddings
-        embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=settings.OPENAI_API_KEY
-        )
+        from services.embeddings import generate_embeddings_batch
         
         doc = docs[0]  # Single URL = single doc
-        chunk_embedding = embeddings_model.embed_documents([doc.page_content])[0]
+        chunk_embeddings = generate_embeddings_batch([doc.page_content])
+        chunk_embedding = chunk_embeddings[0]
         
         # Prepare for RPC
         chunks_payload = [{
