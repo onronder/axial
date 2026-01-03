@@ -57,7 +57,7 @@ DANGEROUS_MIME_TYPES = [
 STAGING_BUCKET = "ephemeral-staging"
 
 
-@router.post("/ingest", response_model=IngestResponse)
+@router.post("/ingest", response_model=IngestResponse, deprecated=True)
 @limiter.limit("10/minute")
 async def ingest_document(
     request: Request,
@@ -70,10 +70,15 @@ async def ingest_document(
     user_id: str = Depends(validate_team_access)  # Validates team access + returns user_id
 ):
     """
-    Zero-Copy Ingestion Endpoint.
+    [DEPRECATED] Zero-Copy Ingestion Endpoint.
     
-    Files are stored in ephemeral staging and processed by workers.
-    No heavy computation happens in the API process.
+    **This endpoint is deprecated for file uploads.**
+    Use the new Direct Upload flow instead:
+    1. POST /ingest/upload-url → Get presigned URL
+    2. PUT to presigned URL → Upload file directly to storage  
+    3. POST /ingest/file/reference → Trigger ingestion
+    
+    This endpoint is still supported for URL, Drive, and Notion ingestion.
     """
     supabase = get_supabase()
     
