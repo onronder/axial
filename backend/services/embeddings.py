@@ -62,6 +62,10 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     """
     Generate embeddings for a batch of texts.
     
+    Automatically splits into sub-batches to stay under OpenAI's token limits.
+    Uses ~300 tokens per chunk estimate, limiting to ~800 chunks per batch
+    for safety margin under 300K token limit.
+    
     Args:
         texts: List of texts to embed
         
@@ -84,11 +88,26 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     
     try:
         model = get_embeddings_model()
-        embeddings = model.embed_documents(valid_texts)
+        
+        # Split into batches to avoid token limits
+        # Conservative estimate: ~300 tokens per chunk average for chunked documents
+        # 300K limit / 300 = 1000 chunks max, use 500 for safety margin
+        BATCH_SIZE = 500
+        all_embeddings = []
+        
+        for batch_start in range(0, len(valid_texts), BATCH_SIZE):
+            batch_end = min(batch_start + BATCH_SIZE, len(valid_texts))
+            batch_texts = valid_texts[batch_start:batch_end]
+            
+            batch_embeddings = model.embed_documents(batch_texts)
+            all_embeddings.extend(batch_embeddings)
+            
+            if batch_end < len(valid_texts):
+                logger.info(f"📊 [Embeddings] Processed batch {batch_start//BATCH_SIZE + 1}: {len(batch_texts)} texts")
         
         # Reconstruct full result list with None for empty texts
         result = [None for _ in texts]
-        for i, emb in zip(valid_indices, embeddings):
+        for i, emb in zip(valid_indices, all_embeddings):
             result[i] = emb
         
         logger.info(f"📊 [Embeddings] Generated {len(valid_texts)} embeddings")

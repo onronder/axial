@@ -341,6 +341,9 @@ class DriveConnector(BaseConnector):
                                 except UnicodeDecodeError:
                                     text_content = content_bytes.decode('utf-8', errors='replace')
                                 
+                                # Remove null bytes that break PostgreSQL
+                                text_content = text_content.replace('\x00', '')
+                                
                                 yield ConnectorDocument(
                                     page_content=text_content,
                                     metadata={
@@ -367,6 +370,9 @@ class DriveConnector(BaseConnector):
                             text_content = content_bytes.decode('utf-8')
                         except UnicodeDecodeError:
                             text_content = content_bytes.decode('utf-8', errors='replace')
+                        
+                        # Remove null bytes that break PostgreSQL
+                        text_content = text_content.replace('\x00', '')
                         
                         yield ConnectorDocument(
                             page_content=text_content,
@@ -455,6 +461,10 @@ class DriveConnector(BaseConnector):
                         content = content_bytes.decode('utf-8')
                     except UnicodeDecodeError:
                         content = content_bytes.decode('utf-8', errors='replace')
+                    
+                    # CRITICAL: Remove null bytes that break PostgreSQL text fields
+                    # Error: '22P05' - '\u0000 cannot be converted to text'
+                    content = content.replace('\x00', '')
                         
                     if not content or not content.strip():
                         logger.warning(f"⚠️ [DriveSync] No content from: {file_meta['name']}")
