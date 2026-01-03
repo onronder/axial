@@ -1,20 +1,109 @@
+"use client";
+
+import { useState } from "react";
+import { Loader2, Check, X, ExternalLink, Clock, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useToast } from "@/hooks/use-toast";
+import { DataSourceIcon } from "./DataSourceIcon";
+import { cn } from "@/lib/utils";
+import type { MergedDataSource } from "@/types";
 
-// ... existing imports
+interface DataSourceCardProps {
+  source: MergedDataSource;
+  onBrowse: () => void;
+  onConnect: (type: string) => void;
+  onDisconnect: (type: string) => Promise<void>;
+  onSync: (integrationId: string) => Promise<{ success: boolean; jobId: string }>;
+}
+
+function formatLastSync(lastSyncAt: string | null): string {
+  if (!lastSyncAt) return "Never";
+
+  const syncDate = new Date(lastSyncAt);
+  const now = new Date();
+  const diffMs = now.getTime() - syncDate.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return syncDate.toLocaleDateString();
+}
 
 export function DataSourceCard({
   source,
   onBrowse,
   onConnect,
   onDisconnect,
-  onSync
+  onSync,
 }: DataSourceCardProps) {
-  // ... existing hooks
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleConnect = async () => {
+    setIsLoading(true);
+    try {
+      onConnect(source.type);
+    } catch {
+      toast({
+        title: "Connection failed",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setIsLoading(true);
+    try {
+      await onDisconnect(source.type);
+      toast({
+        title: `${source.name} disconnected`,
+        description: "Your connection has been removed.",
+      });
+    } catch {
+      toast({
+        title: "Disconnection failed",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    if (!source.integrationId) return;
+    setIsSyncing(true);
+    try {
+      await onSync(source.integrationId);
+      toast({
+        title: "Sync Started",
+        description: `Started syncing ${source.name}. You'll be notified when complete.`,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Could not start sync.";
+      toast({
+        title: "Sync Failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   return (
     <div
@@ -25,7 +114,7 @@ export function DataSourceCard({
           : "border-border hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5"
       )}
     >
-      {/* ... existing badge code ... */}
+      {/* Connection Status Badge */}
       {source.isConnected && (
         <div className="absolute right-3 top-3">
           <Badge className="gap-1.5 bg-gradient-to-r from-emerald-500 to-green-500 text-white border-0 shadow-lg shadow-emerald-500/20">
@@ -36,22 +125,27 @@ export function DataSourceCard({
       )}
 
       <div className="space-y-4">
-        {/* ... existing icon code ... */}
-        <div className={cn(
-          "flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300",
-          source.isConnected
-            ? "bg-gradient-to-br from-primary to-accent shadow-lg shadow-primary/30"
-            : "bg-muted group-hover:bg-primary/10"
-        )}>
+        {/* Icon */}
+        <div
+          className={cn(
+            "flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300",
+            source.isConnected
+              ? "bg-gradient-to-br from-primary to-accent shadow-lg shadow-primary/30"
+              : "bg-muted group-hover:bg-primary/10"
+          )}
+        >
           <DataSourceIcon
             sourceId={source.type}
             className={cn(
               "h-6 w-6 transition-colors",
-              source.isConnected ? "text-white" : "text-muted-foreground group-hover:text-primary"
+              source.isConnected
+                ? "text-white"
+                : "text-muted-foreground group-hover:text-primary"
             )}
           />
         </div>
 
+        {/* Info */}
         <div>
           <h3 className="font-semibold text-foreground">{source.name}</h3>
           {source.isConnected ? (
@@ -60,11 +154,14 @@ export function DataSourceCard({
               Synced: {formatLastSync(source.lastSyncAt)}
             </p>
           ) : (
-            <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{source.description}</p>
+            <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
+              {source.description}
+            </p>
           )}
         </div>
       </div>
 
+      {/* Actions */}
       <div className="mt-6 pt-4 border-t border-border/50">
         {source.isConnected ? (
           <div className="flex items-center gap-2">
@@ -90,7 +187,9 @@ export function DataSourceCard({
                       onClick={handleSync}
                       disabled={isLoading || isSyncing}
                     >
-                      <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
+                      <RefreshCw
+                        className={cn("h-4 w-4", isSyncing && "animate-spin")}
+                      />
                       <span className="sr-only">Sync Now</span>
                     </Button>
                   </TooltipTrigger>
