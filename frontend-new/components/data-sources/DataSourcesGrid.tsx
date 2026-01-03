@@ -32,7 +32,16 @@ const CATEGORY_LABELS: Record<string, string> = {
 type FilterStatus = "all" | "connected" | "not-connected";
 
 export function DataSourcesGrid() {
-  const { dataSources, loading, error, refresh, connectedSources } = useDataSources();
+  const {
+    dataSources,
+    loading,
+    error,
+    refresh,
+    connectedSources,
+    connect,
+    disconnect,
+    syncIntegration
+  } = useDataSources();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
@@ -181,12 +190,16 @@ export function DataSourcesGrid() {
                     key={source.id}
                     source={source}
                     onBrowse={() => setBrowsing(source)}
+                    onConnect={connect}
+                    onDisconnect={disconnect}
+                    onSync={syncIntegration}
                   />
                 )
               ))}
             </div>
           </div>
         ))}
+
 
         {/* Empty state */}
         {Object.keys(groupedSources).length === 0 && (
