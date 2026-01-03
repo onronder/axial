@@ -202,7 +202,8 @@ export const useDataSources = () => {
             return true;
         } catch (err: any) {
             console.error('📦 [useDataSources] ❌ Ingest failed:', err.message);
-            return false;
+            // Re-throw so UI can show error toast
+            throw new Error(err.response?.data?.detail || err.message || 'Ingestion failed');
         }
     }, []);
 

@@ -124,10 +124,11 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
         description: `${selectedIds.size} file(s) added to your knowledge base.`,
       });
       setSelectedIds(new Set());
-    } catch {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Please try again.";
       toast({
         title: "Ingestion failed",
-        description: "Please try again.",
+        description: message,
         variant: "destructive",
       });
     } finally {

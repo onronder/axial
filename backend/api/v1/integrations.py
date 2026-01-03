@@ -555,9 +555,12 @@ async def ingest_provider_items(
             raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
         
         # Get user's integration with credentials
-        # Use maybe_single() or handle PGRST116 manually since not all providers require connection
+        # OAuth providers store tokens in access_token/refresh_token columns
+        # Other providers may use credentials JSONB
         try:
-            integration_res = supabase.table("user_integrations").select("credentials").eq("user_id", user_id).eq("connector_definition_id", conn_def.data['id']).execute()
+            integration_res = supabase.table("user_integrations").select(
+                "access_token, refresh_token, credentials"
+            ).eq("user_id", user_id).eq("connector_definition_id", conn_def.data['id']).execute()
             integration_data = integration_res.data[0] if integration_res.data else None
         except Exception as e:
             logger.warning(f"⚠️ [Ingest] Failed to fetch integration: {e}")
@@ -565,9 +568,23 @@ async def ingest_provider_items(
         
         # Web provider doesn't require explicit connection, others do
         if provider == "web":
-             credentials = {}
-             if integration_data:
-                 credentials = integration_data.get('credentials', {}) or {}
+            credentials = {}
+            if integration_data:
+                credentials = integration_data.get('credentials', {}) or {}
+        elif provider in ["google_drive", "notion"]:
+            # OAuth providers: tokens are in access_token/refresh_token columns
+            if not integration_data or not integration_data.get('access_token'):
+                raise HTTPException(status_code=401, detail=f"Not connected to {provider}. Please reconnect.")
+            
+            # Decrypt tokens for use
+            encrypted_access = integration_data.get('access_token')
+            encrypted_refresh = integration_data.get('refresh_token')
+            
+            credentials = {
+                "access_token": decrypt_token(encrypted_access) if encrypted_access else None,
+                "refresh_token": decrypt_token(encrypted_refresh) if encrypted_refresh else None,
+            }
+            logger.info(f"📥 [Ingest] Decrypted credentials for {provider}")
         else:
             if not integration_data or not integration_data.get('credentials'):
                 raise HTTPException(status_code=401, detail=f"Not connected to {provider}")
