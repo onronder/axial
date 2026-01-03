@@ -6,10 +6,10 @@ import { Upload, FileText, Loader2, CheckCircle } from "lucide-react";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabase";
 import { useUsage } from "@/hooks/useUsage";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
+import { getUploadUrl, uploadToStorage, ingestFileReference } from "@/lib/api";
 
 interface FileUploadZoneProps {
   source: DataSource;
@@ -20,43 +20,51 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
   const { filesUsed, filesLimit, refresh } = useUsage();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
+  const [uploadStage, setUploadStage] = useState<string>("");
 
   const isOverLimit = filesUsed >= filesLimit;
 
+  /**
+   * Direct-to-Storage Upload Flow:
+   * 1. Get presigned URL from our backend
+   * 2. Upload file directly to Supabase Storage
+   * 3. Trigger ingestion via our backend
+   */
   const uploadFile = async (file: File): Promise<boolean> => {
     try {
-      // Get auth token
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error("Not authenticated");
+      // Step 1: Get presigned upload URL
+      setUploadStage("Getting upload URL...");
+      const urlResponse = await getUploadUrl(
+        file.name,
+        file.type || "application/octet-stream",
+        file.size
+      );
+
+      // Step 2: Upload directly to storage (bypasses our API server)
+      setUploadStage("Uploading to storage...");
+      const uploadSuccess = await uploadToStorage(urlResponse.upload_url, file);
+
+      if (!uploadSuccess) {
+        throw new Error("Failed to upload file to storage");
       }
 
-      // Create FormData
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("metadata", JSON.stringify({
-        filename: file.name,
-        size: file.size,
-        type: file.type,
-      }));
-
-      // Upload to backend via Next.js proxy
-      const response = await fetch("/api/py/api/v1/ingest", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${session.access_token}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Upload failed");
-      }
+      // Step 3: Trigger ingestion
+      setUploadStage("Processing file...");
+      await ingestFileReference(
+        urlResponse.storage_path,
+        file.name,
+        file.size,
+        {
+          filename: file.name,
+          size: file.size,
+          type: file.type,
+        }
+      );
 
       return true;
-    } catch (error) {
-      console.error(`Failed to upload ${file.name}:`, error);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      console.error(`Failed to upload ${file.name}:`, message);
       return false;
     }
   };
@@ -155,7 +163,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
             <h3 className="font-medium text-foreground">{source.name}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {isUploading
-                ? `Uploading... (${uploadedCount} uploaded)`
+                ? uploadStage || `Uploading... (${uploadedCount} uploaded)`
                 : isDragActive
                   ? "Drop files here..."
                   : source.description}

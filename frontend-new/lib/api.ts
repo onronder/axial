@@ -206,3 +206,71 @@ export const updateMemberRole = async (memberId: string, role: string): Promise<
     return response.data;
 };
 
+// =============================================================================
+// PRESIGNED URL UPLOAD API
+// =============================================================================
+
+export interface UploadUrlResponse {
+    upload_url: string;
+    storage_path: string;
+    expires_in: number;
+}
+
+export interface IngestReferenceResponse {
+    status: string;
+    doc_id: string;
+}
+
+/**
+ * Get a presigned URL for direct-to-storage file upload
+ * POST /api/v1/ingest/upload-url
+ */
+export const getUploadUrl = async (
+    filename: string,
+    fileType: string,
+    fileSize: number
+): Promise<UploadUrlResponse> => {
+    const response = await api.post<UploadUrlResponse>('/ingest/upload-url', {
+        filename,
+        file_type: fileType,
+        file_size: fileSize,
+    });
+    return response.data;
+};
+
+/**
+ * Trigger ingestion for an already-uploaded file
+ * POST /api/v1/ingest/file/reference
+ */
+export const ingestFileReference = async (
+    storagePath: string,
+    filename: string,
+    fileSize: number,
+    metadata: Record<string, unknown> = {}
+): Promise<IngestReferenceResponse> => {
+    const response = await api.post<IngestReferenceResponse>('/ingest/file/reference', {
+        storage_path: storagePath,
+        filename,
+        file_size: fileSize,
+        metadata,
+    });
+    return response.data;
+};
+
+/**
+ * Upload file directly to storage using presigned URL
+ * (Uses native fetch, not axios, for binary upload)
+ */
+export const uploadToStorage = async (
+    uploadUrl: string,
+    file: File
+): Promise<boolean> => {
+    const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+    });
+    return response.ok;
+};
