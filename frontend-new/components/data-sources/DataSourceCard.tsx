@@ -108,36 +108,26 @@ export function DataSourceCard({
   return (
     <div
       className={cn(
-        "group relative flex flex-col justify-between rounded-xl border bg-card p-5 transition-all duration-300",
+        "group rounded-xl border bg-card p-4 transition-all duration-300",
         source.isConnected
-          ? "border-primary/50 bg-gradient-to-br from-primary/5 to-transparent shadow-lg shadow-primary/10"
-          : "border-border hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5"
+          ? "border-primary/30 bg-gradient-to-br from-primary/5 to-transparent"
+          : "border-border hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5"
       )}
     >
-      {/* Connection Status Badge */}
-      {source.isConnected && (
-        <div className="absolute right-3 top-3">
-          <Badge className="gap-1.5 bg-gradient-to-r from-emerald-500 to-green-500 text-white border-0 shadow-lg shadow-emerald-500/20">
-            <Check className="h-3 w-3" />
-            Connected
-          </Badge>
-        </div>
-      )}
-
-      <div className="space-y-4">
-        {/* Icon */}
+      {/* Row 1: Icon + Badge */}
+      <div className="flex items-start justify-between mb-3">
         <div
           className={cn(
-            "flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300",
+            "flex h-12 w-12 items-center justify-center rounded-xl",
             source.isConnected
-              ? "bg-gradient-to-br from-primary to-accent shadow-lg shadow-primary/30"
+              ? "bg-gradient-to-br from-primary to-accent shadow-md"
               : "bg-muted group-hover:bg-primary/10"
           )}
         >
           <DataSourceIcon
             sourceId={source.type}
             className={cn(
-              "h-6 w-6 transition-colors",
+              "h-6 w-6",
               source.isConnected
                 ? "text-white"
                 : "text-muted-foreground group-hover:text-primary"
@@ -145,96 +135,97 @@ export function DataSourceCard({
           />
         </div>
 
-        {/* Info */}
-        <div>
-          <h3 className="font-semibold text-foreground">{source.name}</h3>
-          {source.isConnected ? (
-            <p className="mt-1 text-sm text-muted-foreground flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              Synced: {formatLastSync(source.lastSyncAt)}
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-              {source.description}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="mt-6 pt-4 border-t border-border/50">
-        {source.isConnected ? (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="gradient"
-              size="sm"
-              className="flex-1 shadow-md hover:shadow-lg transition-all"
-              onClick={onBrowse}
-              disabled={isLoading || isSyncing}
-            >
-              <ExternalLink className="mr-2 h-4 w-4" />
-              Browse
-            </Button>
-
-            <TooltipProvider>
-              <div className="flex items-center gap-1 border-l border-border/50 pl-2 ml-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 text-muted-foreground hover:text-primary hover:bg-primary/10"
-                      onClick={handleSync}
-                      disabled={isLoading || isSyncing}
-                    >
-                      <RefreshCw
-                        className={cn("h-4 w-4", isSyncing && "animate-spin")}
-                      />
-                      <span className="sr-only">Sync Now</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Sync Now</p>
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      onClick={handleDisconnect}
-                      disabled={isLoading || isSyncing}
-                    >
-                      {isLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <X className="h-4 w-4" />
-                      )}
-                      <span className="sr-only">Disconnect</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Disconnect</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </TooltipProvider>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full transition-all hover:border-primary hover:bg-primary/5 hover:text-primary group-hover:border-primary/50"
-            onClick={handleConnect}
-            disabled={isLoading}
-          >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Connect
-          </Button>
+        {source.isConnected && (
+          <Badge className="gap-1 bg-emerald-500/90 text-white text-xs border-0 px-2 py-0.5">
+            <Check className="h-3 w-3" />
+            Connected
+          </Badge>
         )}
       </div>
+
+      {/* Row 2: Title + Sync Status */}
+      <div className="mb-4">
+        <h3 className="font-semibold text-foreground text-base">{source.name}</h3>
+        {source.isConnected ? (
+          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+            <Clock className="h-3 w-3" />
+            Synced: {formatLastSync(source.lastSyncAt)}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+            {source.description}
+          </p>
+        )}
+      </div>
+
+      {/* Row 3: Actions */}
+      {source.isConnected ? (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="gradient"
+            size="sm"
+            className="gap-1.5 px-3 h-8 text-xs font-medium shadow-sm"
+            onClick={onBrowse}
+            disabled={isLoading || isSyncing}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Browse
+          </Button>
+
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                  onClick={handleSync}
+                  disabled={isLoading || isSyncing}
+                >
+                  <RefreshCw
+                    className={cn("h-4 w-4", isSyncing && "animate-spin")}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">Sync Now</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  onClick={handleDisconnect}
+                  disabled={isLoading || isSyncing}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <X className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">Disconnect</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-8 text-xs font-medium hover:border-primary hover:bg-primary/5 hover:text-primary"
+          onClick={handleConnect}
+          disabled={isLoading}
+        >
+          {isLoading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+          Connect
+        </Button>
+      )}
     </div>
   );
 }
