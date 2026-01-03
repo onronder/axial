@@ -498,12 +498,57 @@ async def disconnect_provider(
             # Non-blocking failure - continue to delete from our DB
             logger.warning(f"⚠️ [Disconnect] Revocation attempt failed (continuing): {e}")
         
-        # 2. Delete the user integration
+        # =================================================================
+        # 2. DEEP CLEAN: Delete all associated data before removing integration
+        # =================================================================
+        # Map provider to source_type used in documents table
+        SOURCE_TYPE_MAP = {
+            "google_drive": "drive",
+            "notion": "notion",
+        }
+        source_type = SOURCE_TYPE_MAP.get(provider, provider)
+        
+        logger.info(f"🧹 [Disconnect] Deep cleaning data for {provider} (source_type={source_type})...")
+        
+        # 2a. Delete Documents (cascades to document_chunks via FK)
+        try:
+            doc_result = supabase.table("documents").delete().eq(
+                "user_id", user_id
+            ).eq("source_type", source_type).execute()
+            
+            deleted_docs = len(doc_result.data) if doc_result.data else 0
+            logger.info(f"🧹 [Disconnect] Deleted {deleted_docs} documents")
+        except Exception as e:
+            logger.warning(f"⚠️ [Disconnect] Document cleanup failed: {e}")
+        
+        # 2b. Delete Ingestion Jobs
+        try:
+            job_result = supabase.table("ingestion_jobs").delete().eq(
+                "user_id", user_id
+            ).eq("provider", provider).execute()
+            
+            deleted_jobs = len(job_result.data) if job_result.data else 0
+            logger.info(f"🧹 [Disconnect] Deleted {deleted_jobs} ingestion jobs")
+        except Exception as e:
+            logger.warning(f"⚠️ [Disconnect] Job cleanup failed: {e}")
+        
+        # =================================================================
+        # 3. Delete the user integration record
+        # =================================================================
         supabase.table("user_integrations").delete().eq(
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
         
-        return {"status": "success", "provider": provider}
+        logger.info(f"✅ [Disconnect] {provider} disconnected and all data cleaned for user {user_id}")
+        
+        return {
+            "status": "success", 
+            "provider": provider,
+            "cleanup": {
+                "documents_deleted": deleted_docs if 'deleted_docs' in dir() else 0,
+                "jobs_deleted": deleted_jobs if 'deleted_jobs' in dir() else 0
+            }
+        }
     except HTTPException:
         raise
     except Exception as e:
