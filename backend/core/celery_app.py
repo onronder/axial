@@ -10,20 +10,33 @@ from celery import Celery
 from core.config import settings
 
 # =============================================================================
-# Sentry Error Tracking for Celery Workers
+# Sentry Error Tracking + Logs for Celery Workers
 # =============================================================================
 if settings.SENTRY_DSN:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.celery import CeleryIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        import logging
+        
+        logging_integration = LoggingIntegration(
+            level=logging.INFO,
+            event_level=logging.ERROR
+        )
         
         sentry_sdk.init(
             dsn=settings.SENTRY_DSN,
             traces_sample_rate=0.1,
             profiles_sample_rate=0.1,
             environment=os.getenv("ENVIRONMENT", "development"),
-            integrations=[CeleryIntegration()],
+            integrations=[
+                CeleryIntegration(),
+                logging_integration,
+            ],
             release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "local"),
+            _experiments={
+                "enable_logs": True,
+            },
         )
     except ImportError:
         pass  # sentry-sdk not installed

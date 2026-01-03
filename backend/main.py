@@ -26,13 +26,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Sentry Error Tracking (Production)
+# Sentry Error Tracking + Logs (Production)
 # =============================================================================
 if settings.SENTRY_DSN:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.starlette import StarletteIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        
+        # Enable Sentry logging integration
+        logging_integration = LoggingIntegration(
+            level=logging.INFO,        # Capture INFO and above as breadcrumbs
+            event_level=logging.ERROR  # Send ERROR and above as events
+        )
         
         sentry_sdk.init(
             dsn=settings.SENTRY_DSN,
@@ -46,11 +53,16 @@ if settings.SENTRY_DSN:
             integrations=[
                 FastApiIntegration(),
                 StarletteIntegration(),
+                logging_integration,
             ],
             # Release tracking
             release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "local"),
+            # Enable experimental logs feature (new in 2.35.0+)
+            _experiments={
+                "enable_logs": True,
+            },
         )
-        logger.info("🔭 Sentry initialized for error tracking")
+        logger.info("🔭 Sentry initialized with logging and error tracking")
     except ImportError:
         logger.warning("⚠️ sentry-sdk not installed, error tracking disabled")
     except Exception as e:
