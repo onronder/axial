@@ -12,6 +12,7 @@ from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.resilience import with_retry_sync
 import requests
+from starlette.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,11 @@ class NotionConnector(BaseConnector):
         return res.data["id"]
     
     async def authorize(self, user_id: str) -> bool:
-        """Check if user has connected their Notion account."""
+        """Async wrapper for authorization check."""
+        return await run_in_threadpool(self._authorize_implementation, user_id)
+
+    def _authorize_implementation(self, user_id: str) -> bool:
+        """Synchronous implementation of authorize."""
         supabase = get_supabase()
         connector_def_id = self._get_connector_definition_id()
         res = supabase.table("user_integrations").select("id").eq(
@@ -94,12 +99,7 @@ class NotionConnector(BaseConnector):
         response.raise_for_status()
         return response.json()
     
-from starlette.concurrency import run_in_threadpool
-# ... imports ...
 
-
-class NotionConnector(BaseConnector):
-    # ... existing code ...
 
     async def list_items(
         self,
