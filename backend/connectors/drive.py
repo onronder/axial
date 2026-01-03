@@ -36,16 +36,19 @@ class DriveConnector(BaseConnector):
     
     def _download_file_content(self, service, file_meta):
         """
-        Download file content using chunked streaming.
+        Download file content using chunked streaming with memory-safe buffering.
         Returns (content_bytes, export_mime_type, filename).
         
-        Uses MediaIoBaseDownload for chunked downloads to:
-        - Keep SSL connections alive during large transfers
-        - Prevent EOF errors on slow networks
-        - Handle interruptions gracefully
+        Uses SpooledTemporaryFile for memory safety:
+        - Files < 10MB: buffered in RAM (fast)
+        - Files > 10MB: automatically spilled to disk (safe)
+        - Prevents OOM crashes on large file downloads
         """
-        from io import BytesIO
+        import tempfile
         from googleapiclient.http import MediaIoBaseDownload
+        
+        # 10MB threshold: small files stay in RAM, large files go to disk
+        MAX_MEM_SIZE = 10 * 1024 * 1024
         
         file_id = file_meta['id']
         mime_type = file_meta.get('mimeType')
@@ -60,16 +63,16 @@ class DriveConnector(BaseConnector):
             
             try:
                 request = service.files().export_media(fileId=file_id, mimeType=export_mime)
-                # Use streaming download for large exports
-                fh = BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
-                    if status:
-                        logger.debug(f"📥 [Drive] Export progress {name}: {int(status.progress() * 100)}%")
-                fh.seek(0)
-                content = fh.read()
+                # SpooledTemporaryFile: RAM < 10MB < Disk
+                with tempfile.SpooledTemporaryFile(max_size=MAX_MEM_SIZE, mode='w+b') as fh:
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while not done:
+                        status, done = downloader.next_chunk()
+                        if status:
+                            logger.debug(f"📥 [Drive] Export progress {name}: {int(status.progress() * 100)}%")
+                    fh.seek(0)
+                    content = fh.read()
                 return content, export_mime, filename
             except Exception as e:
                 logger.warning(f"⚠️ [Drive] Export failed for {name}: {e}")
@@ -83,19 +86,20 @@ class DriveConnector(BaseConnector):
         else:
             try:
                 request = service.files().get_media(fileId=file_id)
-                # Chunked streaming download - keeps SSL alive
-                fh = BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
-                    if status:
-                        logger.debug(f"📥 [Drive] Download progress {name}: {int(status.progress() * 100)}%")
-                fh.seek(0)
-                content = fh.read()
+                # SpooledTemporaryFile: RAM < 10MB < Disk (prevents OOM on large files)
+                with tempfile.SpooledTemporaryFile(max_size=MAX_MEM_SIZE, mode='w+b') as fh:
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while not done:
+                        status, done = downloader.next_chunk()
+                        if status:
+                            logger.debug(f"📥 [Drive] Download progress {name}: {int(status.progress() * 100)}%")
+                    fh.seek(0)
+                    content = fh.read()
                 return content, mime_type, name
             except Exception as e:
                 logger.warning(f"⚠️ [Drive] Download failed for {name}: {e}")
+                return None, None, None
                 return None, None, None
 
     def _get_all_files_recursive(self, service, parent_id: str) -> Iterator[Dict]:
