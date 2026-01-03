@@ -92,10 +92,13 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     try:
         model = get_embeddings_model()
         
-        # Split into batches to avoid token limits
-        # Conservative estimate: ~300 tokens per chunk average for chunked documents
-        # 300K limit / 300 = 1000 chunks max, use 500 for safety margin
-        BATCH_SIZE = 500
+        # PRODUCTION TUNING: Safety First
+        # Reduced batch size to prevent exceeding OpenAI's single-request token limit (max_tokens_per_request)
+        # Error seen: "Requested 303625 tokens, max 300000" with BATCH_SIZE=500
+        BATCH_SIZE = 50
+        # Increased sleep to prevent hitting the Tokens Per Minute (TPM) rate limit
+        SLEEP_INTERVAL = 2.0
+        
         all_embeddings = []
         
         for batch_start in range(0, len(valid_texts), BATCH_SIZE):
@@ -105,10 +108,10 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
             batch_embeddings = model.embed_documents(batch_texts)
             all_embeddings.extend(batch_embeddings)
             
-            # Rate Limit Protection: Sleep 0.5s between batches to respect OpenAI TPM
+            # Rate Limit Protection: Sleep between batches to respect OpenAI TPM
             if batch_end < len(valid_texts):
                 logger.info(f"📊 [Embeddings] Processed batch {batch_start//BATCH_SIZE + 1}: {len(batch_texts)} texts")
-                time.sleep(0.5)
+                time.sleep(SLEEP_INTERVAL)
         
         # Reconstruct full result list with None for empty texts
         result = [None for _ in texts]
