@@ -6,6 +6,8 @@ especially for external services like Google Drive, Notion, etc.
 """
 
 import logging
+import ssl
+import http.client
 from functools import wraps
 from typing import Callable, TypeVar, Any
 from tenacity import (
@@ -28,11 +30,16 @@ T = TypeVar("T")
 # =============================================================================
 
 # Transient errors that should trigger retry
+# Includes network errors, SSL issues, and incomplete reads
 TRANSIENT_EXCEPTIONS = (
     ConnectError,
     TimeoutException,
     ConnectionError,
     TimeoutError,
+    ConnectionResetError,           # Connection reset by peer
+    ssl.SSLError,                   # SSL/TLS errors (EOF, handshake failures)
+    http.client.IncompleteRead,     # Partial response received
+    OSError,                        # Generic I/O errors (includes many network issues)
 )
 
 # Rate limit status codes

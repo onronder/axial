@@ -36,9 +36,17 @@ class DriveConnector(BaseConnector):
     
     def _download_file_content(self, service, file_meta):
         """
-        Download file content. Returns (content_bytes, export_mime_type, filename).
-        Handles Google Doc export vs Binary download.
+        Download file content using chunked streaming.
+        Returns (content_bytes, export_mime_type, filename).
+        
+        Uses MediaIoBaseDownload for chunked downloads to:
+        - Keep SSL connections alive during large transfers
+        - Prevent EOF errors on slow networks
+        - Handle interruptions gracefully
         """
+        from io import BytesIO
+        from googleapiclient.http import MediaIoBaseDownload
+        
         file_id = file_meta['id']
         mime_type = file_meta.get('mimeType')
         name = file_meta.get('name')
@@ -52,20 +60,39 @@ class DriveConnector(BaseConnector):
             
             try:
                 request = service.files().export_media(fileId=file_id, mimeType=export_mime)
-                content = request.execute()
+                # Use streaming download for large exports
+                fh = BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                    if status:
+                        logger.debug(f"📥 [Drive] Export progress {name}: {int(status.progress() * 100)}%")
+                fh.seek(0)
+                content = fh.read()
                 return content, export_mime, filename
             except Exception as e:
                 logger.warning(f"⚠️ [Drive] Export failed for {name}: {e}")
                 return None, None, None
 
-        # 2. Handle Binary files (Direct Download)
+        # 2. Handle Folders (skip)
         elif mime_type == 'application/vnd.google-apps.folder':
             return None, None, None
+            
+        # 3. Handle Binary files (Direct Download with streaming)
         else:
-            # Default to binary download
             try:
                 request = service.files().get_media(fileId=file_id)
-                content = request.execute()
+                # Chunked streaming download - keeps SSL alive
+                fh = BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                    if status:
+                        logger.debug(f"📥 [Drive] Download progress {name}: {int(status.progress() * 100)}%")
+                fh.seek(0)
+                content = fh.read()
                 return content, mime_type, name
             except Exception as e:
                 logger.warning(f"⚠️ [Drive] Download failed for {name}: {e}")

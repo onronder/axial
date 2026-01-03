@@ -92,12 +92,12 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     try:
         model = get_embeddings_model()
         
-        # PRODUCTION TUNING: Safety First
-        # Reduced batch size to prevent exceeding OpenAI's single-request token limit (max_tokens_per_request)
-        # Error seen: "Requested 303625 tokens, max 300000" with BATCH_SIZE=500
-        BATCH_SIZE = 50
-        # Increased sleep to prevent hitting the Tokens Per Minute (TPM) rate limit
-        SLEEP_INTERVAL = 2.0
+        # PRODUCTION TUNING: Maximum Safety
+        # Dense PDF pages can have 2000+ tokens. With 20 chunks * 2000 = 40k tokens max.
+        # This guarantees we NEVER hit the 300k token limit per request.
+        BATCH_SIZE = 20
+        # Conservative sleep interval to respect Tokens Per Minute (TPM) limits
+        SLEEP_INTERVAL = 1.0
         
         all_embeddings = []
         
@@ -108,7 +108,7 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
             batch_embeddings = model.embed_documents(batch_texts)
             all_embeddings.extend(batch_embeddings)
             
-            # Rate Limit Protection: Sleep between batches to respect OpenAI TPM
+            # Rate Limit Protection: Always sleep between batches to respect OpenAI TPM
             if batch_end < len(valid_texts):
                 logger.info(f"📊 [Embeddings] Processed batch {batch_start//BATCH_SIZE + 1}: {len(batch_texts)} texts")
                 time.sleep(SLEEP_INTERVAL)
