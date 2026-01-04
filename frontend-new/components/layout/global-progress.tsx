@@ -9,7 +9,6 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Progress } from "@/components/ui/progress";
 import {
     CheckCircle2,
     Loader2,

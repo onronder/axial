@@ -253,7 +253,7 @@ function JobHeader({ job, onCancel }: { job: IngestionJob; onCancel: (id: string
 /**
  * Files list for a single job
  */
-function JobFilesList({ jobId, provider }: { jobId: string; provider: string }) {
+function JobFilesList({ jobId }: { jobId: string }) {
     const { files, isLoading, refresh } = useFileStatus(jobId);
 
     if (isLoading) {
@@ -371,7 +371,7 @@ export function IngestionProgressPanel() {
                                             job={job}
                                             onCancel={() => { /* Auto-updates via realtime */ }}
                                         />
-                                        <JobFilesList jobId={job.id} provider={job.provider} />
+                                        <JobFilesList jobId={job.id} />
                                     </div>
                                 ))}
                             </CardContent>
