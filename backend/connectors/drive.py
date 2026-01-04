@@ -355,11 +355,8 @@ class DriveConnector(BaseConnector):
                 
                 # Handle folders recursively
                 if file_meta['mimeType'] == 'application/vnd.google-apps.folder':
-                    # NOTE: _get_all_files_recursive returns a LIST. 
-                    # For true streaming of folders, we should refactor that too, 
-                    # but for now we iterate the result.
-                    # Ideally, _get_all_files_recursive should also be a generator.
-                    folder_files = self._get_all_files_recursive(service, item_id)
+                    # Convert generator to list so we can count and iterate
+                    folder_files = list(self._get_all_files_recursive(service, item_id))
                     logger.info(f"📁 [DriveConnector] Found {len(folder_files)} files in folder: {file_meta['name']}")
                     
                     for f in folder_files:
