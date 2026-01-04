@@ -128,7 +128,7 @@ class GuardrailService:
         """
         try:
             model = self._get_model()
-            prompt = GUARDRAIL_PROMPT.format(query=query.replace('"', '\\"'))
+            prompt = GUARDRAIL_PROMPT.replace("{query}", query.replace('"', '\\"'))
             
             # Invoke the model
             response = await model.ainvoke(prompt)
