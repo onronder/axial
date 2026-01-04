@@ -9,7 +9,7 @@ from services.audit import log_chat_delete, audit_logger
 from services.llm_factory import LLMFactory
 from services.guardrails import guardrail_service
 from services.router import llm_router
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from slowapi import Limiter

@@ -428,7 +428,7 @@ def send_email_notification(
         
         # Check user preference in user_notification_settings (key-value table)
         # Default to True if no explicit setting exists
-        settings_response = supabase.table("user_notification_settings").select("enabled").eq("user_id", user_id).eq("setting_key", "email_on_ingestion_complete").maybeSingle().execute()
+        settings_response = supabase.table("user_notification_settings").select("enabled").eq("user_id", user_id).eq("setting_key", "email_on_ingestion_complete").maybe_single().execute()
         
         email_enabled = True  # Default if no setting exists
         if settings_response.data:
@@ -491,7 +491,7 @@ def send_failure_email_notification(
             return
         
         # Check user preference (respect opt-out for error emails too)
-        settings_response = supabase.table("user_notification_settings").select("enabled").eq("user_id", user_id).eq("setting_key", "email_on_ingestion_complete").maybeSingle().execute()
+        settings_response = supabase.table("user_notification_settings").select("enabled").eq("user_id", user_id).eq("setting_key", "email_on_ingestion_complete").maybe_single().execute()
         
         email_enabled = True
         if settings_response.data:
