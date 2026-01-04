@@ -51,7 +51,8 @@ export const useUsage = () => {
     }, [fetchAll]);
 
     // Derived values for convenience
-    const plan: PlanType = effectivePlan?.plan ?? usage?.plan ?? 'free';
+    // IMPORTANT: Return null while loading to prevent "Free" flash before real plan loads
+    const plan: PlanType | null = isLoading ? null : (effectivePlan?.plan ?? usage?.plan ?? 'free');
     const isPlanInherited = effectivePlan?.inherited ?? false;
 
     const filesUsed = usage?.files.used ?? 0;

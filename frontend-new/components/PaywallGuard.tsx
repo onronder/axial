@@ -27,9 +27,11 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
     const isLoading = isUsageLoading || isPlansLoading;
 
     // Check if user has a valid paid plan
-    const hasAccess = ['starter', 'pro', 'enterprise'].includes(currentPlan || '');
+    // If plan is null, it means we're still loading - don't show paywall
+    const hasAccess = currentPlan !== null && ['starter', 'pro', 'enterprise'].includes(currentPlan);
 
-    if (isLoading) {
+    // Show loading if: explicitly loading OR plan hasn't been fetched yet
+    if (isLoading || currentPlan === null) {
         return (
             <div className="flex h-[50vh] items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />

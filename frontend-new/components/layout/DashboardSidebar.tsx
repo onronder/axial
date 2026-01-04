@@ -125,7 +125,9 @@ export function DashboardSidebar() {
                                         variant="secondary"
                                         className="h-4 px-1.5 text-[10px] bg-sidebar-accent hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer border border-transparent hover:border-primary/30"
                                     >
-                                        {effectivePlan ? effectivePlan.charAt(0).toUpperCase() + effectivePlan.slice(1) : 'Free'}
+                                        {effectivePlan
+                                            ? effectivePlan.charAt(0).toUpperCase() + effectivePlan.slice(1)
+                                            : <span className="animate-pulse">···</span>}
                                     </Badge>
                                 </Link>
                             </div>
