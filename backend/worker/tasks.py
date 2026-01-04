@@ -474,6 +474,154 @@ def send_failure_email_notification(
         logger.error(f"📧 [Email] Failed to send failure notification: {e}")
 
 # ============================================================
+# UNIFIED DOCUMENT PROCESSING PIPELINE
+# ============================================================
+
+from dataclasses import dataclass
+
+@dataclass
+class ProcessResult:
+    """Result of processing a single document."""
+    success: bool
+    document_id: str = None
+    chunks_count: int = 0
+    error: str = None
+
+
+def process_document_pipeline(
+    supabase,
+    content: bytes | str,
+    filename: str,
+    user_id: str,
+    job_id: str,
+    file_status_id: str,
+    source_type: str,
+    metadata: dict = None,
+    source_url: str = None
+) -> ProcessResult:
+    """
+    Unified document processing pipeline.
+    
+    Handles the common flow for all document types:
+    1. Parse content → chunks
+    2. Generate embeddings
+    3. Insert into database (batched)
+    4. Update file status throughout
+    
+    Args:
+        supabase: Supabase client
+        content: File content as bytes or string
+        filename: Original filename
+        user_id: User ID
+        job_id: Parent ingestion job ID
+        file_status_id: Per-file status tracking ID
+        source_type: Source type (file, drive, notion, web)
+        metadata: Optional additional metadata
+        source_url: Optional source URL
+        
+    Returns:
+        ProcessResult with success status, document_id, chunk count
+    """
+    try:
+        # 1. Parse content
+        update_file_status(supabase, file_status_id,
+            status="processing", progress=25, message="Extracting content...")
+        
+        # Handle both bytes and string content
+        if isinstance(content, str):
+            content_bytes = content.encode('utf-8')
+        else:
+            content_bytes = content
+        
+        # Process through document factory
+        result = DocumentProcessorFactory.process(
+            content=content_bytes,
+            filename=filename,
+            mime_type=metadata.get('mime_type') if metadata else None
+        )
+        
+        if not result.chunks:
+            update_file_status(supabase, file_status_id,
+                status="completed", progress=100, message="No content found")
+            return ProcessResult(success=True, chunks_count=0)
+        
+        update_file_status(supabase, file_status_id,
+            progress=40, message=f"Parsed {len(result.chunks)} chunks",
+            chunks_total=len(result.chunks))
+        
+        # 2. Generate embeddings
+        update_file_status(supabase, file_status_id,
+            status="embedding", progress=50, message="Generating embeddings...")
+        
+        chunk_texts = [chunk.content for chunk in result.chunks]
+        chunk_embeddings = generate_embeddings_batch(chunk_texts)
+        
+        update_file_status(supabase, file_status_id,
+            progress=70, message="Embeddings complete")
+        
+        # 3. Build chunks payload
+        chunks_payload = []
+        for chunk, embedding in zip(result.chunks, chunk_embeddings):
+            if embedding is None:
+                continue
+            chunks_payload.append({
+                "content": chunk.content,
+                "embedding": embedding,
+                "chunk_index": chunk.chunk_index,
+                "metadata": {
+                    **chunk.metadata,
+                    "token_count": chunk.token_count,
+                }
+            })
+        
+        # 4. Index in database
+        update_file_status(supabase, file_status_id,
+            status="indexing", progress=80, message="Saving to database...")
+        
+        # Merge metadata
+        doc_metadata = {
+            **(metadata or {}),
+            "file_type": result.file_type,
+            "total_tokens": result.total_tokens,
+            "total_chunks": len(result.chunks),
+            **(result.metadata or {}),
+        }
+        
+        doc_id = ingest_document_batched(
+            supabase=supabase,
+            user_id=user_id,
+            doc_title=filename,
+            source_type=source_type,
+            metadata=doc_metadata,
+            chunks_payload=chunks_payload,
+            file_size_bytes=len(content_bytes),
+            job_id=job_id,
+            source_url=source_url
+        )
+        
+        # 5. Complete
+        if doc_id:
+            update_file_status(supabase, file_status_id,
+                status="completed", progress=100, message="Complete",
+                chunks_processed=len(chunks_payload), document_id=doc_id)
+            
+            return ProcessResult(
+                success=True,
+                document_id=doc_id,
+                chunks_count=len(chunks_payload)
+            )
+        else:
+            update_file_status(supabase, file_status_id,
+                status="failed", progress=0, error="Failed to save document")
+            return ProcessResult(success=False, error="Database insert failed")
+            
+    except Exception as e:
+        update_file_status(supabase, file_status_id,
+            status="failed", progress=0, error=str(e))
+        return ProcessResult(success=False, error=str(e))
+
+
+# ============================================================
 # ZERO-COPY FILE INGESTION TASK
 # ============================================================
 
