@@ -24,7 +24,8 @@ class DocumentDTO(BaseModel):
     source_url: Optional[str] = None
     created_at: str
     status: str = "indexed"
-    indexing_status: str = "pending"
+    # Documents only exist after successful ingestion, so default to completed
+    indexing_status: str = "completed"
     size: Optional[int] = 0
     metadata: Dict[str, Any]
 
