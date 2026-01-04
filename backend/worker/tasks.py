@@ -144,6 +144,104 @@ def ingest_document_batched(
     return str(doc_id)
 
 
+# ============================================================
+# PER-FILE STATUS TRACKING HELPERS
+# ============================================================
+
+def create_file_status(
+    supabase, 
+    job_id: str, 
+    user_id: str, 
+    filename: str, 
+    file_size: int = 0
+) -> Optional[str]:
+    """
+    Create a file status record for granular progress tracking.
+    
+    Args:
+        supabase: Supabase client
+        job_id: Parent ingestion job ID
+        user_id: User ID
+        filename: Name of the file being processed
+        file_size: File size in bytes
+        
+    Returns:
+        File status record ID (UUID string) or None on error
+    """
+    try:
+        result = supabase.table("ingestion_file_status").insert({
+            "job_id": job_id,
+            "user_id": user_id,
+            "filename": filename,
+            "file_size_bytes": file_size,
+            "status": "pending",
+            "progress": 0,
+            "status_message": "Queued for processing"
+        }).execute()
+        
+        if result.data:
+            file_status_id = result.data[0]["id"]
+            logger.debug(f"📄 Created file status: {filename} ({file_status_id[:8]}...)")
+            return file_status_id
+        return None
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to create file status for {filename}: {e}")
+        return None
+
+
+def update_file_status(
+    supabase,
+    file_status_id: str,
+    status: str = None,
+    progress: int = None,
+    message: str = None,
+    error: str = None,
+    chunks_total: int = None,
+    chunks_processed: int = None,
+    document_id: str = None
+):
+    """
+    Update file processing status for real-time UI feedback.
+    
+    Status progression: pending → uploading → processing → embedding → indexing → completed/failed
+    
+    Args:
+        file_status_id: The file status record ID
+        status: New status (pending/uploading/processing/embedding/indexing/completed/failed)
+        progress: Progress percentage (0-100)
+        message: Human-readable status message
+        error: Error message (for failed status)
+        chunks_total: Total chunks for this file
+        chunks_processed: Chunks processed so far
+        document_id: Final document ID after successful ingestion
+    """
+    if not file_status_id:
+        return
+        
+    try:
+        update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+        
+        if status:
+            update_data["status"] = status
+        if progress is not None:
+            update_data["progress"] = min(100, max(0, progress))
+        if message:
+            update_data["status_message"] = message
+        if error:
+            update_data["error_message"] = error
+        if chunks_total is not None:
+            update_data["chunks_total"] = chunks_total
+        if chunks_processed is not None:
+            update_data["chunks_processed"] = chunks_processed
+        if document_id:
+            update_data["document_id"] = document_id
+            
+        supabase.table("ingestion_file_status").update(update_data).eq("id", file_status_id).execute()
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to update file status {file_status_id[:8]}...: {e}")
+
+
 def create_notification(
     supabase,
     user_id: str,
@@ -371,6 +469,12 @@ def ingest_file_task(
         # Update job to processing
         update_job_status(supabase, job_id, "processing", 0)
         
+        # Create per-file status tracking record
+        file_status_id = create_file_status(
+            supabase, job_id, user_id, filename, 
+            file_size=metadata.get("size", 0) if metadata else 0
+        )
+        
         create_notification(
             supabase, user_id,
             "Processing File",
@@ -380,10 +484,16 @@ def ingest_file_task(
         )
         
         # ========== STEP 1: Download from Storage ==========
+        update_file_status(supabase, file_status_id, 
+            status="uploading", progress=5, message="Downloading file...")
+        
         logger.info(f"📦 [Worker:{task_id}] Downloading from storage: {storage_path}")
         
         file_data = supabase.storage.from_(STAGING_BUCKET).download(storage_path)
         file_size_bytes = len(file_data)  # Track for quota
+        
+        # Update file size now that we know it
+        update_file_status(supabase, file_status_id, progress=15, message="File downloaded")
         
         # Write to temp file
         file_ext = os.path.splitext(filename)[1] if filename else ""
@@ -394,6 +504,9 @@ def ingest_file_task(
         logger.info(f"📦 [Worker:{task_id}] Downloaded to: {local_path} ({file_size_bytes} bytes)")
         
         # ========== STEP 2: Smart Parse & Chunk (Format-Specific) ==========
+        update_file_status(supabase, file_status_id, 
+            status="processing", progress=25, message="Extracting content...")
+        
         from services.parsers import DocumentProcessorFactory
         
         # Process file with format-specific strategy
@@ -404,17 +517,31 @@ def ingest_file_task(
         
         if not result.chunks:
             logger.warning(f"📥 [Worker:{task_id}] No content extracted from {filename}")
+            update_file_status(supabase, file_status_id, 
+                status="completed", progress=100, message="No content (empty file)", 
+                chunks_total=0)
             update_job_status(supabase, job_id, "completed", 1)
             return {"status": "skipped", "message": "No content extracted"}
+        
+        update_file_status(supabase, file_status_id, 
+            progress=40, message=f"Parsed {len(result.chunks)} chunks",
+            chunks_total=len(result.chunks))
         
         logger.info(f"📄 [Worker:{task_id}] {result.file_type}: {len(result.chunks)} chunks, {result.total_tokens} tokens")
         
         # ========== STEP 3: Embed ==========
+        update_file_status(supabase, file_status_id, 
+            status="embedding", progress=50, message="Generating embeddings...")
+        
         from services.embeddings import generate_embeddings_batch
         
         # Get chunk texts for embedding
         chunk_texts = [chunk.content for chunk in result.chunks]
         chunk_embeddings = generate_embeddings_batch(chunk_texts)
+        
+        update_file_status(supabase, file_status_id, 
+            progress=70, message="Embeddings complete")
+        
         logger.info(f"🔢 [Worker:{task_id}] Embedded {len(chunk_texts)} chunks")
         
         # ========== STEP 4: Atomic RPC Insert ==========
@@ -447,6 +574,10 @@ def ingest_file_task(
             **(result.metadata or {}),
         }
         
+        # ========== STEP 4: Index to Database ==========
+        update_file_status(supabase, file_status_id, 
+            status="indexing", progress=80, message="Saving to database...")
+        
         # Use batched insertion with progress tracking (prevents DB timeouts)
         doc_id = ingest_document_batched(
             supabase=supabase,
@@ -459,6 +590,11 @@ def ingest_file_task(
             job_id=job_id
         )
         
+        # Mark file as completed
+        update_file_status(supabase, file_status_id, 
+            status="completed", progress=100, message="Complete",
+            chunks_processed=len(chunks_payload), document_id=doc_id)
+        
         logger.info(f"✅ [Worker:{task_id}] Document stored: {doc_id}")
         
         # Update job to completed
@@ -467,17 +603,22 @@ def ingest_file_task(
         create_notification(
             supabase, user_id,
             "Ingestion Complete",
-            f"Successfully processed {filename} ({len(chunks)} chunks)",
+            f"Successfully processed {filename} ({len(chunks_payload)} chunks)",
             "success",
             {"job_id": job_id, "document_id": str(doc_id)}
         )
         
         send_email_notification(supabase, user_id, 1)
         
-        return {"status": "success", "document_id": str(doc_id), "chunks": len(chunks)}
+        return {"status": "success", "document_id": str(doc_id), "chunks": len(chunks_payload)}
         
     except Exception as e:
         logger.error(f"❌ [Worker:{task_id}] Failed: {e}")
+        
+        # Update file status to failed
+        if 'file_status_id' in locals() and file_status_id:
+            update_file_status(supabase, file_status_id, 
+                status="failed", progress=0, error=str(e))
         
         update_job_status(supabase, job_id, "failed", 0, str(e))
         

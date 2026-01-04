@@ -10,6 +10,7 @@ import { ProfileProvider } from "@/hooks/useProfile";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { GlobalProgress } from "@/components/layout/global-progress";
+import { IngestionProgressPanel } from "@/components/layout/IngestionProgressPanel";
 import { GlobalIngestModal } from "@/components/GlobalIngestModal";
 import { UsageWarningBanner } from "@/components/UsageWarningBanner";
 import { PaywallGuard } from "@/components/PaywallGuard";
@@ -86,6 +87,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                             </SidebarErrorBoundary>
                             <SidebarErrorBoundary>
                                 <GlobalProgress />
+                            </SidebarErrorBoundary>
+                            {/* Per-file progress panel */}
+                            <SidebarErrorBoundary>
+                                <IngestionProgressPanel />
                             </SidebarErrorBoundary>
                         </div>
                     </PaywallGuard>
