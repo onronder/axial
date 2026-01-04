@@ -7,6 +7,7 @@ These run in a separate worker process to avoid blocking the FastAPI server.
 
 import logging
 import json
+import base64
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
@@ -1031,8 +1032,21 @@ def ingest_connector_task(
                         )
                     else:
                         # Drive and others: Use extension/mime_type routing
-                        content_bytes = doc_content.encode('utf-8')
                         mime_type = doc.metadata.get('mime_type', 'text/plain')
+                        
+                        # Handle binary files (base64 encoded from connector)
+                        if mime_type in {
+                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            'application/msword',
+                            'application/pdf'
+                        }:
+                             try:
+                                 content_bytes = base64.b64decode(doc_content)
+                             except Exception:
+                                 # Fallback just in case content wasn't encoded
+                                 content_bytes = doc_content.encode('utf-8')
+                        else:
+                             content_bytes = doc_content.encode('utf-8')
                         
                         # Try to get file extension from title
                         filename = doc_title

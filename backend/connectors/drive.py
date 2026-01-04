@@ -7,6 +7,7 @@ File parsing is delegated to the centralized DocumentParser service.
 """
 
 import logging
+import base64
 from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
 from datetime import datetime, timezone
 from google.oauth2.credentials import Credentials
@@ -169,19 +170,12 @@ class DriveConnector(BaseConnector):
     }
     
     # Supported MIME types for ingestion
-    # NOTE: We only support TEXT-compatible formats because:
-    # 1. Content is decoded as UTF-8 for ConnectorDocument
-    # 2. Binary formats (DOCX, PDF) get corrupted by UTF-8 decode
-    # 3. pypdf/python-docx are not installed on Railway
-    # 
-    # For binary files uploaded to Drive (not native Google types),
-    # users should convert to Google Docs first for ingestion.
     SUPPORTED_MIME_TYPES = {
         # Google native types -> exported as text
         'application/vnd.google-apps.document': 'gdoc',
         'application/vnd.google-apps.spreadsheet': 'gsheet',
         'application/vnd.google-apps.presentation': 'gslides',
-        # Text formats -> directly compatible
+        # Text formats -> directly compatible (UTF-8 safe)
         'text/plain': 'text',
         'text/markdown': 'text',
         'text/csv': 'text',
@@ -189,10 +183,18 @@ class DriveConnector(BaseConnector):
         'application/json': 'text',
         'application/xml': 'text',
         'text/xml': 'text',
-        # NOTE: Binary formats REMOVED - cannot process without libraries:
-        # 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-        # 'application/msword': 'docx',
-        # 'application/pdf': 'pdf',
+        # Binary formats -> need base64 encoding
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'application/msword': 'docx',
+        'application/pdf': 'pdf',
+    }
+    
+    # Binary MIME types that cannot be decoded as UTF-8
+    # These must be base64 encoded when passed through ConnectorDocument
+    BINARY_MIME_TYPES = {
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword',
+        'application/pdf',
     }
     
     async def authorize(self, user_id: str) -> bool:
@@ -383,13 +385,20 @@ class DriveConnector(BaseConnector):
                             content_bytes, export_mime, filename = self._download_file_content(service, f)
                             if content_bytes:
                                 file_size = len(content_bytes)
-                                try:
-                                    text_content = content_bytes.decode('utf-8')
-                                except UnicodeDecodeError:
-                                    text_content = content_bytes.decode('utf-8', errors='replace')
                                 
-                                # Remove null bytes that break PostgreSQL
-                                text_content = text_content.replace('\x00', '')
+                                # Check if binary or text
+                                if export_mime in self.BINARY_MIME_TYPES:
+                                    # Binary: Encode as base64 string
+                                    text_content = base64.b64encode(content_bytes).decode('ascii')
+                                else:
+                                    # Text: Decode UTF-8
+                                    try:
+                                        text_content = content_bytes.decode('utf-8')
+                                    except UnicodeDecodeError:
+                                        text_content = content_bytes.decode('utf-8', errors='replace')
+                                    
+                                    # Remove null bytes that break PostgreSQL
+                                    text_content = text_content.replace('\x00', '')
                                 
                                 yield ConnectorDocument(
                                     page_content=text_content,
@@ -413,13 +422,20 @@ class DriveConnector(BaseConnector):
                     
                     if content_bytes:
                         file_size = len(content_bytes)
-                        try:
-                            text_content = content_bytes.decode('utf-8')
-                        except UnicodeDecodeError:
-                            text_content = content_bytes.decode('utf-8', errors='replace')
                         
-                        # Remove null bytes that break PostgreSQL
-                        text_content = text_content.replace('\x00', '')
+                        # Check if binary or text
+                        if export_mime in self.BINARY_MIME_TYPES:
+                            # Binary: Encode as base64 string
+                            text_content = base64.b64encode(content_bytes).decode('ascii')
+                        else:
+                            # Text: Decode UTF-8
+                            try:
+                                text_content = content_bytes.decode('utf-8')
+                            except UnicodeDecodeError:
+                                text_content = content_bytes.decode('utf-8', errors='replace')
+                            
+                            # Remove null bytes that break PostgreSQL
+                            text_content = text_content.replace('\x00', '')
                         
                         yield ConnectorDocument(
                             page_content=text_content,
