@@ -10,7 +10,7 @@ export interface IngestionJob {
     id: string;
     user_id: string;
     provider: string;
-    status: "pending" | "processing" | "completed" | "failed";
+    status: "pending" | "processing" | "completed" | "failed" | "cancelled";
     total_files: number;
     processed_files: number;
     error_message?: string;
@@ -93,6 +93,13 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
                         title: "Ingestion Failed",
                         description: newJob.error_message || "An error occurred.",
                         variant: "destructive",
+                    });
+                }
+
+                if (newJob.status === "cancelled" && oldJob?.status !== "cancelled") {
+                    toast({
+                        title: "Ingestion Cancelled",
+                        description: "Job was cancelled by user.",
                     });
                 }
             }
