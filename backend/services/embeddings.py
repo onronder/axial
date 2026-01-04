@@ -70,11 +70,16 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     for safety margin under 300K token limit.
     
     Args:
-        texts: List of texts to embed
+        texts: List of texts to embed (or any iterable)
         
     Returns:
         List of embedding vectors (or None for empty texts)
     """
+    # CRITICAL FIX: Convert generators to list to prevent 'generator has no len()' error
+    # WebConnector and DriveConnector yield generators for lazy loading
+    if not isinstance(texts, list):
+        texts = list(texts)
+    
     if not texts:
         return []
     

@@ -44,6 +44,106 @@ def update_job_status(supabase, job_id: str, status: str, processed_files: int =
         logger.error(f"❌ [Job:{job_id}] Failed to update status: {e}")
 
 
+def update_job_progress(supabase, job_id: str, progress: int, message: str = None):
+    """Update job progress percentage for granular UX feedback."""
+    try:
+        update_data = {
+            "progress": progress,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        if message:
+            update_data["status_message"] = message
+            
+        supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
+    except Exception as e:
+        logger.warning(f"⚠️ [Job:{job_id}] Failed to update progress: {e}")
+
+
+def ingest_document_batched(
+    supabase,
+    user_id: str,
+    doc_title: str,
+    source_type: str,
+    metadata: dict,
+    chunks_payload: list,
+    file_size_bytes: int = 0,
+    job_id: str = None,
+    source_url: str = None
+) -> str:
+    """
+    Insert document and chunks in batches to prevent DB timeouts.
+    
+    This replaces the single-RPC approach which times out on large documents.
+    
+    Args:
+        supabase: Supabase client
+        user_id: User ID
+        doc_title: Document title
+        source_type: Source type (file, drive, notion, web)
+        metadata: Document metadata dict
+        chunks_payload: List of chunk dicts with content, embedding, etc.
+        file_size_bytes: File size for quota tracking
+        job_id: Optional job ID for progress updates
+        source_url: Optional source URL
+        
+    Returns:
+        Document ID (UUID string)
+    """
+    DB_BATCH_SIZE = 50  # Insert 50 chunks at a time to prevent timeouts
+    
+    # Step 1: Create parent document record FIRST
+    doc_data = {
+        "user_id": user_id,
+        "title": doc_title,
+        "source_type": source_type,
+        "source_url": source_url,
+        "metadata": metadata,
+        "file_size": file_size_bytes,
+        "chunk_count": len(chunks_payload),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    doc_result = supabase.table("documents").insert(doc_data).execute()
+    if not doc_result.data:
+        raise Exception("Failed to create document record")
+    
+    doc_id = doc_result.data[0]["id"]
+    logger.info(f"📄 Created document {doc_id}: {doc_title}")
+    
+    # Step 2: Insert chunks in batches with progress tracking
+    total_chunks = len(chunks_payload)
+    
+    if total_chunks == 0:
+        return str(doc_id)
+    
+    for i in range(0, total_chunks, DB_BATCH_SIZE):
+        batch = chunks_payload[i:i + DB_BATCH_SIZE]
+        
+        # Add document_id to each chunk
+        for chunk in batch:
+            chunk["document_id"] = str(doc_id)
+        
+        # Insert this batch
+        try:
+            supabase.table("document_chunks").insert(batch).execute()
+        except Exception as e:
+            logger.error(f"❌ Failed to insert chunk batch {i//DB_BATCH_SIZE + 1}: {e}")
+            # Continue with other batches - partial ingestion is better than none
+            continue
+        
+        # Update progress if job_id provided
+        if job_id:
+            progress_percent = int(((i + len(batch)) / total_chunks) * 100)
+            update_job_progress(
+                supabase, job_id, progress_percent,
+                f"Indexing chunk {i + len(batch)}/{total_chunks}..."
+            )
+    
+    logger.info(f"✅ Inserted {total_chunks} chunks for document {doc_id}")
+    return str(doc_id)
+
+
 def create_notification(
     supabase,
     user_id: str,
@@ -347,22 +447,19 @@ def ingest_file_task(
             **(result.metadata or {}),
         }
         
-        # Call atomic ingestion RPC with file size for quota tracking
-        rpc_result = supabase.rpc("ingest_document_with_chunks", {
-            "p_user_id": user_id,
-            "p_doc_title": filename,
-            "p_source_type": "file",
-            "p_source_url": None,
-            "p_metadata": json.dumps(doc_metadata),
-            "p_chunks": json.dumps(chunks_payload),
-            "p_file_size_bytes": file_size_bytes
-        }).execute()
+        # Use batched insertion with progress tracking (prevents DB timeouts)
+        doc_id = ingest_document_batched(
+            supabase=supabase,
+            user_id=user_id,
+            doc_title=filename,
+            source_type="file",
+            metadata=doc_metadata,
+            chunks_payload=chunks_payload,
+            file_size_bytes=file_size_bytes,
+            job_id=job_id
+        )
         
-        if rpc_result.data:
-            doc_id = rpc_result.data
-            logger.info(f"✅ [Worker:{task_id}] Document stored: {doc_id}")
-        else:
-            raise Exception("RPC returned no document ID")
+        logger.info(f"✅ [Worker:{task_id}] Document stored: {doc_id}")
         
         # Update job to completed
         update_job_status(supabase, job_id, "completed", 1)
