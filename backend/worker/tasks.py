@@ -976,9 +976,31 @@ def ingest_connector_task(
         # Define async stream consumer
         async def process_stream():
             stream = await connector.ingest(ingest_config)
+            
+            # STEP 1: Collect all documents from stream first
+            # This allows us to know the total count for accurate progress
+            all_docs = []
+            async for doc in stream:
+                all_docs.append(doc)
+            
+            total_files = len(all_docs)
+            logger.info(f"📥 [Worker:{task_id}] Discovered {total_files} files to process")
+            
+            # STEP 2: Update job with actual file count
+            if job_id and total_files > 0:
+                supabase.table("ingestion_jobs").update({
+                    "total_files": total_files,
+                    "status_message": f"Processing {total_files} files..."
+                }).eq("id", job_id).execute()
+            
+            if total_files == 0:
+                logger.warning(f"⚠️ [Worker:{task_id}] No files found in selection")
+                return []
+            
             processed_docs = []
             
-            async for doc in stream:
+            # STEP 3: Process each document with accurate progress
+            for doc_index, doc in enumerate(all_docs):
                 # Check for cancellation before processing each document
                 if check_job_cancelled(supabase, job_id):
                     logger.info(f"🛑 [Worker:{task_id}] Job cancelled, stopping processing")
