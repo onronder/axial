@@ -41,9 +41,9 @@ export function DashboardSidebar() {
         ? `${profile.first_name} ${profile.last_name}`
         : profile?.first_name || user?.name || user?.email?.split('@')[0] || 'User';
 
-    const handleLogout = () => {
-        logout();
-        router.push("/login");
+    const handleLogout = async () => {
+        await logout();
+        // Navigation is handled in useAuth.logout()
     };
 
     const toggleTheme = () => {

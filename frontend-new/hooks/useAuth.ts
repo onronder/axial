@@ -128,15 +128,23 @@ export const useAuth = () => {
 
     /**
      * Sign out the current user
+     * Note: We handle navigation here directly to avoid race conditions
+     * with the onAuthStateChange listener
      */
     const logout = async (): Promise<void> => {
-        const { error } = await supabase.auth.signOut();
+        // Clear user state immediately for instant UI feedback
+        setUser(null);
 
-        if (error) {
-            console.error("Logout error:", error.message);
+        try {
+            const { error } = await supabase.auth.signOut();
+            if (error) {
+                console.error("Logout error:", error.message);
+            }
+        } catch (error) {
+            console.error("Logout exception:", error);
         }
 
-        setUser(null);
+        // Navigate after sign out completes
         router.push("/login");
     };
 
