@@ -21,6 +21,7 @@ from connectors.factory import get_connector
 from services.embeddings import generate_embeddings_batch
 
 logger = logging.getLogger(__name__)
+logger.info("✅ Worker tasks module loaded - Cache buster 001")
 
 
 # ============================================================
