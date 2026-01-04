@@ -517,11 +517,12 @@ async def chat_endpoint(
             logger.error(f"ERROR: Retrieval failed: {fallback_e}")
             raise HTTPException(500, f"Retrieval failed: {fallback_e}")
 
-    # ========== STEP 9: DYNAMIC CONTEXT INJECTION (The 0.75 Rule) ==========
-    # Task 2: Only include chunks with similarity > 0.75
+    # ========== STEP 9: DYNAMIC CONTEXT INJECTION ==========
+    # CRITICAL FIX: hybrid_search returns 'vector_score', match_documents returns 'similarity'
+    # Check for both fields to handle both search methods
     high_quality_docs = [
         d for d in docs 
-        if d.get("similarity", 0) >= settings.RAG_SIMILARITY_THRESHOLD
+        if d.get("vector_score", d.get("similarity", 0)) >= settings.RAG_SIMILARITY_THRESHOLD
     ]
     
     context_text = ""
@@ -531,11 +532,10 @@ async def chat_endpoint(
         logger.info(f"✅ [Chat] High quality context found: {len(high_quality_docs)} docs")
         context_text, sources_metadata = format_context_with_citations(high_quality_docs)
     else:
-        # "Empty Context" Logic: If no docs pass threshold, send raw query without context.
-        # This saves tokens on irrelevant retrieval and allows general retrieval fallback if desired,
-        # or simply general chitchat handling.
-        logger.info(f"📉 [Chat] No Docs > {settings.RAG_SIMILARITY_THRESHOLD} similarity. Dropping context (General Query).")
-        context_text = ""
+        # CRITICAL: Do NOT fall back to generic AI responses!
+        # RAG must be document-only. Provide explicit "no docs" message.
+        logger.warning(f"⚠️ [Chat] No docs above {settings.RAG_SIMILARITY_THRESHOLD} threshold. Using document-only response.")
+        context_text = "[No relevant documents found in your knowledge base for this query.]"
         sources_metadata = []
 
     # ========== STEP 10: GET SELECTED LLM & ENFORCE PLAN ==========
@@ -548,33 +548,17 @@ async def chat_endpoint(
         streaming=payload.stream
     )
     
-    # Prompt Construction
-    # If we have context, use RAG prompt. If not, use standard prompt.
-    if context_text:
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", SYSTEM_PROMPT),  # Contains {context} placeholder
-            ("user", "{question}")
-        ])
-        input_vars = {
-            "context": context_text,
-            "question": search_query,
-            "language": detected_language
-        }
-    else:
-        # General/Fallback Prompt without context injection
-        # Saves 2000+ tokens by not injecting "No documents found" filler
-        GENERAL_SYSTEM_PROMPT = """You are Axio, a helpful AI assistant.
-        Answer the user's question directly and helpfully in {language}.
-        If the question requires private knowledge that you don't have, politely admit it.
-        """
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", GENERAL_SYSTEM_PROMPT),
-            ("user", "{question}")
-        ])
-        input_vars = {
-            "question": search_query,
-            "language": detected_language
-        }
+    # ALWAYS use RAG prompt - never fall back to generic AI
+    # The context will indicate "no documents found" if empty
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT),  # Contains {context} placeholder
+        ("user", "{question}")
+    ])
+    input_vars = {
+        "context": context_text,
+        "question": search_query,
+        "language": detected_language
+    }
     
     if payload.stream:
         # ========== STREAMING RESPONSE ==========

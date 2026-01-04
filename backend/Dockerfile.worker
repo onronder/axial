@@ -26,6 +26,12 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy application code
 COPY . .
 
+# Create non-root user for security (eliminates Celery's "running as root" warning)
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 # Run Celery worker
 # concurrency=2 for memory safety, loglevel=info for visibility
 CMD ["celery", "-A", "core.celery_app", "worker", "--loglevel=info", "--concurrency=2"]

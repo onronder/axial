@@ -57,6 +57,9 @@ class UsageResponse(BaseModel):
     features: FeatureAccess
     model_tier: str
     subscription_status: str
+    
+    # Fix Pydantic warning: 'model_tier' conflicts with protected 'model_' namespace
+    model_config = {"protected_namespaces": ()}
 
 
 class PlansResponse(BaseModel):

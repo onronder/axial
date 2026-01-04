@@ -56,6 +56,9 @@ celery_app = Celery(
 # ============================================================
 
 celery_app.conf.update(
+    # Connection retry on startup (Celery 6.0+ compatibility)
+    broker_connection_retry_on_startup=True,
+    
     # Reliability: Tasks are only acknowledged after successful completion
     # If worker crashes, task goes back to queue
     task_acks_late=True,

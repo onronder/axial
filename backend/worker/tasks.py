@@ -406,7 +406,7 @@ def send_email_notification(
     try:
         # Fetch user name from profile (table does not have email)
         try:
-            user_response = supabase.table("user_profiles").select("display_name, full_name").eq("id", user_id).single().execute()
+            user_response = supabase.table("user_profiles").select("display_name, full_name").eq("user_id", user_id).single().execute()
             user_data = user_response.data or {}
             name = user_data.get("display_name") or user_data.get("full_name") or "there"
         except Exception:
@@ -427,12 +427,19 @@ def send_email_notification(
             return
         
         # Check user preference in user_notification_settings (key-value table)
-        # Default to True if no explicit setting exists
-        settings_response = supabase.table("user_notification_settings").select("enabled").eq("user_id", user_id).eq("setting_key", "email_on_ingestion_complete").maybe_single().execute()
-        
-        email_enabled = True  # Default if no setting exists
-        if settings_response.data:
-            email_enabled = settings_response.data.get("enabled", True)
+        # Default to True if no explicit setting exists - fail-safe approach
+        email_enabled = True  # Default if no setting or on error
+        try:
+            settings_response = supabase.table("user_notification_settings") \
+                .select("enabled") \
+                .eq("user_id", user_id) \
+                .eq("setting_key", "email_on_ingestion_complete") \
+                .maybe_single().execute()
+            
+            if settings_response and settings_response.data:
+                email_enabled = settings_response.data.get("enabled", True)
+        except Exception as settings_error:
+            logger.warning(f"📧 [Email] Could not fetch settings (defaulting to enabled): {settings_error}")
         
         if not email_enabled:
             logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
@@ -470,7 +477,7 @@ def send_failure_email_notification(
     try:
         # Fetch user name from profile (table does not have email)
         try:
-            user_response = supabase.table("user_profiles").select("display_name, full_name").eq("id", user_id).single().execute()
+            user_response = supabase.table("user_profiles").select("display_name, full_name").eq("user_id", user_id).single().execute()
             user_data = user_response.data or {}
             name = user_data.get("display_name") or user_data.get("full_name") or "there"
         except Exception:
@@ -490,12 +497,19 @@ def send_failure_email_notification(
             logger.warning(f"📧 [Email] No email found for user {user_id}")
             return
         
-        # Check user preference (respect opt-out for error emails too)
-        settings_response = supabase.table("user_notification_settings").select("enabled").eq("user_id", user_id).eq("setting_key", "email_on_ingestion_complete").maybe_single().execute()
-        
-        email_enabled = True
-        if settings_response.data:
-            email_enabled = settings_response.data.get("enabled", True)
+        # Check user preference (respect opt-out for error emails too) - fail-safe
+        email_enabled = True  # Default if no setting or on error
+        try:
+            settings_response = supabase.table("user_notification_settings") \
+                .select("enabled") \
+                .eq("user_id", user_id) \
+                .eq("setting_key", "email_on_ingestion_complete") \
+                .maybe_single().execute()
+            
+            if settings_response and settings_response.data:
+                email_enabled = settings_response.data.get("enabled", True)
+        except Exception as settings_error:
+            logger.warning(f"📧 [Email] Could not fetch settings (defaulting to enabled): {settings_error}")
         
         if not email_enabled:
             logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
