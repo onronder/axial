@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     
     RAG_SIMILARITY_THRESHOLD: float = 0.70 
+    
+    # =========================================================================
+    # Advanced Document Parsing (LlamaParse OCR)
+    # =========================================================================
+    LLAMA_CLOUD_API_KEY: Optional[str] = None 
 
     # =========================================================================
     # COMMERCIALIZATION & TIER LIMITS

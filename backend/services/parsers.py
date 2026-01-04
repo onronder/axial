@@ -331,8 +331,11 @@ class PDFProcessor(BaseProcessor):
     """
     Processor for PDF documents.
     
-    Uses PyMuPDF for fast, accurate text extraction.
-    Cleans headers/footers, injects file/page context.
+    Supports two parsing modes:
+    1. LlamaParse (Advanced): OCR-enabled, table extraction, premium parsing
+       - Activated when LLAMA_CLOUD_API_KEY is set
+    2. PyMuPDF (Standard): Fast, accurate text extraction
+       - Used as fallback or when no API key
     """
     
     # Regex patterns for common headers/footers to remove
@@ -344,7 +347,116 @@ class PDFProcessor(BaseProcessor):
     ]
     
     def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process PDF with page-aware chunking."""
+        """Process PDF with LlamaParse (if available) or PyMuPDF fallback."""
+        from core.config import settings
+        
+        # Try LlamaParse first if API key is configured
+        if settings.LLAMA_CLOUD_API_KEY:
+            try:
+                result = self._process_with_llamaparse(content, filename)
+                if result and result.chunks:
+                    return result
+            except Exception as e:
+                logger.warning(f"[PDFProcessor] LlamaParse failed, falling back to PyMuPDF: {e}")
+        
+        # Fallback to PyMuPDF
+        return self._process_with_pymupdf(content, filename)
+    
+    def _process_with_llamaparse(self, content: bytes, filename: str) -> ProcessedDocument:
+        """
+        Process PDF using LlamaParse for advanced OCR and table extraction.
+        
+        LlamaParse provides:
+        - OCR for scanned documents
+        - Table detection and extraction
+        - Better handling of complex layouts
+        """
+        import tempfile
+        import os
+        
+        # Import LlamaParse with nest_asyncio for async compatibility
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+            from llama_parse import LlamaParse
+        except ImportError:
+            raise ImportError("llama-parse package not installed")
+        
+        from core.config import settings
+        
+        logger.info(f"[PDFProcessor] Using LlamaParse for {filename}")
+        
+        # Write content to temp file (LlamaParse needs file path)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
+            tf.write(content)
+            tf_path = tf.name
+        
+        try:
+            # Initialize LlamaParse with OCR settings
+            parser = LlamaParse(
+                api_key=settings.LLAMA_CLOUD_API_KEY,
+                result_type="markdown",  # Get structured markdown output
+                verbose=False,
+                language="en",
+            )
+            
+            # Parse the document (synchronous call)
+            documents = parser.load_data(tf_path)
+            
+            if not documents:
+                raise ValueError("LlamaParse returned no documents")
+            
+            # Combine all document text
+            full_text = "\n\n".join([doc.text for doc in documents])
+            
+            if not full_text.strip():
+                raise ValueError("LlamaParse returned empty text")
+            
+            logger.info(f"[PDFProcessor] LlamaParse extracted {len(full_text)} chars from {filename}")
+            
+        finally:
+            # Always cleanup temp file
+            try:
+                os.remove(tf_path)
+            except:
+                pass
+        
+        # Chunk the extracted text (use MarkdownProcessor for markdown output)
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ". ", " ", ""]
+        )
+        raw_chunks = splitter.split_text(full_text)
+        
+        chunks = []
+        total_tokens = 0
+        for i, chunk_text in enumerate(raw_chunks):
+            contextualized = f"[File: {filename}]\n{chunk_text}"
+            token_count = self.count_tokens(contextualized)
+            total_tokens += token_count
+            
+            chunks.append(ProcessedChunk(
+                content=contextualized,
+                metadata={
+                    "file_type": "pdf",
+                    "parser": "llama_parse",
+                    "filename": filename,
+                },
+                token_count=token_count,
+                chunk_index=i
+            ))
+        
+        logger.info(f"[PDFProcessor] LlamaParse: {filename}: {len(chunks)} chunks")
+        return ProcessedDocument(
+            chunks=chunks,
+            file_type="pdf",
+            total_tokens=total_tokens,
+            metadata={"parser": "llama_parse"}
+        )
+    
+    def _process_with_pymupdf(self, content: bytes, filename: str) -> ProcessedDocument:
+        """Process PDF with PyMuPDF (standard mode)."""
         try:
             import fitz  # PyMuPDF
         except ImportError:
@@ -394,6 +506,7 @@ class PDFProcessor(BaseProcessor):
                     content=contextualized,
                     metadata={
                         "file_type": "pdf",
+                        "parser": "pymupdf",
                         "page_number": page_num,
                         "filename": filename,
                     },
@@ -401,12 +514,12 @@ class PDFProcessor(BaseProcessor):
                     chunk_index=len(chunks)
                 ))
         
-        logger.info(f"[PDFProcessor] {filename}: {len(chunks)} chunks from {len(pages_text)} pages")
+        logger.info(f"[PDFProcessor] PyMuPDF: {filename}: {len(chunks)} chunks from {len(pages_text)} pages")
         return ProcessedDocument(
             chunks=chunks,
             file_type="pdf",
             total_tokens=total_tokens,
-            metadata={"total_pages": len(pages_text)}
+            metadata={"total_pages": len(pages_text), "parser": "pymupdf"}
         )
     
     def _clean_text(self, text: str) -> str:

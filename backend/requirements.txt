@@ -57,3 +57,7 @@ lxml
 lxml
 youtube-transcript-api
 jinja2
+
+# --- ADVANCED DOCUMENT PARSING (OCR) ---
+llama-parse
+nest_asyncio
