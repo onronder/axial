@@ -521,8 +521,22 @@ async def disconnect_provider(
         except Exception as e:
             logger.warning(f"⚠️ [Disconnect] Document cleanup failed: {e}")
         
-        # 2b. Delete Ingestion Jobs
+        # 2b. Delete Ingestion Jobs and associated file statuses
         try:
+            # First, find all job IDs for this provider
+            jobs_res = supabase.table("ingestion_jobs").select("id").eq(
+                "user_id", user_id
+            ).eq("provider", provider).execute()
+            
+            job_ids = [job["id"] for job in (jobs_res.data or [])]
+            
+            # Delete file statuses for these jobs
+            if job_ids:
+                for job_id in job_ids:
+                    supabase.table("ingestion_file_status").delete().eq("job_id", job_id).execute()
+                logger.info(f"🧹 [Disconnect] Deleted file statuses for {len(job_ids)} jobs")
+            
+            # Then delete the jobs
             job_result = supabase.table("ingestion_jobs").delete().eq(
                 "user_id", user_id
             ).eq("provider", provider).execute()
@@ -531,6 +545,17 @@ async def disconnect_provider(
             logger.info(f"🧹 [Disconnect] Deleted {deleted_jobs} ingestion jobs")
         except Exception as e:
             logger.warning(f"⚠️ [Disconnect] Job cleanup failed: {e}")
+        
+        # 2c. Delete sync state (cursors, tokens, etc.)
+        try:
+            sync_result = supabase.table("sync_state").delete().eq(
+                "user_id", user_id
+            ).eq("provider", provider).execute()
+            
+            deleted_sync = len(sync_result.data) if sync_result.data else 0
+            logger.info(f"🧹 [Disconnect] Deleted {deleted_sync} sync state records")
+        except Exception as e:
+            logger.warning(f"⚠️ [Disconnect] Sync state cleanup failed: {e}")
         
         # =================================================================
         # 3. Delete the user integration record
