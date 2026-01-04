@@ -538,7 +538,9 @@ class DriveConnector(BaseConnector):
                     
                     # =====================================================
                     # STEP B: Insert Chunks into `document_chunks` table
+                    # BATCHED: Insert 50 chunks at a time to prevent DB timeouts
                     # =====================================================
+                    DB_BATCH_SIZE = 50
                     chunk_records = []
                     for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                         if embedding is None:
@@ -553,15 +555,26 @@ class DriveConnector(BaseConnector):
                             # Note: NO user_id or metadata here - they live on parent document
                         })
                     
-                    # Insert chunks
+                    # Insert chunks in batches to prevent statement timeout
                     if chunk_records:
-                        chunk_res = supabase.table("document_chunks").insert(chunk_records).execute()
-                        if chunk_res.data:
-                            total_chunks += len(chunk_records)
+                        inserted_count = 0
+                        for batch_start in range(0, len(chunk_records), DB_BATCH_SIZE):
+                            batch = chunk_records[batch_start:batch_start + DB_BATCH_SIZE]
+                            try:
+                                chunk_res = supabase.table("document_chunks").insert(batch).execute()
+                                if chunk_res.data:
+                                    inserted_count += len(batch)
+                                    logger.debug(f"📦 [DriveSync] Inserted batch {batch_start//DB_BATCH_SIZE + 1}: {len(batch)} chunks")
+                            except Exception as batch_err:
+                                logger.error(f"❌ [DriveSync] Batch insert failed for {file_meta['name']}: {batch_err}")
+                                continue
+                        
+                        if inserted_count > 0:
+                            total_chunks += inserted_count
                             processed_files += 1
-                            logger.info(f"✅ [DriveSync] Inserted {len(chunk_records)} chunks for {file_meta['name']}")
+                            logger.info(f"✅ [DriveSync] Inserted {inserted_count} chunks for {file_meta['name']}")
                         else:
-                            logger.error(f"❌ [DriveSync] Failed to insert chunks for {file_meta['name']}")
+                            logger.error(f"❌ [DriveSync] Failed to insert any chunks for {file_meta['name']}")
                             errors.append(f"Chunk insert failed: {file_meta['name']}")
                         
                 except Exception as e:
