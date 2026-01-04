@@ -403,16 +403,27 @@ def send_email_notification(
         total_files: Number of processed files
     """
     try:
-        # Fetch user profile for email and name
-        user_response = supabase.table("user_profiles").select("email, display_name, full_name").eq("id", user_id).single().execute()
-        
-        if not user_response.data:
-            logger.warning(f"📧 [Email] User profile not found for {user_id}")
+    try:
+        # Fetch user profile for name only (table might not have email)
+        try:
+            user_response = supabase.table("user_profiles").select("display_name, full_name").eq("id", user_id).single().execute()
+            user_data = user_response.data or {}
+            name = user_data.get("display_name") or user_data.get("full_name") or "there"
+        except Exception:
+            name = "there"
+            
+        # Fetch email from Auth (Service Role required)
+        email = None
+        try:
+            auth_user = supabase.auth.admin.get_user_by_id(user_id)
+            if auth_user and auth_user.user:
+                email = auth_user.user.email
+        except Exception as auth_error:
+            logger.warning(f"📧 [Email] Failed to fetch auth user: {auth_error}")
+            
+        if not email:
+            logger.warning(f"📧 [Email] No email found for user {user_id}")
             return
-        
-        user_data = user_response.data
-        email = user_data.get("email")
-        name = user_data.get("display_name") or user_data.get("full_name") or "there"
         
         if not email:
             logger.warning(f"📧 [Email] No email found for user {user_id}")
@@ -460,17 +471,25 @@ def send_failure_email_notification(
         error_message: Error details
     """
     try:
-        # Fetch user profile for email and name
-        user_response = supabase.table("user_profiles").select("email, display_name, full_name").eq("id", user_id).single().execute()
-        
-        if not user_response.data:
-            logger.warning(f"📧 [Email] User profile not found for {user_id}")
-            return
-        
-        user_data = user_response.data
-        email = user_data.get("email")
-        name = user_data.get("display_name") or user_data.get("full_name") or "there"
-        
+    try:
+        # Fetch user name from profile (table does not have email)
+        try:
+            user_response = supabase.table("user_profiles").select("display_name, full_name").eq("id", user_id).single().execute()
+            user_data = user_response.data or {}
+            name = user_data.get("display_name") or user_data.get("full_name") or "there"
+        except Exception:
+            name = "there"
+            
+        # Fetch email from Auth Admin (requires Service Role key)
+        email = None
+        try:
+            # tasks.py uses the global supabase client which has SECRET_KEY (Admin)
+            auth_user = supabase.auth.admin.get_user_by_id(user_id)
+            if auth_user and auth_user.user:
+                email = auth_user.user.email
+        except Exception as auth_error:
+            logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
+            
         if not email:
             logger.warning(f"📧 [Email] No email found for user {user_id}")
             return
