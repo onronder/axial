@@ -125,10 +125,12 @@ export interface Document {
     name: string;
     source: string;
     sourceType: DocumentSourceType;
+    sourceUrl?: string;  // File path or URL
     status: DocumentStatus;
     indexingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
     addedAt: string;
     size?: number;
+    errorMessage?: string;  // Error reason for failed files
 }
 
 // =============================================================================

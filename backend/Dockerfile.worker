@@ -21,7 +21,9 @@ RUN apt-get update \
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    # Force install llama-parse (bypass Docker cache if requirements.txt cached)
+    && pip install --no-cache-dir llama-parse>=0.5.0 nest_asyncio
 
 # Copy application code
 COPY . .

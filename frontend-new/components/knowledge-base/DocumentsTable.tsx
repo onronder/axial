@@ -18,7 +18,8 @@ import {
   MoreVertical,
   Download,
   ExternalLink,
-  Filter
+  Filter,
+  Link2
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -221,18 +222,19 @@ export function DocumentsTable() {
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow className="hover:bg-transparent border-b border-border/60">
-                <TableHead className="pl-6 w-[40%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Name</TableHead>
-                <TableHead className="w-[15%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Source</TableHead>
-                <TableHead className="w-[15%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[10%] text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">Size</TableHead>
-                <TableHead className="w-[15%] text-right pr-6 font-medium text-xs uppercase tracking-wider text-muted-foreground">Added</TableHead>
+                <TableHead className="pl-6 w-[30%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Name</TableHead>
+                <TableHead className="w-[12%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Source</TableHead>
+                <TableHead className="w-[18%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Path</TableHead>
+                <TableHead className="w-[12%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[8%] text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">Size</TableHead>
+                <TableHead className="w-[12%] text-right pr-6 font-medium text-xs uppercase tracking-wider text-muted-foreground">Added</TableHead>
                 <TableHead className="w-[5%]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedDocuments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-64 text-center">
+                  <TableCell colSpan={7} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
                         <FileText className="h-6 w-6 text-muted-foreground" />
@@ -278,10 +280,31 @@ export function DocumentsTable() {
                         </div>
                       </TableCell>
                       <TableCell>
+                        {doc.sourceUrl ? (
+                          <a
+                            href={doc.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-sm text-primary hover:underline truncate max-w-[150px]"
+                            title={doc.sourceUrl}
+                          >
+                            <Link2 className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{new URL(doc.sourceUrl).hostname || 'Link'}</span>
+                          </a>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <div className={cn("inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border", status.className)}>
                           <span className={cn("w-1.5 h-1.5 rounded-full", status.dotClass)} />
                           {status.label}
                         </div>
+                        {doc.indexingStatus === 'failed' && doc.errorMessage && (
+                          <p className="text-xs text-destructive mt-1 truncate max-w-[120px]" title={doc.errorMessage}>
+                            {doc.errorMessage}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm text-muted-foreground">
                         {formatSize(doc.size)}

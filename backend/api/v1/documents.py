@@ -100,12 +100,13 @@ async def list_documents(
     user_id: str = Depends(validate_team_access),  # Validates team access
     limit: int = 50,
     offset: int = 0,
-    q: Optional[str] = None
+    q: Optional[str] = None,
+    include_failed: bool = True  # New param to include failed files
 ):
     supabase = get_supabase()
     
     try:
-        # Build query
+        # Build query for completed documents
         query = supabase.table("documents")\
             .select("*", count="exact")\
             .eq("user_id", user_id)
@@ -115,7 +116,6 @@ async def list_documents(
             query = query.ilike("title", f"%{q.strip()}%")
             
         # Execute with pagination
-        # Note: Order by created_at desc
         db_res = query\
             .order("created_at", desc=True)\
             .range(offset, offset + limit - 1)\
@@ -125,16 +125,58 @@ async def list_documents(
         if db_res.count is not None:
              response.headers["X-Total-Count"] = str(db_res.count)
             
-        # Enrich with status if not present in DB
+        # Enrich completed documents with status
         docs = []
         for d in db_res.data:
             d['status'] = d.get('status', 'indexed')
+            d['indexing_status'] = 'completed'
             # Fallback for size if not top-level
             if 'size' not in d or d['size'] is None:
                 meta = d.get('metadata') or {}
                 d['size'] = meta.get('size') or meta.get('file_size') or meta.get('file_size_bytes') or 0
                 
             docs.append(d)
+        
+        # Also fetch failed files from ingestion_file_status (not yet in documents)
+        if include_failed:
+            try:
+                failed_query = supabase.table("ingestion_file_status")\
+                    .select("*")\
+                    .eq("user_id", user_id)\
+                    .eq("status", "failed")\
+                    .is_("document_id", "null")
+                
+                if q and q.strip():
+                    failed_query = failed_query.ilike("filename", f"%{q.strip()}%")
+                
+                failed_res = failed_query\
+                    .order("created_at", desc=True)\
+                    .limit(limit)\
+                    .execute()
+                
+                # Convert failed files to DocumentDTO format
+                for f in (failed_res.data or []):
+                    docs.append({
+                        "id": f["id"],
+                        "title": f["filename"],
+                        "source_type": "upload",  # Default, could extract from job
+                        "source_url": None,
+                        "created_at": f["created_at"],
+                        "status": "failed",
+                        "indexing_status": "failed",
+                        "size": f.get("file_size_bytes", 0),
+                        "metadata": {
+                            "error": f.get("error_message", "Unknown error"),
+                            "job_id": str(f.get("job_id", ""))
+                        }
+                    })
+            except Exception as failed_err:
+                # Don't fail entire request if failed files query fails
+                import logging
+                logging.warning(f"Failed to fetch failed files: {failed_err}")
+        
+        # Sort combined list by created_at
+        docs.sort(key=lambda x: x.get('created_at', ''), reverse=True)
             
         return docs
     except Exception as e:

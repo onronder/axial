@@ -14,10 +14,12 @@ function mapDocument(d: any): Document {
         name: d.title || d.name || "Untitled",
         source: d.source_type || "file",
         sourceType: d.source_type || "upload",
+        sourceUrl: d.source_url || null,
         status: d.status || "indexed",
         indexingStatus: d.indexing_status || "completed",
         addedAt: d.created_at || new Date().toISOString(),
-        size: d.size || 0
+        size: d.size || 0,
+        errorMessage: d.metadata?.error || null
     };
 }
 
