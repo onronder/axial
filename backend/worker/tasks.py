@@ -746,95 +746,133 @@ def ingest_connector_task(
                 doc_title = doc.metadata.get('title', 'Untitled')
                 doc_content = doc.page_content
                 source_url = doc.metadata.get('source_url')
+                content_size = len(doc_content.encode('utf-8'))
                 
-                if connector_type in ["notion"]:
-                    # Notion: Treat as markdown (has headers, lists, etc.)
-                    result = DocumentProcessorFactory.process_web_content(
-                        doc_content,
-                        source_url or doc_title
-                    )
-                else:
-                    # Drive and others: Use extension/mime_type routing
-                    content_bytes = doc_content.encode('utf-8')
-                    mime_type = doc.metadata.get('mime_type', 'text/plain')
+                # Create per-file status tracking
+                file_status_id = create_file_status(
+                    supabase, job_id, user_id, doc_title, content_size
+                )
+                
+                try:
+                    # Status: Processing
+                    update_file_status(supabase, file_status_id,
+                        status="processing", progress=20, message="Extracting content...")
                     
-                    # Try to get file extension from title
-                    filename = doc_title
-                    if not any(filename.endswith(ext) for ext in ['.pdf', '.docx', '.md', '.txt', '.py', '.js']):
-                        # Add extension based on mime type
-                        if 'pdf' in mime_type:
-                            filename = f"{doc_title}.pdf"
-                        elif 'markdown' in mime_type:
-                            filename = f"{doc_title}.md"
-                        elif 'document' in mime_type:
-                            filename = f"{doc_title}.docx"
+                    if connector_type in ["notion"]:
+                        # Notion: Treat as markdown (has headers, lists, etc.)
+                        result = DocumentProcessorFactory.process_web_content(
+                            doc_content,
+                            source_url or doc_title
+                        )
+                    else:
+                        # Drive and others: Use extension/mime_type routing
+                        content_bytes = doc_content.encode('utf-8')
+                        mime_type = doc.metadata.get('mime_type', 'text/plain')
+                        
+                        # Try to get file extension from title
+                        filename = doc_title
+                        if not any(filename.endswith(ext) for ext in ['.pdf', '.docx', '.md', '.txt', '.py', '.js']):
+                            # Add extension based on mime type
+                            if 'pdf' in mime_type:
+                                filename = f"{doc_title}.pdf"
+                            elif 'markdown' in mime_type:
+                                filename = f"{doc_title}.md"
+                            elif 'document' in mime_type:
+                                filename = f"{doc_title}.docx"
+                        
+                        result = DocumentProcessorFactory.process(
+                            content=content_bytes,
+                            filename=filename,
+                            mime_type=mime_type
+                        )
                     
-                    result = DocumentProcessorFactory.process(
-                        content=content_bytes,
-                        filename=filename,
-                        mime_type=mime_type
-                    )
-                
-                if not result.chunks:
-                    logger.warning(f"⚠️ [Worker:{task_id}] No chunks from: {doc_title}")
-                    continue
-                
-                # Embed chunks
-                chunk_texts = [chunk.content for chunk in result.chunks]
-                chunk_embeddings = generate_embeddings_batch(chunk_texts)
-                
-                # Build chunks payload with enriched metadata
-                chunks_payload = []
-                for chunk, embedding in zip(result.chunks, chunk_embeddings):
-                    if embedding is None:
+                    if not result.chunks:
+                        logger.warning(f"⚠️ [Worker:{task_id}] No chunks from: {doc_title}")
+                        update_file_status(supabase, file_status_id,
+                            status="completed", progress=100, message="No content (empty)")
+                        continue
+                    
+                    update_file_status(supabase, file_status_id,
+                        progress=40, message=f"Parsed {len(result.chunks)} chunks",
+                        chunks_total=len(result.chunks))
+                    
+                    # Status: Embedding
+                    update_file_status(supabase, file_status_id,
+                        status="embedding", progress=50, message="Generating embeddings...")
+                    
+                    # Embed chunks
+                    chunk_texts = [chunk.content for chunk in result.chunks]
+                    chunk_embeddings = generate_embeddings_batch(chunk_texts)
+                    
+                    update_file_status(supabase, file_status_id,
+                        progress=70, message="Embeddings complete")
+                    
+                    # Build chunks payload with enriched metadata
+                    chunks_payload = []
+                    for chunk, embedding in zip(result.chunks, chunk_embeddings):
+                        if embedding is None:
                             logger.warning(f"⚠️ [Worker:{task_id}] Skipping empty chunk {chunk.chunk_index}")
                             continue
 
-                    chunks_payload.append({
-                        "content": chunk.content,
-                        "embedding": embedding,
-                        "chunk_index": chunk.chunk_index,
-                        "metadata": {
-                            **chunk.metadata,
-                            "token_count": chunk.token_count,
-                        }
-                    })
-                
-                # Calculate file size for quota tracking
-                content_size = len(doc_content.encode('utf-8'))
-                
-                # Document metadata
-                doc_metadata = {
-                    **doc.metadata,
-                    "file_type": result.file_type,
-                    "total_tokens": result.total_tokens,
-                    "total_chunks": len(result.chunks),
-                    **(result.metadata or {}),
-                }
-                
-                # Use batched insertion with progress tracking (prevents DB timeouts)
-                doc_id = ingest_document_batched(
-                    supabase=supabase,
-                    user_id=user_id,
-                    doc_title=doc_title,
-                    source_type=source_type_enum,
-                    metadata=doc_metadata,
-                    chunks_payload=chunks_payload,
-                    file_size_bytes=content_size,
-                    job_id=job_id,
-                    source_url=source_url
-                )
-                
-                if doc_id:
-                    processed_docs.append(str(doc_id))
-                    logger.info(f"📄 [Worker:{task_id}] {doc_title}: {len(result.chunks)} chunks via {result.file_type}")
+                        chunks_payload.append({
+                            "content": chunk.content,
+                            "embedding": embedding,
+                            "chunk_index": chunk.chunk_index,
+                            "metadata": {
+                                **chunk.metadata,
+                                "token_count": chunk.token_count,
+                            }
+                        })
                     
-                    # Update progress per document
-                    if job_id:
-                        update_job_status(supabase, job_id, "processing", len(processed_docs))
-
-                else:
-                    logger.warning(f"⚠️ [Worker:{task_id}] Insert returned no data for {doc_title}")
+                    # Document metadata
+                    doc_metadata = {
+                        **doc.metadata,
+                        "file_type": result.file_type,
+                        "total_tokens": result.total_tokens,
+                        "total_chunks": len(result.chunks),
+                        **(result.metadata or {}),
+                    }
+                    
+                    # Status: Indexing
+                    update_file_status(supabase, file_status_id,
+                        status="indexing", progress=80, message="Saving to database...")
+                    
+                    # Use batched insertion with progress tracking (prevents DB timeouts)
+                    doc_id = ingest_document_batched(
+                        supabase=supabase,
+                        user_id=user_id,
+                        doc_title=doc_title,
+                        source_type=source_type_enum,
+                        metadata=doc_metadata,
+                        chunks_payload=chunks_payload,
+                        file_size_bytes=content_size,
+                        job_id=job_id,
+                        source_url=source_url
+                    )
+                    
+                    if doc_id:
+                        # Status: Completed
+                        update_file_status(supabase, file_status_id,
+                            status="completed", progress=100, message="Complete",
+                            chunks_processed=len(chunks_payload), document_id=doc_id)
+                        
+                        processed_docs.append(str(doc_id))
+                        logger.info(f"📄 [Worker:{task_id}] {doc_title}: {len(result.chunks)} chunks via {result.file_type}")
+                        
+                        # Update job progress per document
+                        if job_id:
+                            update_job_status(supabase, job_id, "processing", len(processed_docs))
+                    else:
+                        update_file_status(supabase, file_status_id,
+                            status="failed", progress=0, error="Insert returned no data")
+                        logger.warning(f"⚠️ [Worker:{task_id}] Insert returned no data for {doc_title}")
+                        
+                except Exception as doc_error:
+                    logger.error(f"❌ [Worker:{task_id}] Error processing {doc_title}: {doc_error}")
+                    update_file_status(supabase, file_status_id,
+                        status="failed", progress=0, error=str(doc_error))
+                    # Continue to next document - don't fail entire job
+                    continue
                     
             return processed_docs
 
