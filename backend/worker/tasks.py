@@ -671,19 +671,20 @@ def ingest_connector_task(
                     **(result.metadata or {}),
                 }
                 
-                # ATOMIC RPC: Insert document with all chunks and file size
-                rpc_result = supabase.rpc("ingest_document_with_chunks", {
-                    "p_user_id": user_id,
-                    "p_doc_title": doc_title,
-                    "p_source_type": source_type_enum,
-                    "p_source_url": source_url,
-                    "p_metadata": json.dumps(doc_metadata),
-                    "p_chunks": json.dumps(chunks_payload),
-                    "p_file_size_bytes": content_size
-                }).execute()
+                # Use batched insertion with progress tracking (prevents DB timeouts)
+                doc_id = ingest_document_batched(
+                    supabase=supabase,
+                    user_id=user_id,
+                    doc_title=doc_title,
+                    source_type=source_type_enum,
+                    metadata=doc_metadata,
+                    chunks_payload=chunks_payload,
+                    file_size_bytes=content_size,
+                    job_id=job_id,
+                    source_url=source_url
+                )
                 
-                if rpc_result.data:
-                    doc_id = rpc_result.data
+                if doc_id:
                     processed_docs.append(str(doc_id))
                     logger.info(f"📄 [Worker:{task_id}] {doc_title}: {len(result.chunks)} chunks via {result.file_type}")
                     
@@ -692,7 +693,7 @@ def ingest_connector_task(
                         update_job_status(supabase, job_id, "processing", len(processed_docs))
 
                 else:
-                    logger.warning(f"⚠️ [Worker:{task_id}] RPC returned no data for {doc_title}")
+                    logger.warning(f"⚠️ [Worker:{task_id}] Insert returned no data for {doc_title}")
                     
             return processed_docs
 
