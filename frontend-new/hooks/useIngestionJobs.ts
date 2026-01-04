@@ -14,6 +14,9 @@ export interface IngestionJob {
     total_files: number;
     processed_files: number;
     error_message?: string;
+    // NEW: Granular progress tracking from backend
+    progress?: number;           // 0-100 percentage
+    status_message?: string;     // e.g., "Indexing chunk 45/200..."
     created_at: string;
     updated_at: string;
 }

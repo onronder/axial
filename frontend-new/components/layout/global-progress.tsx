@@ -33,6 +33,9 @@ interface IngestionJob {
     processed_files: number;
     status: "pending" | "processing" | "completed" | "failed";
     error_message?: string;
+    // NEW: Granular progress tracking from backend
+    progress?: number;           // 0-100 percentage  
+    status_message?: string;     // e.g., "Indexing chunk 45/200..."
     created_at: string;
     updated_at: string;
 }
@@ -168,13 +171,21 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
     const Icon = providerIcons[job.provider] || FileText;
     const label = providerLabels[job.provider] || job.provider;
 
-    const progress = job.total_files > 0
-        ? Math.round((job.processed_files / job.total_files) * 100)
-        : 0;
+    // Use backend progress if available, fallback to file-based calculation
+    const progress = job.progress ?? (
+        job.total_files > 0
+            ? Math.round((job.processed_files / job.total_files) * 100)
+            : 0
+    );
 
     const isActive = job.status === "pending" || job.status === "processing";
     const isComplete = job.status === "completed";
     const isFailed = job.status === "failed";
+
+    // Status message from backend or fallback
+    const statusText = job.status_message ||
+        (job.status === "pending" ? "Starting..." :
+            `${job.processed_files} / ${job.total_files} files`);
 
     return (
         <motion.div
@@ -183,7 +194,7 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: 100, scale: 0.95 }}
             className={cn(
-                "relative flex items-center gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm min-w-[280px]",
+                "relative flex items-center gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm min-w-[300px]",
                 "bg-card/95 dark:bg-card/95",
                 isActive && "border-primary/30",
                 isComplete && "border-green-500/30 bg-green-50/50 dark:bg-green-950/20",
@@ -225,17 +236,24 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
 
                 {isActive && (
                     <>
-                        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        {/* Progress Bar with smooth animation */}
+                        <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
                             <motion.div
-                                className="h-full bg-primary rounded-full"
+                                className="h-full bg-gradient-to-r from-primary to-primary/80 rounded-full"
                                 initial={{ width: 0 }}
                                 animate={{ width: `${progress}%` }}
-                                transition={{ duration: 0.4, ease: "easeOut" }}
+                                transition={{ duration: 0.5, ease: "easeOut" }}
                             />
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            {job.processed_files} / {job.total_files} files • {progress}%
-                        </p>
+                        {/* Status Text with percentage */}
+                        <div className="mt-1 flex items-center justify-between">
+                            <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                                {statusText}
+                            </p>
+                            <span className="text-xs font-medium text-primary">
+                                {progress}%
+                            </span>
+                        </div>
                     </>
                 )}
 
