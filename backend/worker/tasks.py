@@ -403,8 +403,7 @@ def send_email_notification(
         total_files: Number of processed files
     """
     try:
-    try:
-        # Fetch user profile for name only (table might not have email)
+        # Fetch user name from profile (table does not have email)
         try:
             user_response = supabase.table("user_profiles").select("display_name, full_name").eq("id", user_id).single().execute()
             user_data = user_response.data or {}
@@ -412,19 +411,16 @@ def send_email_notification(
         except Exception:
             name = "there"
             
-        # Fetch email from Auth (Service Role required)
+        # Fetch email from Auth Admin (requires Service Role key)
         email = None
         try:
+            # tasks.py uses the global supabase client which has SECRET_KEY (Admin)
             auth_user = supabase.auth.admin.get_user_by_id(user_id)
             if auth_user and auth_user.user:
                 email = auth_user.user.email
         except Exception as auth_error:
-            logger.warning(f"📧 [Email] Failed to fetch auth user: {auth_error}")
+            logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
             
-        if not email:
-            logger.warning(f"📧 [Email] No email found for user {user_id}")
-            return
-        
         if not email:
             logger.warning(f"📧 [Email] No email found for user {user_id}")
             return
@@ -470,7 +466,6 @@ def send_failure_email_notification(
         filename: Name of the file that failed
         error_message: Error details
     """
-    try:
     try:
         # Fetch user name from profile (table does not have email)
         try:
