@@ -168,17 +168,31 @@ class DriveConnector(BaseConnector):
         },
     }
     
-    # Supported MIME types (delegated to DocumentParser for actual extraction)
+    # Supported MIME types for ingestion
+    # NOTE: We only support TEXT-compatible formats because:
+    # 1. Content is decoded as UTF-8 for ConnectorDocument
+    # 2. Binary formats (DOCX, PDF) get corrupted by UTF-8 decode
+    # 3. pypdf/python-docx are not installed on Railway
+    # 
+    # For binary files uploaded to Drive (not native Google types),
+    # users should convert to Google Docs first for ingestion.
     SUPPORTED_MIME_TYPES = {
+        # Google native types -> exported as text
         'application/vnd.google-apps.document': 'gdoc',
         'application/vnd.google-apps.spreadsheet': 'gsheet',
         'application/vnd.google-apps.presentation': 'gslides',
+        # Text formats -> directly compatible
         'text/plain': 'text',
         'text/markdown': 'text',
         'text/csv': 'text',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-        'application/msword': 'docx',
-        'application/pdf': 'pdf',
+        'text/html': 'text',
+        'application/json': 'text',
+        'application/xml': 'text',
+        'text/xml': 'text',
+        # NOTE: Binary formats REMOVED - cannot process without libraries:
+        # 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        # 'application/msword': 'docx',
+        # 'application/pdf': 'pdf',
     }
     
     async def authorize(self, user_id: str) -> bool:

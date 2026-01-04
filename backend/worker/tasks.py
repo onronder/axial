@@ -94,16 +94,17 @@ def ingest_document_batched(
     DB_BATCH_SIZE = 50  # Insert 50 chunks at a time to prevent timeouts
     
     # Step 1: Create parent document record FIRST
+    # NOTE: Using actual column names from migrations:
+    # - file_size_bytes (not file_size)
+    # - chunk_count doesn't exist in schema
     doc_data = {
         "user_id": user_id,
         "title": doc_title,
         "source_type": source_type,
         "source_url": source_url,
         "metadata": metadata,
-        "file_size": file_size_bytes,
-        "chunk_count": len(chunks_payload),
+        "file_size_bytes": file_size_bytes,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat()
     }
     
     doc_result = supabase.table("documents").insert(doc_data).execute()
