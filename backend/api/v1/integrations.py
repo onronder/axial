@@ -224,16 +224,22 @@ async def exchange_google_token(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    # 5. Schedule background sync
+    # NOTE: We no longer auto-sync on connect to prevent unexpected behavior.
+    # User should explicitly select files/folders to ingest via the Drive explorer.
+    # This prevents the issue of re-ingesting old files after reconnecting.
+    # 
+    # OLD CODE REMOVED:
+    # integration_id = upsert_res.data[0]["id"]
+    # try:
+    #     from connectors.drive import DriveConnector
+    #     connector = DriveConnector()
+    #     background_tasks.add_task(connector.sync, user_id, integration_id)
+    #     logger.info(f"🔐 [OAuth] Scheduled background sync for integration {integration_id}")
+    # except Exception as e:
+    #     logger.warning(f"🔐 [OAuth] Failed to schedule sync: {e}")
+    
     integration_id = upsert_res.data[0]["id"]
-    try:
-        from connectors.drive import DriveConnector
-        connector = DriveConnector()
-        background_tasks.add_task(connector.sync, user_id, integration_id)
-        logger.info(f"🔐 [OAuth] Scheduled background sync for integration {integration_id}")
-    except Exception as e:
-        logger.warning(f"🔐 [OAuth] Failed to schedule sync: {e}")
-        # Don't fail the OAuth just because sync scheduling failed
+    logger.info(f"🔐 [OAuth] Connected Google Drive (integration: {integration_id}). User can now select files to ingest.")
 
     return {"status": "success", "provider": "google_drive", "integration_id": integration_id}
 
