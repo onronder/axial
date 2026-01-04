@@ -397,6 +397,7 @@ class NotionConnector(BaseConnector):
             from core.db import get_supabase
             from services.embeddings import generate_embeddings_batch
             from langchain_text_splitters import RecursiveCharacterTextSplitter
+            from worker.tasks import create_file_status, update_file_status
             
             supabase = get_supabase()
             
@@ -406,16 +407,44 @@ class NotionConnector(BaseConnector):
                 separators=["\n\n", "\n", ". ", " ", ""]
             )
             
+            # Create ingestion job for progress tracking
+            job_id = None
+            if documents:
+                job_result = supabase.table("ingestion_jobs").insert({
+                    "user_id": user_id,
+                    "provider": "notion",
+                    "total_files": len(documents),
+                    "processed_files": 0,
+                    "status": "processing",
+                    "status_message": f"Syncing {len(documents)} pages from Notion"
+                }).execute()
+                if job_result.data:
+                    job_id = job_result.data[0]["id"]
+                    logger.info(f"🔄 [NotionSync] Created job {job_id} for tracking")
+            
             total_chunks = 0
             processed_docs = 0
             errors = []
             
             for doc in documents:
+                doc_title = doc.metadata.get("title", "Untitled")
+                file_status_id = None
+                
+                # Create file status record for tracking
+                if job_id:
+                    file_status_id = create_file_status(supabase, job_id, user_id, doc_title, 
+                        len(doc.page_content.encode('utf-8')))
+                
                 try:
+                    # Status: Processing
+                    if file_status_id:
+                        update_file_status(supabase, file_status_id,
+                            status="processing", progress=20, message="Extracting content...")
+                    
                     # Insert Parent Document
                     parent_doc_data = {
                         "user_id": user_id,
-                        "title": doc.metadata.get("title", "Untitled"),
+                        "title": doc_title,
                         "source_type": "notion",
                         "source_url": doc.metadata.get("source_url"),
                         "metadata": {
@@ -427,17 +456,34 @@ class NotionConnector(BaseConnector):
                     
                     doc_res = supabase.table("documents").insert(parent_doc_data).execute()
                     if not doc_res.data:
-                         continue
+                        if file_status_id:
+                            update_file_status(supabase, file_status_id,
+                                status="failed", progress=0, error="Failed to create document")
+                        continue
                     
                     parent_doc_id = doc_res.data[0]['id']
                     
                     # Chunk
                     chunks = text_splitter.split_text(doc.page_content)
                     if not chunks:
+                        if file_status_id:
+                            update_file_status(supabase, file_status_id,
+                                status="completed", progress=100, message="No content")
                         continue
+                    
+                    # Status: Embedding
+                    if file_status_id:
+                        update_file_status(supabase, file_status_id,
+                            status="embedding", progress=50, message=f"Embedding {len(chunks)} chunks...",
+                            chunks_total=len(chunks))
                         
                     # Embed
                     embeddings = generate_embeddings_batch(chunks)
+                    
+                    # Status: Indexing
+                    if file_status_id:
+                        update_file_status(supabase, file_status_id,
+                            status="indexing", progress=75, message="Saving to database...")
                     
                     # Insert Chunks in batches to prevent DB timeout
                     DB_BATCH_SIZE = 50
@@ -466,12 +512,42 @@ class NotionConnector(BaseConnector):
                         if inserted_count > 0:
                             total_chunks += inserted_count
                             processed_docs += 1
+                            
+                            # Status: Completed
+                            if file_status_id:
+                                update_file_status(supabase, file_status_id,
+                                    status="completed", progress=100, message="Complete",
+                                    chunks_processed=inserted_count, document_id=str(parent_doc_id))
+                            
+                            # Update job progress
+                            if job_id:
+                                supabase.table("ingestion_jobs").update({
+                                    "processed_files": processed_docs,
+                                    "status_message": f"Processed {processed_docs}/{len(documents)} pages"
+                                }).eq("id", job_id).execute()
+                        else:
+                            if file_status_id:
+                                update_file_status(supabase, file_status_id,
+                                    status="failed", progress=0, error="No chunks inserted")
                         
                 except Exception as e:
-                    logger.error(f"❌ [NotionSync] Error saving {doc.metadata.get('title')}: {e}")
+                    logger.error(f"❌ [NotionSync] Error saving {doc_title}: {e}")
+                    if file_status_id:
+                        update_file_status(supabase, file_status_id,
+                            status="failed", progress=0, error=str(e))
                     errors.append(str(e))
             
-            # 4. Update Integration Status
+            # 4. Update job to completed
+            if job_id:
+                final_status = "completed" if processed_docs > 0 else "failed"
+                supabase.table("ingestion_jobs").update({
+                    "status": final_status,
+                    "processed_files": processed_docs,
+                    "progress": 100,
+                    "status_message": f"Synced {processed_docs} pages, {total_chunks} chunks"
+                }).eq("id", job_id).execute()
+            
+            # 5. Update Integration Status
             supabase.table("user_integrations").update({
                 "last_sync_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
@@ -481,7 +557,8 @@ class NotionConnector(BaseConnector):
                 "status": "success",
                 "files_processed": processed_docs,
                 "chunks_created": total_chunks,
-                "errors": errors
+                "errors": errors,
+                "job_id": job_id
             }
 
         except requests.exceptions.HTTPError as e:
@@ -493,5 +570,11 @@ class NotionConnector(BaseConnector):
             raise e
         except Exception as e:
             logger.error(f"❌ [NotionSync] Sync failed: {e}")
+            # Mark job as failed if exists
+            if 'job_id' in locals() and job_id:
+                supabase.table("ingestion_jobs").update({
+                    "status": "failed",
+                    "error_message": str(e)
+                }).eq("id", job_id).execute()
             raise e
 

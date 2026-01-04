@@ -466,8 +466,24 @@ class DriveConnector(BaseConnector):
             files = results.get('files', [])
             logger.info(f"🔄 [DriveSync] Found {len(files)} files to process")
             
-            # Import embedding service
+            # Import required services
             from services.embeddings import generate_embeddings_batch
+            from worker.tasks import create_file_status, update_file_status
+            
+            # Create ingestion job for progress tracking
+            job_id = None
+            if files:
+                job_result = supabase.table("ingestion_jobs").insert({
+                    "user_id": user_id,
+                    "provider": "drive",
+                    "total_files": len(files),
+                    "processed_files": 0,
+                    "status": "processing",
+                    "status_message": f"Syncing {len(files)} files from Google Drive"
+                }).execute()
+                if job_result.data:
+                    job_id = job_result.data[0]["id"]
+                    logger.info(f"🔄 [DriveSync] Created job {job_id} for tracking")
             
             total_chunks = 0
             processed_files = 0
@@ -475,17 +491,37 @@ class DriveConnector(BaseConnector):
             
             # 4. Process each file
             for file_meta in files:
+                filename = file_meta['name']
+                file_status_id = None
+                
+                # Create file status record for tracking
+                if job_id:
+                    file_status_id = create_file_status(supabase, job_id, user_id, filename, 0)
+                
                 try:
-                    logger.info(f"🔄 [DriveSync] Processing: {file_meta['name']} ({file_meta['mimeType']})")
+                    logger.info(f"🔄 [DriveSync] Processing: {filename} ({file_meta['mimeType']})")
+                    
+                    # Status: Uploading/Downloading
+                    if file_status_id:
+                        update_file_status(supabase, file_status_id, 
+                            status="uploading", progress=10, message="Downloading from Drive...")
                     
                     # Download content (uses DocumentParser internally)
                     # FIX: Unpack tuple (content_bytes, mime_type, filename)
                     content_tuple = self._download_file_content(service, file_meta)
                     if not content_tuple or not content_tuple[0]:
-                        logger.warning(f"⚠️ [DriveSync] No content from: {file_meta['name']}")
+                        logger.warning(f"⚠️ [DriveSync] No content from: {filename}")
+                        if file_status_id:
+                            update_file_status(supabase, file_status_id,
+                                status="completed", progress=100, message="No content (empty)")
                         continue
                         
                     content_bytes, _, _ = content_tuple
+                    
+                    # Status: Processing
+                    if file_status_id:
+                        update_file_status(supabase, file_status_id,
+                            status="processing", progress=25, message="Extracting content...")
                     
                     # FIX: Decode bytes to string
                     try:
@@ -498,16 +534,28 @@ class DriveConnector(BaseConnector):
                     content = content.replace('\x00', '')
                         
                     if not content or not content.strip():
-                        logger.warning(f"⚠️ [DriveSync] No content from: {file_meta['name']}")
+                        logger.warning(f"⚠️ [DriveSync] No content from: {filename}")
+                        if file_status_id:
+                            update_file_status(supabase, file_status_id,
+                                status="completed", progress=100, message="No content (empty)")
                         continue
                     
                     # Chunk the content
                     chunks = self.text_splitter.split_text(content)
                     if not chunks:
-                        logger.warning(f"⚠️ [DriveSync] No chunks from: {file_meta['name']}")
+                        logger.warning(f"⚠️ [DriveSync] No chunks from: {filename}")
+                        if file_status_id:
+                            update_file_status(supabase, file_status_id,
+                                status="completed", progress=100, message="No chunks extracted")
                         continue
                     
-                    logger.info(f"🔄 [DriveSync] File '{file_meta['name']}': {len(chunks)} chunks")
+                    logger.info(f"🔄 [DriveSync] File '{filename}': {len(chunks)} chunks")
+                    
+                    # Status: Embedding
+                    if file_status_id:
+                        update_file_status(supabase, file_status_id,
+                            status="embedding", progress=50, message=f"Generating embeddings for {len(chunks)} chunks...",
+                            chunks_total=len(chunks))
                     
                     # Generate embeddings in batch
                     embeddings = generate_embeddings_batch(chunks)
@@ -566,24 +614,54 @@ class DriveConnector(BaseConnector):
                                     inserted_count += len(batch)
                                     logger.debug(f"📦 [DriveSync] Inserted batch {batch_start//DB_BATCH_SIZE + 1}: {len(batch)} chunks")
                             except Exception as batch_err:
-                                logger.error(f"❌ [DriveSync] Batch insert failed for {file_meta['name']}: {batch_err}")
+                                logger.error(f"❌ [DriveSync] Batch insert failed for {filename}: {batch_err}")
                                 continue
                         
                         if inserted_count > 0:
                             total_chunks += inserted_count
                             processed_files += 1
-                            logger.info(f"✅ [DriveSync] Inserted {inserted_count} chunks for {file_meta['name']}")
+                            
+                            # Status: Completed
+                            if file_status_id:
+                                update_file_status(supabase, file_status_id,
+                                    status="completed", progress=100, message="Complete",
+                                    chunks_processed=inserted_count, document_id=str(parent_doc_id))
+                            
+                            # Update job progress
+                            if job_id:
+                                supabase.table("ingestion_jobs").update({
+                                    "processed_files": processed_files,
+                                    "status_message": f"Processed {processed_files}/{len(files)} files"
+                                }).eq("id", job_id).execute()
+                            
+                            logger.info(f"✅ [DriveSync] Inserted {inserted_count} chunks for {filename}")
                         else:
-                            logger.error(f"❌ [DriveSync] Failed to insert any chunks for {file_meta['name']}")
-                            errors.append(f"Chunk insert failed: {file_meta['name']}")
+                            if file_status_id:
+                                update_file_status(supabase, file_status_id,
+                                    status="failed", progress=0, error="No chunks inserted")
+                            logger.error(f"❌ [DriveSync] Failed to insert any chunks for {filename}")
+                            errors.append(f"Chunk insert failed: {filename}")
                         
                 except Exception as e:
-                    logger.error(f"❌ [DriveSync] Error processing {file_meta['name']}: {e}")
-                    errors.append(f"{file_meta['name']}: {str(e)}")
+                    logger.error(f"❌ [DriveSync] Error processing {filename}: {e}")
+                    if file_status_id:
+                        update_file_status(supabase, file_status_id,
+                            status="failed", progress=0, error=str(e))
+                    errors.append(f"{filename}: {str(e)}")
                     # Don't fail the whole sync for one file
                     continue
             
-            # 5. Update last_sync_at
+            # 5. Update job to completed
+            if job_id:
+                final_status = "completed" if processed_files > 0 else "failed"
+                supabase.table("ingestion_jobs").update({
+                    "status": final_status,
+                    "processed_files": processed_files,
+                    "progress": 100,
+                    "status_message": f"Synced {processed_files} files, {total_chunks} chunks"
+                }).eq("id", job_id).execute()
+            
+            # 6. Update last_sync_at
             supabase.table("user_integrations").update({
                 "last_sync_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
@@ -597,8 +675,15 @@ class DriveConnector(BaseConnector):
                 "status": "success",
                 "files_processed": processed_files,
                 "chunks_created": total_chunks,
-                "errors": errors
+                "errors": errors,
+                "job_id": job_id
             }
         except Exception as e:
             logger.error(f"❌ [DriveSync] Sync failed globally: {e}")
+            # Mark job as failed if exists
+            if 'job_id' in locals() and job_id:
+                supabase.table("ingestion_jobs").update({
+                    "status": "failed",
+                    "error_message": str(e)
+                }).eq("id", job_id).execute()
             raise e
