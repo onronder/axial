@@ -143,23 +143,28 @@ class DriveConnector(BaseConnector):
     )
     
     # =========================================================================
-    # RICH EXPORT: Map Google Native types to structured formats
+    # EXPORT FORMAT: Map Google Native types to text formats for RAG
     # =========================================================================
-    # Google Docs -> DOCX (preserves headers/formatting)
-    # Google Sheets -> CSV (preserves row/column structure)
-    # Google Slides -> PDF (preserves slide separation)
+    # IMPORTANT: We export to TEXT formats, not binary (DOCX/PDF), because:
+    # 1. The connector decodes content to UTF-8 text for ConnectorDocument
+    # 2. Binary formats (DOCX, PDF) get corrupted by UTF-8 decode
+    # 3. For RAG, we need the text content anyway
+    # 
+    # Google Docs -> Plain text (clean, no formatting)
+    # Google Sheets -> CSV (row/column structure preserved)
+    # Google Slides -> Plain text (extracted text from slides)
     EXPORT_MIME_TYPES = {
         "application/vnd.google-apps.document": {
-            "export_mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "extension": ".docx",
+            "export_mime": "text/plain",
+            "extension": ".txt",
         },
         "application/vnd.google-apps.spreadsheet": {
             "export_mime": "text/csv",
             "extension": ".csv",
         },
         "application/vnd.google-apps.presentation": {
-            "export_mime": "application/pdf",
-            "extension": ".pdf",
+            "export_mime": "text/plain",
+            "extension": ".txt",
         },
     }
     
