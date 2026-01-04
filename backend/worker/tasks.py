@@ -128,6 +128,12 @@ def ingest_document_batched(
         # Add document_id to each chunk
         for chunk in batch:
             chunk["document_id"] = str(doc_id)
+            # Schema Fix: Remove metadata from chunk as column doesn't exist in document_chunks
+            if "metadata" in chunk:
+                del chunk["metadata"]
+            # Schema Fix: Remove metadata from chunk as column doesn't exist in document_chunks
+            if "metadata" in chunk:
+                del chunk["metadata"]
         
         # Insert this batch
         try:
@@ -398,7 +404,7 @@ def send_email_notification(
     """
     try:
         # Fetch user profile for email and name
-        user_response = supabase.table("profiles").select("email, display_name, full_name").eq("id", user_id).single().execute()
+        user_response = supabase.table("user_profiles").select("email, display_name, full_name").eq("id", user_id).single().execute()
         
         if not user_response.data:
             logger.warning(f"📧 [Email] User profile not found for {user_id}")
@@ -455,7 +461,7 @@ def send_failure_email_notification(
     """
     try:
         # Fetch user profile for email and name
-        user_response = supabase.table("profiles").select("email, display_name, full_name").eq("id", user_id).single().execute()
+        user_response = supabase.table("user_profiles").select("email, display_name, full_name").eq("id", user_id).single().execute()
         
         if not user_response.data:
             logger.warning(f"📧 [Email] User profile not found for {user_id}")

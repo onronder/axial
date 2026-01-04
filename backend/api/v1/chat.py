@@ -540,7 +540,7 @@ async def chat_endpoint(
 
     # ========== STEP 10: GET SELECTED LLM & ENFORCE PLAN ==========
     # Task 1: Hard-Enforce Limits via Factory
-    llm = LLMFactory.get_model(
+    llm, _ = LLMFactory.get_model(
         provider=model_selection.provider,
         model_name=model_selection.model,
         user_plan=user_plan,  # Must pass plan for enforcement
