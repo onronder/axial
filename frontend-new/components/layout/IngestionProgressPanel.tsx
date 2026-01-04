@@ -317,9 +317,16 @@ export function IngestionProgressPanel() {
                 {/* Header */}
                 <CardHeader className="p-3 border-b flex flex-row items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        {processedFiles < totalFiles ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        ) : (
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        )}
                         <span className="font-semibold text-sm">
-                            Processing {totalFiles - processedFiles} file{totalFiles - processedFiles !== 1 ? "s" : ""}
+                            {processedFiles < totalFiles
+                                ? `Ingesting ${processedFiles}/${totalFiles} files`
+                                : `Completed ${totalFiles} files`
+                            }
                         </span>
                     </div>
 
@@ -329,6 +336,7 @@ export function IngestionProgressPanel() {
                             size="icon"
                             className="h-6 w-6"
                             onClick={() => setIsMinimized(!isMinimized)}
+                            title={isMinimized ? "Expand" : "Minimize"}
                         >
                             {isMinimized ? (
                                 <ChevronUp className="h-4 w-4" />

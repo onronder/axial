@@ -31,7 +31,7 @@ interface IngestionJob {
     provider: string;
     total_files: number;
     processed_files: number;
-    status: "pending" | "processing" | "completed" | "failed";
+    status: "pending" | "processing" | "completed" | "failed" | "cancelled";
     error_message?: string;
     // NEW: Granular progress tracking from backend
     progress?: number;           // 0-100 percentage  
@@ -185,7 +185,9 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
     // Status message from backend or fallback
     const statusText = job.status_message ||
         (job.status === "pending" ? "Starting..." :
-            `${job.processed_files} / ${job.total_files} files`);
+            job.processed_files === job.total_files
+                ? "Completing..."
+                : `Processing ${job.processed_files + 1}/${job.total_files} files`);
 
     return (
         <motion.div

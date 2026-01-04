@@ -68,7 +68,8 @@ def ingest_document_batched(
     chunks_payload: list,
     file_size_bytes: int = 0,
     job_id: str = None,
-    source_url: str = None
+    source_url: str = None,
+    file_status_id: str = None  # NEW: for per-file progress tracking
 ) -> str:
     """
     Insert document and chunks in batches to prevent DB timeouts.
@@ -85,6 +86,7 @@ def ingest_document_batched(
         file_size_bytes: File size for quota tracking
         job_id: Optional job ID for progress updates
         source_url: Optional source URL
+        file_status_id: Optional file status ID for per-file chunk progress
         
     Returns:
         Document ID (UUID string)
@@ -117,6 +119,7 @@ def ingest_document_batched(
     if total_chunks == 0:
         return str(doc_id)
     
+    inserted_count = 0
     for i in range(0, total_chunks, DB_BATCH_SIZE):
         batch = chunks_payload[i:i + DB_BATCH_SIZE]
         
@@ -127,21 +130,34 @@ def ingest_document_batched(
         # Insert this batch
         try:
             supabase.table("document_chunks").insert(batch).execute()
+            inserted_count += len(batch)
         except Exception as e:
             logger.error(f"❌ Failed to insert chunk batch {i//DB_BATCH_SIZE + 1}: {e}")
             # Continue with other batches - partial ingestion is better than none
             continue
         
-        # Update progress if job_id provided
+        # Update job-level progress if job_id provided
         if job_id:
-            progress_percent = int(((i + len(batch)) / total_chunks) * 100)
+            progress_percent = int((inserted_count / total_chunks) * 100)
             update_job_progress(
                 supabase, job_id, progress_percent,
-                f"Indexing chunk {i + len(batch)}/{total_chunks}..."
+                f"Indexing chunk {inserted_count}/{total_chunks}..."
+            )
+        
+        # Update per-file chunk progress in real-time
+        if file_status_id:
+            # Calculate progress: indexing is 80-100% of file progress
+            file_progress = 80 + int((inserted_count / total_chunks) * 20)
+            update_file_status(
+                supabase, file_status_id,
+                progress=file_progress,
+                message=f"Indexing {inserted_count}/{total_chunks} chunks...",
+                chunks_processed=inserted_count
             )
     
-    logger.info(f"✅ Inserted {total_chunks} chunks for document {doc_id}")
+    logger.info(f"✅ Inserted {inserted_count} chunks for document {doc_id}")
     return str(doc_id)
+
 
 
 # ============================================================
@@ -596,7 +612,8 @@ def process_document_pipeline(
             chunks_payload=chunks_payload,
             file_size_bytes=len(content_bytes),
             job_id=job_id,
-            source_url=source_url
+            source_url=source_url,
+            file_status_id=file_status_id
         )
         
         # 5. Complete
@@ -798,7 +815,8 @@ def ingest_file_task(
             metadata=doc_metadata,
             chunks_payload=chunks_payload,
             file_size_bytes=file_size_bytes,
-            job_id=job_id
+            job_id=job_id,
+            file_status_id=file_status_id
         )
         
         # Mark file as completed
@@ -1071,7 +1089,8 @@ def ingest_connector_task(
                         chunks_payload=chunks_payload,
                         file_size_bytes=content_size,
                         job_id=job_id,
-                        source_url=source_url
+                        source_url=source_url,
+                        file_status_id=file_status_id
                     )
                     
                     if doc_id:
