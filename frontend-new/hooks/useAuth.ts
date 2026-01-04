@@ -128,13 +128,15 @@ export const useAuth = () => {
 
     /**
      * Sign out the current user
-     * Note: We handle navigation here directly to avoid race conditions
-     * with the onAuthStateChange listener
+     * 
+     * IMPORTANT: Must navigate BEFORE clearing user state to avoid
+     * PaywallGuard showing pricing page during the transition.
      */
     const logout = async (): Promise<void> => {
-        // Clear user state immediately for instant UI feedback
-        setUser(null);
+        // 1. Navigate to login FIRST (prevents flash of pricing page)
+        router.push("/login");
 
+        // 2. Sign out from Supabase (clears session/cookies)
         try {
             const { error } = await supabase.auth.signOut();
             if (error) {
@@ -144,8 +146,8 @@ export const useAuth = () => {
             console.error("Logout exception:", error);
         }
 
-        // Navigate after sign out completes
-        router.push("/login");
+        // 3. Clear local user state last
+        setUser(null);
     };
 
     return {
