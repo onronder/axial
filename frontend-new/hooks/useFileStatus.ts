@@ -14,7 +14,8 @@ export type FileStatusType =
     | "embedding"
     | "indexing"
     | "completed"
-    | "failed";
+    | "failed"
+    | "cancelled";
 
 /**
  * Per-file ingestion status record
@@ -236,6 +237,7 @@ export function getStatusLabel(status: FileStatusType): string {
         indexing: "Indexing...",
         completed: "Complete",
         failed: "Failed",
+        cancelled: "Cancelled",
     };
     return labels[status] || status;
 }
@@ -252,6 +254,7 @@ export function getStatusColor(status: FileStatusType): string {
         indexing: "text-cyan-500",
         completed: "text-green-500",
         failed: "text-red-500",
+        cancelled: "text-amber-500",
     };
     return colors[status] || "text-muted-foreground";
 }

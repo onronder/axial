@@ -8,7 +8,7 @@
  * with visual progress bars.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     ChevronUp,
@@ -18,19 +18,46 @@ import {
     Loader2,
     CheckCircle2,
     XCircle,
-    AlertCircle
+    AlertCircle,
+    RotateCcw,
+    StopCircle
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { useIngestionJobs } from "@/hooks/useIngestionJobs";
+import { useIngestionJobs, IngestionJob } from "@/hooks/useIngestionJobs";
 import {
     useFileStatus,
     FileStatus,
     getStatusLabel,
     getStatusColor
 } from "@/hooks/useFileStatus";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
+
+/**
+ * API helper for authenticated requests
+ */
+async function apiRequest(endpoint: string, method: "POST" | "GET" = "POST") {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error("Not authenticated");
+
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1${endpoint}`, {
+        method,
+        headers: {
+            "Authorization": `Bearer ${session.access_token}`,
+            "Content-Type": "application/json"
+        }
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: "Request failed" }));
+        throw new Error(error.detail || "Request failed");
+    }
+
+    return response.json();
+}
 
 /**
  * Format bytes to human-readable string
@@ -58,10 +85,28 @@ function StatusIcon({ status }: { status: FileStatus["status"] }) {
 }
 
 /**
- * Individual file status card
+ * Individual file status card with retry button
  */
-function FileStatusCard({ file }: { file: FileStatus }) {
-    const isActive = !["completed", "failed"].includes(file.status);
+function FileStatusCard({ file, onRetry }: { file: FileStatus; onRetry?: (id: string) => void }) {
+    const isActive = !["completed", "failed", "cancelled"].includes(file.status);
+    const [isRetrying, setIsRetrying] = useState(false);
+    const { toast } = useToast();
+
+    const handleRetry = useCallback(async () => {
+        if (isRetrying) return;
+        setIsRetrying(true);
+
+        try {
+            await apiRequest(`/jobs/files/${file.id}/retry`);
+            toast({ title: "Retry queued", description: file.filename });
+            onRetry?.(file.id);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to retry";
+            toast({ title: "Retry failed", description: message, variant: "destructive" });
+        } finally {
+            setIsRetrying(false);
+        }
+    }, [file.id, file.filename, isRetrying, toast, onRetry]);
 
     return (
         <motion.div
@@ -72,7 +117,8 @@ function FileStatusCard({ file }: { file: FileStatus }) {
             className={cn(
                 "flex items-start gap-3 p-3 rounded-lg border bg-card/50",
                 file.status === "failed" && "border-red-500/30 bg-red-50/5",
-                file.status === "completed" && "border-green-500/30 bg-green-50/5"
+                file.status === "completed" && "border-green-500/30 bg-green-50/5",
+                file.status === "cancelled" && "border-amber-500/30 bg-amber-50/5"
             )}
         >
             {/* File Icon */}
@@ -125,8 +171,27 @@ function FileStatusCard({ file }: { file: FileStatus }) {
                 )}
             </div>
 
-            {/* Status Icon */}
-            <StatusIcon status={file.status} />
+            {/* Actions */}
+            <div className="flex flex-col items-center gap-1">
+                <StatusIcon status={file.status} />
+
+                {/* Retry button for failed files */}
+                {file.status === "failed" && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={handleRetry}
+                        disabled={isRetrying}
+                        title="Retry"
+                    >
+                        <RotateCcw className={cn(
+                            "h-3 w-3",
+                            isRetrying && "animate-spin"
+                        )} />
+                    </Button>
+                )}
+            </div>
         </motion.div>
     );
 }
@@ -134,8 +199,62 @@ function FileStatusCard({ file }: { file: FileStatus }) {
 /**
  * Files list for a single job
  */
+/**
+ * Job header with cancel button
+ */
+function JobHeader({ job, onCancel }: { job: IngestionJob; onCancel: (id: string) => void }) {
+    const [isCancelling, setIsCancelling] = useState(false);
+    const { toast } = useToast();
+    const isActive = ["pending", "processing"].includes(job.status);
+
+    const handleCancel = useCallback(async () => {
+        if (!confirm("Cancel this ingestion? Files already processed will remain.")) return;
+        setIsCancelling(true);
+
+        try {
+            await apiRequest(`/jobs/${job.id}/cancel`);
+            toast({ title: "Job cancelled" });
+            onCancel(job.id);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to cancel";
+            toast({ title: "Cancel failed", description: message, variant: "destructive" });
+        } finally {
+            setIsCancelling(false);
+        }
+    }, [job.id, toast, onCancel]);
+
+    return (
+        <div className="flex items-center justify-between mb-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2">
+                <span className="capitalize font-medium">{job.provider}</span>
+                <span>•</span>
+                <span>{job.processed_files}/{job.total_files} complete</span>
+            </div>
+            {isActive && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 text-muted-foreground hover:text-destructive"
+                    onClick={handleCancel}
+                    disabled={isCancelling}
+                    title="Cancel job"
+                >
+                    {isCancelling ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                        <StopCircle className="h-3 w-3" />
+                    )}
+                </Button>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Files list for a single job
+ */
 function JobFilesList({ jobId, provider }: { jobId: string; provider: string }) {
-    const { files, isLoading } = useFileStatus(jobId);
+    const { files, isLoading, refresh } = useFileStatus(jobId);
 
     if (isLoading) {
         return (
@@ -157,7 +276,7 @@ function JobFilesList({ jobId, provider }: { jobId: string; provider: string }) 
         <div className="space-y-2">
             <AnimatePresence mode="popLayout">
                 {files.map((file) => (
-                    <FileStatusCard key={file.id} file={file} />
+                    <FileStatusCard key={file.id} file={file} onRetry={refresh} />
                 ))}
             </AnimatePresence>
         </div>
@@ -239,14 +358,11 @@ export function IngestionProgressPanel() {
                         >
                             <CardContent className="p-3 max-h-[400px] overflow-y-auto">
                                 {activeJobs.map((job) => (
-                                    <div key={job.id}>
-                                        {activeJobs.length > 1 && (
-                                            <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-                                                <span className="capitalize">{job.provider}</span>
-                                                <span>•</span>
-                                                <span>{job.processed_files}/{job.total_files} complete</span>
-                                            </div>
-                                        )}
+                                    <div key={job.id} className="mb-2 last:mb-0">
+                                        <JobHeader
+                                            job={job}
+                                            onCancel={() => { /* Auto-updates via realtime */ }}
+                                        />
                                         <JobFilesList jobId={job.id} provider={job.provider} />
                                     </div>
                                 ))}

@@ -158,3 +158,221 @@ async def list_recent_jobs(
     except Exception as e:
         logger.error(f"Failed to list jobs: {e}")
         raise HTTPException(status_code=500, detail="Failed to list jobs")
+
+
+# ============================================================
+# CANCEL / RETRY ENDPOINTS
+# ============================================================
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(
+    job_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Cancel an in-progress ingestion job.
+    
+    - Updates job status to 'cancelled'
+    - Revokes any pending Celery tasks
+    - Updates pending file statuses to 'cancelled'
+    
+    Returns:
+        Job ID and cancellation status
+    """
+    from datetime import datetime, timezone
+    
+    supabase = get_supabase()
+    
+    try:
+        # Verify ownership
+        response = supabase.table("ingestion_jobs")\
+            .select("*")\
+            .eq("id", job_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        job = response.data
+        
+        # Check if job can be cancelled
+        if job["status"] in ["completed", "failed", "cancelled"]:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Job already {job['status']}, cannot cancel"
+            )
+        
+        # Revoke Celery task if exists
+        celery_task_id = job.get("celery_task_id")
+        if celery_task_id:
+            try:
+                from worker.celery_app import celery_app
+                celery_app.control.revoke(celery_task_id, terminate=True)
+                logger.info(f"🛑 Revoked Celery task {celery_task_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to revoke Celery task: {e}")
+        
+        # Update job status
+        supabase.table("ingestion_jobs").update({
+            "status": "cancelled",
+            "cancelled_at": datetime.now(timezone.utc).isoformat(),
+            "cancelled_by": user_id,
+            "status_message": "Cancelled by user"
+        }).eq("id", job_id).execute()
+        
+        # Update any pending/processing file statuses
+        supabase.table("ingestion_file_status").update({
+            "status": "cancelled",
+            "status_message": "Cancelled by user",
+            "progress": 0
+        }).eq("job_id", job_id)\
+         .in_("status", ["pending", "uploading", "processing", "embedding", "indexing"])\
+         .execute()
+        
+        logger.info(f"✅ Cancelled job {job_id} for user {user_id}")
+        
+        return {
+            "status": "cancelled",
+            "job_id": job_id,
+            "message": "Job cancelled successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to cancel job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cancel job")
+
+
+@router.post("/jobs/files/{file_status_id}/retry")
+async def retry_file(
+    file_status_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Retry a failed file ingestion.
+    
+    - Validates file status and ownership
+    - Increments retry count (max 3 attempts)
+    - Resets status to 'pending' for reprocessing
+    
+    Returns:
+        File status ID and retry count
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Get file status
+        response = supabase.table("ingestion_file_status")\
+            .select("*, ingestion_jobs!inner(user_id, provider, celery_task_id)")\
+            .eq("id", file_status_id)\
+            .single()\
+            .execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        file_status = response.data
+        
+        # Verify ownership through parent job
+        if file_status["ingestion_jobs"]["user_id"] != user_id:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Check if file can be retried
+        if file_status["status"] != "failed":
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Only failed files can be retried, current status: {file_status['status']}"
+            )
+        
+        if not file_status.get("can_retry", True):
+            raise HTTPException(
+                status_code=400, 
+                detail="This file cannot be retried (marked as non-retryable)"
+            )
+        
+        # Check retry count
+        retry_count = file_status.get("retry_count", 0) + 1
+        if retry_count > 3:
+            raise HTTPException(
+                status_code=400, 
+                detail="Maximum retry attempts (3) exceeded for this file"
+            )
+        
+        # Reset file status for retry
+        supabase.table("ingestion_file_status").update({
+            "status": "pending",
+            "progress": 0,
+            "status_message": f"Retry attempt {retry_count}/3",
+            "error_message": None,
+            "retry_count": retry_count
+        }).eq("id", file_status_id).execute()
+        
+        # Update parent job to processing if it was completed/failed
+        job_id = file_status["job_id"]
+        supabase.table("ingestion_jobs").update({
+            "status": "processing",
+            "status_message": f"Retrying failed file ({retry_count}/3)"
+        }).eq("id", job_id)\
+         .in_("status", ["completed", "failed"])\
+         .execute()
+        
+        # Queue the file for reprocessing
+        # This depends on the job type - for now just log it
+        # The background worker will pick up pending files
+        logger.info(f"🔄 Queued retry for file {file_status_id} (attempt {retry_count})")
+        
+        return {
+            "status": "queued",
+            "file_status_id": file_status_id,
+            "retry_count": retry_count,
+            "message": f"File queued for retry (attempt {retry_count}/3)"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retry file {file_status_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retry file")
+
+
+@router.get("/jobs/{job_id}/files")
+async def get_job_files(
+    job_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get all file statuses for a specific job.
+    
+    Returns detailed per-file progress information.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Verify job ownership
+        job_response = supabase.table("ingestion_jobs")\
+            .select("id")\
+            .eq("id", job_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        if not job_response.data:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Get file statuses
+        response = supabase.table("ingestion_file_status")\
+            .select("*")\
+            .eq("job_id", job_id)\
+            .order("created_at", desc=False)\
+            .execute()
+        
+        return response.data or []
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get files for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get job files")

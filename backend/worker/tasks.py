@@ -242,6 +242,61 @@ def update_file_status(
         logger.warning(f"⚠️ Failed to update file status {file_status_id[:8]}...: {e}")
 
 
+# ============================================================
+# JOB CANCELLATION HELPERS
+# ============================================================
+
+def check_job_cancelled(supabase, job_id: str) -> bool:
+    """
+    Check if a job has been cancelled.
+    
+    Call this periodically in processing loops to support cancellation.
+    
+    Args:
+        supabase: Supabase client
+        job_id: Job ID to check
+        
+    Returns:
+        True if job is cancelled, False otherwise
+    """
+    if not job_id:
+        return False
+    
+    try:
+        result = supabase.table("ingestion_jobs")\
+            .select("status")\
+            .eq("id", job_id)\
+            .single()\
+            .execute()
+        
+        return result.data and result.data.get("status") == "cancelled"
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to check job cancellation status: {e}")
+        return False
+
+
+def store_celery_task_id(supabase, job_id: str, celery_task_id: str):
+    """
+    Store the Celery task ID for a job to enable task revocation.
+    
+    Args:
+        supabase: Supabase client
+        job_id: Job ID
+        celery_task_id: Celery task ID from self.request.id
+    """
+    if not job_id or not celery_task_id:
+        return
+    
+    try:
+        supabase.table("ingestion_jobs").update({
+            "celery_task_id": celery_task_id
+        }).eq("id", job_id).execute()
+        
+        logger.debug(f"📝 Stored Celery task ID {celery_task_id} for job {job_id}")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to store Celery task ID: {e}")
+
+
 def create_notification(
     supabase,
     user_id: str,
@@ -466,6 +521,14 @@ def ingest_file_task(
     local_path = None
     
     try:
+        # Store Celery task ID for cancellation support
+        store_celery_task_id(supabase, job_id, task_id)
+        
+        # Check if job was cancelled before we even start
+        if check_job_cancelled(supabase, job_id):
+            logger.info(f"🛑 [Worker:{task_id}] Job {job_id} cancelled before start, aborting")
+            return {"status": "cancelled", "filename": filename}
+        
         # Update job to processing
         update_job_status(supabase, job_id, "processing", 0)
         
@@ -693,6 +756,14 @@ def ingest_connector_task(
     supabase = get_supabase()
     
     try:
+        # Store Celery task ID for cancellation support
+        store_celery_task_id(supabase, job_id, task_id)
+        
+        # Check if job was cancelled before we start
+        if check_job_cancelled(supabase, job_id):
+            logger.info(f"🛑 [Worker:{task_id}] Job {job_id} cancelled before start, aborting")
+            return {"status": "cancelled", "connector": connector_type}
+        
         update_job_status(supabase, job_id, "processing", 0)
         
         create_notification(
@@ -742,6 +813,11 @@ def ingest_connector_task(
             processed_docs = []
             
             async for doc in stream:
+                # Check for cancellation before processing each document
+                if check_job_cancelled(supabase, job_id):
+                    logger.info(f"🛑 [Worker:{task_id}] Job cancelled, stopping processing")
+                    break
+                
                 # Route through appropriate processor based on connector type
                 doc_title = doc.metadata.get('title', 'Untitled')
                 doc_content = doc.page_content
