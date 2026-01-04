@@ -439,7 +439,8 @@ class NotionConnector(BaseConnector):
                     # Embed
                     embeddings = generate_embeddings_batch(chunks)
                     
-                    # Insert Chunks
+                    # Insert Chunks in batches to prevent DB timeout
+                    DB_BATCH_SIZE = 50
                     chunk_records = []
                     for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                         if embedding is None:
@@ -452,9 +453,19 @@ class NotionConnector(BaseConnector):
                         })
                     
                     if chunk_records:
-                        supabase.table("document_chunks").insert(chunk_records).execute()
-                        total_chunks += len(chunk_records)
-                        processed_docs += 1
+                        inserted_count = 0
+                        for batch_start in range(0, len(chunk_records), DB_BATCH_SIZE):
+                            batch = chunk_records[batch_start:batch_start + DB_BATCH_SIZE]
+                            try:
+                                supabase.table("document_chunks").insert(batch).execute()
+                                inserted_count += len(batch)
+                            except Exception as batch_err:
+                                logger.error(f"❌ [NotionSync] Batch insert failed: {batch_err}")
+                                continue
+                        
+                        if inserted_count > 0:
+                            total_chunks += inserted_count
+                            processed_docs += 1
                         
                 except Exception as e:
                     logger.error(f"❌ [NotionSync] Error saving {doc.metadata.get('title')}: {e}")
