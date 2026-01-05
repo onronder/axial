@@ -169,16 +169,20 @@ async def ingest_document(
         
         crawl_id = str(crawl_res.data[0]["id"])
         
-        from worker.tasks import crawl_web_task
+        from worker.tasks import unified_ingest_task
         try:
-            task = crawl_web_task.delay(
+            task = unified_ingest_task.delay(
                 user_id=user_id,
-                root_url=url,
-                crawl_config={
-                    "crawl_id": crawl_id,
-                    "crawl_type": crawl_type,
-                    "max_depth": max_depth,
-                    "respect_robots": respect_robots
+                job_id=crawl_id,
+                connector_type="web",
+                item_ids=[url],
+                credentials={
+                    "crawl_config": {
+                        "crawl_id": crawl_id,
+                        "crawl_type": crawl_type,
+                        "max_depth": max_depth,
+                        "respect_robots": respect_robots
+                    }
                 }
             )
             
@@ -223,7 +227,7 @@ async def ingest_document(
         
         # Dispatch to worker
         try:
-            task = ingest_connector_task.delay(
+            task = unified_ingest_task.delay(
                 user_id=user_id,
                 job_id=job_id,
                 connector_type=connector_type,

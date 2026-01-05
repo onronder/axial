@@ -399,7 +399,7 @@ async def exchange_notion_token(
                 from worker.tasks import ingest_connector_task
                 task_ids = []
                 for item_id in items:
-                    task = ingest_connector_task.delay(
+                    task = unified_ingest_task.delay(
                         user_id=user_id,
                         job_id=str(job_id),
                         connector_type="notion",
@@ -690,7 +690,7 @@ async def ingest_provider_items(
         
         task_ids = []
         for item_id in request.item_ids:
-            task = ingest_connector_task.delay(
+            task = unified_ingest_task.delay(
                 user_id=user_id,
                 job_id=str(job_id),
                 connector_type=provider,
