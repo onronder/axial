@@ -22,8 +22,8 @@ RUN apt-get update \
 COPY requirements.txt .
 
 # CACHE BUSTER: Change this value to force Railway to rebuild and install llama-parse
-# Last updated: 2026-01-05T09:38:00Z
-ARG CACHEBUST=2026010509380001
+# Last updated: 2026-01-05T09:47:00Z
+ARG CACHEBUST=2026010509470002
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
