@@ -1,112 +1,136 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { getUsageStats, getEffectivePlan } from '@/lib/api';
 import type { UserUsage, EffectivePlan, PlanType } from '@/types';
 
 /**
- * Hook for managing user usage stats and plan information.
+ * Usage Context - Singleton pattern for usage data
  * 
- * Provides access to:
- * - Current plan (inherited from team owner if applicable)
- * - File and storage usage
- * - Feature flags (web_crawl, team_enabled)
+ * This prevents duplicate API calls when multiple components use useUsage().
+ * Data is fetched once and shared across all consumers.
  */
-export const useUsage = () => {
+
+interface UsageContextValue {
+    usage: UserUsage | null;
+    effectivePlan: EffectivePlan | null;
+    isLoading: boolean;
+    error: string | null;
+    plan: PlanType | null;
+    isPlanInherited: boolean;
+    filesUsed: number;
+    filesLimit: number;
+    filesPercent: number;
+    storageUsed: number;
+    storageLimit: number;
+    storagePercent: number;
+    canWebCrawl: boolean;
+    teamEnabled: boolean;
+    refresh: () => Promise<void>;
+    refreshPlan: () => Promise<void>;
+}
+
+const UsageContext = createContext<UsageContextValue | undefined>(undefined);
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+interface UsageProviderProps {
+    children: ReactNode;
+}
+
+export function UsageProvider({ children }: UsageProviderProps) {
     const [usage, setUsage] = useState<UserUsage | null>(null);
     const [effectivePlan, setEffectivePlan] = useState<EffectivePlan | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchAll = useCallback(async () => {
+    const hasFetched = useRef(false);
+    const lastFetchTime = useRef<number>(0);
+    const fetchInProgress = useRef(false);
+
+    const fetchAll = useCallback(async (force: boolean = false) => {
+        if (fetchInProgress.current) return;
+
+        const now = Date.now();
+        if (!force && lastFetchTime.current && (now - lastFetchTime.current) < CACHE_DURATION) {
+            return;
+        }
+
+        fetchInProgress.current = true;
         setIsLoading(true);
         setError(null);
+
         try {
-            // Fetch both in parallel to avoid race conditions
             const [usageData, planData] = await Promise.all([
-                getUsageStats().catch(err => {
-                    console.error('Failed to fetch usage:', err);
-                    return null;
-                }),
-                getEffectivePlan().catch(err => {
-                    console.error('Failed to fetch effective plan:', err);
-                    return null;
-                })
+                getUsageStats().catch(() => null),
+                getEffectivePlan().catch(() => null)
             ]);
 
             if (usageData) setUsage(usageData);
             if (planData) setEffectivePlan(planData);
-
+            lastFetchTime.current = Date.now();
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Failed to fetch user data';
-            console.error('Failed to fetch user data:', err);
             setError(message);
         } finally {
             setIsLoading(false);
+            fetchInProgress.current = false;
         }
     }, []);
 
     useEffect(() => {
+        if (hasFetched.current) return;
+        hasFetched.current = true;
         fetchAll();
     }, [fetchAll]);
 
-    // Derived values for convenience
-    // IMPORTANT: Return null while loading to prevent "Free" flash before real plan loads
     const plan: PlanType | null = isLoading ? null : (effectivePlan?.plan ?? usage?.plan ?? 'free');
     const isPlanInherited = effectivePlan?.inherited ?? false;
-
     const filesUsed = usage?.files.used ?? 0;
     const filesLimit = usage?.files.limit ?? 10;
     const storageUsed = usage?.storage.used_bytes ?? 0;
-    const storageLimit = usage?.storage.limit_bytes ?? 100 * 1024 * 1024; // 100MB default
-
+    const storageLimit = usage?.storage.limit_bytes ?? 100 * 1024 * 1024;
     const canWebCrawl = usage?.features.web_crawl ?? false;
     const teamEnabled = usage?.features.team_enabled ?? false;
-
-    // Calculate percentages
     const filesPercent = filesLimit > 0 ? (filesUsed / filesLimit) * 100 : 0;
     const storagePercent = storageLimit > 0 ? (storageUsed / storageLimit) * 100 : 0;
 
-    return {
-        // Raw data
+    const refresh = useCallback(() => fetchAll(true), [fetchAll]);
+
+    const value: UsageContextValue = {
         usage,
         effectivePlan,
         isLoading,
         error,
-
-        // Derived convenience values
         plan,
         isPlanInherited,
-
-        // Files
         filesUsed,
         filesLimit,
         filesPercent,
-
-        // Storage
         storageUsed,
         storageLimit,
         storagePercent,
-
-        // Features
         canWebCrawl,
         teamEnabled,
-
-        // Actions
-        refresh: fetchAll,
-        refreshPlan: fetchAll,
+        refresh,
+        refreshPlan: refresh,
     };
+
+    return React.createElement(UsageContext.Provider, { value }, children);
+}
+
+export const useUsage = (): UsageContextValue => {
+    const context = useContext(UsageContext);
+    if (context === undefined) {
+        throw new Error('useUsage must be used within a UsageProvider');
+    }
+    return context;
 };
 
-/**
- * Format bytes to human-readable string
- */
 export const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 B';
-
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     const k = 1024;
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${units[i]}`;
 };

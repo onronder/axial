@@ -7,6 +7,7 @@ import { ChatHistoryProvider } from "@/hooks/useChatHistory";
 import { IngestModalProvider } from "@/hooks/useIngestModal";
 import { Loader2 } from "lucide-react";
 import { ProfileProvider } from "@/hooks/useProfile";
+import { UsageProvider } from "@/hooks/useUsage";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { GlobalProgress } from "@/components/layout/global-progress";
@@ -48,54 +49,56 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     return (
         <ProfileProvider>
-            <ChatHistoryProvider>
-                <IngestModalProvider>
-                    <PaywallGuard>
-                        <div className="min-h-screen bg-background">
-                            {/* DESKTOP SIDEBAR - Isolated error boundary */}
-                            <aside
-                                className="fixed inset-y-0 left-0 z-40 hidden md:block border-r border-sidebar-border"
-                                style={{ width: `${SIDEBAR_WIDTH}px` }}
-                            >
+            <UsageProvider>
+                <ChatHistoryProvider>
+                    <IngestModalProvider>
+                        <PaywallGuard>
+                            <div className="min-h-screen bg-background">
+                                {/* DESKTOP SIDEBAR - Isolated error boundary */}
+                                <aside
+                                    className="fixed inset-y-0 left-0 z-40 hidden md:block border-r border-sidebar-border"
+                                    style={{ width: `${SIDEBAR_WIDTH}px` }}
+                                >
+                                    <SidebarErrorBoundary>
+                                        <DashboardSidebar />
+                                    </SidebarErrorBoundary>
+                                </aside>
+
+                                {/* MAIN CONTENT AREA */}
+                                <div className="md:ml-64 min-h-screen">
+                                    {/* Mobile navigation */}
+                                    <MobileNav
+                                        isOpen={mobileMenuOpen}
+                                        onToggle={setMobileMenuOpen}
+                                    />
+
+                                    {/* Usage Warning Banner */}
+                                    <UsageWarningBanner />
+
+                                    {/* Page content - with error boundary */}
+                                    <main className="h-[calc(100vh-56px)] md:h-screen">
+                                        <AppErrorBoundary name="PageContent">
+                                            {children}
+                                        </AppErrorBoundary>
+                                    </main>
+                                </div>
+
+                                {/* Global modals and overlays - isolated */}
                                 <SidebarErrorBoundary>
-                                    <DashboardSidebar />
+                                    <GlobalIngestModal />
                                 </SidebarErrorBoundary>
-                            </aside>
-
-                            {/* MAIN CONTENT AREA */}
-                            <div className="md:ml-64 min-h-screen">
-                                {/* Mobile navigation */}
-                                <MobileNav
-                                    isOpen={mobileMenuOpen}
-                                    onToggle={setMobileMenuOpen}
-                                />
-
-                                {/* Usage Warning Banner */}
-                                <UsageWarningBanner />
-
-                                {/* Page content - with error boundary */}
-                                <main className="h-[calc(100vh-56px)] md:h-screen">
-                                    <AppErrorBoundary name="PageContent">
-                                        {children}
-                                    </AppErrorBoundary>
-                                </main>
+                                <SidebarErrorBoundary>
+                                    <GlobalProgress />
+                                </SidebarErrorBoundary>
+                                {/* Per-file progress panel */}
+                                <SidebarErrorBoundary>
+                                    <IngestionProgressPanel />
+                                </SidebarErrorBoundary>
                             </div>
-
-                            {/* Global modals and overlays - isolated */}
-                            <SidebarErrorBoundary>
-                                <GlobalIngestModal />
-                            </SidebarErrorBoundary>
-                            <SidebarErrorBoundary>
-                                <GlobalProgress />
-                            </SidebarErrorBoundary>
-                            {/* Per-file progress panel */}
-                            <SidebarErrorBoundary>
-                                <IngestionProgressPanel />
-                            </SidebarErrorBoundary>
-                        </div>
-                    </PaywallGuard>
-                </IngestModalProvider>
-            </ChatHistoryProvider>
+                        </PaywallGuard>
+                    </IngestModalProvider>
+                </ChatHistoryProvider>
+            </UsageProvider>
         </ProfileProvider>
     );
 }
