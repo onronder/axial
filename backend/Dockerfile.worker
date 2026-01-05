@@ -20,10 +20,16 @@ RUN apt-get update \
 
 # Install Python dependencies
 COPY requirements.txt .
+
+# CACHE BUSTER: Change this value to force Railway to rebuild and install llama-parse
+# Last updated: 2026-01-05T09:38:00Z
+ARG CACHEBUST=2026010509380001
+
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
     # Force install llama-parse (bypass Docker cache if requirements.txt cached)
-    && pip install --no-cache-dir llama-parse>=0.5.0 nest_asyncio
+    && pip install --no-cache-dir --force-reinstall llama-parse>=0.5.0 nest_asyncio \
+    && python -c "import llama_parse; print(f'LlamaParse version: {llama_parse.__version__}')"
 
 # Copy application code
 COPY . .
