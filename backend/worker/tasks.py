@@ -698,6 +698,11 @@ def ingest_file_task(
     metadata: Dict[str, Any] = None
 ):
     """
+    DEPRECATED: Use unified_ingest_task instead.
+    
+    This task will be removed in a future version.
+    All new code should use unified_ingest_task with connector_type='file_upload'.
+    
     Zero-Copy File Ingestion Task.
     
     Architecture: Store-Forward-Process-Delete
@@ -941,6 +946,11 @@ def ingest_connector_task(
     credentials: Dict[str, Any] = None
 ):
     """
+    DEPRECATED: Use unified_ingest_task instead.
+    
+    This task will be removed in a future version.
+    All new code should use unified_ingest_task.
+    
     Background task to ingest files from cloud connectors (Drive, Notion).
     
     Uses atomic RPC for database insertion.
@@ -1315,6 +1325,11 @@ def crawl_web_task(
     crawl_config: Dict[str, Any]
 ):
     """
+    DEPRECATED: Use unified_ingest_task instead.
+    
+    This task will be removed in a future version.
+    All new code should use unified_ingest_task with connector_type='web'.
+    
     Background task for advanced web crawling.
     
     Supports:
