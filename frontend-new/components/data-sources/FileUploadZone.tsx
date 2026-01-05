@@ -7,9 +7,11 @@ import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useUsage } from "@/hooks/useUsage";
+import { useFileStatus } from "@/hooks/useFileStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import { getUploadUrl, uploadToStorage, ingestFileReference } from "@/lib/api";
+import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 
 interface FileUploadZoneProps {
   source: DataSource;
@@ -21,6 +23,10 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
   const [uploadStage, setUploadStage] = useState<string>("");
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
+  // Track file-level progress
+  const { files: fileStatuses } = useFileStatus(currentJobId);
 
   const isOverLimit = filesUsed >= filesLimit;
 
@@ -48,9 +54,9 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
         throw new Error("Failed to upload file to storage");
       }
 
-      // Step 3: Trigger ingestion
+      // Step 3: Trigger ingestion and capture job ID
       setUploadStage("Processing file...");
-      await ingestFileReference(
+      const ingestionResponse = await ingestFileReference(
         urlResponse.storage_path,
         file.name,
         file.size,
@@ -60,6 +66,11 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
           type: file.type,
         }
       );
+
+      // Capture job ID for progress tracking
+      if (ingestionResponse?.job_id && !currentJobId) {
+        setCurrentJobId(ingestionResponse.job_id);
+      }
 
       return true;
     } catch (error: unknown) {
@@ -175,6 +186,23 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
           </div>
         </div>
       </div>
+
+      {/* Progress Modal */}
+      {currentJobId && fileStatuses.length > 0 && (
+        <IngestionProgressModal
+          jobId={currentJobId}
+          files={fileStatuses}
+          totalFiles={fileStatuses.length}
+          overallProgress={
+            fileStatuses.length > 0
+              ? (fileStatuses.filter((f) => f.status === "completed").length /
+                fileStatuses.length) *
+              100
+              : 0
+          }
+          onClose={() => setCurrentJobId(null)}
+        />
+      )}
     </div>
   );
 }
