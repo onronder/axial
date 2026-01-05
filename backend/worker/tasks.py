@@ -671,106 +671,15 @@ def process_document_pipeline(
             
     except Exception as e:
         update_file_status(supabase, file_status_id,
+            status="failed", progress=0, error=str(e))
         return ProcessResult(success=False, error=str(e))
 
 
 # ============================================================
-# UNIFIED INGESTION TASK (NEW ARCHITECTURE)
+# ZERO-COPY FILE INGESTION TASK
 # ============================================================
 
 STAGING_BUCKET = "ephemeral-staging"
-
-@celery_app.task(
-    bind=True,
-    autoretry_for=(ConnectionError, TimeoutError, OSError),
-    retry_backoff=True,
-    retry_backoff_max=600,
-    max_retries=3,
-    acks_late=True
-)
-def unified_ingest_task(
-    self,
-    user_id: str,
-    job_id: str,
-    connector_type: str,
-    item_ids: list[str],
-    credentials: Dict[str, Any] = None
-):
-    """
-    UNIFIED ingestion task for ALL data sources.
-    
-    This single task replaces:
-    - ingest_file_task
-    - ingest_connector_task  
-    - crawl_web_task
-    
-    Uses the IngestionPipeline for all processing.
-    Connectors only fetch raw content.
-    
-    Args:
-        user_id: User ID
-        job_id: Job ID for tracking
-        connector_type: 'file_upload', 'google_drive', 'notion', 'web', etc.
-        item_ids: List of items to ingest (paths, IDs, URLs)
-        credentials: Optional auth credentials
-    """
-    import asyncio
-    from connectors import get_connector
-    from services.ingestion_pipeline import IngestionPipeline
-    
-    task_id = self.request.id
-    logger.info(f"[UnifiedIngest:{task_id}] Starting: {connector_type}, Job: {job_id}")
-    
-    supabase = get_supabase()
-    
-    try:
-        # Store Celery task ID for cancellation support
-        store_celery_task_id(supabase, job_id, task_id)
-        
-        # Check if job was cancelled before we start
-        if check_job_cancelled(supabase, job_id):
-            logger.info(f"🛑 [UnifiedIngest:{task_id}] Job cancelled before start")
-            return {"status": "cancelled"}
-        
-        # Get connector instance
-        connector = get_connector(connector_type)
-        
-        # Create pipeline
-        pipeline = IngestionPipeline(
-            user_id=user_id,
-            job_id=job_id,
-            supabase_client=supabase
-        )
-        
-        # Fetch documents from connector (async)
-        async def run_ingestion():
-            document_stream = connector.fetch_documents(item_ids, credentials, user_id=user_id)
-            return await pipeline.process_stream(document_stream, connector_type)
-        
-        # Run async code
-        result = asyncio.run(run_ingestion())
-        
-        logger.info(f"[UnifiedIngest:{task_id}] Complete: {result}")
-        return result
-        
-    except Exception as e:
-        logger.error(f"[UnifiedIngest:{task_id}] Failed: {e}")
-        update_job_status(supabase, job_id, "failed", error_message=str(e))
-        
-        # Create failure notification
-        create_notification(
-            supabase, user_id,
-            "Ingestion Failed",
-            f"Failed to process {connector_type}: {str(e)}",
-            "error",
-            {"job_id": job_id, "connector": connector_type}
-        )
-        raise
-
-
-# ============================================================
-# LEGACY FILE INGESTION TASK (TO BE DEPRECATED)
-# ============================================================
 
 @celery_app.task(
     bind=True,
