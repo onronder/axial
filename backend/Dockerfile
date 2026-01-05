@@ -20,8 +20,15 @@ RUN apt-get update \
 
 # Install Python dependencies
 COPY requirements.txt .
+
+# CACHE BUSTER: Force rebuild to install gevent
+ARG CACHEBUST=2026010516450001
+
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    # Force install gevent to ensure it's available
+    && pip install --no-cache-dir --force-reinstall gevent>=23.9.1 \
+    && python -c "import gevent; print(f'✅ gevent {gevent.__version__} installed')"
 
 # Copy application code
 COPY . .
