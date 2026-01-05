@@ -422,9 +422,9 @@ async def generate_upload_url(
         )
     
     # 2. Check quota before generating URL
-    can_upload, reason = await check_can_upload(user_id, body.file_size)
-    if not can_upload:
-        raise HTTPException(status_code=403, detail=reason)
+    quota_check = await check_can_upload(user_id, body.file_size)
+    if not quota_check["allowed"]:
+        raise HTTPException(status_code=403, detail=quota_check["reason"])
     
     # 3. Generate unique storage path (SECURITY: sanitize filename to prevent path traversal)
     unique_id = str(uuid.uuid4())
@@ -490,14 +490,14 @@ async def ingest_file_reference(
         # Continue anyway - worker will fail if file doesn't exist
     
     # 2. Check quota (double-check)
-    can_upload, reason = await check_can_upload(user_id, body.file_size)
-    if not can_upload:
+    quota_check = await check_can_upload(user_id, body.file_size)
+    if not quota_check["allowed"]:
         # Cleanup the uploaded file
         try:
             supabase.storage.from_(STAGING_BUCKET).remove([body.storage_path])
         except:
             pass
-        raise HTTPException(status_code=403, detail=reason)
+        raise HTTPException(status_code=403, detail=quota_check["reason"])
     
     # 3. Create ingestion job
     job_data = {
