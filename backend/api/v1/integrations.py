@@ -395,19 +395,17 @@ async def exchange_notion_token(
             
             if job_response.data:
                 job_id = job_response.data[0]["id"]
-                # Queue the connector ingestion tasks (one per page)
-                from worker.tasks import ingest_connector_task
-                task_ids = []
-                for item_id in items:
-                    task = unified_ingest_task.delay(
-                        user_id=user_id,
-                        job_id=str(job_id),
-                        connector_type="notion",
-                        item_id=item_id,
-                        credentials={"access_token": access_token}
-                    )
-                    task_ids.append(task.id)
-                logger.info(f"📥 [OAuth] Auto-ingestion started: {len(items)} pages, job {job_id}, tasks: {len(task_ids)}")
+                # Queue the unified ingestion task
+                from worker.tasks import unified_ingest_task
+                
+                task = unified_ingest_task.delay(
+                    user_id=user_id,
+                    job_id=str(job_id),
+                    connector_type="notion",
+                    item_ids=items,  # Pass all items at once
+                    credentials={"access_token": access_token}
+                )
+                logger.info(f"📥 [OAuth] Auto-ingestion started: {len(items)} pages, job {job_id}, task: {task.id}")
         else:
             logger.info("📥 [OAuth] No Notion pages found to ingest")
             
@@ -685,21 +683,18 @@ async def ingest_provider_items(
         job_id = job_response.data[0]["id"]
         logger.info(f"📋 [Ingest] Created job {job_id} for {len(request.item_ids)} items")
         
-        # 3. Queue the connector ingestion tasks (one per item)
-        from worker.tasks import ingest_connector_task
+        # 3. Queue the unified ingestion task
+        from worker.tasks import unified_ingest_task
         
-        task_ids = []
-        for item_id in request.item_ids:
-            task = unified_ingest_task.delay(
-                user_id=user_id,
-                job_id=str(job_id),
-                connector_type=provider,
-                item_id=item_id,
-                credentials=credentials
-            )
-            task_ids.append(task.id)
+        task = unified_ingest_task.delay(
+            user_id=user_id,
+            job_id=str(job_id),
+            connector_type=provider,
+            item_ids=request.item_ids,  # Pass all items at once
+            credentials=credentials
+        )
         
-        logger.info(f"📥 [Ingest] Queued {len(task_ids)} tasks for job {job_id}")
+        logger.info(f"📥 [Ingest] Queued task {task.id} for job {job_id}")
         
         # 4. Return 202 Accepted with job info
         return {
