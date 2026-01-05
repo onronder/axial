@@ -516,18 +516,18 @@ async def ingest_file_reference(
     
     job_id = str(job_res.data[0]["id"])
     
-    # 4. Dispatch to worker (same task as regular file upload)
-    from worker.tasks import ingest_file_task
+    # 4. Dispatch to worker using UNIFIED pipeline
+    from worker.tasks import unified_ingest_task
     try:
-        task = ingest_file_task.delay(
+        task = unified_ingest_task.delay(
             user_id=user_id,
             job_id=job_id,
-            storage_path=body.storage_path,
-            filename=body.filename,
-            metadata=body.metadata
+            connector_type="file_upload",
+            item_ids=[body.storage_path],  # List of storage paths
+            credentials=None  # No credentials needed for file upload
         )
     except Exception as e:
-        logger.error(f"❌ [Ingest] Failed to dispatch file reference task: {e}")
+        logger.error(f"❌ [Ingest] Failed to dispatch unified task: {e}")
         try:
             supabase.storage.from_(STAGING_BUCKET).remove([body.storage_path])
         except:
@@ -537,5 +537,5 @@ async def ingest_file_reference(
             detail="Task queue unavailable. Please try again later."
         )
     
-    logger.info(f"📄 [Ingest] File reference task queued: {body.filename}, task={task.id}")
+    logger.info(f"📄 [Ingest] Unified task queued: {body.filename}, task={task.id}")
     return IngestResponse(status="queued", doc_id=job_id)
