@@ -125,6 +125,19 @@ export function GlobalProgress() {
                                 variant: "destructive",
                             });
                         }
+
+                        if (newJob.status === "cancelled" && oldJob?.status !== "cancelled") {
+                            toast({
+                                title: "Ingestion Cancelled",
+                                description: `${providerLabels[newJob.provider] || newJob.provider} ingestion was cancelled.`,
+                                variant: "default",
+                            });
+
+                            // Auto-dismiss after delay
+                            setTimeout(() => {
+                                setJobs((prev) => prev.filter((j) => j.id !== newJob.id));
+                            }, COMPLETION_DISPLAY_TIME);
+                        }
                     }
                 }
             )
@@ -180,6 +193,7 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
     const isActive = job.status === "pending" || job.status === "processing";
     const isComplete = job.status === "completed";
     const isFailed = job.status === "failed";
+    const isCancelled = job.status === "cancelled";
 
     // Status message from backend or fallback
     const statusText = job.status_message ||
@@ -199,11 +213,12 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
                 "bg-card/95 dark:bg-card/95",
                 isActive && "border-primary/30",
                 isComplete && "border-green-500/30 bg-green-50/50 dark:bg-green-950/20",
-                isFailed && "border-red-500/30 bg-red-50/50 dark:bg-red-950/20"
+                isFailed && "border-red-500/30 bg-red-50/50 dark:bg-red-950/20",
+                isCancelled && "border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20"
             )}
         >
             {/* Dismiss button */}
-            {(isComplete || isFailed) && (
+            {(isComplete || isFailed || isCancelled) && (
                 <button
                     onClick={onDismiss}
                     className="absolute top-1 right-1 p-1 rounded-full hover:bg-muted transition-colors"
@@ -217,12 +232,15 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
                 isActive && "bg-primary/10",
                 isComplete && "bg-green-100 dark:bg-green-900/30",
-                isFailed && "bg-red-100 dark:bg-red-900/30"
+                isFailed && "bg-red-100 dark:bg-red-900/30",
+                isCancelled && "bg-amber-100 dark:bg-amber-900/30"
             )}>
                 {isActive ? (
                     <Loader2 className="h-5 w-5 animate-spin text-primary" />
                 ) : isComplete ? (
                     <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                ) : isCancelled ? (
+                    <XCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                 ) : (
                     <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
                 )}
@@ -267,6 +285,12 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
                 {isFailed && (
                     <p className="mt-0.5 text-xs text-red-600 dark:text-red-400 truncate pr-4">
                         {job.error_message || "Processing failed"}
+                    </p>
+                )}
+
+                {isCancelled && (
+                    <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                        Cancelled
                     </p>
                 )}
             </div>

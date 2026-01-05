@@ -203,7 +203,7 @@ async def ingest_document(
     # ROUTE 2: CLOUD CONNECTORS (Drive, Notion)
     # =========================================================
     if drive_id or notion_page_id:
-        from worker.tasks import ingest_connector_task
+        # Import unified task
         
         connector_type = "drive" if drive_id else "notion"
         item_id = drive_id if drive_id else notion_page_id
@@ -337,9 +337,11 @@ async def ingest_document(
         job_id = str(job_res.data[0]["id"])
         
         # Dispatch to worker
-        from worker.tasks import ingest_file_task
+        # Import unified task
+        from worker.tasks import unified_ingest_task
+        
         try:
-            task = ingest_file_task.delay(
+            task = unified_ingest_task.delay(
                 user_id=user_id,
                 job_id=job_id,
                 storage_path=storage_path,
