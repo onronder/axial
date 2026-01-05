@@ -97,12 +97,13 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     try:
         model = get_embeddings_model()
         
-        # PRODUCTION TUNING: Maximum Safety
-        # Dense PDF pages can have 2000+ tokens. With 20 chunks * 2000 = 40k tokens max.
-        # This guarantees we NEVER hit the 300k token limit per request.
-        BATCH_SIZE = 20
-        # Conservative sleep interval to respect Tokens Per Minute (TPM) limits
-        SLEEP_INTERVAL = 1.0
+        # PERFORMANCE OPTIMIZATION: Increased batch size for efficiency
+        # OpenAI allows up to 2048 embeddings per request
+        # 100 chunks provides optimal balance of speed and reliability
+        # Reduces API calls by 80% compared to batch size of 20
+        BATCH_SIZE = 100
+        # Sleep interval to respect rate limits
+        SLEEP_INTERVAL = 0.5  # Reduced from 1.0 for faster processing
         
         all_embeddings = []
         

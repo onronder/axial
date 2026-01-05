@@ -297,15 +297,15 @@ class IngestionPipeline:
                 }
             })
         
-        # Call atomic RPC
-        result = self.supabase.rpc("ingest_document_atomic", {
+        # Call RPC (using correct function name)
+        result = self.supabase.rpc("ingest_document_with_chunks", {
             "p_user_id": self.user_id,
             "p_filename": doc.filename,
             "p_file_type": doc.mime_type,
-            "p_file_size": doc.size_bytes,
             "p_source_type": doc.source_type.value,
-            "p_source_url": doc.metadata.get("source_url"),
-            "p_chunks": chunks_data
+            "p_source_metadata": doc.metadata,
+            "p_chunks": chunks_data,
+            "p_file_size_bytes": doc.size_bytes
         }).execute()
         
         if not result.data:
@@ -339,7 +339,7 @@ class IngestionPipeline:
     def _create_file_status(self, doc: SourceDocument) -> str:
         """Create file status tracker."""
         try:
-            result = self.supabase.table("file_ingestion_status").insert({
+            result = self.supabase.table("ingestion_file_status").insert({
                 "job_id": self.job_id,
                 "user_id": self.user_id,
                 "filename": doc.filename,
@@ -364,7 +364,7 @@ class IngestionPipeline:
                 "status_message": message,
                 **kwargs
             }
-            self.supabase.table("file_ingestion_status").update(update_data).eq("id", file_id).execute()
+            self.supabase.table("ingestion_file_status").update(update_data).eq("id", file_id).execute()
         except Exception as e:
             logger.warning(f"[Pipeline] Failed to update file status: {e}")
     
