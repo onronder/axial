@@ -371,7 +371,7 @@ class IngestionPipeline:
                 "job_id": self.job_id,
                 "user_id": self.user_id,
                 "filename": doc.filename,
-                "file_size": doc.size_bytes,
+                "file_size_bytes": doc.size_bytes,  # Correct column name from database schema
                 "status": "pending",
                 "progress": 0
             }).execute()
