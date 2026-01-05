@@ -219,6 +219,7 @@ export interface UploadUrlResponse {
 export interface IngestReferenceResponse {
     status: string;
     doc_id: string;
+    job_id?: string;  // Optional: returned when file is queued for processing
 }
 
 /**

@@ -325,13 +325,14 @@ class IngestionPipeline:
                 }
             })
         
-        # Call RPC (using correct function name)
+        # Call RPC with parameters matching database function signature exactly
+        # Function: ingest_document_with_chunks(p_user_id, p_doc_title, p_source_type, p_source_url, p_metadata, p_chunks, p_file_size_bytes)
         result = self.supabase.rpc("ingest_document_with_chunks", {
             "p_user_id": self.user_id,
-            "p_filename": doc.filename,
-            "p_file_type": doc.mime_type,
+            "p_doc_title": doc.filename,  # Database expects p_doc_title (not p_filename)
             "p_source_type": doc.source_type.value,
-            "p_source_metadata": doc.metadata,
+            "p_source_url": doc.metadata.get("source_url", ""),  # Required parameter
+            "p_metadata": doc.metadata,  # Database expects p_metadata (not p_source_metadata)
             "p_chunks": chunks_data,
             "p_file_size_bytes": doc.size_bytes
         }).execute()
