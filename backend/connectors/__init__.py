@@ -4,12 +4,16 @@ from connectors.enhanced import EnhancedConnector
 from connectors.drive import DriveConnector
 from connectors.file_upload import FileUploadConnector
 from connectors.google_drive import GoogleDriveConnector
+from connectors.notion_enhanced import NotionConnectorEnhanced
+from connectors.web_enhanced import WebConnectorEnhanced
 
-# Connector registry
+# Connector registry - ALL 4 connectors migrated
 CONNECTORS: Dict[str, Type[EnhancedConnector]] = {
     "file_upload": FileUploadConnector,
     "google_drive": GoogleDriveConnector,
-    # Legacy alias
+    "notion": NotionConnectorEnhanced,
+    "web": WebConnectorEnhanced,
+    # Legacy aliases
     "drive": GoogleDriveConnector,
-    # Add more connectors here as they're migrated
+    "file": FileUploadConnector,
 }
