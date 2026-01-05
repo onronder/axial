@@ -700,7 +700,7 @@ async def ingest_provider_items(
         return {
             "status": "accepted",
             "message": f"Ingestion queued for {len(request.item_ids)} items",
-            "task_ids": task_ids,
+            "task_id": task.id,
             "job_id": str(job_id)
         }
 

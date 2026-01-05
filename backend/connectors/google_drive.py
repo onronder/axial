@@ -55,8 +55,8 @@ class GoogleDriveConnector(EnhancedConnector):
         
         logger.info(f"[GoogleDrive] Fetching {len(item_ids)} items for user {user_id}")
         
-        # Fetch documents using legacy connector
-        async for doc in self.legacy.ingest(config):
+        # Fetch documents using legacy connector (await the async generator)
+        async for doc in await self.legacy.ingest(config):
             # Convert ConnectorDocument to SourceDocument
             content = doc.page_content
             

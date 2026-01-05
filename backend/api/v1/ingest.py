@@ -445,14 +445,14 @@ async def generate_upload_url(
             logger.error(f"❌ [Upload] Supabase returned None for {storage_path}")
             raise HTTPException(status_code=500, detail="Storage service returned empty response")
         
-        if not result.get("signedURL"):
-            logger.error(f"❌ [Upload] No signedURL in response: {result}")
+        if not result.get("signed_url"):
+            logger.error(f"❌ [Upload] No signed_url in response: {result}")
             raise HTTPException(status_code=500, detail="Failed to generate upload URL")
         
         logger.info(f"📤 [Upload] Generated presigned URL for {body.filename} ({storage_path})")
         
         return UploadUrlResponse(
-            upload_url=result["signedURL"],
+            upload_url=result["signed_url"],
             storage_path=storage_path,
             expires_in=3600  # 1 hour
         )
