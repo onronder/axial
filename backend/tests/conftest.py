@@ -12,6 +12,8 @@ from unittest.mock import Mock, AsyncMock, patch
 from fastapi.testclient import TestClient
 import sys
 import os
+import asyncio
+from uuid import uuid4
 
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
