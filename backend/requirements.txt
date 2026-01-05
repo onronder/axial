@@ -7,7 +7,8 @@ pydantic==2.6.1
 pydantic-settings==2.1.0
 
 # --- AUTH & DB ---
-# Supabase 2.10.0 is stable and manages httpx version well
+# Pin httpx to avoid conflicts with supabase, postgrest, storage3, supafunc
+httpx[http2]>=0.26,<0.28
 supabase==2.10.0
 psycopg2-binary==2.9.9
 python-jose[cryptography]==3.3.0
@@ -16,22 +17,28 @@ python-multipart==0.0.9
 redis==5.0.1
 sqlmodel==0.0.16
 
-# --- AI & LANGCHAIN ECOSYSTEM (UNPINNED) ---
-# We use >= to let pip resolve the complex dependency graph automatically
-openai>=1.12.0
-langchain>=0.1.10
-langchain-openai>=0.0.5
-langchain-community>=0.0.20
-langchain-groq
+# --- AI & LANGCHAIN ECOSYSTEM ---
+# Pin older versions that work together without conflicts
+openai>=1.12.0,<2.0.0
+langchain>=0.2.0,<0.3.0
+langchain-core>=0.2.0,<0.3.0
+langchain-openai>=0.1.0,<0.2.0
+langchain-community>=0.2.0,<0.3.0
+langchain-groq>=0.1.0,<0.2.0
 groq
 tiktoken>=0.5.2
 
+# Pin these to avoid langchain conflicts
+tenacity>=8.1.0,<9.0.0
+numpy>=1.24.0,<2.0.0
+packaging>=23.2,<25
+
 # --- UTILITIES ---
 celery==5.3.6
+requests==2.31.0
 resend==0.7.0
 sentry-sdk[fastapi]>=2.35.0
 async-lru==2.0.4
-tenacity==8.2.3
 python-docx==1.1.0
 pypdf>=3.17.0
 PyMuPDF>=1.23.0
@@ -53,12 +60,6 @@ ultimate-sitemap-parser
 youtube-transcript-api
 lxml
 
-# NOTE: polar-sdk is REMOVED to avoid httpx conflicts. 
-# We use raw HTTP requests for billing.beautifulsoup4
-lxml
-youtube-transcript-api
-jinja2
-
 # --- ADVANCED DOCUMENT PARSING (OCR) ---
-llama-parse
+llama-parse>=0.5.0
 nest_asyncio
