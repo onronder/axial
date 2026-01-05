@@ -10,6 +10,7 @@ pydantic==2.6.1
 pydantic-settings==2.1.0
 openai==1.12.0
 celery[redis]==5.3.6
+# CRITICAL: gevent required for async Celery pool (added 2026-01-05)
 gevent>=23.9.1
 redis==5.0.1
 # CRITICAL FIX: Upgraded supabase to support newer httpx
