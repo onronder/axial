@@ -337,16 +337,15 @@ async def ingest_document(
         job_id = str(job_res.data[0]["id"])
         
         # Dispatch to worker
-        # Import unified task
         from worker.tasks import unified_ingest_task
         
         try:
             task = unified_ingest_task.delay(
                 user_id=user_id,
                 job_id=job_id,
-                storage_path=storage_path,
-                filename=file.filename,
-                metadata=meta_dict
+                connector_type="file_upload",
+                item_ids=[storage_path],  # Pass as list
+                credentials=None
             )
         except Exception as e:
             logger.error(f"❌ [Ingest] Failed to dispatch file task: {e}")
@@ -442,7 +441,12 @@ async def generate_upload_url(
         # Use create_signed_upload_url for direct uploads
         result = supabase.storage.from_(STAGING_BUCKET).create_signed_upload_url(storage_path)
         
-        if not result or not result.get("signedURL"):
+        if not result:
+            logger.error(f"❌ [Upload] Supabase returned None for {storage_path}")
+            raise HTTPException(status_code=500, detail="Storage service returned empty response")
+        
+        if not result.get("signedURL"):
+            logger.error(f"❌ [Upload] No signedURL in response: {result}")
             raise HTTPException(status_code=500, detail="Failed to generate upload URL")
         
         logger.info(f"📤 [Upload] Generated presigned URL for {body.filename} ({storage_path})")
@@ -452,8 +456,10 @@ async def generate_upload_url(
             storage_path=storage_path,
             expires_in=3600  # 1 hour
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ [Upload] Failed to generate presigned URL: {e}")
+        logger.error(f"❌ [Upload] Failed to generate presigned URL: {type(e).__name__}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
 
 
