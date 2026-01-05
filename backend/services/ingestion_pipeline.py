@@ -73,6 +73,9 @@ class IngestionPipeline:
         Returns:
             Dict with processing results
         """
+        import asyncio
+        from asyncio import Semaphore
+        
         logger.info(f"[Pipeline:{self.job_id}] Starting ingestion from {source_type}")
         
         # STEP 1: Initialize job
@@ -114,43 +117,56 @@ class IngestionPipeline:
         # Update job with total count
         self._update_job_total(self.total_docs)
         
-        # STEP 3: Process each document
-        results = []
-        for i, doc in enumerate(documents):
-            doc_number = i + 1
-            try:
-                logger.info(f"[Pipeline:{self.job_id}] Processing {doc_number}/{self.total_docs}: {doc.filename}")
-                result = await self._process_single_document(doc, doc_number)
-                results.append(result)
-                self.processed_docs += 1
+        # STEP 3: Process documents in parallel with concurrency limit
+        # Concurrency limit prevents overwhelming external APIs (LlamaParse, OpenAI)
+        CONCURRENCY_LIMIT = 3
+        semaphore = Semaphore(CONCURRENCY_LIMIT)
+        
+        async def process_with_limit(doc: SourceDocument, doc_number: int):
+            """Process single document with concurrency control."""
+            async with semaphore:
+                try:
+                    logger.info(f"[Pipeline:{self.job_id}] Processing {doc_number}/{self.total_docs}: {doc.filename}")
+                    result = await self._process_single_document(doc, doc_number)
+                    self.processed_docs += 1
+                    return {"status": "success", "doc": doc, "result": result}
+                    
+                except QuotaExceededError as e:
+                    logger.warning(f"[Pipeline:{self.job_id}] Quota exceeded: {e}")
+                    self.failed_docs += 1
+                    self._create_notification(
+                        "Quota Exceeded",
+                        str(e),
+                        "warning"
+                    )
+                    return {"status": "quota_exceeded", "doc": doc, "error": str(e)}
+                    
+                except Exception as e:
+                    logger.error(f"[Pipeline:{self.job_id}] Failed to process {doc.filename}: {e}")
+                    self.failed_docs += 1
+                    self._create_notification(
+                        "Document Failed",
+                        f"Failed to process {doc.filename}: {str(e)}",
+                        "error"
+                    )
+                    return {"status": "failed", "doc": doc, "error": str(e)}
                 
-            except QuotaExceededError as e:
-                logger.warning(f"[Pipeline:{self.job_id}] Quota exceeded: {e}")
-                self.failed_docs += 1
-                self._create_notification(
-                    "Quota Exceeded",
-                    str(e),
-                    "warning"
-                )
-                # Stop processing on quota errors
-                break
-                
-            except Exception as e:
-                logger.error(f"[Pipeline:{self.job_id}] Failed to process {doc.filename}: {e}")
-                self.failed_docs += 1
-                self._create_notification(
-                    "Document Failed",
-                    f"Failed to process {doc.filename}: {str(e)}",
-                    "error"
-                )
-            
-            # Update progress
-            progress = int(doc_number / self.total_docs * 100)
-            self._update_job_status(
-                "processing", 
-                progress,
-                f"Processed {doc_number}/{self.total_docs} documents"
-            )
+                finally:
+                    # Update progress after each document
+                    progress = int((self.processed_docs + self.failed_docs) / self.total_docs * 100)
+                    self._update_job_status(
+                        "processing",
+                        progress,
+                        f"Processed {self.processed_docs + self.failed_docs}/{self.total_docs} documents"
+                    )
+        
+        # Process all documents in parallel
+        tasks = [process_with_limit(doc, i + 1) for i, doc in enumerate(documents)]
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+        
+        # Check if we should stop (quota exceeded)
+        if any(r.get("status") == "quota_exceeded" for r in results):
+            logger.warning(f"[Pipeline:{self.job_id}] Stopping due to quota exceeded")
         
         # STEP 4: Finalize
         final_status = "completed" if self.failed_docs == 0 else "partial"
@@ -174,20 +190,23 @@ class IngestionPipeline:
             "bytes": self.total_bytes
         }
     
+    
     async def _process_single_document(
         self, 
         doc: SourceDocument, 
         doc_number: int
     ) -> Dict[str, Any]:
         """Process a single document through the pipeline."""
+        import time
         
         # Create file status tracker
         file_status_id = self._create_file_status(doc)
         local_path = None
+        start_time = time.time()
         
         try:
             # STEP 1: Validate & quota check
-            self._update_file_status(file_status_id, "validating", 5, "Validating...")
+            self._update_file_status(file_status_id, "validating", 5, "Validating file...")
             await self._validate_document(doc)
             
             # STEP 2: Write to temp file
@@ -195,39 +214,48 @@ class IngestionPipeline:
             local_path = self._write_to_temp(doc)
             
             # STEP 3: Parse & chunk
-            self._update_file_status(file_status_id, "processing", 25, "Extracting content...")
+            self._update_file_status(file_status_id, "processing", 25, "Extracting content (this may take 30-90s for PDFs)...")
+            parse_start = time.time()
             chunks = await self._parse_and_chunk(local_path, doc.filename)
+            parse_time = int(time.time() - parse_start)
             
             if not chunks:
                 self._update_file_status(file_status_id, "completed", 100, 
-                    message="No content extracted", chunks_total=0)
+                    message=f"No content extracted (completed in {parse_time}s)", chunks_total=0)
                 return {"status": "skipped", "reason": "empty"}
             
             # STEP 4: Generate embeddings
             self._update_file_status(file_status_id, "embedding", 50, 
-                f"Generating embeddings for {len(chunks)} chunks...")
+                f"Generating embeddings for {len(chunks)} chunks (est. {len(chunks)//100 * 2}s)...")
+            embed_start = time.time()
             embeddings = await self._generate_embeddings(chunks)
+            embed_time = int(time.time() - embed_start)
             
             # STEP 5: Store in database (atomic)
             self._update_file_status(file_status_id, "storing", 75, "Storing in database...")
             doc_id = await self._store_document(doc, chunks, embeddings)
             
             # STEP 6: Success
+            total_time = int(time.time() - start_time)
             self._update_file_status(file_status_id, "completed", 100,
-                message="Successfully processed", chunks_total=len(chunks))
+                message=f"✅ Completed in {total_time}s (parse: {parse_time}s, embed: {embed_time}s)", 
+                chunks_total=len(chunks))
             
             self.total_chunks += len(chunks)
             self.total_bytes += doc.size_bytes
             
+            logger.info(f"[Pipeline] Processed {doc.filename}: {len(chunks)} chunks in {total_time}s")
+            
             return {
                 "status": "success",
                 "doc_id": doc_id,
-                "chunks": len(chunks)
+                "chunks": len(chunks),
+                "time": total_time
             }
             
         except Exception as e:
             self._update_file_status(file_status_id, "failed", 0,
-                message=str(e))
+                message=f"❌ {str(e)}")
             raise
             
         finally:
