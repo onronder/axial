@@ -209,6 +209,25 @@ export function DataSourcesGrid() {
         )}
       </div>
 
+      {/* File Upload Section */}
+      <div className="space-y-4">
+        <h2 className="font-medium text-foreground border-b border-border pb-2">
+          Local Files
+        </h2>
+        <FileUploadZone
+          source={{
+            id: "local-upload",
+            name: "Upload Files",
+            type: "file",
+            status: "disconnected",
+            lastSync: "-",
+            icon: "upload",
+            description: "Drag & drop PDF, TXT, or DOCX files to upload",
+            category: "files",
+          }}
+        />
+      </div>
+
       {/* Coming Soon Section */}
       <ComingSoonIntegrations />
     </div>
