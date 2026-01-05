@@ -326,10 +326,10 @@ export function DocumentsTable() {
                                 <Download className="mr-2 h-4 w-4" /> Download
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem>
-                              <ExternalLink className="mr-2 h-4 w-4" /> View Source
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => doc.sourceUrl && window.open(doc.sourceUrl, '_blank')}
+                              disabled={!doc.sourceUrl}
+                            >
                               <ExternalLink className="mr-2 h-4 w-4" /> View Source
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />

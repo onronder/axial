@@ -343,24 +343,28 @@ def format_context_with_citations(docs: List[Dict]) -> tuple:
     
     for i, doc in enumerate(docs, 1):
         content = doc.get('content', '')
-        metadata = doc.get('metadata', {})
+        metadata = doc.get('metadata', {}) or {}  # Ensure dict even if None
         source_type = doc.get('source_type', metadata.get('source', 'unknown'))
+        
+        # IMPORTANT: hybrid_search returns 'title' at top-level, NOT inside metadata
+        # Check top-level first, then fall back to metadata
+        doc_title = doc.get('title') or metadata.get('title')
         
         # Build source label based on type
         if source_type == "web":
-            source_label = metadata.get("url", metadata.get("source_url", "Web Page"))
+            source_label = metadata.get("url") or metadata.get("source_url") or doc_title or "Web Page"
             source_type_display = "Web"
         elif source_type == "file":
-            source_label = metadata.get("filename", metadata.get("title", "Uploaded File"))
+            source_label = doc_title or metadata.get("filename") or "Uploaded File"
             source_type_display = "File"
-        elif source_type == "drive":
-            source_label = metadata.get("title", "Google Drive")
+        elif source_type == "drive" or source_type == "google_drive":
+            source_label = doc_title or "Google Drive File"
             source_type_display = "Drive"
         elif source_type == "notion":
-            source_label = metadata.get("title", "Notion Page")
+            source_label = doc_title or "Notion Page"
             source_type_display = "Notion"
         else:
-            source_label = metadata.get("title", metadata.get("filename", "Document"))
+            source_label = doc_title or metadata.get("filename") or "Document"
             source_type_display = source_type.title() if source_type else "Doc"
         
         # Get additional context (page, section, etc.)
