@@ -102,38 +102,8 @@ def log_task_failure(
                 f"will retry in {retry_delays[0]} minutes"
             )
             
-            # Send email notification on first failure
-            if user_id:
-                try:
-                    from services.email import email_service
-                    email_service.send_retry_scheduled_email(
-                        user_id=user_id,
-                        job_id=job_id,
-                        retry_time=next_retry,
-                        error_message=str(exc),
-                        attempt_count=1
-                    )
-                    logger.info(f"📧 [DLQ] Sent retry scheduled email to user {user_id}")
-                except Exception as email_error:
-                    logger.error(f"❌ [DLQ] Failed to send retry email: {email_error}")
-        
-        # Send permanently failed email if needed
-        if user_id and status == 'permanently_failed':
-            try:
-                from services.email import email_service
-                support_link = f"{settings.APP_URL}/support?task_id={task_id}&job_id={job_id}"
-                email_service.send_permanently_failed_email(
-                    user_id=user_id,
-                    job_id=job_id,
-                    error_message=str(exc),
-                    support_link=support_link
-                )
-                logger.info(f"📧 [DLQ] Sent permanently failed email to user {user_id}")
-            except Exception as email_error:
-                logger.error(f"❌ [DLQ] Failed to send permanently failed email: {email_error}")
-            
-    except Exception as e:
-        logger.error(f"❌ [DLQ] Failed to log task failure: {e}")
+        except Exception as e:
+            logger.error(f"❌ [DLQ] Failed to log task failure: {e}")
 
 
 def retry_failed_tasks() -> Dict[str, Any]:
