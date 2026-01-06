@@ -207,7 +207,7 @@ class IngestionPipeline:
         
         try:
             # STEP 1: Validate & quota check
-            self._update_file_status(file_status_id, "validating", 5, "Validating file...")
+            self._update_file_status(file_status_id, "processing", 5, "Validating file...")
             await self._validate_document(doc)
             
             # STEP 2: Write to temp file
@@ -249,7 +249,7 @@ class IngestionPipeline:
             )
             
             # STEP 5: Store in database (atomic)
-            self._update_file_status(file_status_id, "storing", 75, "Storing in database...")
+            self._update_file_status(file_status_id, "indexing", 75, "Storing in database...")
             
             # Update: Starting indexing
             self._update_chunk_progress(

@@ -1004,7 +1004,7 @@ def process_file_task(
         
         # STEP 4: Store in database
         supabase.table("ingestion_file_status").update({
-            "status": "storing",
+            "status": "indexing",
             "progress": 75,
             "message": "Storing in database..."
         }).eq("id", file_status_id).execute()
