@@ -826,7 +826,7 @@ def unified_ingest_task(
                 "file_size_bytes": doc.size_bytes,  # FIXED: was "file_size"
                 "status": "pending",
                 "progress": 0,
-                "message": "Queued for processing..."
+                "status_message": "Queued for processing..."  # FIXED: was "message"
             }).execute()
             
             file_status_id = file_status_result.data[0]["id"]
