@@ -823,7 +823,7 @@ def unified_ingest_task(
                 "job_id": job_id,
                 "user_id": user_id,
                 "filename": doc.filename,
-                "file_size": doc.size_bytes,
+                "file_size_bytes": doc.size_bytes,  # FIXED: was "file_size"
                 "status": "pending",
                 "progress": 0,
                 "message": "Queued for processing..."
