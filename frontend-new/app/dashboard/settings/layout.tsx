@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { User, Database, FileText, Bell, CreditCard, Users, Settings } from "lucide-react";
+import { User, Database, FileText, Bell, CreditCard, Users, Settings, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
@@ -13,6 +13,7 @@ const settingsNav = [
     { name: "Team", path: "/dashboard/settings/team", icon: Users },
     { name: "Notifications", path: "/dashboard/settings/notifications", icon: Bell },
     { name: "Billing", path: "/dashboard/settings/billing", icon: CreditCard },
+    { name: "Failed Tasks", path: "/dashboard/settings/failed-tasks", icon: AlertTriangle },
 ];
 
 export default function SettingsLayout({
