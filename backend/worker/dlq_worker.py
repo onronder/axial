@@ -102,8 +102,8 @@ def log_task_failure(
                 f"will retry in {retry_delays[0]} minutes"
             )
             
-        except Exception as e:
-            logger.error(f"❌ [DLQ] Failed to log task failure: {e}")
+    except Exception as e:
+        logger.error(f"❌ [DLQ] Failed to log task failure: {e}")
 
 
 def retry_failed_tasks() -> Dict[str, Any]:

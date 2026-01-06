@@ -5,6 +5,8 @@ import { authFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, Folder, FileText, ChevronRight, Home, Upload, CheckSquare, Square } from "lucide-react"
+import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal"
+import { useFileStatus } from "@/hooks/useFileStatus"
 
 type ConnectorItem = {
     id: string
@@ -22,7 +24,11 @@ export function DriveExplorer() {
     const [selection, setSelection] = useState<Set<string>>(new Set())
     const [ingesting, setIngesting] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [currentJobId, setCurrentJobId] = useState<string | null>(null)
     const { toast } = useToast()
+
+    // Real-time file status subscription
+    const { files: fileStatuses } = useFileStatus(currentJobId)
 
     // Load Items for Current Folder
     useEffect(() => {
@@ -76,10 +82,17 @@ export function DriveExplorer() {
         if (selection.size === 0) return
         setIngesting(true)
         try {
-            await authFetch.post('/integrations/google_drive/ingest', { item_ids: Array.from(selection) })
+            const response = await authFetch.post('/integrations/google_drive/ingest', { item_ids: Array.from(selection) })
+            const jobId = response.data?.job_id
+
+            if (jobId) {
+                // Set job ID to trigger progress modal
+                setCurrentJobId(jobId)
+            }
+
             toast({
-                title: "Ingestion Queued",
-                description: `${selection.size} item(s) queued for processing.`,
+                title: "Ingestion Started",
+                description: `${selection.size} item(s) are now being processed.`,
             })
             setSelection(new Set())
         } catch {
@@ -245,6 +258,22 @@ export function DriveExplorer() {
                     </table>
                 )}
             </div>
+
+            {/* Progress Modal */}
+            {currentJobId && fileStatuses.length > 0 && (
+                <IngestionProgressModal
+                    jobId={currentJobId}
+                    files={fileStatuses}
+                    totalFiles={fileStatuses.length}
+                    overallProgress={
+                        fileStatuses.length > 0
+                            ? (fileStatuses.filter((f) => f.status === "completed").length /
+                                fileStatuses.length) * 100
+                            : 0
+                    }
+                    onClose={() => setCurrentJobId(null)}
+                />
+            )}
         </div>
     )
 }

@@ -241,6 +241,79 @@ async def manual_retry_task(
         )
 
 
+@router.post(
+    "/resolve/{task_id}",
+    response_model=ManualRetryResponse,
+    summary="Resolve a failed task",
+    description="Mark a failed task as resolved (dismisses it from the list)"
+)
+async def resolve_failed_task(
+    task_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Mark a failed task as resolved.
+    
+    This removes the task from the active failed list.
+    Used when the issue has been fixed manually or the task is no longer needed.
+    """
+    try:
+        supabase = get_supabase()
+        
+        # Get the task
+        result = supabase.table("failed_tasks").select("*").eq(
+            "id", task_id
+        ).eq(
+            "user_id", user_id  # Security: Only user's own tasks
+        ).single().execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found or access denied"
+            )
+        
+        task = result.data
+        
+        if task["status"] == "resolved":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Task is already resolved"
+            )
+        
+        # Update task status to resolved
+        now = datetime.now(timezone.utc)
+        update_result = supabase.table("failed_tasks").update({
+            "status": "resolved",
+            "resolved_at": now.isoformat(),
+            "updated_at": now.isoformat()
+        }).eq("id", task_id).execute()
+        
+        if not update_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update task status"
+            )
+        
+        logger.info(f"📥 [DLQ] Task {task_id} marked as resolved by user {user_id}")
+        
+        return ManualRetryResponse(
+            success=True,
+            message="Task marked as resolved",
+            task_id=task_id,
+            new_status="resolved"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resolving task {task_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to resolve task"
+        )
+
+
 @router.get(
     "/stats",
     response_model=DLQStatsResponse,

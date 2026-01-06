@@ -149,10 +149,10 @@ export function DLQDashboard() {
         setIsLoading(true);
         try {
             const [tasksRes, statsRes] = await Promise.all([
-                api.get('/admin/dlq/tasks'),
-                api.get('/admin/dlq/stats'),
+                api.get('/dlq/my-tasks'),
+                api.get('/dlq/stats'),
             ]);
-            setTasks(tasksRes.data || []);
+            setTasks(tasksRes.data?.tasks || []);
             setStats(statsRes.data || null);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to fetch DLQ data';
@@ -177,7 +177,7 @@ export function DLQDashboard() {
     const retryTask = async (taskId: string) => {
         setIsRetrying(taskId);
         try {
-            await api.post(`/admin/dlq/tasks/${taskId}/retry`);
+            await api.post(`/dlq/retry/${taskId}`);
             toast({
                 title: 'Retry Initiated',
                 description: 'Task has been queued for retry.',
@@ -200,9 +200,10 @@ export function DLQDashboard() {
         if (selectedTasks.size === 0) return;
 
         try {
-            await api.post('/admin/dlq/tasks/batch-retry', {
-                task_ids: Array.from(selectedTasks)
-            });
+            // Sequential retry for selected tasks (no batch endpoint yet)
+            for (const taskId of selectedTasks) {
+                await api.post(`/dlq/retry/${taskId}`);
+            }
             toast({
                 title: 'Batch Retry Initiated',
                 description: `${selectedTasks.size} tasks queued for retry.`,
@@ -222,7 +223,7 @@ export function DLQDashboard() {
     // Mark as resolved
     const resolveTask = async (taskId: string) => {
         try {
-            await api.post(`/admin/dlq/tasks/${taskId}/resolve`);
+            await api.post(`/dlq/resolve/${taskId}`);
             toast({
                 title: 'Task Resolved',
                 description: 'Task has been marked as resolved.',
