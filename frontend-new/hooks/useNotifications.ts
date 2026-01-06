@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { authFetch } from "@/lib/api";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 export interface Notification {
@@ -47,9 +47,7 @@ export interface GroupedNotification {
 
 const POLL_INTERVAL = 30000; // 30 seconds fallback
 
-// Initialize Supabase client for realtime
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+// Supabase client will be initialized on-demand using shared singleton
 
 export function useNotifications() {
     const { toast } = useToast();
@@ -122,13 +120,9 @@ export function useNotifications() {
 
     // Setup Supabase Realtime subscription
     const setupRealtimeSubscription = useCallback(async () => {
-        if (!supabaseUrl || !supabaseAnonKey) {
-            console.warn("⚠️ Supabase credentials not configured for realtime");
-            return;
-        }
-
         try {
-            const supabase = createClient(supabaseUrl, supabaseAnonKey);
+            // Use shared singleton client to avoid "Multiple GoTrueClient" warning
+            const supabase = createClient();
 
             // Get current user ID from profile API
             const response = await authFetch.get("/settings/profile");
@@ -154,7 +148,7 @@ export function useNotifications() {
                     },
                     handleRealtimeInsert
                 )
-                .subscribe((status) => {
+                .subscribe((status: string) => {
                     console.log("🔔 [Realtime] Subscription status:", status);
                     setIsRealtimeConnected(status === 'SUBSCRIBED');
                 });
