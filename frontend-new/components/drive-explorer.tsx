@@ -260,7 +260,7 @@ export function DriveExplorer() {
             </div>
 
             {/* Progress Modal */}
-            {currentJobId && fileStatuses.length > 0 && (
+            {currentJobId && (
                 <IngestionProgressModal
                     jobId={currentJobId}
                     files={fileStatuses}
