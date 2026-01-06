@@ -22,6 +22,7 @@ from services.usage import check_can_upload
 from services.parsers import DocumentProcessorFactory
 from services.embeddings import generate_embeddings_batch
 from core.db import get_supabase
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +225,14 @@ class IngestionPipeline:
                     message=f"No content extracted (completed in {parse_time}s)", chunks_total=0)
                 return {"status": "skipped", "reason": "empty"}
             
+            # Update: Chunking complete, starting embedding
+            self._update_chunk_progress(
+                file_status_id=file_status_id,
+                chunks_processed=0,
+                chunks_total=len(chunks),
+                current_stage="chunking"
+            )
+            
             # STEP 4: Generate embeddings
             self._update_file_status(file_status_id, "embedding", 50, 
                 f"Generating embeddings for {len(chunks)} chunks (est. {len(chunks)//100 * 2}s)...")
@@ -231,8 +240,25 @@ class IngestionPipeline:
             embeddings = await self._generate_embeddings(chunks)
             embed_time = int(time.time() - embed_start)
             
+            # Update: Embedding complete, starting indexing
+            self._update_chunk_progress(
+                file_status_id=file_status_id,
+                chunks_processed=len(chunks),
+                chunks_total=len(chunks),
+                current_stage="embedding"
+            )
+            
             # STEP 5: Store in database (atomic)
             self._update_file_status(file_status_id, "storing", 75, "Storing in database...")
+            
+            # Update: Starting indexing
+            self._update_chunk_progress(
+                file_status_id=file_status_id,
+                chunks_processed=len(chunks),
+                chunks_total=len(chunks),
+                current_stage="indexing"
+            )
+            
             doc_id = await self._store_document(doc, chunks, embeddings)
             
             # STEP 6: Success
@@ -305,9 +331,19 @@ class IngestionPipeline:
         return result.chunks
     
     async def _generate_embeddings(self, chunks: list) -> list:
-        """Generate embeddings for chunks."""
+        """Generate embeddings for chunks with timeout protection."""
+        from core.resilience import with_timeout, Timeouts
+        
         chunk_texts = [chunk.content for chunk in chunks]
-        return generate_embeddings_batch(chunk_texts)
+        
+        # Generate embeddings with timeout
+        embeddings = await with_timeout(
+            generate_embeddings_batch(chunk_texts),
+            Timeouts.EMBEDDING_BATCH * len(chunk_texts) / 100,  # Scale timeout by batch count
+            f"Generating {len(chunk_texts)} embeddings"
+        )
+        
+        return embeddings
     
     async def _store_document(self, doc: SourceDocument, chunks, embeddings) -> str:
         """Store document and chunks atomically using RPC."""
@@ -396,6 +432,71 @@ class IngestionPipeline:
             self.supabase.table("ingestion_file_status").update(update_data).eq("id", file_id).execute()
         except Exception as e:
             logger.warning(f"[Pipeline] Failed to update file status: {e}")
+    
+    def _update_chunk_progress(
+        self,
+        file_status_id: str,
+        chunks_processed: int,
+        chunks_total: int,
+        current_stage: str = "embedding"
+    ):
+        """
+        Update chunk processing progress with stage information.
+        
+        Provides real-time updates for UI progress bars showing:
+        - Current chunk being processed
+        - Total chunks
+        - Processing stage (parsing, chunking, embedding, indexing)
+        - Calculated progress percentage
+        
+        Args:
+            file_status_id: File status record ID
+            chunks_processed: Number of chunks processed so far
+            chunks_total: Total number of chunks for this file
+            current_stage: Current processing stage
+        """
+        if not file_status_id:
+            return
+        
+        try:
+            # Calculate progress percentage
+            progress = int((chunks_processed / chunks_total) * 100) if chunks_total > 0 else 0
+            
+            # Determine status based on stage
+            status_map = {
+                "parsing": "processing",
+                "chunking": "processing",
+                "embedding": "embedding",
+                "indexing": "indexing"
+            }
+            status = status_map.get(current_stage, "processing")
+            
+            # Create detailed status message
+            stage_labels = {
+                "parsing": "Parsing document",
+                "chunking": "Splitting into chunks",
+                "embedding": f"Embedding chunk {chunks_processed}/{chunks_total}",
+                "indexing": f"Indexing chunk {chunks_processed}/{chunks_total}"
+            }
+            message = stage_labels.get(current_stage, f"Processing chunk {chunks_processed}/{chunks_total}")
+            
+            # Update database with chunk progress
+            self.supabase.table("ingestion_file_status").update({
+                "status": status,
+                "progress": progress,
+                "chunks_processed": chunks_processed,
+                "chunks_total": chunks_total,
+                "status_message": message,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }).eq("id", file_status_id).execute()
+            
+            logger.debug(
+                f"📊 [Pipeline] Chunk progress: {chunks_processed}/{chunks_total} "
+                f"({progress}%) - {current_stage}"
+            )
+            
+        except Exception as e:
+            logger.warning(f"[Pipeline] Failed to update chunk progress: {e}")
     
     def _create_notification(self, title: str, message: str, type: str):
         """Create user notification."""

@@ -52,9 +52,10 @@ export const useTeamMembers = () => {
 
             const { data } = await api.get('/team/members', { params });
             setMembers(data);
-        } catch (err: any) {
-            console.error('Failed to fetch team members:', err);
-            setError(err.message || 'Failed to fetch team');
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to fetch team';
+            console.error('Failed to fetch team members:', message);
+            setError(message);
         } finally {
             setIsLoading(false);
         }
@@ -64,8 +65,8 @@ export const useTeamMembers = () => {
         try {
             const { data } = await api.get('/team/stats');
             setStats(data);
-        } catch (err: any) {
-            console.error('Failed to fetch team stats:', err);
+        } catch (err) {
+            console.error('Failed to fetch team stats:', err instanceof Error ? err.message : err);
         }
     }, []);
 
@@ -84,9 +85,10 @@ export const useTeamMembers = () => {
                 description: `Invitation sent to ${email}`,
             });
             return true;
-        } catch (err: any) {
-            console.error('Failed to invite member:', err);
-            const message = err.response?.data?.detail || 'Failed to send invitation';
+        } catch (err) {
+            const axiosErr = err as { response?: { data?: { detail?: string } } };
+            const message = axiosErr.response?.data?.detail || 'Failed to send invitation';
+            console.error('Failed to invite member:', message);
             toast({
                 title: 'Error',
                 description: message,
@@ -105,8 +107,8 @@ export const useTeamMembers = () => {
                 description: `Member's role has been changed to ${role}.`,
             });
             return true;
-        } catch (err: any) {
-            console.error('Failed to update role:', err);
+        } catch (err) {
+            console.error('Failed to update role:', err instanceof Error ? err.message : err);
             toast({
                 title: 'Error',
                 description: 'Failed to update role.',
@@ -122,8 +124,8 @@ export const useTeamMembers = () => {
             setMembers(prev => prev.map(m => m.id === memberId ? data : m));
             await fetchStats();
             return true;
-        } catch (err: any) {
-            console.error('Failed to update status:', err);
+        } catch (err) {
+            console.error('Failed to update status:', err instanceof Error ? err.message : err);
             toast({
                 title: 'Error',
                 description: 'Failed to update member status.',
@@ -143,8 +145,8 @@ export const useTeamMembers = () => {
                 description: 'Team member has been removed.',
             });
             return true;
-        } catch (err: any) {
-            console.error('Failed to remove member:', err);
+        } catch (err) {
+            console.error('Failed to remove member:', err instanceof Error ? err.message : err);
             toast({
                 title: 'Error',
                 description: 'Failed to remove member.',
@@ -162,8 +164,8 @@ export const useTeamMembers = () => {
                 description: `Invitation resent to ${email}`,
             });
             return true;
-        } catch (err: any) {
-            console.error('Failed to resend invite:', err);
+        } catch (err) {
+            console.error('Failed to resend invite:', err instanceof Error ? err.message : err);
             toast({
                 title: 'Error',
                 description: 'Failed to resend invitation.',

@@ -470,6 +470,90 @@ async def get_current_subscription(current_user_id: str = Depends(get_current_us
 
 
 # ============================================================
+# CANCEL SUBSCRIPTION ENDPOINT
+# ============================================================
+
+@router.post("/subscription/cancel")
+async def cancel_subscription(current_user_id: str = Depends(get_current_user)):
+    """
+    Cancel the current subscription.
+    
+    Sets cancel_at_period_end=true in Polar, meaning:
+    - User keeps access until end of current billing period
+    - Subscription will not renew
+    - User can resubscribe anytime before period ends
+    """
+    if not settings.POLAR_ACCESS_TOKEN:
+        raise HTTPException(status_code=500, detail="Billing not configured")
+    
+    try:
+        customer_id = await get_customer_id_for_user(current_user_id)
+        
+        if not customer_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="No subscription found to cancel"
+            )
+        
+        # Get active subscription
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # First, get the subscription ID
+            subs_response = await client.get(
+                f"{POLAR_API_BASE}/subscriptions/",
+                params={"customer_id": customer_id, "active": True},
+                headers=get_polar_headers()
+            )
+            
+            if subs_response.status_code != 200:
+                logger.error(f"[Billing] Failed to get subscription: {subs_response.status_code}")
+                raise HTTPException(status_code=500, detail="Failed to get subscription details")
+            
+            subs_data = subs_response.json()
+            items = subs_data.get("items", [])
+            
+            if not items:
+                raise HTTPException(status_code=400, detail="No active subscription found")
+            
+            subscription_id = items[0].get("id")
+            
+            if not subscription_id:
+                raise HTTPException(status_code=500, detail="Invalid subscription data")
+            
+            # Cancel the subscription (set cancel_at_period_end=true)
+            cancel_response = await client.patch(
+                f"{POLAR_API_BASE}/subscriptions/{subscription_id}",
+                json={"cancel_at_period_end": True},
+                headers=get_polar_headers()
+            )
+            
+            if cancel_response.status_code in [200, 201, 204]:
+                logger.info(f"[Billing] Subscription {subscription_id} scheduled for cancellation")
+                
+                # Update local database
+                team_member = await team_service.get_user_team_member(current_user_id)
+                if team_member:
+                    supabase = get_supabase()
+                    supabase.table("subscriptions").update({
+                        "cancel_at_period_end": True
+                    }).eq("team_id", str(team_member.team_id)).execute()
+                
+                return {
+                    "status": "cancelled",
+                    "message": "Subscription will be cancelled at end of billing period",
+                    "subscription_id": subscription_id
+                }
+            else:
+                logger.error(f"[Billing] Cancel failed: {cancel_response.status_code} - {cancel_response.text}")
+                raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Billing] Cancel error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+
+# ============================================================
 # BILLING HISTORY / ORDERS ENDPOINT
 # ============================================================
 

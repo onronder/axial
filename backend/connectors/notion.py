@@ -13,6 +13,7 @@ from core.db import get_supabase
 from core.resilience import with_retry_sync
 import requests
 from starlette.concurrency import run_in_threadpool
+from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
 
@@ -50,23 +51,27 @@ class NotionConnector(BaseConnector):
         return len(res.data) > 0
     
     def _get_access_token(self, user_id: str) -> str:
-        """Get the Notion access token for a user (DB Lookup)."""
-        from core.security import decrypt_token
-        
+        """Get the Notion access token for a user with automatic refresh."""
         supabase = get_supabase()
         connector_def_id = self._get_connector_definition_id()
-        res = supabase.table("user_integrations").select("access_token").eq(
+        
+        res = supabase.table("user_integrations").select("*").eq(
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
         
         if not res.data:
             raise ValueError("Notion not connected for this user.")
         
-        encrypted_token = res.data[0]["access_token"]
-        if encrypted_token:
-            # Decrypt the token before use
-            return decrypt_token(encrypted_token)
-        raise ValueError("No access token found for Notion integration.")
+        try:
+            # Use centralized token manager
+            creds_data = OAuthTokenManager.get_valid_credentials(
+                res.data[0],
+                'notion'
+            )
+            return creds_data['access_token']
+        
+        except TokenRefreshError as e:
+            raise ValueError("Integration requires reconnection") from e
     
     def _get_headers(self, access_token: str) -> Dict[str, str]:
         """Get headers for Notion API requests."""
@@ -273,12 +278,28 @@ class NotionConnector(BaseConnector):
         item_ids = config.get("item_ids", [])
         credentials_data = config.get("credentials")
         
-        # 1. Hybrid Credential Resolution
-        if credentials_data and credentials_data.get("access_token"):
-            # Worker case: Use passed token
+        # 1. Hybrid Credential Resolution with Token Refresh
+        if credentials_data and credentials_data.get('integration_id'):
+            # Worker case: Fetch integration and refresh token if needed
+            supabase = get_supabase()
+            int_res = supabase.table("user_integrations").select("*").eq(
+                "id", credentials_data['integration_id']
+            ).single().execute()
+            
+            if not int_res.data:
+                raise ValueError(f"Integration {credentials_data['integration_id']} not found")
+            
+            # Use token manager for automatic refresh
+            creds_data = OAuthTokenManager.get_valid_credentials(
+                int_res.data,
+                'notion'
+            )
+            access_token = creds_data['access_token']
+        elif credentials_data and credentials_data.get("access_token"):
+            # Legacy: Use passed token (fallback)
             access_token = credentials_data["access_token"]
         elif user_id:
-            # API case: Fallback to DB
+            # API case: Fallback to DB lookup (already has refresh)
             access_token = self._get_access_token(user_id)
         else:
             raise ValueError("No credentials or user_id provided for Notion ingestion")

@@ -335,3 +335,32 @@ async def update_notification_setting(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update setting: {str(e)}")
+
+
+@router.delete("/settings/notifications")
+async def reset_notification_settings(user_id: str = Depends(get_current_user)):
+    """
+    Reset all notification settings to defaults.
+    
+    Deletes all existing settings - they will be recreated with defaults
+    on the next GET /settings/notifications call.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Delete all user's notification settings
+        result = supabase.table("user_notification_settings")\
+            .delete()\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        deleted_count = len(result.data) if result.data else 0
+        
+        return {
+            "status": "success",
+            "message": "Notification settings reset to defaults",
+            "deleted_count": deleted_count
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset settings: {str(e)}")

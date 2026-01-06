@@ -269,3 +269,37 @@ export interface BulkInviteResult {
     errors: Array<{ email: string; error: string }>;
 }
 
+/**
+ * Team update request for PATCH /api/v1/team
+ */
+export interface TeamUpdate {
+    name?: string;
+    slug?: string;
+}
+
+/**
+ * Subscription cancel response from DELETE /api/v1/billing/subscription
+ */
+export interface SubscriptionCancelResponse {
+    success: boolean;
+    message: string;
+    cancel_at_period_end: boolean;
+    current_period_end?: string;
+}
+
+/**
+ * Subscription details from GET /api/v1/billing/subscription
+ */
+export interface SubscriptionDetail {
+    id: string;
+    status: string;
+    plan_name: string;
+    price_amount: number;
+    price_currency: string;
+    interval: string;
+    current_period_start?: string;
+    current_period_end?: string;
+    cancel_at_period_end: boolean;
+}
+
+

@@ -11,7 +11,6 @@ import base64
 from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
 from datetime import datetime, timezone
 from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from starlette.concurrency import run_in_threadpool
@@ -19,7 +18,8 @@ from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
 from services.parsers import DocumentParser
-from core.security import decrypt_token, encrypt_token
+from core.security import decrypt_token
+from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
 
@@ -222,45 +222,31 @@ class DriveConnector(BaseConnector):
     def _get_credentials_by_integration(self, integration: dict) -> Credentials:
         """
         Build Google credentials from an integration record.
-        Handles token refresh if needed.
-        Decrypts tokens before use (supports legacy plain-text tokens).
+        Uses centralized token manager for automatic refresh.
         """
-        # Decrypt tokens (handles both encrypted and legacy plain-text)
-        access_token = decrypt_token(integration['access_token']) if integration.get('access_token') else None
-        refresh_token = decrypt_token(integration.get('refresh_token')) if integration.get('refresh_token') else None
+        try:
+            # Use centralized token manager for automatic refresh
+            creds_data = OAuthTokenManager.get_valid_credentials(
+                integration,
+                'google_drive'
+            )
+            
+            # Build Google credentials with refreshed token
+            creds = Credentials(
+                token=creds_data['access_token'],
+                refresh_token=creds_data['refresh_token'],
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=settings.GOOGLE_CLIENT_ID,
+                client_secret=settings.GOOGLE_CLIENT_SECRET,
+                scopes=['https://www.googleapis.com/auth/drive.readonly'],
+                quota_project_id=None
+            )
+            
+            return creds
         
-        # explicit cast to list/str to ensure correct types for Google Auth
-        scopes = ['https://www.googleapis.com/auth/drive.readonly']
-        
-        creds = Credentials(
-            token=access_token,
-            refresh_token=refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=settings.GOOGLE_CLIENT_ID,
-            client_secret=settings.GOOGLE_CLIENT_SECRET,
-            scopes=scopes,
-            quota_project_id=None
-        )
-        
-        # Refresh if expired
-        if creds.expired or not creds.valid:
-            if creds.refresh_token:
-                logger.info(f"🔄 [DriveConnector] Token expired, refreshing...")
-                creds.refresh(Request())
-                
-                # Update database with new encrypted token
-                supabase = get_supabase()
-                supabase.table("user_integrations").update({
-                    "access_token": encrypt_token(creds.token),
-                    "expires_at": creds.expiry.isoformat() if creds.expiry else None,
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }).eq("id", integration["id"]).execute()
-                
-                logger.info(f"🔄 [DriveConnector] ✅ Token refreshed and saved")
-            else:
-                raise ValueError("Token expired and no refresh token available")
-        
-        return creds
+        except TokenRefreshError as e:
+            logger.error(f"❌ Token refresh failed: {e}")
+            raise ValueError("Integration requires reconnection (Token Expired/Revoked)") from e
 
     def _get_credentials(self, user_id: str) -> Credentials:
         """
@@ -345,9 +331,33 @@ class DriveConnector(BaseConnector):
         
         logger.info(f"📥 [DriveConnector] Starting ingestion for {len(item_ids)} items")
 
-        # 1. Hybrid Credential Resolution
-        if credentials_data:
-            # Worker case: Use passed decrypted credentials
+        # 1. Hybrid Credential Resolution with Token Refresh
+        if credentials_data and credentials_data.get('integration_id'):
+            # Worker case: Fetch integration and refresh token if needed
+            supabase = get_supabase()
+            int_res = supabase.table("user_integrations").select("*").eq(
+                "id", credentials_data['integration_id']
+            ).single().execute()
+            
+            if not int_res.data:
+                raise ValueError(f"Integration {credentials_data['integration_id']} not found")
+            
+            # Use token manager for automatic refresh
+            creds_data = OAuthTokenManager.get_valid_credentials(
+                int_res.data,
+                'google_drive'
+            )
+            
+            creds = Credentials(
+                token=creds_data['access_token'],
+                refresh_token=creds_data['refresh_token'],
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=settings.GOOGLE_CLIENT_ID,
+                client_secret=settings.GOOGLE_CLIENT_SECRET,
+                scopes=['https://www.googleapis.com/auth/drive.readonly']
+            )
+        elif credentials_data:
+            # Legacy: Use passed decrypted credentials (fallback)
             creds = Credentials(
                 token=credentials_data.get('token') or credentials_data.get('access_token'),
                 refresh_token=credentials_data.get('refresh_token'),
@@ -357,7 +367,7 @@ class DriveConnector(BaseConnector):
                 scopes=['https://www.googleapis.com/auth/drive.readonly']
             )
         elif user_id:
-            # API case: Fallback to DB lookup
+            # API case: Fallback to DB lookup (already has refresh)
             creds = self._get_credentials(user_id)
         else:
             raise ValueError("No credentials or user_id provided for Drive ingestion")

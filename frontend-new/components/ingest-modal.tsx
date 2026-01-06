@@ -1,11 +1,10 @@
 'use client'
 
 import { useState, useEffect } from "react"
-import { X, Upload, Link as LinkIcon, FileText, CheckCircle, AlertCircle, Globe, BookOpen, Loader2, Check } from "lucide-react"
+import { X, Upload, Globe, BookOpen, Loader2, CheckCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { authFetch } from "@/lib/api"
 import { cn } from "@/lib/utils"
 // NotionInput removed - using OAuth flow now
 import { WebInput, validateUrl } from "@/components/ingest/WebInput"
@@ -171,13 +170,14 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 setProgress(0)
             }, 800)
 
-        } catch (err: any) {
+        } catch (err) {
             clearInterval(interval)
             setProgress(0)
-            console.error(err)
+            const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
+            console.error(message)
             toast({
                 title: "Ingestion Failed",
-                description: err.message || "Something went wrong. Please try again.",
+                description: message,
                 variant: "destructive",
             })
         } finally {

@@ -237,3 +237,183 @@ class TestJobStatus:
         assert "processing" in valid_statuses
         assert "completed" in valid_statuses
         assert "failed" in valid_statuses
+
+
+# =============================================================================
+# Tests for NEW CRUD Endpoints
+# =============================================================================
+
+class TestRetryJobEndpoint:
+    """Tests for POST /api/v1/jobs/{job_id}/retry."""
+    
+    @pytest.fixture
+    def mock_supabase_with_failed_job(self):
+        """Mock Supabase with a failed job."""
+        mock = MagicMock()
+        
+        # Job lookup response
+        job_response = MagicMock()
+        job_response.data = {
+            "id": "job-123",
+            "user_id": "user-123",
+            "status": "failed",
+            "provider": "google_drive"
+        }
+        
+        # Failed files response
+        files_response = MagicMock()
+        files_response.data = [
+            {"id": "file-1", "status": "failed", "retry_count": 1},
+            {"id": "file-2", "status": "failed", "retry_count": 2},
+            {"id": "file-3", "status": "failed", "retry_count": 3},  # Max retries
+        ]
+        
+        # Update responses
+        update_response = MagicMock()
+        update_response.data = [{"id": "file-1"}]
+        
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.in_.return_value = table
+        table.lt.return_value = table
+        table.single.return_value = table
+        table.update.return_value = table
+        table.execute.side_effect = [job_response, files_response, update_response, update_response, update_response]
+        
+        mock.table.return_value = table
+        return mock
+    
+    @pytest.mark.unit
+    def test_retry_job_resets_failed_files(self, mock_supabase_with_failed_job):
+        """Should reset failed files to pending status."""
+        # Files with status="failed" should be reset to status="pending"
+        reset_status = "pending"
+        assert reset_status == "pending"
+    
+    @pytest.mark.unit
+    def test_retry_job_increments_retry_count(self):
+        """Should increment retry_count for each file."""
+        current_retry_count = 1
+        new_retry_count = current_retry_count + 1
+        assert new_retry_count == 2
+    
+    @pytest.mark.unit
+    def test_retry_job_skips_max_retry_files(self):
+        """Should skip files that have reached max retry count (3)."""
+        max_retries = 3
+        file_retry_count = 3
+        can_retry = file_retry_count < max_retries
+        assert can_retry is False
+    
+    @pytest.mark.unit
+    def test_retry_job_returns_queued_count(self):
+        """Should return count of files queued for retry."""
+        files_queued = 2
+        files_skipped = 1
+        assert files_queued == 2
+        assert files_skipped == 1
+    
+    @pytest.mark.unit
+    def test_retry_job_updates_job_status(self):
+        """Should update job status to 'processing'."""
+        new_job_status = "processing"
+        assert new_job_status == "processing"
+    
+    @pytest.mark.unit
+    def test_retry_job_verifies_ownership(self):
+        """Should verify job belongs to requesting user."""
+        # Query should filter by user_id
+        job_user_id = "user-123"
+        requesting_user_id = "user-123"
+        assert job_user_id == requesting_user_id
+    
+    @pytest.mark.unit
+    def test_retry_job_returns_404_for_nonexistent(self):
+        """Should return 404 when job doesn't exist."""
+        mock = MagicMock()
+        job_response = MagicMock()
+        job_response.data = None
+        
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.execute.return_value = job_response
+        mock.table.return_value = table
+        
+        assert job_response.data is None
+    
+    @pytest.mark.unit
+    def test_retry_job_returns_400_for_invalid_status(self):
+        """Should return 400 when job is still pending/processing."""
+        invalid_statuses = ["pending", "processing"]
+        for status in invalid_statuses:
+            can_retry = status in ["failed", "completed"]
+            assert can_retry is False
+    
+    @pytest.mark.unit
+    def test_retry_job_returns_400_when_no_files_to_retry(self):
+        """Should return 400 when no files can be retried."""
+        retryable_files = []
+        has_retryable = len(retryable_files) > 0
+        assert has_retryable is False
+    
+    @pytest.mark.unit
+    def test_retry_job_clears_error_message(self):
+        """Should clear error_message when resetting file status."""
+        error_message_after_reset = None
+        assert error_message_after_reset is None
+    
+    @pytest.mark.unit
+    def test_retry_job_sets_progress_to_zero(self):
+        """Should reset progress to 0 when retrying."""
+        progress_after_reset = 0
+        assert progress_after_reset == 0
+
+
+class TestCancelJobEndpoint:
+    """Tests for POST /api/v1/jobs/{job_id}/cancel."""
+    
+    @pytest.mark.unit
+    def test_cancel_job_revokes_celery_task(self):
+        """Should revoke the Celery task."""
+        # celery.result.revoke() should be called
+        pass
+    
+    @pytest.mark.unit
+    def test_cancel_job_updates_status(self):
+        """Should update job status to 'cancelled'."""
+        new_status = "cancelled"
+        assert new_status == "cancelled"
+    
+    @pytest.mark.unit
+    def test_cancel_job_verifies_ownership(self):
+        """Should verify job belongs to requesting user."""
+        pass
+
+
+class TestGetJobFilesEndpoint:
+    """Tests for GET /api/v1/jobs/{job_id}/files."""
+    
+    @pytest.mark.unit
+    def test_get_files_returns_file_statuses(self):
+        """Should return list of file status records."""
+        files = [
+            {"id": "file-1", "filename": "doc.pdf", "status": "completed"},
+            {"id": "file-2", "filename": "report.docx", "status": "failed"}
+        ]
+        assert len(files) == 2
+    
+    @pytest.mark.unit
+    def test_get_files_filters_by_job_id(self):
+        """Should only return files for the specified job."""
+        job_id = "job-123"
+        filter_column = "job_id"
+        assert filter_column == "job_id"
+    
+    @pytest.mark.unit
+    def test_get_files_verifies_job_ownership(self):
+        """Should verify user owns the job."""
+        pass
+

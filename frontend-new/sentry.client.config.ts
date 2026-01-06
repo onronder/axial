@@ -18,7 +18,7 @@ Sentry.init({
     debug: false,
 
     // Filter out common noise
-    beforeSend(event, hint) {
+    beforeSend(event, _hint) {
         // Don't send events in development
         if (process.env.NODE_ENV === "development") {
             return null;

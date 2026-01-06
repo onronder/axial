@@ -1,7 +1,7 @@
 """
 Google Drive Connector for Unified Ingestion Pipeline.
 
-This wraps the existing DriveConnector and adapts it to the new EnhancedConnector interface.
+Production connector with automatic OAuth token refresh.
 """
 
 import logging
@@ -18,8 +18,10 @@ class GoogleDriveConnector(EnhancedConnector):
     """
     Enhanced Google Drive connector for unified pipeline.
     
-    Wraps the existing DriveConnector to maintain backward compatibility
-    while providing the new SourceDocument interface.
+    Features:
+    - Automatic OAuth token refresh via OAuthTokenManager
+    - Wraps legacy DriveConnector for backward compatibility
+    - Provides new SourceDocument interface
     """
     
     def __init__(self):
@@ -36,26 +38,33 @@ class GoogleDriveConnector(EnhancedConnector):
         **kwargs
     ) -> AsyncIterator[SourceDocument]:
         """
-        Fetch files from Google Drive.
+        Fetch files from Google Drive with automatic token refresh.
         
         Args:
             item_ids: List of Google Drive file/folder IDs
-            credentials: OAuth credentials
+            credentials: Dict with 'integration_id' for token refresh
             **kwargs: Additional options (user_id, etc.)
+        
+        The credentials dict should contain:
+        - integration_id: Database ID of user_integration (for token refresh)
+        
+        Token refresh is handled automatically by the legacy DriveConnector
+        via OAuthTokenManager when integration_id is provided.
         """
         user_id = kwargs.get("user_id")
         
-        # Use legacy connector's ingest method
+        # Pass credentials with integration_id to legacy connector
+        # The legacy connector will use OAuthTokenManager for token refresh
         config = {
             "user_id": user_id,
             "item_ids": item_ids,
-            "credentials": credentials,
+            "credentials": credentials,  # Contains integration_id
             "provider": "google_drive"
         }
         
         logger.info(f"[GoogleDrive] Fetching {len(item_ids)} items for user {user_id}")
         
-        # Fetch documents using legacy connector (await the async generator)
+        # Fetch documents using legacy connector (with token refresh)
         async for doc in await self.legacy.ingest(config):
             # Convert ConnectorDocument to SourceDocument
             content = doc.page_content
@@ -84,7 +93,11 @@ class GoogleDriveConnector(EnhancedConnector):
         return self.legacy.ingest(config)
     
     def validate_credentials(self, credentials: Dict[str, Any]) -> bool:
-        """Validate Google Drive OAuth credentials."""
-        # Check if we have required OAuth fields
-        required_fields = ["access_token"]
-        return all(field in credentials for field in required_fields)
+        """
+        Validate Google Drive credentials.
+        
+        For OAuth connectors, we only need integration_id.
+        The actual token refresh is handled by OAuthTokenManager.
+        """
+        # Accept either integration_id (new) or access_token (legacy)
+        return "integration_id" in credentials or "access_token" in credentials

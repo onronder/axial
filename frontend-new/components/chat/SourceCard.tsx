@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import {
     FileText,
     Globe,
@@ -112,11 +113,13 @@ export function SourceCard({ source, className }: SourceCardProps) {
                 {/* Thumbnail */}
                 {thumbnailUrl && !imageError ? (
                     <div className="relative aspect-video w-full bg-muted">
-                        <img
+                        <Image
                             src={thumbnailUrl}
                             alt={title}
-                            className="h-full w-full object-cover"
+                            fill
+                            className="object-cover"
                             onError={() => setImageError(true)}
+                            unoptimized
                         />
                         {/* Play overlay */}
                         <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
@@ -163,13 +166,13 @@ export function SourceCard({ source, className }: SourceCardProps) {
                 {/* Favicon */}
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
                     {faviconUrl ? (
-                        <img
+                        <Image
                             src={faviconUrl}
                             alt=""
+                            width={20}
+                            height={20}
                             className="h-5 w-5"
-                            onError={(e) => {
-                                e.currentTarget.style.display = "none";
-                            }}
+                            unoptimized
                         />
                     ) : (
                         <Globe className="h-5 w-5 text-muted-foreground" />

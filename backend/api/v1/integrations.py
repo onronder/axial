@@ -6,7 +6,7 @@ Provides dynamic connector discovery, OAuth handling, and integration management
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
-from core.security import get_current_user, encrypt_token, decrypt_token
+from core.security import get_current_user, encrypt_token
 from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
@@ -395,15 +395,15 @@ async def exchange_notion_token(
             
             if job_response.data:
                 job_id = job_response.data[0]["id"]
-                # Queue the unified ingestion task
+                # Queue the unified ingestion task with integration_id for token refresh
                 from worker.tasks import unified_ingest_task
                 
                 task = unified_ingest_task.delay(
                     user_id=user_id,
                     job_id=str(job_id),
                     connector_type="notion",
-                    item_ids=items,  # Pass all items at once
-                    credentials={"access_token": access_token}
+                    item_ids=items,
+                    credentials={"integration_id": str(integration_id)}  # ✅ Pass integration_id for token refresh
                 )
                 logger.info(f"📥 [OAuth] Auto-ingestion started: {len(items)} pages, job {job_id}, task: {task.id}")
         else:
@@ -628,41 +628,36 @@ async def ingest_provider_items(
         if not conn_def.data:
             raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
         
-        # Get user's integration with credentials
-        # OAuth providers store tokens in access_token/refresh_token columns
-        # Other providers may use credentials JSONB
+        # Get user's integration
         try:
             integration_res = supabase.table("user_integrations").select(
-                "access_token, refresh_token, credentials"
-            ).eq("user_id", user_id).eq("connector_definition_id", conn_def.data['id']).execute()
-            integration_data = integration_res.data[0] if integration_res.data else None
+                "id, access_token, refresh_token, credentials"
+            ).eq("user_id", user_id).eq("connector_definition_id", conn_def.data['id']).single().execute()
+            integration = integration_res.data if integration_res.data else None
         except Exception as e:
             logger.warning(f"⚠️ [Ingest] Failed to fetch integration: {e}")
-            integration_data = None
+            integration = None
         
-        # Web provider doesn't require explicit connection, others do
+        # Prepare credentials based on connector type
         if provider == "web":
+            # Web provider doesn't require explicit connection
             credentials = {}
-            if integration_data:
-                credentials = integration_data.get('credentials', {}) or {}
+            if integration:
+                credentials = integration.get('credentials', {}) or {}
         elif provider in ["google_drive", "notion"]:
-            # OAuth providers: tokens are in access_token/refresh_token columns
-            if not integration_data or not integration_data.get('access_token'):
+            # OAuth connectors: Pass integration_id for automatic token refresh
+            if not integration or not integration.get('access_token'):
                 raise HTTPException(status_code=401, detail=f"Not connected to {provider}. Please reconnect.")
             
-            # Decrypt tokens for use
-            encrypted_access = integration_data.get('access_token')
-            encrypted_refresh = integration_data.get('refresh_token')
-            
             credentials = {
-                "access_token": decrypt_token(encrypted_access) if encrypted_access else None,
-                "refresh_token": decrypt_token(encrypted_refresh) if encrypted_refresh else None,
+                "integration_id": str(integration['id'])  # ✅ Pass integration_id for token refresh
             }
-            logger.info(f"📥 [Ingest] Decrypted credentials for {provider}")
+            logger.info(f"📥 [Ingest] Passing integration_id for OAuth connector: {provider}")
         else:
-            if not integration_data or not integration_data.get('credentials'):
+            # Other connectors: Use stored credentials
+            if not integration or not integration.get('credentials'):
                 raise HTTPException(status_code=401, detail=f"Not connected to {provider}")
-            credentials = integration_data['credentials']
+            credentials = integration['credentials']
         
         # 2. Create ingestion job for progress tracking
         from datetime import datetime
@@ -839,5 +834,59 @@ async def sync_integration(
     except Exception as e:
         logger.error(f"❌ [Sync] Failed to trigger sync: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to trigger sync: {str(e)}")
+
+
+# =============================================================================
+# Sync History Endpoint
+# =============================================================================
+
+@router.get("/integrations/{integration_id}/sync-history")
+async def get_sync_history(
+    integration_id: str,
+    user_id: str = Depends(get_current_user),
+    limit: int = 20
+):
+    """
+    Get sync history for an integration.
+    
+    Returns the sync_state records showing when syncs occurred,
+    their status, and any associated metadata.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # First verify ownership of the integration
+        int_check = supabase.table("user_integrations")\
+            .select("id, connector_definitions(type)")\
+            .eq("id", integration_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        if not int_check.data:
+            raise HTTPException(status_code=404, detail="Integration not found")
+        
+        provider = int_check.data["connector_definitions"]["type"]
+        
+        # Fetch sync_state records for this user and provider
+        sync_response = supabase.table("sync_state")\
+            .select("*")\
+            .eq("user_id", user_id)\
+            .eq("provider", provider)\
+            .order("updated_at", desc=True)\
+            .limit(limit)\
+            .execute()
+        
+        return {
+            "integration_id": integration_id,
+            "provider": provider,
+            "history": sync_response.data or []
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get sync history: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get sync history")
 
 

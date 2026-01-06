@@ -128,8 +128,10 @@ export function useFileStatus(jobId: string | null): UseFileStatusReturn {
                 }
             });
 
+        // ✅ CLEANUP - Prevent memory leaks
         return () => {
             channel.unsubscribe();
+            supabase.removeChannel(channel);
         };
     }, [jobId, fetchFiles]);
 
@@ -212,8 +214,10 @@ export function useAllActiveFiles(): UseFileStatusReturn {
             )
             .subscribe();
 
+        // ✅ CLEANUP - Prevent memory leaks
         return () => {
             channel.unsubscribe();
+            supabase.removeChannel(channel);
         };
     }, [fetchFiles]);
 

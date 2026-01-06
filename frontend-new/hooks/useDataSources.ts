@@ -65,9 +65,10 @@ export const useDataSources = () => {
             setAvailableConnectors(connectors);
             setUserIntegrations(integrations);
             setDataSources(mergeData(connectors, integrations));
-        } catch (err: any) {
-            console.error('📦 [useDataSources] ❌ Fetch failed:', err.message);
-            setError(err.message || 'Failed to fetch data sources');
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to fetch data sources';
+            console.error('📦 [useDataSources] ❌ Fetch failed:', message);
+            setError(message);
         } finally {
             setLoading(false);
         }
@@ -168,8 +169,9 @@ export const useDataSources = () => {
                     ? { ...ds, isConnected: false, lastSyncAt: null, integrationId: null }
                     : ds
             ));
-        } catch (err: any) {
-            console.error('📦 [useDataSources] ❌ Disconnect failed:', err.message);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            console.error('📦 [useDataSources] ❌ Disconnect failed:', message);
             throw new Error("Failed to disconnect source");
         }
     }, []);
@@ -184,8 +186,9 @@ export const useDataSources = () => {
             });
             console.log('📦 [useDataSources] ✅ Got', data?.length || 0, 'files');
             return data || [];
-        } catch (err: any) {
-            console.error('📦 [useDataSources] ❌ Get files failed:', err.message);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            console.error('📦 [useDataSources] ❌ Get files failed:', message);
             return [];
         }
     }, []);
@@ -200,10 +203,11 @@ export const useDataSources = () => {
             });
             console.log('📦 [useDataSources] ✅ Ingested');
             return true;
-        } catch (err: any) {
-            console.error('📦 [useDataSources] ❌ Ingest failed:', err.message);
-            // Re-throw so UI can show error toast
-            throw new Error(err.response?.data?.detail || err.message || 'Ingestion failed');
+        } catch (err) {
+            const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
+            const message = axiosErr.response?.data?.detail || axiosErr.message || 'Ingestion failed';
+            console.error('📦 [useDataSources] ❌ Ingest failed:', message);
+            throw new Error(message);
         }
     }, []);
 
@@ -214,10 +218,11 @@ export const useDataSources = () => {
             const res = await api.post(`/integrations/${integrationId}/sync`);
             console.log('📦 [useDataSources] ✅ Sync started:', res.data);
             return { success: true, jobId: res.data.job_id };
-        } catch (err: any) {
-            console.error('📦 [useDataSources] ❌ Sync failed:', err.message);
-            // Handle 429 specifically if needed
-            if (err.response?.status === 429) {
+        } catch (err) {
+            const axiosErr = err as { response?: { status?: number }; message?: string };
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            console.error('📦 [useDataSources] ❌ Sync failed:', message);
+            if (axiosErr.response?.status === 429) {
                 throw new Error("Sync already in progress");
             }
             throw err;

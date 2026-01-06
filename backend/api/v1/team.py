@@ -61,6 +61,12 @@ class EffectivePlanResponse(BaseModel):
     team_name: Optional[str] = None
 
 
+class TeamUpdate(BaseModel):
+    """Request model for updating team details."""
+    name: Optional[str] = None
+    slug: Optional[str] = None
+
+
 class InviteRequest(BaseModel):
     """Request to invite a team member."""
     email: str
@@ -113,6 +119,118 @@ async def get_current_team(user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="No team found for user")
     
     return team
+
+
+@router.patch("/team", response_model=TeamResponse)
+async def update_team(
+    payload: TeamUpdate,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Update team name or slug.
+    
+    Only team owners can update team details.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Get user's team and verify ownership
+        team = await team_service.get_user_team(user_id)
+        
+        if not team:
+            raise HTTPException(status_code=404, detail="No team found for user")
+        
+        if not team.get("is_owner"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only team owners can update team details"
+            )
+        
+        # Build update payload
+        update_data = {}
+        if payload.name is not None:
+            update_data["name"] = payload.name
+        if payload.slug is not None:
+            # Validate slug format (lowercase, alphanumeric with dashes)
+            import re
+            if not re.match(r'^[a-z0-9-]+$', payload.slug):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Slug must be lowercase alphanumeric with dashes only"
+                )
+            update_data["slug"] = payload.slug
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No update fields provided")
+        
+        # Perform update
+        result = supabase.table("teams")\
+            .update(update_data)\
+            .eq("id", team["id"])\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Update failed")
+        
+        # Return updated team (with user context)
+        return await team_service.get_user_team(user_id)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update team: {str(e)}")
+
+
+@router.delete("/team")
+async def delete_team(user_id: str = Depends(get_current_user)):
+    """
+    Delete the entire team.
+    
+    **WARNING**: This is a destructive operation that will:
+    - Remove all team members
+    - Revoke all member access
+    
+    Only team owners can delete teams.
+    The owner's data (documents, etc.) is NOT deleted - only team associations.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Get user's team and verify ownership
+        team = await team_service.get_user_team(user_id)
+        
+        if not team:
+            raise HTTPException(status_code=404, detail="No team found for user")
+        
+        if not team.get("is_owner"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only team owners can delete a team"
+            )
+        
+        team_id = team["id"]
+        
+        # Delete all team members first (respects FK constraints)
+        supabase.table("team_members")\
+            .delete()\
+            .eq("team_id", team_id)\
+            .execute()
+        
+        # Delete the team itself
+        supabase.table("teams")\
+            .delete()\
+            .eq("id", team_id)\
+            .execute()
+        
+        # Invalidate plan cache for the owner
+        team_service.invalidate_plan_cache(user_id)
+        
+        return {"status": "success", "message": "Team deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete team: {str(e)}")
 
 
 @router.get("/team/effective-plan", response_model=EffectivePlanResponse)

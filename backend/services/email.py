@@ -8,6 +8,7 @@ Errors are logged but never raised to callers - email is secondary to core funct
 import logging
 from pathlib import Path
 from typing import Optional
+from datetime import datetime, timezone
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -361,4 +362,3 @@ class EmailService:
 
 # Singleton instance for easy import
 email_service = EmailService()
-

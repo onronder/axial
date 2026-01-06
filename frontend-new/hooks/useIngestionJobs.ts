@@ -26,6 +26,7 @@ interface UseIngestionJobsReturn {
     activeJobs: IngestionJob[];
     isLoading: boolean;
     refresh: () => Promise<void>;
+    retryJob: (jobId: string) => Promise<void>;
 }
 
 /**
@@ -63,7 +64,7 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
 
     // Handle realtime updates
     const handleRealtimeUpdate = useCallback(
-        (payload: { eventType: string; new: IngestionJob; old?: IngestionJob }) => {
+        (payload: { eventType: string; new: IngestionJob; old?: Partial<IngestionJob> }) => {
             const { eventType, new: newJob, old: oldJob } = payload;
 
             if (eventType === "INSERT") {
@@ -130,7 +131,9 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
                     filter: `user_id=eq.${user.id}`,
                 },
                 (payload) => {
-                    handleRealtimeUpdate(payload as any);
+                    // Cast via unknown to handle Supabase realtime payload variance
+                    const typed = payload as unknown as { eventType: string; new?: IngestionJob; old?: Partial<IngestionJob> };
+                    if (typed.new) handleRealtimeUpdate({ ...typed, new: typed.new });
                 }
             )
             .subscribe((status) => {
@@ -150,11 +153,49 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
         (job) => job.status === "pending" || job.status === "processing"
     );
 
+    // Retry entire failed job
+    const retryJob = useCallback(async (jobId: string): Promise<void> => {
+        try {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/jobs/${jobId}/retry`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                credentials: "include",
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || "Failed to retry job");
+            }
+
+            const result = await response.json();
+
+            toast({
+                title: "Job Retry Started",
+                description: `Retrying ${result.files_queued} failed files...`,
+            });
+
+            // Refresh jobs to show updated status
+            await fetchJobs();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Could not retry the job.';
+            console.error("Failed to retry job:", message);
+            toast({
+                title: "Retry Failed",
+                description: message,
+                variant: "destructive",
+            });
+            throw err;
+        }
+    }, [fetchJobs, toast]);
+
     return {
         jobs,
         activeJobs,
         isLoading,
         refresh: fetchJobs,
+        retryJob,
     };
 }
 

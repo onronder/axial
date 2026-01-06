@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     # Advanced Document Parsing (LlamaParse OCR)
     # =========================================================================
     LLAMA_CLOUD_API_KEY: Optional[str] = None 
+    
+    # =========================================================================
+    # Resource Limits & Memory Management
+    # =========================================================================
+    MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB per file
+    MAX_CHUNK_BATCH_SIZE: int = 100  # Process 100 chunks at a time
+    MEMORY_WARNING_THRESHOLD: float = 0.85  # Warn at 85% memory
+    MEMORY_CRITICAL_THRESHOLD: float = 0.95  # Stop at 95% memory
+ 
 
     # =========================================================================
     # COMMERCIALIZATION & TIER LIMITS
@@ -121,4 +130,39 @@ def get_polar_product_mapping() -> dict:
         mapping[settings.POLAR_PRODUCT_ID_ENTERPRISE] = settings.PLAN_ENTERPRISE
     return mapping
 
+# Initialize settings
 settings = Settings()
+
+# =============================================================================
+# Sentry Integration for Error Tracking
+# =============================================================================
+
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.celery import CeleryIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            environment="production",
+            integrations=[
+                CeleryIntegration(),
+                LoggingIntegration(
+                    level=logging.INFO,
+                    event_level=logging.ERROR
+                )
+            ],
+            traces_sample_rate=0.1,  # 10% of transactions
+            profiles_sample_rate=0.1,  # 10% of transactions
+            send_default_pii=False,  # Don't send PII
+        )
+        
+        import logging
+        logging.getLogger(__name__).info("✅ Sentry initialized for error tracking")
+    except ImportError:
+        import logging
+        logging.getLogger(__name__).warning("⚠️ Sentry SDK not installed, error tracking disabled")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"❌ Failed to initialize Sentry: {e}")

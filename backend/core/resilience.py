@@ -16,9 +16,12 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
     before_sleep_log,
+    after_log,
     RetryError,
 )
 from httpx import HTTPStatusError, ConnectError, TimeoutException
+import asyncio
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +125,42 @@ def with_retry_sync(
         def wrapper(*args: Any, **kwargs: Any) -> T:
             return func(*args, **kwargs)
         
+        return wrapper
+    return decorator
+
+
+def with_retry_async(
+    max_attempts: int = 3,
+    min_wait: float = 1,
+    max_wait: float = 10,
+    exceptions: tuple = TRANSIENT_EXCEPTIONS,
+):
+    """
+    Async retry decorator with exponential backoff.
+    
+    Args:
+        max_attempts: Maximum number of retry attempts
+        min_wait: Minimum wait time between retries (seconds)
+        max_wait: Maximum wait time between retries (seconds)
+        exceptions: Tuple of exception types to retry on
+    
+    Usage:
+        @with_retry_async(max_attempts=3)
+        async def fetch_data():
+            ...
+    """
+    def decorator(func):
+        @wraps(func)
+        @retry(
+            stop=stop_after_attempt(max_attempts),
+            wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
+            retry=retry_if_exception_type(exceptions),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+            after=after_log(logger, logging.INFO),
+            reraise=True,
+        )
+        async def wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
         return wrapper
     return decorator
 
@@ -267,3 +306,136 @@ class CircuitBreaker:
                 logger.error(f"⚡ Circuit breaker '{self.name}' OPENED after {self.failures} failures")
             
         return False  # Don't suppress the exception
+
+
+# =============================================================================
+# Service-Specific Circuit Breaker Instances
+# =============================================================================
+
+# Circuit breaker for OpenAI API
+openai_breaker = CircuitBreaker(
+    failure_threshold=5,  # Open after 5 consecutive failures
+    recovery_timeout=60,  # Stay open for 60 seconds
+    name="OpenAI API"
+)
+
+# Circuit breaker for LlamaParse API
+llamaparse_breaker = CircuitBreaker(
+    failure_threshold=3,  # Open after 3 failures (more sensitive - expensive service)
+    recovery_timeout=120,  # Stay open for 2 minutes
+    name="LlamaParse API"
+)
+
+# Circuit breaker for Supabase
+supabase_breaker = CircuitBreaker(
+    failure_threshold=5,  # Open after 5 consecutive failures
+    recovery_timeout=30,  # Stay open for 30 seconds
+    name="Supabase"
+)
+
+logger.info("🔌 Circuit breakers initialized for: OpenAI, LlamaParse, Supabase")
+
+
+# =============================================================================
+# Timeout Utilities
+# =============================================================================
+
+class Timeouts:
+    """Centralized timeout configuration for all operations."""
+    PDF_PARSING = 300  # 5 minutes for complex PDFs
+    DOCX_PARSING = 60   # 1 minute for DOCX
+    EMBEDDING_BATCH = 60  # 1 minute per batch
+    SUPABASE_RPC = 30   # 30 seconds for DB operations
+    FILE_DOWNLOAD = 120  # 2 minutes for file downloads
+    LLAMAPARSE_API = 180  # 3 minutes for LlamaParse
+
+
+async def with_timeout(
+    coro,
+    timeout_seconds: float,
+    operation_name: str = "operation"
+):
+    """
+    Execute async operation with timeout.
+    
+    Args:
+        coro: Coroutine to execute
+        timeout_seconds: Timeout in seconds
+        operation_name: Name for error messages
+        
+    Returns:
+        Result of coroutine
+        
+    Raises:
+        TimeoutError: If operation exceeds timeout
+    """
+    try:
+        result = await asyncio.wait_for(coro, timeout=timeout_seconds)
+        return result
+    except asyncio.TimeoutError:
+        logger.error(
+            f"⏱️ Timeout: {operation_name} exceeded {timeout_seconds}s"
+        )
+        raise TimeoutError(
+            f"{operation_name} timed out after {timeout_seconds} seconds"
+        )
+
+
+# =============================================================================
+# Service-Specific Retry Configurations
+# =============================================================================
+
+OPENAI_RETRY_CONFIG = {
+    "max_attempts": 3,
+    "min_wait": 2.0,
+    "max_wait": 10.0,
+    "exceptions": TRANSIENT_EXCEPTIONS
+}
+
+SUPABASE_RETRY_CONFIG = {
+    "max_attempts": 3,
+    "min_wait": 1.0,
+    "max_wait": 5.0,
+    "exceptions": TRANSIENT_EXCEPTIONS
+}
+
+LLAMAPARSE_RETRY_CONFIG = {
+    "max_attempts": 3,
+    "min_wait": 3.0,
+    "max_wait": 15.0,
+    "exceptions": TRANSIENT_EXCEPTIONS
+}
+
+logger.info("✅ Retry configurations loaded: OpenAI, Supabase, LlamaParse")
+
+
+# =============================================================================
+# Memory Monitoring
+# =============================================================================
+
+def check_memory_usage() -> dict:
+    """Check current memory usage."""
+    memory = psutil.virtual_memory()
+    return {
+        "percent": memory.percent,
+        "available_mb": memory.available / 1024 / 1024,
+        "total_mb": memory.total / 1024 / 1024,
+        "warning": memory.percent > 85,  # Warning at 85%
+        "critical": memory.percent > 95  # Critical at 95%
+    }
+
+
+def enforce_memory_limit():
+    """Raise error if memory usage is critical."""
+    status = check_memory_usage()
+    
+    if status["critical"]:
+        raise MemoryError(
+            f"Memory usage critical: {status['percent']:.1f}% "
+            f"({status['available_mb']:.0f}MB available)"
+        )
+    
+    if status["warning"]:
+        logger.warning(
+            f"⚠️ Memory usage high: {status['percent']:.1f}%"
+        )

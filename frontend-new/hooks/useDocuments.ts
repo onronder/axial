@@ -6,20 +6,36 @@ import { Document } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
 /**
+ * Backend document response interface.
+ */
+interface BackendDocument {
+    id: string;
+    title?: string;
+    name?: string;
+    source_type?: string;
+    source_url?: string;
+    status?: string;
+    indexing_status?: string;
+    created_at?: string;
+    size?: number;
+    metadata?: { error?: string };
+}
+
+/**
  * Map backend document response to frontend Document interface.
  */
-function mapDocument(d: any): Document {
+function mapDocument(d: BackendDocument): Document {
     return {
         id: d.id,
         name: d.title || d.name || "Untitled",
         source: d.source_type || "file",
-        sourceType: d.source_type || "upload",
-        sourceUrl: d.source_url || null,
-        status: d.status || "indexed",
-        indexingStatus: d.indexing_status || "completed",
+        sourceType: (d.source_type as Document['sourceType']) || "upload",
+        sourceUrl: d.source_url || undefined,
+        status: (d.status as Document['status']) || "indexed",
+        indexingStatus: (d.indexing_status as Document['indexingStatus']) || "completed",
         addedAt: d.created_at || new Date().toISOString(),
         size: d.size || 0,
-        errorMessage: d.metadata?.error || null
+        errorMessage: d.metadata?.error
     };
 }
 
@@ -59,6 +75,23 @@ async function fetchDocuments({ page, pageSize, search }: FetchDocsParams): Prom
  */
 async function deleteDocumentApi(id: string): Promise<void> {
     await api.delete(`/documents/${id}`);
+}
+
+/**
+ * Document update request interface.
+ */
+interface DocumentUpdate {
+    title?: string;
+    description?: string;
+    tags?: string[];
+}
+
+/**
+ * Update document metadata.
+ */
+async function updateDocumentApi(id: string, update: DocumentUpdate): Promise<Document> {
+    const response = await api.patch(`/documents/${id}`, update);
+    return mapDocument(response.data);
 }
 
 /**
@@ -117,12 +150,12 @@ export const useDocuments = (
                 description: "The document has been removed.",
             });
         },
-        onError: (err: any, _deletedId, context) => {
+        onError: (err: Error, _deletedId, context) => {
             // Rollback on error
             if (context?.previousDocs) {
                 queryClient.setQueryData(["documents"], context.previousDocs);
             }
-            console.error("Failed to delete document", err);
+            console.error("Failed to delete document", err.message);
             toast({
                 title: "Error",
                 description: "Failed to delete document.",
@@ -135,6 +168,27 @@ export const useDocuments = (
         },
     });
 
+    // Mutation for updating documents
+    const updateMutation = useMutation({
+        mutationFn: ({ id, update }: { id: string; update: DocumentUpdate }) =>
+            updateDocumentApi(id, update),
+        onSuccess: () => {
+            toast({
+                title: "Document updated",
+                description: "Document metadata has been updated.",
+            });
+            queryClient.invalidateQueries({ queryKey: ["documents"] });
+        },
+        onError: (err: any) => {
+            console.error("Failed to update document", err);
+            toast({
+                title: "Error",
+                description: "Failed to update document.",
+                variant: "destructive",
+            });
+        },
+    });
+
     return {
         documents,
         totalCount,
@@ -143,5 +197,7 @@ export const useDocuments = (
         refresh: refetch,
         deleteDocument: deleteMutation.mutateAsync,
         isDeleting: deleteMutation.isPending,
+        updateDocument: updateMutation.mutateAsync,
+        isUpdating: updateMutation.isPending,
     };
 };

@@ -551,3 +551,70 @@ async def ingest_file_reference(
     
     logger.info(f"📄 [Ingest] Unified task queued: {body.filename}, task={task.id}")
     return IngestResponse(status="queued", doc_id=job_id)
+
+
+# =============================================================================
+# Web Crawl Config Management
+# =============================================================================
+
+@router.delete("/web/{config_id}")
+async def delete_crawl_config(
+    config_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Delete a web crawl configuration.
+    
+    This will:
+    - Cancel any running crawl task
+    - Delete the configuration record
+    - Optionally cascade delete associated documents (via FK/trigger)
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Verify ownership
+        config_response = supabase.table("web_crawl_configs")\
+            .select("id, celery_task_id, status")\
+            .eq("id", config_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        if not config_response.data:
+            raise HTTPException(status_code=404, detail="Crawl configuration not found")
+        
+        config = config_response.data
+        
+        # Cancel running task if exists
+        if config.get("celery_task_id") and config.get("status") in ["pending", "processing"]:
+            try:
+                from celery.result import AsyncResult
+                from core.celery_app import celery_app
+                
+                result = AsyncResult(config["celery_task_id"], app=celery_app)
+                result.revoke(terminate=True)
+                logger.info(f"🛑 [Crawl] Cancelled task {config['celery_task_id']}")
+            except Exception as e:
+                logger.warning(f"⚠️ [Crawl] Failed to cancel task: {e}")
+        
+        # Delete the configuration
+        supabase.table("web_crawl_configs")\
+            .delete()\
+            .eq("id", config_id)\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        logger.info(f"🗑️ [Crawl] Deleted crawl config {config_id}")
+        
+        return {
+            "status": "success",
+            "message": "Crawl configuration deleted",
+            "config_id": config_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete crawl config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete crawl configuration")

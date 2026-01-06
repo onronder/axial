@@ -29,6 +29,16 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // ============================================================
 // STATIC PLANS - Always show 3 plans (Starter, Pro, Enterprise)
@@ -200,6 +210,28 @@ export function BillingSettings() {
       toast.error("Failed to open subscription portal");
     } finally {
       setIsPortalLoading(false);
+    }
+  };
+
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+  const handleCancelSubscription = async () => {
+    try {
+      setIsCancelling(true);
+      const response = await api.delete("/billing/subscription");
+
+      if (response.data?.success) {
+        toast.success("Subscription cancelled. You'll have access until the end of your billing period.");
+        setShowCancelConfirm(false);
+      } else {
+        throw new Error(response.data?.message || "Failed to cancel");
+      }
+    } catch (error) {
+      console.error("[Billing] Cancel failed:", error);
+      toast.error("Failed to cancel subscription. Please try again.");
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -465,6 +497,64 @@ export function BillingSettings() {
         open={isEnterpriseModalOpen}
         onOpenChange={setIsEnterpriseModalOpen}
       />
+
+      {/* Danger Zone - Cancel Subscription */}
+      {currentPlan !== "free" && (
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+            <CardDescription>
+              Irreversible actions that affect your subscription
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 rounded-lg border border-destructive/30 bg-destructive/5">
+              <div>
+                <p className="font-medium">Cancel Subscription</p>
+                <p className="text-sm text-muted-foreground">
+                  You&apos;ll lose access to {planInfo.name} features at the end of your billing period
+                </p>
+              </div>
+              <Button
+                variant="destructive"
+                onClick={() => setShowCancelConfirm(true)}
+              >
+                Cancel Subscription
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cancel Confirmation Dialog */}
+      <AlertDialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel your subscription?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your {planInfo.name} plan will remain active until the end of your current billing period.
+              After that, you&apos;ll be downgraded to the Free plan with limited features.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isCancelling}>Keep Subscription</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCancelSubscription}
+              disabled={isCancelling}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isCancelling ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Cancelling...
+                </>
+              ) : (
+                "Yes, Cancel Subscription"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

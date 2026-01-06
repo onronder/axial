@@ -36,6 +36,22 @@ class DocumentStatsDTO(BaseModel):
     last_updated: Optional[str] = None
 
 
+class DocumentUpdate(BaseModel):
+    """Request model for updating document metadata."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+class DocumentChunkDTO(BaseModel):
+    """Response model for document chunks."""
+    id: str
+    document_id: str
+    content: str
+    chunk_index: int
+    metadata: Dict[str, Any] = {}
+
+
 # =============================================================================
 # Stats Endpoint (Optimized for Onboarding Check)
 # =============================================================================
@@ -224,3 +240,153 @@ async def delete_document(
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
+
+
+# =============================================================================
+# Document Update Endpoint
+# =============================================================================
+
+@router.patch("/documents/{document_id}", response_model=DocumentDTO)
+@limiter.limit("30/minute")
+async def update_document(
+    document_id: str,
+    update: DocumentUpdate,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Update document metadata (title, description, tags).
+    
+    Only the document owner or team members with editor/admin role can update.
+    """
+    from services.audit import audit_logger
+    
+    supabase = get_supabase()
+    
+    try:
+        # RBAC Check: Viewers cannot update documents
+        team = await team_service.get_user_team(user_id)
+        if team and team.get("user_role") == "viewer":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Viewers cannot update documents."
+            )
+        
+        # Check document exists and user owns it
+        doc_response = supabase.table("documents")\
+            .select("*")\
+            .eq("id", document_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        if not doc_response.data:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        old_doc = doc_response.data
+        
+        # Build update payload
+        update_data = {}
+        if update.title is not None:
+            update_data["title"] = update.title
+        
+        # Store description and tags in metadata
+        if update.description is not None or update.tags is not None:
+            existing_metadata = old_doc.get("metadata", {}) or {}
+            if update.description is not None:
+                existing_metadata["description"] = update.description
+            if update.tags is not None:
+                existing_metadata["tags"] = update.tags
+            update_data["metadata"] = existing_metadata
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No update fields provided")
+        
+        # Perform update
+        result = supabase.table("documents")\
+            .update(update_data)\
+            .eq("id", document_id)\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Update failed")
+        
+        updated_doc = result.data[0]
+        
+        # Audit log
+        audit_logger.log(
+            background_tasks,
+            user_id=user_id,
+            action="document.update",
+            resource_type="document",
+            resource_id=document_id,
+            details={
+                "title": updated_doc.get("title"),
+                "changes": list(update_data.keys())
+            },
+            request=request
+        )
+        
+        # Return updated document
+        updated_doc['status'] = updated_doc.get('status', 'indexed')
+        updated_doc['indexing_status'] = 'completed'
+        if 'size' not in updated_doc or updated_doc['size'] is None:
+            meta = updated_doc.get('metadata') or {}
+            updated_doc['size'] = meta.get('size') or meta.get('file_size') or 0
+        
+        return updated_doc
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update document: {str(e)}")
+
+
+# =============================================================================
+# Document Chunks Endpoint (for debugging/display)
+# =============================================================================
+
+@router.get("/documents/{document_id}/chunks", response_model=List[DocumentChunkDTO])
+@limiter.limit("30/minute")
+async def get_document_chunks(
+    document_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    Get all chunks for a document.
+    
+    Useful for debugging and displaying document content breakdown.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Verify document exists and user owns it
+        doc_check = supabase.table("documents")\
+            .select("id")\
+            .eq("id", document_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        if not doc_check.data:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Fetch chunks
+        chunks_response = supabase.table("document_chunks")\
+            .select("id, document_id, content, chunk_index, metadata")\
+            .eq("document_id", document_id)\
+            .order("chunk_index", desc=False)\
+            .range(offset, offset + limit - 1)\
+            .execute()
+        
+        return chunks_response.data or []
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch chunks: {str(e)}")

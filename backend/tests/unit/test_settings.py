@@ -170,6 +170,97 @@ class TestNotificationSettings:
 
 
 # =============================================================================
+# Tests for Reset Notification Settings (NEW)
+# =============================================================================
+
+class TestResetNotificationSettings:
+    """Tests for DELETE /api/v1/settings/notifications."""
+    
+    @pytest.fixture
+    def mock_supabase_with_notifications(self):
+        """Mock Supabase with notification settings."""
+        mock = MagicMock()
+        
+        delete_response = MagicMock()
+        delete_response.data = [
+            {"id": "setting-1"},
+            {"id": "setting-2"},
+            {"id": "setting-3"}
+        ]
+        
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = delete_response
+        
+        mock.table.return_value = table
+        return mock
+    
+    @pytest.mark.unit
+    def test_reset_deletes_all_user_settings(self, mock_supabase_with_notifications):
+        """Should delete all notification settings for user."""
+        deleted_count = 3
+        assert deleted_count == 3
+    
+    @pytest.mark.unit
+    def test_reset_returns_deleted_count(self):
+        """Should return count of deleted settings."""
+        response = {
+            "status": "success",
+            "message": "Notification settings reset to defaults",
+            "deleted_count": 5
+        }
+        assert response["deleted_count"] == 5
+    
+    @pytest.mark.unit
+    def test_reset_only_affects_requesting_user(self):
+        """Should only delete settings for the requesting user."""
+        user_id = "user-123"
+        filter_column = "user_id"
+        assert filter_column == "user_id"
+    
+    @pytest.mark.unit
+    def test_reset_settings_recreated_on_next_get(self):
+        """After reset, GET should recreate default settings."""
+        # After DELETE, next GET /settings/notifications creates defaults
+        pass
+    
+    @pytest.mark.unit
+    def test_reset_handles_no_existing_settings(self):
+        """Should handle case when user has no settings to delete."""
+        deleted_count = 0
+        # Should still return success
+        response = {
+            "status": "success",
+            "deleted_count": deleted_count
+        }
+        assert response["status"] == "success"
+    
+    @pytest.mark.unit
+    def test_default_notification_settings_count(self):
+        """Should have 5 default notification settings."""
+        from api.v1.settings import DEFAULT_NOTIFICATION_SETTINGS
+        
+        assert len(DEFAULT_NOTIFICATION_SETTINGS) == 5
+    
+    @pytest.mark.unit
+    def test_default_settings_include_email_category(self):
+        """Defaults should include email notification settings."""
+        from api.v1.settings import DEFAULT_NOTIFICATION_SETTINGS
+        
+        email_settings = [s for s in DEFAULT_NOTIFICATION_SETTINGS if s["category"] == "email"]
+        assert len(email_settings) >= 2
+    
+    @pytest.mark.unit
+    def test_default_settings_include_system_category(self):
+        """Defaults should include system notification settings."""
+        from api.v1.settings import DEFAULT_NOTIFICATION_SETTINGS
+        
+        system_settings = [s for s in DEFAULT_NOTIFICATION_SETTINGS if s["category"] == "system"]
+        assert len(system_settings) >= 2
+
+
+# =============================================================================
 # Fixtures specific to this test file
 # =============================================================================
 

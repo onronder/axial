@@ -121,7 +121,7 @@ export const clearAuthCache = () => {
 // USAGE & PLAN API
 // =============================================================================
 
-import type { UserUsage, EffectivePlan, Team, TeamMember, InviteRequest, BulkInviteResult } from '@/types';
+import type { UserUsage, EffectivePlan, Team, TeamMember, InviteRequest, BulkInviteResult, TeamUpdate, SubscriptionCancelResponse, SubscriptionDetail } from '@/types';
 
 /**
  * Get user usage stats and limits
@@ -203,6 +203,47 @@ export const removeMember = async (memberId: string): Promise<{ success: boolean
  */
 export const updateMemberRole = async (memberId: string, role: string): Promise<TeamMember> => {
     const response = await api.patch<TeamMember>(`/team/members/${memberId}`, { role });
+    return response.data;
+};
+
+/**
+ * Update team details (name, slug)
+ * PATCH /api/v1/team
+ */
+export const updateTeam = async (data: TeamUpdate): Promise<Team> => {
+    const response = await api.patch<Team>('/team', data);
+    return response.data;
+};
+
+/**
+ * Delete the team (owner only)
+ * DELETE /api/v1/team
+ */
+export const deleteTeam = async (): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete('/team');
+    return response.data;
+};
+
+// =============================================================================
+// BILLING API
+// =============================================================================
+
+/**
+ * Cancel the current subscription
+ * Sets cancel_at_period_end=true, access continues until period ends
+ * DELETE /api/v1/billing/subscription
+ */
+export const cancelSubscription = async (): Promise<SubscriptionCancelResponse> => {
+    const response = await api.delete<SubscriptionCancelResponse>('/billing/subscription');
+    return response.data;
+};
+
+/**
+ * Get current subscription details
+ * GET /api/v1/billing/subscription
+ */
+export const getCurrentSubscription = async (): Promise<SubscriptionDetail> => {
+    const response = await api.get<SubscriptionDetail>('/billing/subscription');
     return response.data;
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ArrowLeft,
   Folder,
@@ -48,7 +48,7 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
   const { getFiles, ingestFiles } = useDataSources();
   const { toast } = useToast();
   // Use 'any' temporarily if FileItem isn't strictly defined in the mock hook result or define strict LocalFileItem
-  const [files, setFiles] = useState<any[]>([]);
+  const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [ingesting, setIngesting] = useState(false);
@@ -59,15 +59,11 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
 
   const currentFolderId = breadcrumbs[breadcrumbs.length - 1].id;
 
-  const filteredFiles = files.filter((f: any) =>
+  const filteredFiles = files.filter((f: FileItem) =>
     f.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  useEffect(() => {
-    loadFiles();
-  }, [currentFolderId]);
-
-  const loadFiles = async () => {
+  const loadFiles = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getFiles(source.id, currentFolderId);
@@ -81,7 +77,11 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [getFiles, source.id, currentFolderId, toast]);
+
+  useEffect(() => {
+    loadFiles();
+  }, [loadFiles]);
 
   const handleFolderClick = (folder: FileItem) => {
     setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);

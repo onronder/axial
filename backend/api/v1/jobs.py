@@ -376,3 +376,107 @@ async def get_job_files(
     except Exception as e:
         logger.error(f"Failed to get files for job {job_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get job files")
+
+
+# ============================================================
+# RETRY ENTIRE JOB ENDPOINT
+# ============================================================
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_job(
+    job_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Retry an entire failed ingestion job.
+    
+    - Validates job status and ownership
+    - Resets all failed files to 'pending'
+    - Resets job status to 'processing'
+    - Re-dispatches for processing
+    
+    Returns:
+        Job ID and number of files queued for retry
+    """
+    from datetime import datetime, timezone
+    
+    supabase = get_supabase()
+    
+    try:
+        # Verify ownership and get job details
+        response = supabase.table("ingestion_jobs")\
+            .select("*")\
+            .eq("id", job_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        job = response.data
+        
+        # Check if job can be retried (only failed or completed jobs)
+        if job["status"] not in ["failed", "completed"]:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot retry job with status '{job['status']}'. Only failed or completed jobs can be retried."
+            )
+        
+        # Count failed files
+        failed_files_response = supabase.table("ingestion_file_status")\
+            .select("id, retry_count")\
+            .eq("job_id", job_id)\
+            .eq("status", "failed")\
+            .execute()
+        
+        failed_files = failed_files_response.data or []
+        
+        if not failed_files:
+            raise HTTPException(
+                status_code=400, 
+                detail="No failed files to retry in this job"
+            )
+        
+        # Filter out files that have exceeded max retries
+        retryable_files = [f for f in failed_files if (f.get("retry_count", 0) or 0) < 3]
+        
+        if not retryable_files:
+            raise HTTPException(
+                status_code=400, 
+                detail="All failed files have exceeded maximum retry attempts (3)"
+            )
+        
+        # Reset all retryable failed files to 'pending'
+        for file_info in retryable_files:
+            retry_count = (file_info.get("retry_count", 0) or 0) + 1
+            supabase.table("ingestion_file_status").update({
+                "status": "pending",
+                "progress": 0,
+                "status_message": f"Retry attempt {retry_count}/3",
+                "error_message": None,
+                "retry_count": retry_count
+            }).eq("id", file_info["id"]).execute()
+        
+        # Reset job status to processing
+        supabase.table("ingestion_jobs").update({
+            "status": "processing",
+            "status_message": f"Retrying {len(retryable_files)} failed files",
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }).eq("id", job_id).execute()
+        
+        logger.info(f"🔄 Retry job {job_id}: queued {len(retryable_files)} files for reprocessing")
+        
+        return {
+            "status": "queued",
+            "job_id": job_id,
+            "files_queued": len(retryable_files),
+            "files_skipped": len(failed_files) - len(retryable_files),
+            "message": f"{len(retryable_files)} files queued for retry"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retry job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retry job")

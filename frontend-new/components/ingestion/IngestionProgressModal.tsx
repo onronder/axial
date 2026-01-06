@@ -1,12 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, X, FileText, Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileStatus, getStatusLabel, getStatusColor } from "@/hooks/useFileStatus";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ChunkProgress } from "./ChunkProgress";
+import { ProcessingStages } from "./ProcessingStages";
+import { ErrorDetails } from "./ErrorDetails";
+import { RetryStatus } from "./RetryStatus";
+import {
+    announceToScreenReader,
+    KeyboardShortcuts,
+    FocusTrap,
+    getProgressLabel,
+    getFileStatusLabel
+} from "@/lib/accessibility";
 
 interface IngestionProgressModalProps {
     jobId: string;
@@ -24,6 +36,9 @@ export function IngestionProgressModal({
     onClose,
 }: IngestionProgressModalProps) {
     const [isExpanded, setIsExpanded] = useState(true);
+    const modalRef = useRef<HTMLDivElement>(null);
+    const keyboardShortcuts = useRef<KeyboardShortcuts | null>(null);
+    const focusTrap = useRef<FocusTrap | null>(null);
 
     const completedFiles = files.filter((f) => f.status === "completed").length;
     const failedFiles = files.filter((f) => f.status === "failed").length;
@@ -33,8 +48,50 @@ export function IngestionProgressModal({
 
     const allComplete = completedFiles + failedFiles === totalFiles;
 
+    // Setup keyboard shortcuts and focus trap
+    useEffect(() => {
+        if (!modalRef.current) return;
+
+        // Initialize keyboard shortcuts
+        const shortcuts = new KeyboardShortcuts();
+        shortcuts.register('escape', onClose);
+        shortcuts.register('ctrl+e', () => setIsExpanded(!isExpanded));
+        shortcuts.start();
+        keyboardShortcuts.current = shortcuts;
+
+        // Initialize focus trap
+        const trap = new FocusTrap(modalRef.current);
+        trap.activate();
+        focusTrap.current = trap;
+
+        // Announce modal opening
+        announceToScreenReader('File processing progress modal opened', 'polite');
+
+        return () => {
+            shortcuts.stop();
+            trap.deactivate();
+        };
+    }, [onClose]);
+
+    // Announce progress updates
+    useEffect(() => {
+        if (allComplete) {
+            announceToScreenReader(
+                `Processing complete. ${completedFiles} files completed${failedFiles > 0 ? `, ${failedFiles} failed` : ''}`,
+                'assertive'
+            );
+        }
+    }, [allComplete, completedFiles, failedFiles]);
+
     return (
-        <div className="fixed bottom-4 right-4 z-50 w-96 shadow-2xl">
+        <div
+            ref={modalRef}
+            className="fixed bottom-4 right-4 z-50 w-96 shadow-2xl animate-slide-in"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="progress-modal-title"
+            aria-describedby="progress-modal-description"
+        >
             <Card className="border-2">
                 {/* Header - Always Visible */}
                 <div className="flex items-center justify-between border-b bg-muted/30 p-4">
@@ -65,6 +122,7 @@ export function IngestionProgressModal({
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => setIsExpanded(!isExpanded)}
+                            aria-label={isExpanded ? "Collapse" : "Expand"}
                         >
                             {isExpanded ? (
                                 <ChevronDown className="h-4 w-4" />
@@ -78,6 +136,7 @@ export function IngestionProgressModal({
                                 size="icon"
                                 className="h-8 w-8"
                                 onClick={onClose}
+                                aria-label="Close"
                             >
                                 <X className="h-4 w-4" />
                             </Button>
@@ -89,9 +148,9 @@ export function IngestionProgressModal({
                 <div className="px-4 py-3 border-b bg-background">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium">Overall Progress</span>
-                        <span className="text-xs text-muted-foreground">{Math.round(overallProgress)}%</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{Math.round(overallProgress)}%</span>
                     </div>
-                    <Progress value={overallProgress} className="h-2" />
+                    <Progress value={overallProgress} className="h-2 transition-all duration-300" />
                 </div>
 
                 {/* Expandable File List */}
@@ -105,7 +164,7 @@ export function IngestionProgressModal({
                         ) : (
                             <div className="divide-y">
                                 {files.map((file) => (
-                                    <FileProgressCard key={file.id} file={file} />
+                                    <FileProgressCard key={file.id} file={file} jobId={jobId} />
                                 ))}
                             </div>
                         )}
@@ -118,12 +177,55 @@ export function IngestionProgressModal({
 
 interface FileProgressCardProps {
     file: FileStatus;
+    jobId: string;
 }
 
-function FileProgressCard({ file }: FileProgressCardProps) {
+function FileProgressCard({ file, jobId }: FileProgressCardProps) {
+    const [isExpanded, setIsExpanded] = useState(false);
     const statusColor = getStatusColor(file.status);
     const statusLabel = getStatusLabel(file.status);
     const isProcessing = !["completed", "failed", "cancelled"].includes(file.status);
+    const isFailed = file.status === "failed";
+    const hasChunks = file.chunks_total > 0;
+    const hasError = !!file.error_message;
+
+    // Determine processing stages based on status
+    const getProcessingStages = () => {
+        const stages: any = {
+            parsing: 'complete',
+            chunking: 'complete',
+            embedding: 'pending',
+            indexing: 'pending',
+        };
+
+        if (file.status === 'processing') {
+            stages.embedding = 'in_progress';
+        } else if (file.status === 'embedding') {
+            stages.embedding = 'in_progress';
+        } else if (file.status === 'indexing') {
+            stages.embedding = 'complete';
+            stages.indexing = 'in_progress';
+        } else if (file.status === 'completed') {
+            stages.embedding = 'complete';
+            stages.indexing = 'complete';
+        } else if (file.status === 'failed') {
+            // Mark current stage as failed
+            if (file.status_message?.includes('embedding')) {
+                stages.embedding = 'failed';
+            } else if (file.status_message?.includes('indexing')) {
+                stages.indexing = 'failed';
+            }
+        }
+
+        return stages;
+    };
+
+    const getCurrentStage = (): 'parsing' | 'chunking' | 'embedding' | 'indexing' => {
+        if (file.status === 'embedding') return 'embedding';
+        if (file.status === 'indexing') return 'indexing';
+        if (file.status === 'processing') return 'embedding';
+        return 'parsing';
+    };
 
     return (
         <div className="p-4 hover:bg-muted/30 transition-colors">
@@ -141,56 +243,113 @@ function FileProgressCard({ file }: FileProgressCardProps) {
 
                 {/* Content */}
                 <div className="flex-1 min-w-0 space-y-2">
-                    {/* Filename */}
-                    <div>
-                        <p className="text-sm font-medium truncate" title={file.filename}>
-                            {file.filename}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                            <span className={cn("text-xs font-medium", statusColor)}>
-                                {statusLabel}
-                            </span>
-                            {file.file_size_bytes > 0 && (
-                                <>
-                                    <span className="text-xs text-muted-foreground">•</span>
-                                    <span className="text-xs text-muted-foreground">
-                                        {formatBytes(file.file_size_bytes)}
-                                    </span>
-                                </>
-                            )}
+                    {/* Filename and basic info */}
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate" title={file.filename}>
+                                {file.filename}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className={cn("text-xs font-medium", statusColor)}>
+                                    {statusLabel}
+                                </span>
+                                {file.file_size_bytes > 0 && (
+                                    <>
+                                        <span className="text-xs text-muted-foreground">•</span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {formatBytes(file.file_size_bytes)}
+                                        </span>
+                                    </>
+                                )}
+                            </div>
                         </div>
+
+                        {/* Expand button (only if has details to show) */}
+                        {(isProcessing && hasChunks) || isFailed ? (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => setIsExpanded(!isExpanded)}
+                                aria-label={isExpanded ? "Collapse details" : "Expand details"}
+                            >
+                                {isExpanded ? (
+                                    <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                    <ChevronDown className="h-3 w-3" />
+                                )}
+                            </Button>
+                        ) : null}
                     </div>
 
                     {/* Progress Bar (only for active files) */}
                     {isProcessing && file.progress > 0 && (
                         <div>
-                            <Progress value={file.progress} className="h-1.5" />
+                            <Progress value={file.progress} className="h-1.5 transition-all duration-300" />
                         </div>
                     )}
 
                     {/* Status Message */}
-                    {file.status_message && (
-                        <p className="text-xs text-muted-foreground line-clamp-2">
+                    {file.status_message && !isExpanded && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">
                             {file.status_message}
                         </p>
                     )}
 
-                    {/* Error Message */}
-                    {file.error_message && (
-                        <p className="text-xs text-red-500 line-clamp-2">
+                    {/* Error Message (collapsed) */}
+                    {hasError && !isExpanded && (
+                        <p className="text-xs text-red-500 line-clamp-1">
                             {file.error_message}
                         </p>
                     )}
 
-                    {/* Chunk Progress (if available) */}
-                    {file.chunks_total > 0 && (
+                    {/* Chunk count (collapsed) */}
+                    {hasChunks && !isExpanded && (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <FileText className="h-3 w-3" />
-                            <span>
+                            <span className="tabular-nums">
                                 {file.chunks_processed}/{file.chunks_total} chunks
                             </span>
                         </div>
                     )}
+
+                    {/* Expandable Details */}
+                    <Collapsible open={isExpanded}>
+                        <CollapsibleContent className="space-y-3 pt-2 animate-accordion-down">
+                            {/* Processing file details */}
+                            {isProcessing && hasChunks && (
+                                <>
+                                    <ChunkProgress
+                                        processed={file.chunks_processed}
+                                        total={file.chunks_total}
+                                    />
+
+                                    <ProcessingStages
+                                        currentStage={getCurrentStage()}
+                                        stages={getProcessingStages()}
+                                    />
+                                </>
+                            )}
+
+                            {/* Failed file details */}
+                            {isFailed && hasError && (
+                                <>
+                                    <ErrorDetails
+                                        error={{
+                                            type: file.error_message?.split(':')[0] || 'Error',
+                                            message: file.error_message || 'An error occurred',
+                                            timestamp: file.updated_at,
+                                        }}
+                                    />
+
+                                    {/* Retry Status Integration */}
+                                    <div className="pt-2">
+                                        <RetryStatus jobId={jobId} />
+                                    </div>
+                                </>
+                            )}
+                        </CollapsibleContent>
+                    </Collapsible>
                 </div>
             </div>
         </div>

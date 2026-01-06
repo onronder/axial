@@ -100,5 +100,25 @@ celery_app.conf.update(
             "task": "worker.tasks.cleanup_old_jobs",
             "schedule": 86400.0,  # Every 24 hours (in seconds)
         },
+        # Retry failed tasks from DLQ every 5 minutes
+        "retry-failed-tasks": {
+            "task": "worker.dlq_worker.retry_failed_tasks",
+            "schedule": 300.0,  # Every 5 minutes
+        },
+        # Update memory metrics every minute
+        "update-memory-metrics": {
+            "task": "worker.periodic_tasks.update_memory_metrics",
+            "schedule": 60.0,  # Every minute
+        },
+        # Cleanup old file status records daily at 3am UTC
+        "cleanup-old-file-status-daily": {
+            "task": "worker.periodic_tasks.cleanup_old_file_status",
+            "schedule": crontab(hour=3, minute=0),
+        },
+        # Cleanup old audit logs weekly on Sunday at 4am UTC
+        "cleanup-old-audit-logs-weekly": {
+            "task": "worker.periodic_tasks.cleanup_old_audit_logs",
+            "schedule": crontab(day_of_week=0, hour=4, minute=0),
+        },
     },
 )

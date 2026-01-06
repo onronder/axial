@@ -681,8 +681,50 @@ def process_document_pipeline(
 
 STAGING_BUCKET = "ephemeral-staging"
 
+
+
+# ============================================================
+# UNIFIED INGESTION TASK - Production Grade with DLQ
+# ============================================================
+
+def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
+    """
+    Handle task failure by logging to dead letter queue.
+    
+    This callback is triggered when a Celery task fails after all retries.
+    It logs the failure to the failed_tasks table for tracking and potential retry.
+    """
+    try:
+        from worker.dlq_worker import log_task_failure
+        
+        # Extract user_id and job_id from kwargs
+        user_id = kwargs.get('user_id')
+        job_id = kwargs.get('job_id')
+        
+        # Log to DLQ with full context
+        log_task_failure(
+            task_id=task_id,
+            task_name=self.name,
+            args=args,
+            kwargs=kwargs,
+            exc=exc,
+            traceback_str=str(einfo),
+            user_id=user_id,
+            job_id=job_id
+        )
+        
+        logger.info(f"📥 [DLQ] Logged failed task {task_id} to dead letter queue")
+        
+    except Exception as e:
+        logger.error(f"❌ [DLQ] Failed to log task failure to DLQ: {e}")
+
+
+
+
 @celery_app.task(
     bind=True,
+    name="unified_ingest_task",
+    on_failure=handle_task_failure,
     autoretry_for=(ConnectionError, TimeoutError, OSError),
     retry_backoff=True,
     retry_backoff_max=600,

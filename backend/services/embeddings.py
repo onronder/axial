@@ -4,6 +4,7 @@ Embedding Service
 Provides centralized embedding generation using OpenAI's text-embedding-3-small model.
 """
 
+import asyncio
 import logging
 import time
 from typing import List, Optional
@@ -60,10 +61,12 @@ def generate_embedding(text: str) -> Optional[List[float]]:
         raise
 
 
-@with_retry_sync(max_attempts=3)
-def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
+async def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     """
     Generate embeddings for a batch of texts with parallel processing.
+    
+    CRITICAL FIX: Removed @with_retry_sync decorator (was causing async/sync mismatch).
+    Retry logic is now applied at the batch level inside this function.
     
     Automatically splits into sub-batches and processes them in parallel
     with rate limiting to respect OpenAI's token limits.
@@ -74,7 +77,6 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
     Returns:
         List of embedding vectors (or None for empty texts)
     """
-    import asyncio
     from asyncio import Semaphore
     
     # CRITICAL FIX: Convert generators to list to prevent 'generator has no len()' error
@@ -113,18 +115,37 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
             batches.append(valid_texts[batch_start:batch_end])
         
         # Process batches in parallel with rate limiting
-        async def process_batches_parallel():
-            # Allow 3 concurrent embedding requests
-            semaphore = Semaphore(3)
-            
-            async def process_single_batch(batch_idx, batch_texts):
-                async with semaphore:
-                    # Run sync function in thread pool
-                    loop = asyncio.get_event_loop()
-                    embeddings = await loop.run_in_executor(
+        # Allow 3 concurrent embedding requests
+        semaphore = Semaphore(3)
+        
+        async def process_single_batch(batch_idx, batch_texts):
+            """Process single batch with retry and timeout protection."""
+            async with semaphore:
+                # Import resilience utilities
+                from core.resilience import with_retry_async, OPENAI_RETRY_CONFIG, with_timeout, Timeouts
+                
+                # Wrap embedding call with retry logic
+                @with_retry_async(**OPENAI_RETRY_CONFIG)
+                async def embed_with_retry():
+                    """Embedding call with automatic retry on transient failures."""
+                    # Use asyncio.to_thread for Python 3.9+ (better than run_in_executor)
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
+                    
+                    return await loop.run_in_executor(
                         None,
                         model.embed_documents,
                         batch_texts
+                    )
+                
+                # Apply timeout protection (60s per batch)
+                try:
+                    embeddings = await with_timeout(
+                        embed_with_retry(),
+                        timeout_seconds=Timeouts.EMBEDDING_BATCH,
+                        operation_name=f"Embedding batch {batch_idx + 1}/{len(batches)}"
                     )
                     logger.info(f"📊 [Embeddings] Processed batch {batch_idx + 1}/{len(batches)}: {len(batch_texts)} texts")
                     
@@ -133,20 +154,22 @@ def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
                         await asyncio.sleep(SLEEP_INTERVAL)
                     
                     return embeddings
-            
-            # Process all batches in parallel
-            tasks = [process_single_batch(i, batch) for i, batch in enumerate(batches)]
-            batch_results = await asyncio.gather(*tasks)
-            
-            # Flatten results
-            all_embeddings = []
-            for batch_emb in batch_results:
-                all_embeddings.extend(batch_emb)
-            
-            return all_embeddings
+                    
+                except asyncio.TimeoutError:
+                    logger.error(f"📊 [Embeddings] Batch {batch_idx + 1} timed out after {Timeouts.EMBEDDING_BATCH}s")
+                    raise
+                except Exception as e:
+                    logger.error(f"📊 [Embeddings] Batch {batch_idx + 1} failed after retries: {e}")
+                    raise
         
-        # Run async processing
-        all_embeddings = asyncio.run(process_batches_parallel())
+        # Process all batches in parallel
+        tasks = [process_single_batch(i, batch) for i, batch in enumerate(batches)]
+        batch_results = await asyncio.gather(*tasks)
+        
+        # Flatten results
+        all_embeddings = []
+        for batch_emb in batch_results:
+            all_embeddings.extend(batch_emb)
         
         # Reconstruct full result list with None for empty texts
         result = [None for _ in texts]

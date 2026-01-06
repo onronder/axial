@@ -95,6 +95,8 @@ class TeamService:
         """
         Direct database query for effective plan (fallback).
         
+        OPTIMIZED: Uses single RPC call instead of 4 sequential queries.
+        
         PRIORITY ORDER:
         1. Check subscriptions table (populated by Polar webhooks) 
         2. Fallback to user_profiles.plan (legacy/default)
@@ -104,6 +106,47 @@ class TeamService:
         try:
             supabase = get_supabase()
             
+            # ✅ OPTIMIZED: Single RPC call instead of N+1 queries
+            try:
+                team_data_response = supabase.rpc('get_user_team_data', {
+                    'target_user_id': user_id
+                }).execute()
+                
+                if team_data_response.data:
+                    data = team_data_response.data
+                    
+                    # Check subscription first (source of truth)
+                    if data.get('subscription'):
+                        sub = data['subscription']
+                        sub_status = sub.get('status', '')
+                        sub_plan = sub.get('plan_type', 'free')
+                        
+                        if sub_status == 'active':
+                            logger.info(f"[TeamService] User {user_id[:8]}... has active subscription: {sub_plan}")
+                            return sub_plan
+                        elif sub_status == 'canceled':
+                            logger.info(f"[TeamService] User {user_id[:8]}... subscription canceled, returning 'free'")
+                            return 'free'
+                        elif sub_status in ['trialing']:
+                            return sub_plan
+                    
+                    # Fallback to profile
+                    if data.get('profile'):
+                        profile = data['profile']
+                        subscription_status = profile.get('subscription_status', 'active')
+                        allowed_statuses = ['active', 'trialing']
+                        
+                        if subscription_status not in allowed_statuses:
+                            logger.info(f"[TeamService] User {user_id[:8]}... has status={subscription_status}, forcing 'none'")
+                            return 'none'
+                        
+                        return profile.get('plan', 'free')
+                        
+            except Exception as rpc_error:
+                logger.warning(f"[TeamService] RPC call failed, falling back to sequential queries: {rpc_error}")
+                # Fall through to legacy sequential queries below
+            
+            # ⚠️ FALLBACK: Legacy sequential queries (only if RPC fails)
             # Step 1: Find user's team membership
             member_response = supabase.table("team_members").select(
                 "team_id"

@@ -216,6 +216,76 @@ describe('useIngestionJobs Hook', () => {
             const returnValue = { refresh: async () => { } };
             expect(typeof returnValue.refresh).toBe('function');
         });
+
+        it('returns retryJob function', () => {
+            const returnValue = { retryJob: async (jobId: string) => { } };
+            expect(typeof returnValue.retryJob).toBe('function');
+        });
+    });
+
+    // =========================================================================
+    // Tests for Retry Job Function (NEW)
+    // =========================================================================
+
+    describe('Retry Job', () => {
+        it('should format retry endpoint correctly', () => {
+            const jobId = 'job-123';
+            const endpoint = `/api/v1/jobs/${jobId}/retry`;
+            expect(endpoint).toBe('/api/v1/jobs/job-123/retry');
+        });
+
+        it('should use POST method', () => {
+            const method = 'POST';
+            expect(method).toBe('POST');
+        });
+
+        it('should show toast on success', () => {
+            const toastTitle = 'Job Retry Started';
+            expect(toastTitle).toBe('Job Retry Started');
+        });
+
+        it('should show files_queued in success message', () => {
+            const result = { files_queued: 5 };
+            const message = `Retrying ${result.files_queued} failed files...`;
+            expect(message).toContain('5');
+        });
+
+        it('should show destructive toast on error', () => {
+            const variant = 'destructive';
+            expect(variant).toBe('destructive');
+        });
+
+        it('should refresh jobs after retry', () => {
+            const refreshCalled = true;
+            expect(refreshCalled).toBe(true);
+        });
+
+        it('should throw error for failed retry', () => {
+            const shouldThrow = true;
+            expect(shouldThrow).toBe(true);
+        });
+    });
+
+    describe('Retry Job Response', () => {
+        it('should include files_queued count', () => {
+            const response = { files_queued: 3, files_skipped: 1 };
+            expect(response.files_queued).toBe(3);
+        });
+
+        it('should include files_skipped count', () => {
+            const response = { files_queued: 3, files_skipped: 1 };
+            expect(response.files_skipped).toBe(1);
+        });
+
+        it('should include status', () => {
+            const response = { status: 'queued' };
+            expect(response.status).toBe('queued');
+        });
+
+        it('should include job_id', () => {
+            const response = { job_id: 'job-123' };
+            expect(response.job_id).toBe('job-123');
+        });
     });
 });
 

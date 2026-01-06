@@ -94,14 +94,14 @@ export function DashboardSidebar() {
 
             {/* Settings Link */}
             <div className="px-4 py-2">
-                <a
+                <Link
                     href="/dashboard/settings"
                     className={`flex items-center gap-2 px-2 py-2 rounded-md transition-colors ${isSettingsActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent/50'
                         }`}
                 >
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
-                </a>
+                </Link>
             </div>
 
             {/* Help Modal */}

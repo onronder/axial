@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { cn } from "@/lib/utils";
 
 // Use static path instead of import
@@ -51,7 +52,7 @@ export function AxioLoader({
           }}
         />
         {/* Logo */}
-        <img
+        <Image
           src={logoIcon}
           alt="Loading..."
           width={dimensions.logo}

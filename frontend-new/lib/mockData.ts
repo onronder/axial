@@ -147,6 +147,16 @@ export const DATA_SOURCES: DataSource[] = [
         description: "Crawl and index your company website.",
         category: "web",
     },
+    {
+        id: "youtube",
+        name: "YouTube",
+        type: "youtube",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "youtube",
+        description: "Import transcripts from YouTube videos and channels.",
+        category: "web",
+    },
 ];
 
 // =============================================================================

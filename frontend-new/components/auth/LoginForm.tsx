@@ -1,12 +1,10 @@
-"use client";
-
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,6 +31,8 @@ export function LoginForm() {
   const { login } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const redirectUrl = searchParams.get("redirect");
 
@@ -48,6 +48,16 @@ export function LoginForm() {
     setIsLoading(true);
     try {
       await login(data.email, data.password);
+
+      // Handle remember me
+      if (rememberMe) {
+        localStorage.setItem('remember_me', 'true');
+        localStorage.setItem('user_email', data.email);
+      } else {
+        localStorage.removeItem('remember_me');
+        localStorage.removeItem('user_email');
+      }
+
       toast({
         title: "Welcome back!",
         description: "You've successfully logged in.",
@@ -105,19 +115,43 @@ export function LoginForm() {
               <FormItem className="space-y-2">
                 <FormLabel className="text-sm font-medium text-white/80">Password</FormLabel>
                 <FormControl>
-                  <Input
-                    className="input-glass w-full"
-                    type="password"
-                    placeholder="••••••••"
-                    {...field}
-                  />
+                  <div className="relative">
+                    <Input
+                      className="input-glass w-full pr-10"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      {...field}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/60 transition-colors"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </FormControl>
                 <FormMessage className="text-red-400 text-xs" />
               </FormItem>
             )}
           />
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-2 focus:ring-primary focus:ring-offset-0"
+              />
+              <span className="text-sm text-white/80">Remember me</span>
+            </label>
+
             <Link
               href="/forgot-password"
               className="text-sm text-accent-violet hover:text-accent-violet/80 transition-colors"

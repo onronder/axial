@@ -238,6 +238,12 @@ app.include_router(notifications_router, prefix="/api/v1", tags=["notifications"
 app.include_router(usage_router, prefix="/api/v1", tags=["usage"])
 app.include_router(webhooks_router, prefix="/api/v1", tags=["webhooks"])
 
+from api.v1.admin import router as admin_router
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
+
+from api.v1.dlq import router as dlq_router
+app.include_router(dlq_router, prefix="/api/v1/dlq", tags=["Dead Letter Queue"])
+
 
 # =============================================================================
 # Health & Root Endpoints

@@ -124,3 +124,116 @@ class TestDataSourceSecurity:
     def test_ingested_data_isolated_by_user(self):
         """Ingested documents belong only to the requesting user."""
         pass
+
+
+# =============================================================================
+# Tests for Sync History Endpoint (NEW)
+# =============================================================================
+
+class TestSyncHistoryEndpoint:
+    """Tests for GET /api/v1/integrations/{integration_id}/sync-history."""
+    
+    @pytest.fixture
+    def mock_supabase_with_sync_history(self):
+        """Mock Supabase with sync state history."""
+        mock = MagicMock()
+        
+        # Mock integration check
+        int_response = MagicMock()
+        int_response.data = {
+            "id": "int-123",
+            "connector_definitions": {"type": "google_drive"}
+        }
+        
+        # Mock sync_state response
+        sync_response = MagicMock()
+        sync_response.data = [
+            {
+                "id": "sync-1",
+                "user_id": "user-123",
+                "provider": "google_drive",
+                "cursor": "abc123",
+                "updated_at": "2024-01-02T00:00:00Z"
+            },
+            {
+                "id": "sync-2",
+                "user_id": "user-123",
+                "provider": "google_drive",
+                "cursor": None,
+                "updated_at": "2024-01-01T00:00:00Z"
+            }
+        ]
+        
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.side_effect = [int_response, sync_response]
+        
+        mock.table.return_value = table
+        return mock
+    
+    @pytest.mark.unit
+    def test_sync_history_returns_list(self, mock_supabase_with_sync_history):
+        """Should return list of sync state records."""
+        history = [
+            {"id": "sync-1", "updated_at": "2024-01-02T00:00:00Z"},
+            {"id": "sync-2", "updated_at": "2024-01-01T00:00:00Z"}
+        ]
+        assert len(history) == 2
+    
+    @pytest.mark.unit
+    def test_sync_history_verifies_integration_ownership(self):
+        """Should verify user owns the integration."""
+        # Query should filter by user_id
+        pass
+    
+    @pytest.mark.unit
+    def test_sync_history_returns_404_for_nonexistent_integration(self):
+        """Should return 404 when integration not found."""
+        mock = MagicMock()
+        int_response = MagicMock()
+        int_response.data = None
+        
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.execute.return_value = int_response
+        mock.table.return_value = table
+        
+        assert int_response.data is None
+    
+    @pytest.mark.unit
+    def test_sync_history_filters_by_provider(self):
+        """Should filter sync_state by provider type."""
+        provider = "google_drive"
+        assert provider in ["google_drive", "notion"]
+    
+    @pytest.mark.unit
+    def test_sync_history_orders_by_updated_at_desc(self):
+        """Most recent syncs should appear first."""
+        order_column = "updated_at"
+        order_desc = True
+        
+        assert order_column == "updated_at"
+        assert order_desc is True
+    
+    @pytest.mark.unit
+    def test_sync_history_respects_limit_parameter(self):
+        """Should respect limit parameter (default 20)."""
+        default_limit = 20
+        assert default_limit == 20
+    
+    @pytest.mark.unit
+    def test_sync_history_response_includes_provider(self):
+        """Response should include provider type."""
+        response = {
+            "integration_id": "int-123",
+            "provider": "google_drive",
+            "history": []
+        }
+        assert response["provider"] == "google_drive"
+

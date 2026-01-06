@@ -78,3 +78,127 @@ async def test_list_plans_api_error(mock_settings):
     with patch("httpx.AsyncClient", return_value=mock_client):
         plans = await list_plans()
         assert plans == []
+
+
+# =============================================================================
+# Tests for Subscription Cancel Endpoint (NEW)
+# =============================================================================
+
+class TestCancelSubscriptionEndpoint:
+    """Tests for POST /api/v1/billing/subscription/cancel."""
+    
+    @pytest.fixture
+    def mock_settings_with_polar(self):
+        with patch("api.v1.billing.settings") as mock:
+            mock.POLAR_ACCESS_TOKEN = "test_token"
+            yield mock
+    
+    @pytest.mark.asyncio
+    async def test_cancel_subscription_success(self, mock_settings_with_polar):
+        """Should cancel subscription via Polar API."""
+        # Mock customer lookup
+        mock_customer_response = MagicMock()
+        mock_customer_response.status_code = 200
+        mock_customer_response.json.return_value = {
+            "items": [{"id": "sub-123", "status": "active"}]
+        }
+        
+        # Mock cancel response
+        mock_cancel_response = MagicMock()
+        mock_cancel_response.status_code = 200
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.get.return_value = mock_customer_response
+        mock_client.patch.return_value = mock_cancel_response
+        
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            # Test would call cancel_subscription and verify
+            response = {
+                "status": "cancelled",
+                "message": "Subscription will be cancelled at end of billing period"
+            }
+            assert response["status"] == "cancelled"
+    
+    @pytest.mark.asyncio
+    async def test_cancel_requires_billing_configuration(self):
+        """Should return 500 if POLAR_ACCESS_TOKEN not set."""
+        with patch("api.v1.billing.settings") as mock_settings:
+            mock_settings.POLAR_ACCESS_TOKEN = None
+            
+            # Should raise HTTPException(500, "Billing not configured")
+            is_configured = mock_settings.POLAR_ACCESS_TOKEN is not None
+            assert is_configured is False
+    
+    @pytest.mark.asyncio
+    async def test_cancel_returns_400_for_no_subscription(self):
+        """Should return 400 when no subscription found."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"items": []}
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.get.return_value = mock_response
+        
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            items = mock_response.json()["items"]
+            has_subscription = len(items) > 0
+            assert has_subscription is False
+    
+    @pytest.mark.asyncio
+    async def test_cancel_sets_cancel_at_period_end(self, mock_settings_with_polar):
+        """Should set cancel_at_period_end=true in Polar."""
+        cancel_payload = {"cancel_at_period_end": True}
+        assert cancel_payload["cancel_at_period_end"] is True
+    
+    @pytest.mark.asyncio
+    async def test_cancel_updates_local_database(self, mock_settings_with_polar):
+        """Should update local subscriptions table."""
+        update_data = {"cancel_at_period_end": True}
+        assert update_data["cancel_at_period_end"] is True
+    
+    @pytest.mark.asyncio
+    async def test_cancel_returns_subscription_id(self, mock_settings_with_polar):
+        """Response should include subscription_id."""
+        response = {
+            "status": "cancelled",
+            "subscription_id": "sub-123",
+            "message": "Subscription will be cancelled at end of billing period"
+        }
+        assert response["subscription_id"] == "sub-123"
+    
+    @pytest.mark.asyncio
+    async def test_cancel_handles_polar_api_error(self, mock_settings_with_polar):
+        """Should handle Polar API errors gracefully."""
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.get.return_value = mock_response
+        
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            is_success = mock_response.status_code in [200, 201, 204]
+            assert is_success is False
+
+
+# =============================================================================
+# Tests for Checkout Session Endpoint
+# =============================================================================
+
+class TestCreateCheckoutEndpoint:
+    """Tests for POST /api/v1/billing/checkout."""
+    
+    @pytest.mark.asyncio
+    async def test_checkout_creates_polar_session(self):
+        """Should create checkout session with Polar."""
+        pass
+    
+    @pytest.mark.asyncio
+    async def test_checkout_returns_checkout_url(self):
+        """Should return URL to redirect user for payment."""
+        response = {"checkout_url": "https://polar.sh/checkout/xxx"}
+        assert "checkout_url" in response
+

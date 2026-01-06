@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileText, Loader2, CheckCircle } from "lucide-react";
+import { Upload, FileText, Loader2 } from "lucide-react";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -123,7 +123,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
         });
       }
     },
-    [toast]
+    [toast, refresh, uploadFile]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
