@@ -6,6 +6,7 @@ Provides Supabase client with connection pooling and optimization.
 
 import logging
 from supabase import create_client, Client
+from supabase.lib.client_options import ClientOptions
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -34,18 +35,13 @@ def get_supabase() -> Client:
             _supabase_client = create_client(
                 supabase_url=settings.SUPABASE_URL,
                 supabase_key=settings.SUPABASE_SECRET_KEY,
-                options={
-                    'postgrest': {
-                        'schema': 'public',
-                    },
-                    'auth': {
-                        'auto_refresh_token': True,
-                        'persist_session': False,  # Server-side, no persistence needed
-                    },
-                    'realtime': {
-                        'timeout': 10000,  # 10 second timeout
-                    }
-                }
+                options=ClientOptions(
+                    postgrest_client_timeout=10,
+                    storage_client_timeout=10,
+                    schema="public",
+                    auto_refresh_token=True,
+                    persist_session=False
+                )
             )
             
             logger.info("✅ Supabase client initialized successfully")
