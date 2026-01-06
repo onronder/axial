@@ -8,6 +8,7 @@ subscription status and team access validation.
 import logging
 from fastapi import Depends, HTTPException, status
 from core.security import get_current_user
+from core.db import get_supabase
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
@@ -95,3 +96,65 @@ async def require_plan(required_plans: list[str]):
             )
         return plan
     return checker
+
+
+async def require_admin(user_id: str = Depends(get_current_user)) -> str:
+    """
+    Dependency to require admin privileges.
+    
+    Checks if the user has admin role in their team or is a system admin.
+    
+    Usage:
+        @router.post("/admin-only")
+        async def admin_endpoint(user_id: str = Depends(require_admin)):
+            ...
+    
+    Returns:
+        user_id if admin access is granted
+        
+    Raises:
+        HTTPException(403): If user is not an admin
+    """
+    try:
+        supabase = get_supabase()
+        
+        # Check if user is a team owner (owners are admins of their team)
+        result = supabase.table("teams").select("id, owner_id").eq("owner_id", user_id).execute()
+        
+        if result.data and len(result.data) > 0:
+            return user_id  # User is a team owner, grant admin access
+        
+        # Check if user has admin role in team_members
+        member_result = supabase.table("team_members").select("role").eq("user_id", user_id).eq("role", "admin").execute()
+        
+        if member_result.data and len(member_result.data) > 0:
+            return user_id  # User has admin role
+        
+        # If neither, deny access
+        logger.warning(f"[require_admin] Admin access denied for user {user_id[:8]}...")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "ADMIN_REQUIRED",
+                "message": "This endpoint requires admin privileges"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[require_admin] Error checking admin status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify admin status"
+        )
+
+
+# Re-export get_current_user for convenience
+__all__ = [
+    'get_current_user',
+    'validate_team_access',
+    'get_effective_plan',
+    'require_plan',
+    'require_admin',
+]
