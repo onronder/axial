@@ -60,6 +60,9 @@ ultimate-sitemap-parser
 youtube-transcript-api
 lxml
 
+# --- SERVER MONITORING ---
+psutil>=5.9.0
+
 # --- ADVANCED DOCUMENT PARSING (OCR) ---
 llama-parse>=0.5.0
 nest_asyncio
