@@ -742,13 +742,11 @@ def unified_ingest_task(
     """
     UNIFIED ingestion task for ALL data sources.
     
-    This single task replaces:
-    - ingest_file_task
-    - ingest_connector_task  
-    - crawl_web_task
-    
-    Uses the IngestionPipeline for all processing.
-    Connectors only fetch raw content.
+    Now uses FAN-OUT PATTERN for true parallel processing:
+    1. Fetch all files from connector
+    2. Create file status records
+    3. Dispatch parallel process_file_task for each file
+    4. chord callback aggregates results
     
     Args:
         user_id: User ID
@@ -758,11 +756,12 @@ def unified_ingest_task(
         credentials: Optional auth credentials
     """
     import asyncio
+    import base64
+    from celery import chord, group
     from connectors import get_connector
-    from services.ingestion_pipeline import IngestionPipeline
     
     task_id = self.request.id
-    logger.info(f"[UnifiedIngest:{task_id}] Starting: {connector_type}, Job: {job_id}")
+    logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}")
     
     supabase = get_supabase()
     
@@ -775,26 +774,109 @@ def unified_ingest_task(
             logger.info(f"🛑 [UnifiedIngest:{task_id}] Job cancelled before start")
             return {"status": "cancelled"}
         
+        # Update job status
+        update_job_status(supabase, job_id, "processing")
+        
+        # Create notification
+        create_notification(
+            supabase, user_id,
+            "Processing Started",
+            f"Ingesting documents from {connector_type.replace('_', ' ').title()}",
+            "info",
+            {"job_id": job_id}
+        )
+        
         # Get connector instance
         connector = get_connector(connector_type)
         
-        # Create pipeline
-        pipeline = IngestionPipeline(
-            user_id=user_id,
-            job_id=job_id,
-            supabase_client=supabase
+        # STEP 1: Fetch all documents from connector
+        logger.info(f"[UnifiedIngest:{task_id}] Fetching documents from {connector_type}...")
+        
+        async def collect_documents():
+            documents = []
+            async for doc in connector.fetch_documents(item_ids, credentials, user_id=user_id):
+                documents.append(doc)
+            return documents
+        
+        documents = asyncio.run(collect_documents())
+        total_files = len(documents)
+        
+        logger.info(f"[UnifiedIngest:{task_id}] Collected {total_files} documents for parallel processing")
+        
+        if total_files == 0:
+            update_job_status(supabase, job_id, "completed", 0, "No documents to process")
+            return {"status": "completed", "message": "No documents"}
+        
+        # Update job with total count
+        supabase.table("ingestion_jobs").update({
+            "total_files": total_files,
+            "progress": 5,
+            "message": f"Preparing {total_files} files for parallel processing..."
+        }).eq("id", job_id).execute()
+        
+        # STEP 2: Create file status records and serialize documents
+        file_tasks = []
+        
+        for i, doc in enumerate(documents):
+            # Create file status record
+            file_status_result = supabase.table("ingestion_file_status").insert({
+                "job_id": job_id,
+                "user_id": user_id,
+                "filename": doc.filename,
+                "file_size": doc.size_bytes,
+                "status": "pending",
+                "progress": 0,
+                "message": "Queued for processing..."
+            }).execute()
+            
+            file_status_id = file_status_result.data[0]["id"]
+            
+            # Serialize document content to base64 for Celery
+            content_b64 = base64.b64encode(doc.content).decode('utf-8')
+            
+            file_data = {
+                "filename": doc.filename,
+                "content_b64": content_b64,
+                "size_bytes": doc.size_bytes,
+                "mime_type": doc.mime_type
+            }
+            
+            # Create task signature
+            file_tasks.append(
+                process_file_task.s(
+                    user_id=user_id,
+                    job_id=job_id,
+                    file_data=file_data,
+                    file_status_id=file_status_id,
+                    connector_type=connector_type
+                )
+            )
+        
+        logger.info(f"[UnifiedIngest:{task_id}] Dispatching {len(file_tasks)} parallel tasks...")
+        
+        # Update job status
+        supabase.table("ingestion_jobs").update({
+            "progress": 10,
+            "message": f"Processing {total_files} files in parallel..."
+        }).eq("id", job_id).execute()
+        
+        # STEP 3: Dispatch all tasks in parallel using chord
+        # chord = group of tasks + callback when all complete
+        job = chord(
+            group(file_tasks),
+            finalize_job_task.s(user_id=user_id, job_id=job_id, total_files=total_files)
         )
         
-        # Fetch documents from connector (async)
-        async def run_ingestion():
-            document_stream = connector.fetch_documents(item_ids, credentials, user_id=user_id)
-            return await pipeline.process_stream(document_stream, connector_type)
+        result = job.apply_async()
         
-        # Run async code
-        result = asyncio.run(run_ingestion())
+        logger.info(f"[UnifiedIngest:{task_id}] ✅ Dispatched chord with {total_files} tasks, chord_id: {result.id}")
         
-        logger.info(f"[UnifiedIngest:{task_id}] Complete: {result}")
-        return result
+        return {
+            "status": "dispatched",
+            "job_id": job_id,
+            "total_files": total_files,
+            "chord_id": result.id
+        }
         
     except Exception as e:
         logger.error(f"[UnifiedIngest:{task_id}] Failed: {e}")
@@ -809,6 +891,274 @@ def unified_ingest_task(
             {"job_id": job_id, "connector": connector_type}
         )
         raise
+
+
+# ============================================================
+# FAN-OUT PARALLEL PROCESSING TASKS
+# ============================================================
+
+@celery_app.task(
+    bind=True,
+    name="process_file_task",
+    on_failure=handle_task_failure,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    max_retries=2,
+    acks_late=True,
+    soft_time_limit=600,  # 10 min per file
+    time_limit=660  # Hard kill at 11 min
+)
+def process_file_task(
+    self,
+    user_id: str,
+    job_id: str,
+    file_data: Dict[str, Any],
+    file_status_id: str,
+    connector_type: str
+):
+    """
+    Process a SINGLE file independently.
+    
+    This task is spawned by unified_ingest_task for each file,
+    enabling true parallel processing across all Celery workers.
+    
+    Args:
+        user_id: User ID
+        job_id: Parent job ID
+        file_data: Serialized file data (filename, content_b64, size, mime_type)
+        file_status_id: ID of the file status record for progress tracking
+        connector_type: Source type for metadata
+    """
+    import asyncio
+    import base64
+    import tempfile
+    import os
+    import time
+    from services.parsers import DocumentFactory
+    from services.embeddings import generate_embeddings_batch
+    
+    task_id = self.request.id
+    filename = file_data.get("filename", "unknown")
+    logger.info(f"[ProcessFile:{task_id}] Starting: {filename} (job: {job_id})")
+    
+    supabase = get_supabase()
+    local_path = None
+    start_time = time.time()
+    
+    try:
+        # Update status: processing
+        supabase.table("ingestion_file_status").update({
+            "status": "processing",
+            "progress": 10,
+            "message": "Starting file processing..."
+        }).eq("id", file_status_id).execute()
+        
+        # STEP 1: Decode content and write to temp file
+        content_b64 = file_data.get("content_b64")
+        if not content_b64:
+            raise ValueError("No content provided")
+        
+        content = base64.b64decode(content_b64)
+        
+        suffix = os.path.splitext(filename)[1] or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            local_path = tmp.name
+        
+        # STEP 2: Parse document
+        supabase.table("ingestion_file_status").update({
+            "status": "processing",
+            "progress": 20,
+            "message": "Extracting content (may take 30-90s for PDFs)..."
+        }).eq("id", file_status_id).execute()
+        
+        async def parse_document():
+            factory = DocumentFactory()
+            return await factory.process(local_path, filename)
+        
+        chunks = asyncio.run(parse_document())
+        
+        if not chunks:
+            supabase.table("ingestion_file_status").update({
+                "status": "completed",
+                "progress": 100,
+                "message": "No content extracted",
+                "chunks_total": 0
+            }).eq("id", file_status_id).execute()
+            return {"status": "skipped", "filename": filename, "reason": "empty"}
+        
+        # STEP 3: Generate embeddings
+        supabase.table("ingestion_file_status").update({
+            "status": "embedding",
+            "progress": 50,
+            "message": f"Generating embeddings for {len(chunks)} chunks...",
+            "chunks_total": len(chunks)
+        }).eq("id", file_status_id).execute()
+        
+        async def generate_embeddings():
+            texts = [c["text"] for c in chunks]
+            return await generate_embeddings_batch(texts)
+        
+        embeddings = asyncio.run(generate_embeddings())
+        
+        # STEP 4: Store in database
+        supabase.table("ingestion_file_status").update({
+            "status": "storing",
+            "progress": 75,
+            "message": "Storing in database..."
+        }).eq("id", file_status_id).execute()
+        
+        # Create document record
+        doc_result = supabase.table("documents").insert({
+            "user_id": user_id,
+            "title": filename,
+            "source_type": connector_type,
+            "file_size_bytes": file_data.get("size_bytes", len(content)),
+            "file_type": file_data.get("mime_type", "application/octet-stream"),
+            "metadata": {"job_id": job_id}
+        }).execute()
+        
+        doc_id = doc_result.data[0]["id"]
+        
+        # Insert chunks in batches
+        BATCH_SIZE = 50
+        for i in range(0, len(chunks), BATCH_SIZE):
+            batch = chunks[i:i+BATCH_SIZE]
+            batch_embeddings = embeddings[i:i+BATCH_SIZE]
+            
+            chunk_records = []
+            for j, (chunk, embedding) in enumerate(zip(batch, batch_embeddings)):
+                chunk_records.append({
+                    "document_id": doc_id,
+                    "user_id": user_id,
+                    "content": chunk["text"],
+                    "embedding": embedding,
+                    "chunk_index": i + j,
+                    "metadata": chunk.get("metadata", {})
+                })
+            
+            supabase.table("chunks").insert(chunk_records).execute()
+        
+        # STEP 5: Success
+        total_time = int(time.time() - start_time)
+        supabase.table("ingestion_file_status").update({
+            "status": "completed",
+            "progress": 100,
+            "message": f"✅ Completed in {total_time}s",
+            "chunks_total": len(chunks),
+            "chunks_processed": len(chunks),
+            "document_id": doc_id
+        }).eq("id", file_status_id).execute()
+        
+        logger.info(f"[ProcessFile:{task_id}] ✅ {filename}: {len(chunks)} chunks in {total_time}s")
+        
+        return {
+            "status": "success",
+            "filename": filename,
+            "doc_id": doc_id,
+            "chunks": len(chunks),
+            "time": total_time
+        }
+        
+    except Exception as e:
+        logger.error(f"[ProcessFile:{task_id}] ❌ {filename}: {e}")
+        
+        # Update file status to failed
+        supabase.table("ingestion_file_status").update({
+            "status": "failed",
+            "progress": 0,
+            "message": str(e)[:500],
+            "error": str(e)[:1000]
+        }).eq("id", file_status_id).execute()
+        
+        return {
+            "status": "failed",
+            "filename": filename,
+            "error": str(e)
+        }
+        
+    finally:
+        # Cleanup temp file
+        if local_path and os.path.exists(local_path):
+            try:
+                os.unlink(local_path)
+            except:
+                pass
+
+
+@celery_app.task(
+    bind=True,
+    name="finalize_job_task"
+)
+def finalize_job_task(self, results: list, user_id: str, job_id: str, total_files: int):
+    """
+    Callback task that runs after all file processing tasks complete.
+    
+    Aggregates results and updates job status.
+    
+    Args:
+        results: List of results from all process_file_task calls
+        user_id: User ID
+        job_id: Job ID
+        total_files: Total number of files submitted
+    """
+    task_id = self.request.id
+    logger.info(f"[FinalizeJob:{task_id}] Aggregating results for job {job_id}")
+    
+    supabase = get_supabase()
+    
+    # Count successes and failures
+    successful = [r for r in results if r and r.get("status") == "success"]
+    failed = [r for r in results if r and r.get("status") == "failed"]
+    skipped = [r for r in results if r and r.get("status") == "skipped"]
+    
+    total_chunks = sum(r.get("chunks", 0) for r in successful)
+    
+    # Determine final status
+    if len(failed) == 0:
+        final_status = "completed"
+        status_msg = f"✅ Processed {len(successful)} files ({total_chunks} chunks)"
+    elif len(successful) > 0:
+        final_status = "partial"
+        status_msg = f"⚠️ Processed {len(successful)}/{total_files} files, {len(failed)} failed"
+    else:
+        final_status = "failed"
+        status_msg = f"❌ All {len(failed)} files failed"
+    
+    # Update job status
+    supabase.table("ingestion_jobs").update({
+        "status": final_status,
+        "progress": 100,
+        "message": status_msg,
+        "processed_files": len(successful),
+        "total_files": total_files
+    }).eq("id", job_id).execute()
+    
+    # Create completion notification
+    notification_type = "success" if final_status == "completed" else ("warning" if final_status == "partial" else "error")
+    create_notification(
+        supabase, user_id,
+        "Ingestion Complete" if final_status != "failed" else "Ingestion Failed",
+        status_msg,
+        notification_type,
+        {"job_id": job_id, "successful": len(successful), "failed": len(failed)}
+    )
+    
+    # Send email if configured
+    if len(successful) > 0:
+        send_email_notification(supabase, user_id, len(successful))
+    
+    logger.info(f"[FinalizeJob:{task_id}] ✅ Job {job_id}: {status_msg}")
+    
+    return {
+        "job_id": job_id,
+        "status": final_status,
+        "successful": len(successful),
+        "failed": len(failed),
+        "skipped": len(skipped),
+        "total_chunks": total_chunks
+    }
 
 
 # ============================================================
