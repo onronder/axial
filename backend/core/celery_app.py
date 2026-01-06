@@ -7,6 +7,7 @@ Uses Redis as broker and result backend.
 
 import os
 from celery import Celery
+from celery.schedules import crontab  # Required for beat schedule
 from core.config import settings
 
 # =============================================================================
