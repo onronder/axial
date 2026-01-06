@@ -140,6 +140,7 @@ settings = Settings()
 if settings.SENTRY_DSN:
     try:
         import sentry_sdk
+        import logging as py_logging  # Import BEFORE using logging.INFO/ERROR
         from sentry_sdk.integrations.celery import CeleryIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
         
@@ -149,8 +150,8 @@ if settings.SENTRY_DSN:
             integrations=[
                 CeleryIntegration(),
                 LoggingIntegration(
-                    level=logging.INFO,
-                    event_level=logging.ERROR
+                    level=py_logging.INFO,
+                    event_level=py_logging.ERROR
                 )
             ],
             traces_sample_rate=0.1,  # 10% of transactions
@@ -158,8 +159,7 @@ if settings.SENTRY_DSN:
             send_default_pii=False,  # Don't send PII
         )
         
-        import logging
-        logging.getLogger(__name__).info("✅ Sentry initialized for error tracking")
+        py_logging.getLogger(__name__).info("✅ Sentry initialized for error tracking")
     except ImportError:
         import logging
         logging.getLogger(__name__).warning("⚠️ Sentry SDK not installed, error tracking disabled")
