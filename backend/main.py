@@ -31,14 +31,15 @@ logger = logging.getLogger(__name__)
 if settings.SENTRY_DSN:
     try:
         import sentry_sdk
+        import logging as py_logging  # Explicit alias to avoid NameError
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.starlette import StarletteIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
         
         # Enable Sentry logging integration
         logging_integration = LoggingIntegration(
-            level=logging.INFO,        # Capture INFO and above as breadcrumbs
-            event_level=logging.ERROR  # Send ERROR and above as events
+            level=py_logging.INFO,        # Capture INFO and above as breadcrumbs
+            event_level=py_logging.ERROR  # Send ERROR and above as events
         )
         
         sentry_sdk.init(

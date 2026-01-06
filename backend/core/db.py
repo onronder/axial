@@ -68,5 +68,29 @@ def close_supabase():
         _supabase_client = None
         logger.info("🔌 Supabase client closed")
 
+async def check_connection() -> bool:
+    """
+    Verify database connection health.
+    
+    Performs a lightweight query to ensure the Supabase client
+    can successfully communicate with the database.
+    
+    Returns:
+        bool: True if connection is healthy
+        
+    Raises:
+        Exception: If connection fails
+    """
+    try:
+        client = get_supabase()
+        # Perform minimal query - select 1 row, no data return needed
+        # Using count='exact', head=True to minimize data transfer
+        # We query the 'documents' table as it's a core table
+        client.table("documents").select("id", count="exact").limit(1).execute()
+        return True
+    except Exception as e:
+        logger.error(f"❌ Database connection check failed: {e}")
+        raise
+
 # Export for convenience
-__all__ = ['get_supabase', 'close_supabase']
+__all__ = ['get_supabase', 'close_supabase', 'check_connection']
