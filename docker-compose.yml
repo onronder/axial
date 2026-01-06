@@ -13,21 +13,6 @@ services:
     depends_on:
       - redis
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: ../docker/frontend.Dockerfile
-    ports:
-      - "8501:8501"
-    depends_on:
-      - backend
-    environment:
-      # Docker internal networking URL
-      - BACKEND_URL=http://backend:8000
-    volumes:
-      # Mount volume for hot-reloading during dev
-      - ./frontend:/app
-
   redis:
     image: redis:alpine
     ports:
