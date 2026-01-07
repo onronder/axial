@@ -219,6 +219,7 @@ async def cancel_job(
             "status": "cancelled",
             "cancelled_at": datetime.now(timezone.utc).isoformat(),
             "cancelled_by": user_id,
+            "message": "Cancelled by user",
             "status_message": "Cancelled by user"
         }).eq("id", job_id).execute()
         
@@ -314,6 +315,7 @@ async def retry_file(
         job_id = file_status["job_id"]
         supabase.table("ingestion_jobs").update({
             "status": "processing",
+            "message": f"Retrying failed file ({retry_count}/3)",
             "status_message": f"Retrying failed file ({retry_count}/3)"
         }).eq("id", job_id)\
          .in_("status", ["completed", "failed"])\
@@ -461,6 +463,7 @@ async def retry_job(
         # Reset job status to processing
         supabase.table("ingestion_jobs").update({
             "status": "processing",
+            "message": f"Retrying {len(retryable_files)} failed files",
             "status_message": f"Retrying {len(retryable_files)} failed files",
             "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", job_id).execute()

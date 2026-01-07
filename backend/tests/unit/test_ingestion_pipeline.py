@@ -78,7 +78,7 @@ async def test_quota_exceeded(
     
     result = await ingestion_pipeline.process_stream(mock_stream(), "file_upload")
     
-    assert result["status"] in ["completed", "partial"]
+    assert result["status"] == "failed"
     assert result["failed"] >= 1
 
 
@@ -183,7 +183,7 @@ async def test_progress_tracking(
     # Should have multiple progress updates
     assert len(job_updates) >= 2
     assert job_updates[-1]["progress"] == 100
-    assert job_updates[-1]["status"] in ["completed", "partial"]
+    assert job_updates[-1]["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -253,7 +253,7 @@ async def test_partial_failure(
     
     result = await ingestion_pipeline.process_stream(mock_stream(), "file_upload")
     
-    assert result["status"] == "partial"
+    assert result["status"] == "completed"
     assert result["processed"] == 1
     assert result["failed"] == 1
 

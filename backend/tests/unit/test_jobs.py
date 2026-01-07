@@ -230,13 +230,14 @@ class TestJobStatus:
     
     @pytest.mark.unit
     def test_valid_status_values(self):
-        """Job status should support pending, processing, completed, failed."""
-        valid_statuses = ["pending", "processing", "completed", "failed"]
+        """Job status should support pending, processing, completed, failed, cancelled."""
+        valid_statuses = ["pending", "processing", "completed", "failed", "cancelled"]
         
         assert "pending" in valid_statuses
         assert "processing" in valid_statuses
         assert "completed" in valid_statuses
         assert "failed" in valid_statuses
+        assert "cancelled" in valid_statuses
 
 
 # =============================================================================
@@ -416,4 +417,3 @@ class TestGetJobFilesEndpoint:
     def test_get_files_verifies_job_ownership(self):
         """Should verify user owns the job."""
         pass
-

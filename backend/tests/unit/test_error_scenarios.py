@@ -255,7 +255,7 @@ async def test_concurrent_processing_error():
     # Should have partial success
     assert result["processed"] >= 1
     assert result["failed"] >= 1
-    assert result["status"] == "partial"
+    assert result["status"] == "completed"
 
 
 @pytest.mark.asyncio

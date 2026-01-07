@@ -130,6 +130,7 @@ class JobStatus(str, PyEnum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class IngestionJob(SQLModel, table=True):
@@ -144,7 +145,7 @@ class IngestionJob(SQLModel, table=True):
     provider: str
     total_files: int = Field(default=0)
     processed_files: int = Field(default=0)
-    status: str = Field(default="pending")  # pending, processing, completed, failed
+    status: str = Field(default="pending")  # pending, processing, completed, failed, cancelled
     error_message: Optional[str] = None
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)

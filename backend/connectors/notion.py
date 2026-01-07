@@ -437,6 +437,7 @@ class NotionConnector(BaseConnector):
                     "total_files": len(documents),
                     "processed_files": 0,
                     "status": "processing",
+                    "message": f"Syncing {len(documents)} pages from Notion",
                     "status_message": f"Syncing {len(documents)} pages from Notion"
                 }).execute()
                 if job_result.data:
@@ -460,7 +461,7 @@ class NotionConnector(BaseConnector):
                     # Status: Processing
                     if file_status_id:
                         update_file_status(supabase, file_status_id,
-                            status="processing", progress=20, message="Extracting content...")
+                            status="parsing", progress=20, message="Extracting content...")
                     
                     # Insert Parent Document
                     parent_doc_data = {
@@ -489,7 +490,7 @@ class NotionConnector(BaseConnector):
                     if not chunks:
                         if file_status_id:
                             update_file_status(supabase, file_status_id,
-                                status="completed", progress=100, message="No content")
+                                status="skipped", progress=100, message="No content")
                         continue
                     
                     # Status: Embedding
@@ -544,6 +545,7 @@ class NotionConnector(BaseConnector):
                             if job_id:
                                 supabase.table("ingestion_jobs").update({
                                     "processed_files": processed_docs,
+                                    "message": f"Processed {processed_docs}/{len(documents)} pages",
                                     "status_message": f"Processed {processed_docs}/{len(documents)} pages"
                                 }).eq("id", job_id).execute()
                         else:
@@ -565,6 +567,7 @@ class NotionConnector(BaseConnector):
                     "status": final_status,
                     "processed_files": processed_docs,
                     "progress": 100,
+                    "message": f"Synced {processed_docs} pages, {total_chunks} chunks",
                     "status_message": f"Synced {processed_docs} pages, {total_chunks} chunks"
                 }).eq("id", job_id).execute()
             
@@ -598,4 +601,3 @@ class NotionConnector(BaseConnector):
                     "error_message": str(e)
                 }).eq("id", job_id).execute()
             raise e
-

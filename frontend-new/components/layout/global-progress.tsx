@@ -34,7 +34,8 @@ interface IngestionJob {
     error_message?: string;
     // NEW: Granular progress tracking from backend
     progress?: number;           // 0-100 percentage  
-    status_message?: string;     // e.g., "Indexing chunk 45/200..."
+    message?: string;            // e.g., "Indexing chunk 45/200..."
+    status_message?: string;     // legacy alias
     created_at: string;
     updated_at: string;
 }
@@ -107,9 +108,11 @@ export function GlobalProgress() {
 
                         // Show completion toast
                         if (newJob.status === "completed" && oldJob?.status !== "completed") {
+                            const completionMessage = newJob.message || newJob.status_message;
                             toast({
                                 title: "Ingestion Complete! 🎉",
-                                description: `Successfully processed ${newJob.processed_files} files from ${providerLabels[newJob.provider] || newJob.provider}.`,
+                                description: completionMessage ||
+                                    `Successfully processed ${newJob.processed_files} files from ${providerLabels[newJob.provider] || newJob.provider}.`,
                             });
 
                             // Auto-dismiss after delay
@@ -196,7 +199,8 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
     const isCancelled = job.status === "cancelled";
 
     // Status message from backend or fallback
-    const statusText = job.status_message ||
+    const statusText = job.message ||
+        job.status_message ||
         (job.status === "pending" ? "Starting..." :
             job.processed_files === job.total_files
                 ? "Completing..."

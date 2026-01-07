@@ -16,7 +16,8 @@ export interface IngestionJob {
     error_message?: string;
     // NEW: Granular progress tracking from backend
     progress?: number;           // 0-100 percentage
-    status_message?: string;     // e.g., "Indexing chunk 45/200..."
+    message?: string;            // e.g., "Indexing chunk 45/200..."
+    status_message?: string;     // legacy alias
     created_at: string;
     updated_at: string;
 }
@@ -83,9 +84,11 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
 
                 // Show completion toast
                 if (newJob.status === "completed" && oldJob?.status !== "completed") {
+                    const completionMessage = newJob.message || newJob.status_message;
                     toast({
                         title: "Ingestion Complete! 🎉",
-                        description: `Successfully processed ${newJob.processed_files} files.`,
+                        description: completionMessage ||
+                            `Successfully processed ${newJob.processed_files} files.`,
                     });
                 }
 

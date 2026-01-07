@@ -521,6 +521,7 @@ class DriveConnector(BaseConnector):
                     "total_files": len(files),
                     "processed_files": 0,
                     "status": "processing",
+                    "message": f"Syncing {len(files)} files from Google Drive",
                     "status_message": f"Syncing {len(files)} files from Google Drive"
                 }).execute()
                 if job_result.data:
@@ -555,7 +556,7 @@ class DriveConnector(BaseConnector):
                         logger.warning(f"⚠️ [DriveSync] No content from: {filename}")
                         if file_status_id:
                             update_file_status(supabase, file_status_id,
-                                status="completed", progress=100, message="No content (empty)")
+                                status="skipped", progress=100, message="No content (empty)")
                         continue
                         
                     content_bytes, _, _ = content_tuple
@@ -563,7 +564,7 @@ class DriveConnector(BaseConnector):
                     # Status: Processing
                     if file_status_id:
                         update_file_status(supabase, file_status_id,
-                            status="processing", progress=25, message="Extracting content...")
+                            status="parsing", progress=25, message="Extracting content...")
                     
                     # FIX: Decode bytes to string
                     try:
@@ -579,7 +580,7 @@ class DriveConnector(BaseConnector):
                         logger.warning(f"⚠️ [DriveSync] No content from: {filename}")
                         if file_status_id:
                             update_file_status(supabase, file_status_id,
-                                status="completed", progress=100, message="No content (empty)")
+                                status="skipped", progress=100, message="No content (empty)")
                         continue
                     
                     # Chunk the content
@@ -588,7 +589,7 @@ class DriveConnector(BaseConnector):
                         logger.warning(f"⚠️ [DriveSync] No chunks from: {filename}")
                         if file_status_id:
                             update_file_status(supabase, file_status_id,
-                                status="completed", progress=100, message="No chunks extracted")
+                                status="skipped", progress=100, message="No chunks extracted")
                         continue
                     
                     logger.info(f"🔄 [DriveSync] File '{filename}': {len(chunks)} chunks")
@@ -673,6 +674,7 @@ class DriveConnector(BaseConnector):
                             if job_id:
                                 supabase.table("ingestion_jobs").update({
                                     "processed_files": processed_files,
+                                    "message": f"Processed {processed_files}/{len(files)} files",
                                     "status_message": f"Processed {processed_files}/{len(files)} files"
                                 }).eq("id", job_id).execute()
                             
@@ -700,6 +702,7 @@ class DriveConnector(BaseConnector):
                     "status": final_status,
                     "processed_files": processed_files,
                     "progress": 100,
+                    "message": f"Synced {processed_files} files, {total_chunks} chunks",
                     "status_message": f"Synced {processed_files} files, {total_chunks} chunks"
                 }).eq("id", job_id).execute()
             

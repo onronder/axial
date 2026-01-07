@@ -59,7 +59,7 @@ async def test_file_upload_end_to_end():
         result = await pipeline.process_stream(doc_stream())
         
         # 4. Verify results
-        assert result["status"] in ["completed", "partial"]
+        assert result["status"] == "completed"
         assert result["processed"] >= 1
         
         # 5. Verify document in database

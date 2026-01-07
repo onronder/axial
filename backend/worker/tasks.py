@@ -28,7 +28,16 @@ logger.info("✅ Worker tasks module loaded - Cache buster 001")
 # JOB PROGRESS HELPERS
 # ============================================================
 
-def update_job_status(supabase, job_id: str, status: str, processed_files: int = None, error_message: str = None):
+def update_job_status(
+    supabase,
+    job_id: str,
+    status: str,
+    processed_files: int = None,
+    error_message: str = None,
+    message: str = None,
+    failed_files: int = None,
+    progress: int = None,
+):
     """Helper to update ingestion job status in the database."""
     try:
         update_data = {
@@ -37,8 +46,15 @@ def update_job_status(supabase, job_id: str, status: str, processed_files: int =
         }
         if processed_files is not None:
             update_data["processed_files"] = processed_files
+        if failed_files is not None:
+            update_data["failed_files"] = failed_files
         if error_message is not None:
             update_data["error_message"] = error_message
+        if message is not None:
+            update_data["message"] = message
+            update_data["status_message"] = message
+        if progress is not None:
+            update_data["progress"] = progress
             
         supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
         logger.info(f"📊 [Job:{job_id}] Status: {status}, Processed: {processed_files}")
@@ -54,6 +70,7 @@ def update_job_progress(supabase, job_id: str, progress: int, message: str = Non
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         if message:
+            update_data["message"] = message
             update_data["status_message"] = message
             
         supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
@@ -145,24 +162,7 @@ def ingest_document_batched(
             # Continue with other batches - partial ingestion is better than none
             continue
         
-        # Update job-level progress if job_id provided
-        if job_id:
-            progress_percent = int((inserted_count / total_chunks) * 100)
-            update_job_progress(
-                supabase, job_id, progress_percent,
-                f"Indexing chunk {inserted_count}/{total_chunks}..."
-            )
-        
-        # Update per-file chunk progress in real-time
-        if file_status_id:
-            # Calculate progress: indexing is 80-100% of file progress
-            file_progress = 80 + int((inserted_count / total_chunks) * 20)
-            update_file_status(
-                supabase, file_status_id,
-                progress=file_progress,
-                message=f"Indexing {inserted_count}/{total_chunks} chunks...",
-                chunks_processed=inserted_count
-            )
+        # Per-chunk progress updates intentionally omitted (stage-based updates only).
     
     logger.info(f"✅ Inserted {inserted_count} chunks for document {doc_id}")
     return str(doc_id)
@@ -804,13 +804,21 @@ def unified_ingest_task(
         logger.info(f"[UnifiedIngest:{task_id}] Collected {total_files} documents for parallel processing")
         
         if total_files == 0:
-            update_job_status(supabase, job_id, "completed", 0, "No documents to process")
+            update_job_status(
+                supabase,
+                job_id,
+                "completed",
+                processed_files=0,
+                message="No documents to process",
+                progress=100,
+            )
             return {"status": "completed", "message": "No documents"}
         
         # Update job with total count
         supabase.table("ingestion_jobs").update({
             "total_files": total_files,
             "progress": 5,
+            "message": f"Preparing {total_files} files for parallel processing...",
             "status_message": f"Preparing {total_files} files for parallel processing..."
         }).eq("id", job_id).execute()
         
@@ -857,6 +865,7 @@ def unified_ingest_task(
         # Update job status
         supabase.table("ingestion_jobs").update({
             "progress": 10,
+            "message": f"Processing {total_files} files in parallel...",
             "status_message": f"Processing {total_files} files in parallel..."
         }).eq("id", job_id).execute()
         
@@ -1024,8 +1033,10 @@ def process_file_task(
             "title": filename,
             "source_type": connector_type,
             "file_size_bytes": file_data.get("size_bytes", len(content)),
-            "file_type": file_data.get("mime_type", "application/octet-stream"),
-            "metadata": {"job_id": job_id}
+            "metadata": {
+                "job_id": job_id,
+                "mime_type": file_data.get("mime_type", "application/octet-stream"),
+            },
         }).execute()
         
         doc_id = doc_result.data[0]["id"]
@@ -1040,14 +1051,12 @@ def process_file_task(
             for j, (chunk, embedding) in enumerate(zip(batch, batch_embeddings)):
                 chunk_records.append({
                     "document_id": doc_id,
-                    "user_id": user_id,
                     "content": chunk["text"],
                     "embedding": embedding,
                     "chunk_index": i + j,
-                    "metadata": chunk.get("metadata", {})
                 })
-            
-            supabase.table("chunks").insert(chunk_records).execute()
+
+            supabase.table("document_chunks").insert(chunk_records).execute()
         
         # STEP 5: Success
         total_time = int(time.time() - start_time)
@@ -1124,37 +1133,59 @@ def finalize_job_task(self, results: list, user_id: str, job_id: str, total_file
     successful = [r for r in results if r and r.get("status") == "success"]
     failed = [r for r in results if r and r.get("status") == "failed"]
     skipped = [r for r in results if r and r.get("status") == "skipped"]
-    
+
+    successful_count = len(successful)
+    failed_count = len(failed)
+    skipped_count = len(skipped)
+    processed_count = successful_count + skipped_count
+
     total_chunks = sum(r.get("chunks", 0) for r in successful)
-    
+
     # Determine final status
-    if len(failed) == 0:
+    if failed_count == 0:
         final_status = "completed"
-        status_msg = f"✅ Processed {len(successful)} files ({total_chunks} chunks)"
-    elif len(successful) > 0:
-        final_status = "partial"
-        status_msg = f"⚠️ Processed {len(successful)}/{total_files} files, {len(failed)} failed"
+    elif processed_count > 0:
+        final_status = "completed"
     else:
         final_status = "failed"
-        status_msg = f"❌ All {len(failed)} files failed"
-    
+
+    if final_status == "failed":
+        status_msg = f"All {failed_count} files failed"
+    else:
+        status_parts = [f"Processed {processed_count}/{total_files} files"]
+        if skipped_count:
+            status_parts.append(f"{skipped_count} skipped")
+        if failed_count:
+            status_parts.append(f"{failed_count} failed")
+        if total_chunks:
+            status_parts.append(f"{total_chunks} chunks")
+        status_msg = ", ".join(status_parts)
+
     # Update job status
     supabase.table("ingestion_jobs").update({
         "status": final_status,
         "progress": 100,
         "message": status_msg,
-        "processed_files": len(successful),
-        "total_files": total_files
+        "status_message": status_msg,
+        "processed_files": processed_count,
+        "failed_files": failed_count,
+        "total_files": total_files,
+        "error_message": status_msg if final_status == "failed" else None,
     }).eq("id", job_id).execute()
-    
+
     # Create completion notification
-    notification_type = "success" if final_status == "completed" else ("warning" if final_status == "partial" else "error")
+    if final_status == "failed":
+        notification_type = "error"
+    elif failed_count > 0:
+        notification_type = "warning"
+    else:
+        notification_type = "success"
     create_notification(
         supabase, user_id,
         "Ingestion Complete" if final_status != "failed" else "Ingestion Failed",
         status_msg,
         notification_type,
-        {"job_id": job_id, "successful": len(successful), "failed": len(failed)}
+        {"job_id": job_id, "successful": successful_count, "failed": failed_count, "skipped": skipped_count}
     )
     
     # Send email if configured

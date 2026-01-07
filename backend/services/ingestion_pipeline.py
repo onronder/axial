@@ -170,14 +170,33 @@ class IngestionPipeline:
             logger.warning(f"[Pipeline:{self.job_id}] Stopping due to quota exceeded")
         
         # STEP 4: Finalize
-        final_status = "completed" if self.failed_docs == 0 else "partial"
-        self._update_job_status(final_status, 100, "Processing complete")
-        
-        success_msg = f"Processed {self.processed_docs}/{self.total_docs} documents ({self.total_chunks} chunks)"
+        if self.failed_docs == 0:
+            final_status = "completed"
+        elif self.processed_docs > 0:
+            final_status = "completed"
+        else:
+            final_status = "failed"
+
+        status_parts = [f"Processed {self.processed_docs}/{self.total_docs} documents"]
+        if self.failed_docs:
+            status_parts.append(f"{self.failed_docs} failed")
+        if self.total_chunks:
+            status_parts.append(f"{self.total_chunks} chunks")
+        success_msg = ", ".join(status_parts)
+
+        self._update_job_status(final_status, 100, success_msg)
+
+        if final_status == "failed":
+            notification_type = "error"
+        elif self.failed_docs > 0:
+            notification_type = "warning"
+        else:
+            notification_type = "success"
+
         self._create_notification(
-            "Processing Complete",
+            "Processing Complete" if final_status != "failed" else "Processing Failed",
             success_msg,
-            "success" if self.failed_docs == 0 else "warning"
+            notification_type
         )
         
         logger.info(f"[Pipeline:{self.job_id}] Complete: {success_msg}")
@@ -385,6 +404,7 @@ class IngestionPipeline:
             self.supabase.table("ingestion_jobs").update({
                 "status": status,
                 "progress": progress,
+                "message": message,
                 "status_message": message,
                 "processed_files": self.processed_docs,
                 "failed_files": self.failed_docs

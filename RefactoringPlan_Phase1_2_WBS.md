@@ -82,9 +82,9 @@ Rollback or contingency:
 
 ---
 
-### Step 3: Reduce progress update frequency
+### Step 3: Stage-based progress updates (no per-chunk writes)
 
-Objective: Reduce DB write amplification and realtime load.
+Objective: Provide granular stage updates while avoiding per-chunk write amplification.
 Dependencies: Step 1 completed.
 Inputs required:
 - Approved progress milestone definitions and UI behavior.
