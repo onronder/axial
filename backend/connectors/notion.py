@@ -10,6 +10,7 @@ from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
 from datetime import datetime, timezone
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
+from core.config import settings
 from core.resilience import with_retry_sync
 import requests
 from starlette.concurrency import run_in_threadpool
@@ -508,7 +509,7 @@ class NotionConnector(BaseConnector):
                             status="indexing", progress=75, message="Saving to database...")
                     
                     # Insert Chunks in batches to prevent DB timeout
-                    DB_BATCH_SIZE = 50
+                    DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))
                     chunk_records = []
                     for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                         if embedding is None:

@@ -110,7 +110,7 @@ def ingest_document_batched(
     Returns:
         Document ID (UUID string)
     """
-    DB_BATCH_SIZE = 50  # Insert 50 chunks at a time to prevent timeouts
+    DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))  # Configurable batch size to prevent timeouts
     
     # Step 1: Create parent document record FIRST
     # NOTE: Using actual column names from migrations:
@@ -1076,7 +1076,7 @@ def process_file_task(
         doc_id = doc_result.data[0]["id"]
         
         # Insert chunks in batches
-        BATCH_SIZE = 50
+        BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))
         inserted_chunks = 0
         total_chunks = len(chunks)
         for i in range(0, len(chunks), BATCH_SIZE):

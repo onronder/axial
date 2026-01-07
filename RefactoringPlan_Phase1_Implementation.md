@@ -75,13 +75,14 @@ Step completion check:
 Notes:
 - Reminder: Apply `supabase db push` for the status constraint migration before deploy; `git push` is OK. Verify in Supabase Table Editor during the next smoke test.
 - Implementation detail: ingestion_jobs writes update both `message` and `status_message` for compatibility; frontend prefers `message`.
+- UI: progress modal styling and chunk progress presentation updated for clearer per-file status.
 - Additional migration: add `cancelled` to `job_status` enum to keep cancellation updates valid.
 
 ---
 
 ## Step 2: Region alignment for DB and workers
 
-Status: TBD (set before start)
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -128,13 +129,14 @@ Step completion check:
 
 
 Notes:
-- TBD
+- Railway API services and Supabase are now co-located in us-east-1 (per user confirmation).
+- Maintenance window: Sunday 03:00 - 05:00 UTC; 24-hour advance notice policy recorded.
 
 ---
 
 ## Step 3: Stage-based progress updates (no per-chunk writes)
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -271,7 +273,7 @@ Notes:
 
 ## Step 4: Increase embedding batch size and concurrency
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -322,13 +324,14 @@ Step completion check:
 
 
 Notes:
-- TBD
+- Configured embedding batch size and sleep interval via `backend/core/config.py`.
+- Async embedding helper now delegates to the synchronous implementation to avoid event-loop usage in workers.
 
 ---
 
 ## Step 5: Increase chunk insert batch size (still PostgREST)
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -383,7 +386,8 @@ Step completion check:
 
 
 Notes:
-- TBD
+- Chunk insert batch size is now configurable via `backend/core/config.py` and used in the worker ingestion paths.
+- Drive and Notion sync paths now use the same configurable batch size.
 
 ---
 
@@ -544,7 +548,7 @@ Step completion check:
 
 
 Notes:
-- TBD
+- User requested to keep worker concurrency at 10 for now; defer reducing until further validation.
 
 ---
 

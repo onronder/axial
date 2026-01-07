@@ -629,9 +629,9 @@ class DriveConnector(BaseConnector):
                     
                     # =====================================================
                     # STEP B: Insert Chunks into `document_chunks` table
-                    # BATCHED: Insert 50 chunks at a time to prevent DB timeouts
+                    # BATCHED: Configurable chunk batch size to prevent DB timeouts
                     # =====================================================
-                    DB_BATCH_SIZE = 50
+                    DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))
                     chunk_records = []
                     for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
                         if embedding is None:

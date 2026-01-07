@@ -21,7 +21,7 @@ export function ChunkProgress({ processed, total, className }: ChunkProgressProp
     const remaining = total - processed;
 
     return (
-        <div className={cn("space-y-2 p-3 rounded-lg bg-muted/30 border border-border/50", className)}>
+        <div className={cn("space-y-2 p-3 rounded-lg bg-muted/20 border border-border/50", className)}>
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -32,7 +32,7 @@ export function ChunkProgress({ processed, total, className }: ChunkProgressProp
             </div>
 
             {/* Visual progress bar */}
-            <Progress value={percentage} className="h-2" />
+            <Progress value={percentage} className="h-2.5" />
 
             {/* Text details */}
             <div className="flex items-center justify-between text-xs text-muted-foreground">

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, X, FileText, Loader2, CheckCircle2, XCircle, Clock, SkipForward } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { FileStatus, getStatusLabel, getStatusColor } from "@/hooks/useFileStatus";
+import { FileStatus, getStatusLabel } from "@/hooks/useFileStatus";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -93,9 +93,9 @@ export function IngestionProgressModal({
             aria-labelledby="progress-modal-title"
             aria-describedby="progress-modal-description"
         >
-            <Card className="border border-border/60 bg-card/95 backdrop-blur-md rounded-2xl overflow-hidden">
+            <Card className="border border-border/60 bg-card/95 backdrop-blur-md rounded-2xl overflow-hidden shadow-[0_20px_60px_-28px_rgba(0,0,0,0.65)] ring-1 ring-white/5">
                 {/* Header - Always Visible */}
-                <div className="flex items-center justify-between border-b bg-gradient-to-r from-muted/60 via-muted/30 to-transparent p-4">
+                <div className="flex items-center justify-between border-b bg-gradient-to-r from-muted/70 via-muted/30 to-transparent p-4">
                     <div className="flex items-center gap-3 flex-1">
                         <div className="relative">
                             {allComplete ? (
@@ -111,16 +111,16 @@ export function IngestionProgressModal({
                                     : `Processing ${processingFiles} ${processingFiles === 1 ? "file" : "files"}...`}
                             </h3>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                                <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-green-500">
+                                <span className="rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-green-400">
                                     {completedFiles}/{totalFiles} completed
                                 </span>
                                 {failedFiles > 0 && (
-                                    <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-red-500">
+                                    <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-red-400">
                                         {failedFiles} failed
                                     </span>
                                 )}
                                 {skippedFiles > 0 && (
-                                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-500">
+                                    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-amber-400">
                                         {skippedFiles} skipped
                                     </span>
                                 )}
@@ -162,7 +162,11 @@ export function IngestionProgressModal({
                         <span className="text-xs font-medium">Overall Progress</span>
                         <span className="text-xs text-muted-foreground tabular-nums">{Math.round(overallProgress)}%</span>
                     </div>
-                    <Progress value={overallProgress} className="h-2.5 transition-all duration-300" />
+                    <Progress
+                        value={overallProgress}
+                        className="h-2.5 transition-all duration-300"
+                        aria-label={getProgressLabel(Math.round(overallProgress), "Overall progress")}
+                    />
                 </div>
 
                 {/* Expandable File List */}
@@ -194,12 +198,23 @@ interface FileProgressCardProps {
 
 function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
-    const statusColor = getStatusColor(file.status);
     const statusLabel = getStatusLabel(file.status);
     const isProcessing = !["completed", "failed", "skipped", "cancelled"].includes(file.status);
     const isFailed = file.status === "failed";
+    const isCompleted = file.status === "completed";
+    const isSkipped = file.status === "skipped";
+    const isCancelled = file.status === "cancelled";
     const hasChunks = file.chunks_total > 0;
     const hasError = !!file.error_message;
+
+    const statusPillClass = cn(
+        "text-[11px] font-semibold px-2 py-0.5 rounded-full border",
+        isCompleted && "text-green-400 border-green-500/25 bg-green-500/10",
+        isFailed && "text-red-400 border-red-500/25 bg-red-500/10",
+        isSkipped && "text-amber-400 border-amber-500/25 bg-amber-500/10",
+        isCancelled && "text-amber-400 border-amber-500/25 bg-amber-500/10",
+        isProcessing && "text-primary border-primary/25 bg-primary/10"
+    );
 
     // Determine processing stages based on status
     const getProcessingStages = () => {
@@ -258,15 +273,25 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     };
 
     return (
-        <div className="p-4 hover:bg-muted/40 transition-colors">
+        <div
+            className={cn(
+                "p-4 transition-colors",
+                isCompleted && "bg-green-500/5",
+                isFailed && "bg-red-500/5",
+                isSkipped && "bg-amber-500/5",
+                isCancelled && "bg-amber-500/5",
+                !isCompleted && !isFailed && !isSkipped && !isCancelled && "hover:bg-muted/40"
+            )}
+            aria-label={getFileStatusLabel(file.status, file.filename)}
+        >
             <div className="flex items-start gap-3">
                 {/* Icon */}
                 <div className="mt-0.5">
-                    {file.status === "completed" ? (
+                    {isCompleted ? (
                         <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : file.status === "skipped" ? (
+                    ) : isSkipped ? (
                         <SkipForward className="h-4 w-4 text-amber-500" />
-                    ) : file.status === "failed" ? (
+                    ) : isFailed ? (
                         <XCircle className="h-4 w-4 text-red-500" />
                     ) : (
                         <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -282,7 +307,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
                                 {file.filename}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
-                                <span className={cn("text-[11px] font-semibold px-2 py-0.5 rounded-full bg-muted/40", statusColor)}>
+                                <span className={statusPillClass}>
                                     {statusLabel}
                                 </span>
                                 {file.file_size_bytes > 0 && (
@@ -317,13 +342,24 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
                     {/* Progress Bar (only for active files) */}
                     {isProcessing && file.progress > 0 && (
                         <div>
-                            <Progress value={file.progress} className="h-1.5 transition-all duration-300" />
+                            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                                <span>{file.status_message || "Processing..."}</span>
+                                <span className="tabular-nums">{file.progress}%</span>
+                            </div>
+                            <Progress
+                                value={file.progress}
+                                className="h-1.5 transition-all duration-300"
+                                aria-label={getProgressLabel(file.progress, `${file.filename} progress`)}
+                            />
                         </div>
                     )}
 
                     {/* Status Message */}
-                    {file.status_message && !isExpanded && (
-                        <p className="text-xs text-muted-foreground line-clamp-1">
+                    {file.status_message && (!isExpanded || isSkipped || isFailed) && (
+                        <p className={cn(
+                            "text-xs line-clamp-2",
+                            isSkipped ? "text-amber-400" : "text-muted-foreground"
+                        )}>
                             {file.status_message}
                         </p>
                     )}
