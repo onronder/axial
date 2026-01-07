@@ -186,21 +186,60 @@ async def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[floa
 
 def generate_embeddings_batch_sync(texts: List[str]) -> List[Optional[List[float]]]:
     """
-    Synchronous wrapper for batch embeddings.
+    Synchronous batch embeddings helper.
 
-    Uses the async implementation under the hood, but safely executes it even
-    when an event loop is already running in the current thread.
+    Intentionally avoids asyncio/event loops so it can run safely inside
+    Celery workers (gevent or prefork) without cross-loop errors.
     """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(generate_embeddings_batch(texts))
+    # CRITICAL: Convert generators to list to prevent 'generator has no len()' error
+    if not isinstance(texts, list):
+        texts = list(texts)
 
-    from concurrent.futures import ThreadPoolExecutor
+    if not texts:
+        return []
 
-    def _runner() -> List[Optional[List[float]]]:
-        return asyncio.run(generate_embeddings_batch(texts))
+    # Filter out empty texts and track indices
+    valid_texts: List[str] = []
+    valid_indices: List[int] = []
+    for i, text in enumerate(texts):
+        if text and text.strip():
+            valid_texts.append(text)
+            valid_indices.append(i)
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_runner)
-        return future.result()
+    if not valid_texts:
+        return [None for _ in texts]
+
+    model = get_embeddings_model()
+
+    # OpenAI allows up to 2048 embeddings per request; keep it conservative.
+    BATCH_SIZE = 100
+    SLEEP_INTERVAL = 0.5
+
+    @with_retry_sync(max_attempts=3)
+    def embed_batch(batch_texts: List[str]) -> List[List[float]]:
+        return model.embed_documents(batch_texts)
+
+    batches = []
+    for batch_start in range(0, len(valid_texts), BATCH_SIZE):
+        batch_end = min(batch_start + BATCH_SIZE, len(valid_texts))
+        batches.append(valid_texts[batch_start:batch_end])
+
+    all_embeddings: List[List[float]] = []
+    for batch_idx, batch_texts in enumerate(batches):
+        embeddings = embed_batch(batch_texts)
+        all_embeddings.extend(embeddings)
+        logger.info(
+            f"📊 [Embeddings] Processed batch {batch_idx + 1}/{len(batches)}: {len(batch_texts)} texts"
+        )
+
+        if batch_idx < len(batches) - 1:
+            time.sleep(SLEEP_INTERVAL)
+
+    result: List[Optional[List[float]]] = [None for _ in texts]
+    for i, emb in zip(valid_indices, all_embeddings):
+        result[i] = emb
+
+    logger.info(
+        f"📊 [Embeddings] Generated {len(valid_texts)} embeddings in {len(batches)} batches"
+    )
+    return result

@@ -519,20 +519,19 @@ async def disconnect_provider(
         # =================================================================
         # 2. DEEP CLEAN: Delete all associated data before removing integration
         # =================================================================
-        # Map provider to source_type used in documents table
-        SOURCE_TYPE_MAP = {
-            "google_drive": "drive",
-            "notion": "notion",
+        # Map provider to source_type values used in documents table (legacy + current)
+        SOURCE_TYPE_LEGACY_MAP = {
+            "google_drive": ["drive"],
         }
-        source_type = SOURCE_TYPE_MAP.get(provider, provider)
+        source_types = [provider] + SOURCE_TYPE_LEGACY_MAP.get(provider, [])
         
-        logger.info(f"🧹 [Disconnect] Deep cleaning data for {provider} (source_type={source_type})...")
+        logger.info(f"🧹 [Disconnect] Deep cleaning data for {provider} (source_type={source_types})...")
         
         # 2a. Delete Documents (cascades to document_chunks via FK)
         try:
             doc_result = supabase.table("documents").delete().eq(
                 "user_id", user_id
-            ).eq("source_type", source_type).execute()
+            ).in_("source_type", source_types).execute()
             
             deleted_docs = len(doc_result.data) if doc_result.data else 0
             logger.info(f"🧹 [Disconnect] Deleted {deleted_docs} documents")
