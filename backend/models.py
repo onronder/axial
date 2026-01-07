@@ -266,6 +266,8 @@ class WebCrawlConfig(SQLModel, table=True):
     root_url: str                                    # Starting URL
     crawl_type: str = Field(default="single")        # single, recursive, sitemap
     max_depth: int = Field(default=1)                # Max recursion depth (1-10)
+    max_pages: int = Field(default=500)              # Max pages per crawl (1-10000)
+    allow_subdomains: bool = Field(default=False)    # Allow subdomains when recursive
     respect_robots_txt: bool = Field(default=True)   # Respect robots.txt
     
     # Progress Tracking
@@ -297,6 +299,8 @@ class WebCrawlConfigResponse(BaseModel):
     root_url: str
     crawl_type: str
     max_depth: int
+    max_pages: int
+    allow_subdomains: bool
     status: str
     total_pages_found: int
     pages_ingested: int

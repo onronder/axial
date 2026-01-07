@@ -14,8 +14,11 @@ The connector provides discovery capabilities; looping logic is in the Celery wo
 
 import re
 import logging
+import ipaddress
+import socket
+from functools import lru_cache
 from typing import List, Dict, Any, Optional, Set, Iterator, AsyncIterator
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, urlunparse, parse_qsl, urlencode
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 import trafilatura
 import requests
@@ -40,6 +43,28 @@ class WebConnector(BaseConnector):
     
     # User-Agent for polite crawling
     USER_AGENT = "AxioBot/1.0 (+https://axiohub.io/bot)"
+    DEFAULT_HEADERS = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    ALLOWED_CONTENT_TYPES = ("text/html", "application/xhtml+xml", "text/plain")
+    MAX_HTML_BYTES = 2_000_000  # 2MB safety cap for HTML fetch
+    TRACKING_QUERY_PARAMS = {
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "gclid",
+        "fbclid",
+        "mc_cid",
+        "mc_eid",
+    }
+
+    def __init__(self) -> None:
+        self.session = requests.Session()
+        self.session.headers.update(self.DEFAULT_HEADERS)
     
     async def authorize(self, user_id: str) -> bool:
         """Web connector is public/open, always authorized."""
@@ -125,10 +150,9 @@ class WebConnector(BaseConnector):
         try:
             from bs4 import BeautifulSoup
             
-            response = requests.get(
+            response = self.session.get(
                 sitemap_url,
-                headers={"User-Agent": self.USER_AGENT},
-                timeout=30
+                timeout=(10, 30)
             )
             response.raise_for_status()
             
@@ -158,7 +182,14 @@ class WebConnector(BaseConnector):
             logger.error(f"❌ [Web] Basic sitemap parsing failed: {e}")
             return []
     
-    def extract_links(self, html_content: str, base_url: str) -> List[str]:
+    def extract_links(
+        self,
+        html_content: str,
+        base_url: str,
+        *,
+        base_domain: Optional[str] = None,
+        allow_subdomains: bool = False
+    ) -> List[str]:
         """
         Extract internal links from HTML content.
         
@@ -177,11 +208,17 @@ class WebConnector(BaseConnector):
             
             soup = BeautifulSoup(html_content, "html.parser")
             base_parsed = urlparse(base_url)
-            base_domain = base_parsed.netloc
+            base_domain = base_domain or self._normalize_hostname(base_parsed.hostname or "")
             
             links: Set[str] = set()
             
             for a_tag in soup.find_all("a", href=True):
+                rel = a_tag.get("rel") or []
+                if isinstance(rel, str):
+                    rel = [rel]
+                if any(r.lower() == "nofollow" for r in rel):
+                    continue
+
                 href = a_tag["href"]
                 
                 # Skip non-HTTP links
@@ -190,15 +227,14 @@ class WebConnector(BaseConnector):
                 
                 # Resolve relative URLs
                 absolute_url = urljoin(base_url, href)
-                parsed = urlparse(absolute_url)
+                normalized = self.normalize_url(absolute_url)
+                if not normalized:
+                    continue
+                parsed = urlparse(normalized)
                 
                 # Only include same-domain links
-                if parsed.netloc == base_domain:
-                    # Normalize: remove fragments, ensure https
-                    clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                    if parsed.query:
-                        clean_url += f"?{parsed.query}"
-                    links.add(clean_url)
+                if self._is_allowed_domain(parsed.hostname or "", base_domain, allow_subdomains):
+                    links.add(normalized)
             
             logger.debug(f"🔗 [Web] Extracted {len(links)} internal links from {base_url}")
             return list(links)
@@ -219,21 +255,27 @@ class WebConnector(BaseConnector):
             True if allowed to crawl, False if disallowed
         """
         try:
-            from urllib.robotparser import RobotFileParser
-            
             parsed = urlparse(url)
             robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
-            
-            rp = RobotFileParser()
-            rp.set_url(robots_url)
-            rp.read()
-            
+            rp = self._get_robots_parser(robots_url)
             return rp.can_fetch(user_agent, url)
-            
         except Exception as e:
             # If robots.txt check fails, allow crawling (fail open)
             logger.warning(f"⚠️ [Web] robots.txt check failed for {url}: {e}")
             return True
+
+    def get_crawl_delay(self, url: str, user_agent: str = "*") -> Optional[float]:
+        """Return crawl-delay from robots.txt if provided."""
+        try:
+            parsed = urlparse(url)
+            robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+            rp = self._get_robots_parser(robots_url)
+            delay = rp.crawl_delay(user_agent)
+            if delay is None:
+                return None
+            return max(float(delay), 0.0)
+        except Exception:
+            return None
     
     # =========================================================================
     # YOUTUBE SUPPORT
@@ -327,6 +369,10 @@ class WebConnector(BaseConnector):
         from starlette.concurrency import iterate_in_threadpool
         return iterate_in_threadpool(self._ingest_implementation(config))
 
+    def ingest_sync(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
+        """Synchronous ingestion generator (used by worker tasks)."""
+        return self._ingest_implementation(config)
+
     def _ingest_implementation(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
         """
         Ingests web pages or YouTube videos (Generator).
@@ -343,6 +389,10 @@ class WebConnector(BaseConnector):
         
         for url in urls:
             try:
+                if not self.is_safe_url(url):
+                    logger.warning(f"⚠️ [Web] Unsafe URL blocked: {url}")
+                    continue
+
                 # Check robots.txt if enabled
                 if respect_robots and not self.check_robots_txt(url, self.USER_AGENT):
                     logger.info(f"🚫 [Web] Blocked by robots.txt: {url}")
@@ -359,16 +409,16 @@ class WebConnector(BaseConnector):
                     continue
                 
                 # Standard web page
-                downloaded = trafilatura.fetch_url(url)
-                if downloaded:
+                html = self.fetch_html(url)
+                if html:
                     text = trafilatura.extract(
-                        downloaded,
+                        html,
                         include_comments=False,
                         include_tables=True,
                         include_links=False,
                         output_format="txt"
                     )
-                    metadata = trafilatura.extract_metadata(downloaded)
+                    metadata = trafilatura.extract_metadata(html)
                     
                     if text and text.strip():
                         title = metadata.title if metadata and metadata.title else url
@@ -393,20 +443,164 @@ class WebConnector(BaseConnector):
         
         logger.info(f"📥 [WebConnector] Ingestion stream ended")
     
-    def fetch_html(self, url: str) -> Optional[str]:
+    def fetch_html(self, url: str, max_bytes: int = None) -> Optional[str]:
         """
         Fetch raw HTML content for link extraction.
         
         Used by the worker for recursive crawling.
         """
         try:
-            response = requests.get(
+            max_bytes = max_bytes or self.MAX_HTML_BYTES
+            response = self.session.get(
                 url,
-                headers={"User-Agent": self.USER_AGENT},
-                timeout=30
+                timeout=(10, 30),
+                allow_redirects=True,
+                stream=True
             )
             response.raise_for_status()
-            return response.text
+
+            content_type = (response.headers.get("Content-Type") or "").lower()
+            if content_type and not any(ct in content_type for ct in self.ALLOWED_CONTENT_TYPES):
+                logger.info(f"⚠️ [Web] Skipping non-HTML content: {url} ({content_type})")
+                response.close()
+                return None
+
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > max_bytes:
+                logger.info(f"⚠️ [Web] Skipping large page ({content_length} bytes): {url}")
+                response.close()
+                return None
+
+            chunks = []
+            total = 0
+            for chunk in response.iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    logger.info(f"⚠️ [Web] Page exceeded max size ({max_bytes} bytes): {url}")
+                    response.close()
+                    return None
+                chunks.append(chunk)
+
+            encoding = response.encoding or "utf-8"
+            html = b"".join(chunks).decode(encoding, errors="replace")
+            response.close()
+            return html
         except Exception as e:
             logger.error(f"❌ [Web] HTML fetch failed for {url}: {e}")
             return None
+
+    def is_safe_url(self, url: str) -> bool:
+        """Basic SSRF protection: allow only public http(s) URLs."""
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"}:
+                return False
+            if parsed.username or parsed.password:
+                return False
+            hostname = parsed.hostname
+            if not hostname:
+                return False
+            return self._is_safe_host(hostname)
+        except Exception:
+            return False
+
+    @lru_cache(maxsize=512)
+    def _is_safe_host(self, hostname: str) -> bool:
+        try:
+            ip = ipaddress.ip_address(hostname)
+            return self._is_public_ip(ip)
+        except ValueError:
+            # Hostname: resolve and validate all IPs
+            try:
+                infos = socket.getaddrinfo(hostname, None)
+            except socket.gaierror:
+                return False
+
+            for info in infos:
+                addr = info[4][0]
+                try:
+                    ip = ipaddress.ip_address(addr)
+                except ValueError:
+                    return False
+                if not self._is_public_ip(ip):
+                    return False
+            return True
+
+    def normalize_url(self, url: str) -> Optional[str]:
+        """Normalize URL for deduplication and safe comparisons."""
+        if not url:
+            return None
+        try:
+            raw = url.strip()
+            parsed = urlparse(raw)
+            if parsed.scheme not in {"http", "https"}:
+                return None
+            if not parsed.hostname:
+                return None
+
+            scheme = parsed.scheme.lower()
+            host = parsed.hostname.lower()
+            port = parsed.port
+            if port and ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+                port = None
+            netloc = host if port is None else f"{host}:{port}"
+
+            path = parsed.path or "/"
+            path = re.sub("/{2,}", "/", path)
+            if path != "/":
+                path = path.rstrip("/")
+
+            query = self._strip_tracking_params(parsed.query)
+            return urlunparse((scheme, netloc, path, "", query, ""))
+        except Exception:
+            return None
+
+    def _strip_tracking_params(self, query: str) -> str:
+        params = []
+        for key, value in parse_qsl(query, keep_blank_values=False):
+            if key.lower() in self.TRACKING_QUERY_PARAMS:
+                continue
+            params.append((key, value))
+        return urlencode(params, doseq=True)
+
+    def _normalize_hostname(self, hostname: str) -> str:
+        host = hostname.strip().lower().rstrip(".")
+        if host.startswith("www."):
+            return host[4:]
+        return host
+
+    def _is_allowed_domain(self, hostname: str, base_domain: str, allow_subdomains: bool) -> bool:
+        host = self._normalize_hostname(hostname)
+        base = self._normalize_hostname(base_domain)
+        if allow_subdomains:
+            return host == base or host.endswith(f".{base}")
+        return host == base
+
+    def is_allowed_domain(self, hostname: str, base_domain: str, allow_subdomains: bool) -> bool:
+        """Public wrapper for domain allow-list checks."""
+        return self._is_allowed_domain(hostname, base_domain, allow_subdomains)
+
+    def _is_public_ip(self, ip) -> bool:
+        return not (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        )
+
+    @lru_cache(maxsize=256)
+    def _get_robots_parser(self, robots_url: str):
+        from urllib.robotparser import RobotFileParser
+        rp = RobotFileParser()
+        try:
+            response = self.session.get(robots_url, timeout=(10, 30))
+            if response.status_code >= 400:
+                return rp
+            rp.parse(response.text.splitlines())
+        except Exception as e:
+            logger.warning(f"⚠️ [Web] robots.txt fetch failed for {robots_url}: {e}")
+        return rp

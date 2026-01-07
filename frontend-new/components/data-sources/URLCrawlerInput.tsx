@@ -36,23 +36,12 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
 
     setIsLoading(true);
     try {
-      // Call the advanced crawler endpoint
-      // Must use FormData because the endpoint expects 'Form' fields
-      const formData = new FormData();
-      formData.append("url", url);
-
-      // Metadata payload for advanced options
-      const metadata = {
-        depth: depth,
+      await api.post("/integrations/web/crawl", {
+        url,
         crawl_type: depth > 1 ? "recursive" : "single",
-        respect_robots: true // Default to true
-      };
-      formData.append("metadata", JSON.stringify(metadata));
-
-      await api.post("/ingest", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
+        max_depth: depth,
+        respect_robots: true,
+        allow_subdomains: false,
       });
 
       toast({

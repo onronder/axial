@@ -10,9 +10,13 @@ from core.security import get_current_user, encrypt_token, decrypt_token
 from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
+from services.usage import check_feature_access
+from services.web_crawl import queue_web_crawl
+from connectors.web import WebConnector
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
+from uuid import UUID
 import logging
 import httpx
 
@@ -53,6 +57,16 @@ class UserIntegrationOut(BaseModel):
 class IngestRequest(BaseModel):
     """Ingestion request with validation."""
     item_ids: List[str] = Field(..., max_length=100)  # Max 100 items per request
+
+
+class WebCrawlRequest(BaseModel):
+    """Web crawl request with validation."""
+    url: str = Field(..., min_length=1, max_length=2048)
+    crawl_type: str = Field(default="single")
+    max_depth: int = Field(default=1, ge=1, le=10)
+    respect_robots: bool = Field(default=True)
+    max_pages: int = Field(default=500, ge=1, le=10000)
+    allow_subdomains: bool = Field(default=False)
 
 
 # =============================================================================
@@ -588,7 +602,7 @@ async def disconnect_provider(
 # Provider Items & Ingestion
 # =============================================================================
 
-from connectors.factory import get_connector
+from connectors import get_connector
 
 
 @router.get("/integrations/{provider}/items")
@@ -606,6 +620,58 @@ async def list_provider_items(
         raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
 
 
+@router.post("/integrations/web/crawl", status_code=202)
+@limiter.limit("10/minute")
+async def crawl_web(
+    request: Request,
+    body: WebCrawlRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Queue a web crawl with best-practice defaults."""
+    try:
+        feature_check = await check_feature_access(UUID(user_id), "web_crawl")
+        if not feature_check["allowed"]:
+            raise HTTPException(status_code=403, detail=feature_check["reason"])
+
+        connector = WebConnector()
+        normalized_url = connector.normalize_url(body.url)
+        if not normalized_url:
+            raise HTTPException(status_code=400, detail="Invalid URL for crawling.")
+        if not connector.is_safe_url(normalized_url):
+            raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")
+
+        crawl_type = body.crawl_type.lower()
+        if crawl_type not in {"single", "recursive", "sitemap"}:
+            raise HTTPException(status_code=400, detail="Invalid crawl_type.")
+
+        max_depth = body.max_depth if crawl_type == "recursive" else 1
+        max_pages = body.max_pages
+        if crawl_type == "single":
+            max_pages = 1
+
+        result = queue_web_crawl(
+            user_id=user_id,
+            root_url=normalized_url,
+            crawl_type=crawl_type,
+            max_depth=max_depth,
+            respect_robots=body.respect_robots,
+            max_pages=max_pages,
+            allow_subdomains=body.allow_subdomains,
+        )
+
+        return {
+            "status": "queued",
+            "crawl_id": result["crawl_id"],
+            "task_id": result["task_id"],
+            "root_url": normalized_url,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [Crawl] Failed to queue web crawl: {e}")
+        raise HTTPException(status_code=500, detail="Failed to queue web crawl.")
+
+
 @router.post("/integrations/{provider}/ingest", status_code=202)
 async def ingest_provider_items(
     provider: str,
@@ -620,6 +686,41 @@ async def ingest_provider_items(
     for progress tracking.
     """
     try:
+        if provider == "web":
+            if len(request.item_ids) != 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Web ingest supports a single URL. Use /integrations/web/crawl for advanced options."
+                )
+
+            feature_check = await check_feature_access(UUID(user_id), "web_crawl")
+            if not feature_check["allowed"]:
+                raise HTTPException(status_code=403, detail=feature_check["reason"])
+
+            connector = WebConnector()
+            normalized_url = connector.normalize_url(request.item_ids[0])
+            if not normalized_url:
+                raise HTTPException(status_code=400, detail="Invalid URL for crawling.")
+            if not connector.is_safe_url(normalized_url):
+                raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")
+
+            result = queue_web_crawl(
+                user_id=user_id,
+                root_url=normalized_url,
+                crawl_type="single",
+                max_depth=1,
+                respect_robots=True,
+                max_pages=1,
+                allow_subdomains=False,
+            )
+
+            return {
+                "status": "queued",
+                "crawl_id": result["crawl_id"],
+                "task_id": result["task_id"],
+                "root_url": normalized_url,
+            }
+
         # 1. Get user's credentials for this provider
         supabase = get_supabase()
         
@@ -724,7 +825,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
         }).eq("id", job_id).execute()
         
         # 2. Get Connector
-        from connectors.factory import get_connector
+        from connectors import get_connector
         try:
             connector = get_connector(provider)
         except Exception:
@@ -888,4 +989,3 @@ async def get_sync_history(
     except Exception as e:
         logger.error(f"Failed to get sync history: {e}")
         raise HTTPException(status_code=500, detail="Failed to get sync history")
-

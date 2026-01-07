@@ -93,18 +93,22 @@ describe('IngestModal', () => {
 
             await waitFor(() => {
                 expect(global.fetch).toHaveBeenCalledWith(
-                    '/api/py/ingest',
+                    '/api/py/integrations/web/crawl',
                     expect.objectContaining({
                         method: 'POST',
-                        headers: { 'Authorization': 'Bearer test-token' }
+                        headers: {
+                            'Authorization': 'Bearer test-token',
+                            'Content-Type': 'application/json'
+                        }
                     })
                 )
             })
 
-            // Check FormData contains url
+            // Check payload contains url
             const fetchCall = (global.fetch as Mock).mock.calls[0]
-            const formData = fetchCall[1].body as FormData
-            expect(formData.get('url')).toBe('https://example.com/test-page')
+            const payload = JSON.parse(fetchCall[1].body as string)
+            expect(payload.url).toBe('https://example.com/test-page')
+            expect(payload.crawl_type).toBe('sitemap')
         })
 
         it('should show error for invalid URL', async () => {

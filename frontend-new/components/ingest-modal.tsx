@@ -84,8 +84,8 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
             if (!token) throw new Error("Not authenticated")
 
-            const endpoint = '/api/py/ingest'
-            let body: FormData | null = null
+            let endpoint = ''
+            let fetchOptions: RequestInit | null = null
 
             if (activeTab === 'file') {
                 if (!file) {
@@ -96,7 +96,12 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 const formData = new FormData()
                 formData.append("file", file)
                 formData.append("metadata", JSON.stringify({ client_id: "frontend_user" }))
-                body = formData
+                endpoint = '/api/py/ingest'
+                fetchOptions = {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                }
 
             } else if (activeTab === 'url' || activeTab === 'website') {
                 const targetUrl = activeTab === 'website' ? websiteUrl : url
@@ -110,25 +115,32 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 if (!validateUrl(targetUrl)) {
                     throw new Error("Please enter a valid URL starting with http:// or https://")
                 }
-
-                const formData = new FormData()
-                formData.append("url", targetUrl)
-                formData.append("metadata", JSON.stringify({ client_id: "frontend_user", source: "web_crawl" }))
-                body = formData
+                const crawlType = activeTab === 'website' ? 'sitemap' : 'single'
+                endpoint = '/api/py/integrations/web/crawl'
+                fetchOptions = {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        url: targetUrl,
+                        crawl_type: crawlType,
+                        max_depth: 1,
+                        respect_robots: true,
+                        allow_subdomains: false
+                    })
+                }
             }
 
-            if (!body) {
+            if (!fetchOptions || !endpoint) {
                 // Should not happen
                 setLoading(false)
                 clearInterval(interval)
                 return
             }
 
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: body
-            })
+            const res = await fetch(endpoint, fetchOptions)
 
             clearInterval(interval)
             setProgress(100)

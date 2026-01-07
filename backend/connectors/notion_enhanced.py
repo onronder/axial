@@ -91,6 +91,10 @@ class NotionConnectorEnhanced(EnhancedConnector):
     async def ingest(self, config: Dict[str, Any]) -> AsyncIterator[ConnectorDocument]:
         """Legacy method - maintains backward compatibility."""
         return self.legacy.ingest(config)
+
+    async def sync(self, user_id: str, integration_id: str) -> dict:
+        """Delegate sync to legacy connector for backward compatibility."""
+        return await self.legacy.sync(user_id, integration_id)
     
     def validate_credentials(self, credentials: Dict[str, Any]) -> bool:
         """

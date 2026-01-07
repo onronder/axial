@@ -20,6 +20,8 @@ from core.db import get_supabase
 from core.config import settings
 from core.quotas import QUOTA_LIMITS, check_quota
 from services.usage import check_can_upload, check_feature_access
+from services.web_crawl import queue_web_crawl
+from connectors.web import WebConnector
 from services.team_service import team_service
 from api.v1.dependencies import validate_team_access
 from slowapi import Limiter
@@ -146,58 +148,61 @@ async def ingest_document(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=feature_check["reason"]
             )
-        
-        from datetime import datetime as dt
-        crawl_type = meta_dict.get("crawl_type", "single")
-        max_depth = min(int(meta_dict.get("depth", 1)), 10)
-        respect_robots = meta_dict.get("respect_robots", True)
-        
-        crawl_config_data = {
-            "user_id": user_id,
-            "root_url": url,
-            "crawl_type": crawl_type,
-            "max_depth": max_depth,
-            "respect_robots_txt": respect_robots,
-            "status": "pending",
-            "created_at": dt.now(datetime.timezone.utc).isoformat(),
-            "updated_at": dt.now(datetime.timezone.utc).isoformat()
-        }
-        
-        crawl_res = supabase.table("web_crawl_configs").insert(crawl_config_data).execute()
-        if not crawl_res.data:
-            raise HTTPException(status_code=500, detail="Failed to create crawl config")
-        
-        crawl_id = str(crawl_res.data[0]["id"])
-        
-        from worker.tasks import unified_ingest_task
+
+        connector = WebConnector()
+        normalized_url = connector.normalize_url(url)
+        if not normalized_url:
+            raise HTTPException(status_code=400, detail="Invalid URL for crawling.")
+        if not connector.is_safe_url(normalized_url):
+            raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")
+
+        crawl_type = str(meta_dict.get("crawl_type", "single")).lower()
+        if crawl_type not in {"single", "recursive", "sitemap"}:
+            raise HTTPException(status_code=400, detail="Invalid crawl_type.")
+
+        def _safe_int(value: Optional[object], default: int) -> int:
+            try:
+                return int(value) if value is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        max_depth = min(_safe_int(meta_dict.get("depth", 1), 1), 10)
+        max_pages = _safe_int(meta_dict.get("max_pages", 500), 500)
+        max_pages = max(1, min(max_pages, 10000))
+        def _safe_bool(value: Optional[object], default: bool) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.strip().lower() in {"true", "1", "yes", "y"}
+            return default
+
+        allow_subdomains = _safe_bool(meta_dict.get("allow_subdomains"), False)
+        respect_robots = _safe_bool(meta_dict.get("respect_robots"), True)
+
+        if crawl_type != "recursive":
+            max_depth = 1
+        if crawl_type == "single":
+            max_pages = 1
+
         try:
-            task = unified_ingest_task.delay(
+            result = queue_web_crawl(
                 user_id=user_id,
-                job_id=crawl_id,
-                connector_type="web",
-                item_ids=[url],
-                credentials={
-                    "crawl_config": {
-                        "crawl_id": crawl_id,
-                        "crawl_type": crawl_type,
-                        "max_depth": max_depth,
-                        "respect_robots": respect_robots
-                    }
-                }
+                root_url=normalized_url,
+                crawl_type=crawl_type,
+                max_depth=max_depth,
+                respect_robots=respect_robots,
+                max_pages=max_pages,
+                allow_subdomains=allow_subdomains,
             )
-            
-            supabase.table("web_crawl_configs").update({
-                "celery_task_id": task.id
-            }).eq("id", crawl_id).execute()
         except Exception as e:
             logger.error(f"❌ [Ingest] Failed to dispatch web crawl task: {e}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Task queue unavailable. Please try again later."
             )
-        
-        logger.info(f"🕸️ [Ingest] Web crawl queued: {url}, task={task.id}")
-        return IngestResponse(status="queued", doc_id=crawl_id)
+
+        logger.info(f"🕸️ [Ingest] Web crawl queued: {normalized_url}, task={result['task_id']}")
+        return IngestResponse(status="queued", doc_id=result["crawl_id"])
 
     # =========================================================
     # ROUTE 2: CLOUD CONNECTORS (Drive, Notion)

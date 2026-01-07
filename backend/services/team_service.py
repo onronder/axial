@@ -82,7 +82,10 @@ class TeamService:
             if response.data:
                 plan = response.data
                 logger.debug(f"[TeamService] User {user_id[:8]}... effective plan: {plan}")
-                return plan
+                # Legacy RPC can return stale "free"/"none" if subscriptions table is source of truth.
+                if plan in {"starter", "pro", "enterprise"}:
+                    return plan
+                return await self._get_effective_plan_direct(user_id)
             
             # Fallback: direct query
             return await self._get_effective_plan_direct(user_id)
@@ -133,13 +136,6 @@ class TeamService:
                     # Fallback to profile
                     if data.get('profile'):
                         profile = data['profile']
-                        subscription_status = profile.get('subscription_status', 'active')
-                        allowed_statuses = ['active', 'trialing']
-                        
-                        if subscription_status not in allowed_statuses:
-                            logger.info(f"[TeamService] User {user_id[:8]}... has status={subscription_status}, forcing 'none'")
-                            return 'none'
-                        
                         return profile.get('plan', 'free')
                         
             except Exception as rpc_error:
@@ -186,17 +182,11 @@ class TeamService:
                     is_owner = (owner_id == user_id)
                     
                     profile_response = supabase.table("user_profiles").select(
-                        "plan, subscription_status"
+                        "plan"
                     ).eq("user_id", owner_id).single().execute()
                     
                     if profile_response.data:
                         owner_plan = profile_response.data.get("plan", "free")
-                        subscription_status = profile_response.data.get("subscription_status", "active")
-                        
-                        allowed_statuses = ["active", "trialing"]
-                        if subscription_status not in allowed_statuses:
-                            logger.info(f"[TeamService] Owner {owner_id[:8]}... has status={subscription_status}, forcing 'none'")
-                            return "none"
                         
                         if not is_owner:
                             plan_limits = get_plan_limits(owner_plan)
@@ -221,15 +211,10 @@ class TeamService:
             
             # Final fallback: user_profiles.plan
             own_profile = supabase.table("user_profiles").select(
-                "plan, subscription_status"
+                "plan"
             ).eq("user_id", user_id).single().execute()
             
             if own_profile.data:
-                subscription_status = own_profile.data.get("subscription_status", "active")
-                allowed_statuses = ["active", "trialing"]
-                if subscription_status not in allowed_statuses:
-                    logger.info(f"[TeamService] User {user_id[:8]}... has status={subscription_status}, forcing 'none'")
-                    return "none"
                 return own_profile.data.get("plan", "free")
             
             return "free"
@@ -322,29 +307,39 @@ class TeamService:
                 # Owners always have access to their own team
                 return {"allowed": True, "reason": "team_owner", "plan": "unknown"}
             
-            # User is a member - check owner's status and plan
-            profile_response = supabase.table("user_profiles").select(
-                "plan, subscription_status"
-            ).eq("user_id", owner_id).single().execute()
+            # User is a member - check subscription first, then owner plan
+            owner_plan = "free"
+            subscription_status = None
+
+            subscription_response = supabase.table("subscriptions").select(
+                "status, plan_type"
+            ).eq("team_id", team_id).limit(1).execute()
+
+            if subscription_response.data:
+                subscription_status = subscription_response.data[0].get("status")
+                owner_plan = subscription_response.data[0].get("plan_type", "free")
+            else:
+                profile_response = supabase.table("user_profiles").select(
+                    "plan"
+                ).eq("user_id", owner_id).single().execute()
+                
+                if not profile_response.data:
+                    return {"allowed": True, "reason": "owner_not_found", "plan": "free"}
+                
+                owner_plan = profile_response.data.get("plan", "free")
             
-            if not profile_response.data:
-                return {"allowed": True, "reason": "owner_not_found", "plan": "free"}
-            
-            owner_plan = profile_response.data.get("plan", "free")
-            subscription_status = profile_response.data.get("subscription_status", "active")
-            
-            # Check 1: Subscription Status
-            restricted_statuses = ["unpaid", "past_due", "canceled", "expired"]
+            # Check 1: Subscription Status (only if present)
+            restricted_statuses = ["past_due", "canceled", "incomplete"]
             if subscription_status in restricted_statuses:
                 logger.warning(
                     f"[TeamService] Access denied for {user_id[:8]}...: "
-                    f"Owner subscription status is '{subscription_status}'"
+                    f"Team subscription status is '{subscription_status}'"
                 )
                 return {
                     "allowed": False,
                     "reason": "subscription_inactive",
                     "plan": "free",
-                    "message": "Team access is suspended. Owner's subscription is inactive."
+                    "message": "Team access is suspended. Subscription is inactive."
                 }
             
             # Check 2: Team Lockout (owner downgraded)
@@ -962,4 +957,3 @@ class TeamService:
 
 # Singleton instance
 team_service = TeamService()
-

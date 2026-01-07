@@ -188,19 +188,38 @@ class SubscriptionService:
         }, on_conflict="team_id").execute()
         
         # ALSO UPDATE user_profiles.plan for the team owner (keeps both tables in sync)
+        owner_id = None
         try:
             team_response = supabase.table("teams").select("owner_id").eq("id", team_id).single().execute()
             if team_response.data and team_response.data.get("owner_id"):
                 owner_id = team_response.data["owner_id"]
-                supabase.table("user_profiles").update({
-                    "plan": plan,
-                    "subscription_status": "active"
-                }).eq("user_id", owner_id).execute()
+                try:
+                    supabase.table("user_profiles").update({
+                        "plan": plan,
+                        "subscription_status": "active"
+                    }).eq("user_id", owner_id).execute()
+                except Exception as update_error:
+                    logger.warning(f"[SubscriptionService] Failed to update subscription_status, retrying with plan only: {update_error}")
+                    supabase.table("user_profiles").update({
+                        "plan": plan
+                    }).eq("user_id", owner_id).execute()
                 logger.info(f"[SubscriptionService] Updated user_profiles.plan for owner {owner_id[:8]}... to {plan}")
         except Exception as e:
             logger.warning(f"[SubscriptionService] Failed to update user_profiles: {e}")
         
-        team_service.invalidate_plan_cache(team_id)
+        # Invalidate cached plans for all team members (owner + members)
+        try:
+            member_rows = supabase.table("team_members").select(
+                "member_user_id"
+            ).eq("team_id", team_id).neq("status", "removed").execute()
+            member_ids = {row.get("member_user_id") for row in (member_rows.data or []) if row.get("member_user_id")}
+            if owner_id:
+                member_ids.add(owner_id)
+            for member_id in member_ids:
+                team_service.invalidate_plan_cache(member_id)
+        except Exception as e:
+            logger.warning(f"[SubscriptionService] Failed to invalidate plan cache for team {team_id}: {e}")
+
         logger.info(f"SUCCESS: Team {team_id} plan updated to {plan}")
 
     async def _cancel_subscription(self, body: Dict[str, Any], action: str):
@@ -215,8 +234,22 @@ class SubscriptionService:
         supabase.table("subscriptions").update({
             "status": "canceled"
         }).eq("team_id", team_id).execute()
-        
-        team_service.invalidate_plan_cache(team_id)
+
+        # Invalidate cached plans for all team members (owner + members)
+        try:
+            member_rows = supabase.table("team_members").select(
+                "member_user_id"
+            ).eq("team_id", team_id).neq("status", "removed").execute()
+            member_ids = {row.get("member_user_id") for row in (member_rows.data or []) if row.get("member_user_id")}
+            team_response = supabase.table("teams").select("owner_id").eq("id", team_id).single().execute()
+            owner_id = team_response.data.get("owner_id") if team_response.data else None
+            if owner_id:
+                member_ids.add(owner_id)
+            for member_id in member_ids:
+                team_service.invalidate_plan_cache(member_id)
+        except Exception as e:
+            logger.warning(f"[SubscriptionService] Failed to invalidate plan cache for team {team_id}: {e}")
+
         logger.info(f"Team {team_id} subscription {action}")
 
 # Singleton instance

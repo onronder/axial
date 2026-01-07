@@ -15,9 +15,9 @@ from core.celery_app import celery_app
 from core.db import get_supabase
 from core.config import settings
 from core.security import decrypt_token
-from services.parsers import DocumentParser, DocumentProcessorFactory
+from services.parsers import DocumentProcessorFactory
 from services.email import email_service
-from connectors.factory import get_connector
+from connectors import get_connector
 from services.embeddings import generate_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -758,7 +758,6 @@ def unified_ingest_task(
     import asyncio
     import base64
     from celery import chord, group
-    from connectors import get_connector
     
     task_id = self.request.id
     logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}")
@@ -1244,6 +1243,38 @@ def finalize_job_task(self, results: list, user_id: str, job_id: str, total_file
 # DISTRIBUTED CRAWLER: Master-Worker Pattern
 # ============================================================
 
+def update_crawl_status(
+    supabase,
+    crawl_id: str,
+    *,
+    status: Optional[str] = None,
+    total_pages: Optional[int] = None,
+    pages_ingested: Optional[int] = None,
+    pages_failed: Optional[int] = None,
+    error_message: Optional[str] = None
+) -> None:
+    """Update crawl progress in web_crawl_configs with safe defaults."""
+    try:
+        update_data: Dict[str, Any] = {
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        if status is not None:
+            update_data["status"] = status
+            if status in {"completed", "failed", "cancelled"}:
+                update_data["completed_at"] = datetime.now(timezone.utc).isoformat()
+        if total_pages is not None:
+            update_data["total_pages_found"] = total_pages
+        if pages_ingested is not None:
+            update_data["pages_ingested"] = pages_ingested
+        if pages_failed is not None:
+            update_data["pages_failed"] = pages_failed
+        if error_message is not None:
+            update_data["error_message"] = error_message
+        supabase.table("web_crawl_configs").update(update_data).eq("id", crawl_id).execute()
+    except Exception as e:
+        logger.warning(f"⚠️ [Crawl] Failed to update status for {crawl_id}: {e}")
+
+
 @celery_app.task(
     bind=True,
     autoretry_for=(ConnectionError, TimeoutError),
@@ -1260,24 +1291,26 @@ def crawl_discovery_task(
     Master task for distributed web crawling.
     
     Discovers URLs (via sitemap or recursive) and dispatches
-    individual page processing tasks using Celery groups.
-    
-    This pattern prevents Celery Soft Time Limit issues when
-    crawling large sites (10,000+ pages).
+    individual page processing tasks using a Celery chord.
     """
-    from celery import group
+    from celery import chord, group
     from collections import deque
     import time
     import random
+    from urllib.parse import urlparse
     
     task_id = self.request.id
     crawl_id = crawl_config.get("crawl_id")
     crawl_type = crawl_config.get("crawl_type", "single")
-    max_depth = min(crawl_config.get("max_depth", 1), 10)
-    respect_robots = crawl_config.get("respect_robots", True)
+    max_depth = min(int(crawl_config.get("max_depth", 1)), 10)
+    max_pages = min(int(crawl_config.get("max_pages", 500)), 10000)
+    max_pages = max(1, max_pages)
+    respect_robots = bool(crawl_config.get("respect_robots", True))
+    allow_subdomains = bool(crawl_config.get("allow_subdomains", False))
+    is_recrawl = bool(crawl_config.get("is_recrawl", False))
     
-    logger.info(f"🕸️ [Discovery:{task_id}] Starting distributed crawl for user {user_id}")
-    logger.info(f"🕸️ [Discovery:{task_id}] URL: {root_url}, Type: {crawl_type}, Depth: {max_depth}")
+    logger.info(f"🕸️ [Discovery:{task_id}] Starting crawl for user {user_id}")
+    logger.info(f"🕸️ [Discovery:{task_id}] URL: {root_url}, Type: {crawl_type}, Depth: {max_depth}, Max: {max_pages}")
     
     supabase = get_supabase()
     
@@ -1285,6 +1318,13 @@ def crawl_discovery_task(
         # Import connector
         from connectors.web import WebConnector
         connector = WebConnector()
+        
+        normalized_root = connector.normalize_url(root_url)
+        if not normalized_root:
+            raise ValueError("Invalid URL provided for crawl")
+        if not connector.is_safe_url(normalized_root):
+            raise ValueError("URL is not allowed for crawling")
+        root_url = normalized_root
         
         # Update status
         if crawl_id:
@@ -1300,24 +1340,43 @@ def crawl_discovery_task(
         
         # ===== DISCOVERY PHASE =====
         urls_to_process: List[str] = []
+        parsed_root = urlparse(root_url)
+        base_domain = parsed_root.hostname or ""
         
         if crawl_type == "sitemap":
             logger.info(f"🗺️ [Discovery] Parsing sitemap: {root_url}")
-            urls_to_process = connector.parse_sitemap(root_url)
+            sitemap_urls = connector.parse_sitemap(root_url)
+            seen = set()
+            for url in sitemap_urls:
+                normalized = connector.normalize_url(url)
+                if not normalized:
+                    continue
+                if normalized in seen:
+                    continue
+                if connector.is_allowed_domain(urlparse(normalized).hostname or "", base_domain, allow_subdomains):
+                    seen.add(normalized)
+                    urls_to_process.append(normalized)
+                if len(urls_to_process) >= max_pages:
+                    break
             
         elif crawl_type == "recursive":
             logger.info(f"🔄 [Discovery] Recursive crawl from: {root_url}")
             queue = deque([(root_url, 0)])
             seen = {root_url}
             
-            while queue:
+            while queue and len(urls_to_process) < max_pages:
                 url, depth = queue.popleft()
                 urls_to_process.append(url)
                 
                 if depth < max_depth:
                     html = connector.fetch_html(url)
                     if html:
-                        links = connector.extract_links(html, url)
+                        links = connector.extract_links(
+                            html,
+                            url,
+                            base_domain=base_domain,
+                            allow_subdomains=allow_subdomains
+                        )
                         for link in links:
                             if link not in seen:
                                 seen.add(link)
@@ -1328,8 +1387,14 @@ def crawl_discovery_task(
         else:
             urls_to_process = [root_url]
         
+        if respect_robots:
+            urls_to_process = [
+                url for url in urls_to_process
+                if connector.check_robots_txt(url, connector.USER_AGENT)
+            ]
+        
         total_pages = len(urls_to_process)
-        logger.info(f"📊 [Discovery] Discovered {total_pages} URLs")
+        logger.info(f"📊 [Discovery] Discovered {total_pages} URLs after filtering")
         
         if crawl_id:
             update_crawl_status(supabase, crawl_id, status="processing", total_pages=total_pages)
@@ -1339,8 +1404,41 @@ def crawl_discovery_task(
                 update_crawl_status(supabase, crawl_id, status="completed", total_pages=0)
             return {"status": "completed", "message": "No pages found"}
         
+        # ===== DEDUP AGAINST EXISTING =====
+        if not is_recrawl:
+            existing_urls = set()
+            try:
+                batch_size = 1000
+                for i in range(0, len(urls_to_process), batch_size):
+                    batch = urls_to_process[i:i + batch_size]
+                    existing_res = supabase.table("documents").select("source_url").eq(
+                        "user_id", user_id
+                    ).in_(
+                        "source_url", batch
+                    ).execute()
+                    for row in existing_res.data or []:
+                        src = row.get("source_url")
+                        normalized = connector.normalize_url(src) if src else None
+                        if normalized:
+                            existing_urls.add(normalized)
+                        elif src:
+                            existing_urls.add(src)
+            except Exception as e:
+                logger.warning(f"⚠️ [Discovery] Dedup query failed: {e}")
+            
+            if existing_urls:
+                urls_to_process = [url for url in urls_to_process if url not in existing_urls]
+                logger.info(f"📊 [Discovery] After dedup: {len(urls_to_process)} new URLs")
+        
+        if not urls_to_process:
+            if crawl_id:
+                update_crawl_status(supabase, crawl_id, status="completed", total_pages=0)
+            return {"status": "completed", "message": "No new URLs to crawl"}
+        
+        if crawl_id:
+            update_crawl_status(supabase, crawl_id, status="processing", total_pages=len(urls_to_process))
+        
         # ===== DISPATCH PHASE: Parallel processing =====
-        # Create a group of tasks for parallel execution
         page_tasks = group(
             process_page_task.s(
                 user_id=user_id,
@@ -1350,16 +1448,19 @@ def crawl_discovery_task(
             ) for url in urls_to_process
         )
         
-        # Execute all tasks in parallel
-        result = page_tasks.apply_async()
+        job = chord(
+            page_tasks,
+            finalize_crawl_task.s(user_id=user_id, crawl_id=crawl_id, root_url=root_url)
+        )
+        result = job.apply_async()
         
-        logger.info(f"🚀 [Discovery:{task_id}] Dispatched {total_pages} page tasks")
+        logger.info(f"🚀 [Discovery:{task_id}] Dispatched {len(urls_to_process)} page tasks")
         
         return {
             "status": "dispatched",
             "crawl_id": crawl_id,
-            "total_pages": total_pages,
-            "group_id": str(result.id)
+            "total_pages": len(urls_to_process),
+            "chord_id": str(result.id)
         }
         
     except Exception as e:
@@ -1388,7 +1489,7 @@ def crawl_discovery_task(
     autoretry_for=(ConnectionError, TimeoutError),
     retry_backoff=True,
     max_retries=3,
-    rate_limit='10/s'  # Rate limit: max 10 pages per second
+    rate_limit="10/s"
 )
 def process_page_task(
     self,
@@ -1403,6 +1504,9 @@ def process_page_task(
     Downloads, parses, embeds, and stores a single URL.
     Uses rate limiting to be polite to target servers.
     """
+    import time
+    import random
+    
     task_id = self.request.id
     logger.info(f"📄 [Page:{task_id}] Processing: {url}")
     
@@ -1413,27 +1517,57 @@ def process_page_task(
         from services.parsers import DocumentProcessorFactory
         
         connector = WebConnector()
+        if not connector.is_safe_url(url):
+            logger.warning(f"⚠️ [Page:{task_id}] Unsafe URL blocked: {url}")
+            if crawl_id:
+                supabase.rpc("increment_crawl_counter", {
+                    "p_crawl_id": crawl_id,
+                    "p_field": "pages_failed"
+                }).execute()
+            return {"status": "failed", "url": url, "error": "unsafe_url"}
+        
+        # Rate limiting - wait if needed
+        max_wait = 5
+        waited = 0.0
+        while not check_rate_limit(supabase, url) and waited < max_wait:
+            time.sleep(0.5)
+            waited += 0.5
+        
+        crawl_delay = connector.get_crawl_delay(url, connector.USER_AGENT) if respect_robots else None
+        if crawl_delay:
+            time.sleep(min(crawl_delay, 10.0) + random.uniform(0.1, 0.3))
         
         # Fetch and parse page
-        docs = connector.ingest({
+        docs = list(connector.ingest_sync({
             "item_ids": [url],
             "respect_robots": respect_robots
-        })
+        }))
         
         if not docs:
             logger.warning(f"⚠️ [Page:{task_id}] No content from: {url}")
+            if crawl_id:
+                supabase.rpc("increment_crawl_counter", {
+                    "p_crawl_id": crawl_id,
+                    "p_field": "pages_failed"
+                }).execute()
             return {"status": "skipped", "url": url}
         
-        # Get page content and title
-        page_content = docs[0].page_content if docs else ""
-        page_title = docs[0].metadata.get("title", "Web Page") if docs else "Web Page"
-        page_metadata = docs[0].metadata if docs else {}
+        doc = docs[0]
+        page_content = doc.page_content
+        page_metadata = doc.metadata or {}
+        page_title = page_metadata.get("title", "Web Page")
+        source_url = page_metadata.get("source_url", url)
         
         # Process using MarkdownProcessor (treats web content as markdown)
-        result = DocumentProcessorFactory.process_web_content(page_content, url)
+        result = DocumentProcessorFactory.process_web_content(page_content, source_url)
         
         if not result.chunks:
             logger.warning(f"⚠️ [Page:{task_id}] No chunks generated from: {url}")
+            if crawl_id:
+                supabase.rpc("increment_crawl_counter", {
+                    "p_crawl_id": crawl_id,
+                    "p_field": "pages_failed"
+                }).execute()
             return {"status": "skipped", "url": url}
         
         # Embed
@@ -1461,27 +1595,31 @@ def process_page_task(
                 }
             })
         
-        # Check for partial failure
-        if failed_chunks > 0:
-            total_chunks = len(result.chunks)
-            if failed_chunks / total_chunks > 0.5:
-                logger.error(f"❌ [Page:{task_id}] High embedding failure rate: {failed_chunks}/{total_chunks} chunks failed for {url}")
+        if not chunks_payload:
+            logger.warning(f"⚠️ [Page:{task_id}] No embeddings for: {url}")
+            if crawl_id:
+                supabase.rpc("increment_crawl_counter", {
+                    "p_crawl_id": crawl_id,
+                    "p_field": "pages_failed"
+                }).execute()
+            return {"status": "failed", "url": url, "error": "no_embeddings"}
         
         # Document metadata
         doc_metadata = {
             **page_metadata,
             "file_type": "web",
+            "crawl_id": crawl_id,
             "total_tokens": result.total_tokens,
             "total_chunks": len(result.chunks),
         }
         
         # Store using atomic RPC
-        content_size = len(html_content.encode('utf-8')) if 'html_content' in dir() else 0
-        rpc_result = supabase.rpc("ingest_document_with_chunks", {
+        content_size = len(page_content.encode("utf-8"))
+        supabase.rpc("ingest_document_with_chunks", {
             "p_user_id": user_id,
             "p_doc_title": page_title,
             "p_source_type": "web",
-            "p_source_url": url,
+            "p_source_url": source_url,
             "p_metadata": json.dumps(doc_metadata),
             "p_chunks": json.dumps(chunks_payload),
             "p_file_size_bytes": content_size
@@ -1489,7 +1627,6 @@ def process_page_task(
         
         logger.info(f"✅ [Page:{task_id}] Stored: {url} ({len(result.chunks)} chunks)")
         
-        # Update crawl progress
         if crawl_id:
             try:
                 supabase.rpc("increment_crawl_counter", {
@@ -1497,14 +1634,13 @@ def process_page_task(
                     "p_field": "pages_ingested"
                 }).execute()
             except Exception:
-                pass  # Non-critical
+                pass
         
         return {"status": "success", "url": url}
         
     except Exception as e:
         logger.error(f"❌ [Page:{task_id}] Failed {url}: {e}")
         
-        # Increment failure counter
         if crawl_id:
             try:
                 supabase.rpc("increment_crawl_counter", {
@@ -1514,10 +1650,56 @@ def process_page_task(
             except Exception:
                 pass
         
-        # Send failure email for web page (fail-safe)
         send_failure_email_notification(supabase, user_id, url, str(e))
         
         raise
+
+
+@celery_app.task(bind=True)
+def finalize_crawl_task(
+    self,
+    results: List[Dict[str, Any]],
+    user_id: str,
+    crawl_id: str,
+    root_url: str
+):
+    """Finalize crawl after all page tasks complete."""
+    task_id = self.request.id
+    supabase = get_supabase()
+    
+    success_count = sum(1 for r in results if r.get("status") == "success")
+    failed_count = sum(1 for r in results if r.get("status") == "failed")
+    skipped_count = sum(1 for r in results if r.get("status") == "skipped")
+    
+    logger.info(f"✅ [FinalizeCrawl:{task_id}] Crawl done: {success_count} success, {failed_count} failed, {skipped_count} skipped")
+    
+    final_status = "completed" if success_count > 0 or skipped_count > 0 else "failed"
+    update_crawl_status(
+        supabase,
+        crawl_id,
+        status=final_status,
+        pages_ingested=success_count,
+        pages_failed=failed_count
+    )
+    
+    create_notification(
+        supabase, user_id,
+        "Web Crawl Complete" if final_status == "completed" else "Web Crawl Failed",
+        f"Ingested {success_count} pages from {root_url}" if final_status == "completed" else f"Failed to crawl {root_url}",
+        "success" if final_status == "completed" else "error",
+        {"crawl_id": crawl_id, "pages_ingested": success_count, "pages_failed": failed_count}
+    )
+    
+    return {
+        "status": final_status,
+        "pages_ingested": success_count,
+        "pages_failed": failed_count,
+        "pages_skipped": skipped_count
+    }
+
+
+# Legacy alias (backward compatibility)
+crawl_web_task = crawl_discovery_task
 
 
 # ============================================================
@@ -1564,6 +1746,9 @@ def check_scheduled_crawls(self):
                 root_url = config["root_url"]
                 crawl_type = config["crawl_type"]
                 max_depth = config["max_depth"]
+                max_pages = config.get("max_pages", 500)
+                allow_subdomains = config.get("allow_subdomains", False)
+                respect_robots = config.get("respect_robots_txt", True)
                 refresh_interval = config["refresh_interval"]
                 
                 logger.info(f"🔄 [Scheduler] Triggering re-crawl: {root_url} ({refresh_interval})")
@@ -1578,15 +1763,20 @@ def check_scheduled_crawls(self):
                     "updated_at": now.isoformat()
                 }).eq("id", crawl_id).execute()
                 
-                # Queue unified ingestion task for web crawl
-                from worker.tasks import unified_ingest_task
-                task = unified_ingest_task.delay(
+                # Queue crawl discovery task for web crawl
+                task = crawl_discovery_task.delay(
                     user_id=user_id,
-                    job_id=crawl_id,
-                    connector_type="web",
-                    item_ids=[root_url],
-                    credentials=None
-                )        
+                    root_url=root_url,
+                    crawl_config={
+                        "crawl_id": crawl_id,
+                        "crawl_type": crawl_type,
+                        "max_depth": max_depth,
+                        "max_pages": max_pages,
+                        "respect_robots": respect_robots,
+                        "allow_subdomains": allow_subdomains,
+                        "is_recrawl": True
+                    }
+                )
                 # Calculate next_crawl_at based on interval
                 if refresh_interval == "daily":
                     next_crawl = now + timedelta(days=1)
@@ -1622,19 +1812,8 @@ def check_scheduled_crawls(self):
 
 
 # ============================================================
-# DISTRIBUTED WEB CRAWLER - MASTER/WORKER ARCHITECTURE
+# WEB CRAWL RATE LIMITING HELPERS
 # ============================================================
-# 
-# Master task (crawl_discovery_task):
-#   - Discovers all URLs (sitemap, recursive, single)
-#   - Deduplicates against existing documents
-#   - Dispatches process_page_task for each URL via Celery Group
-#
-# Worker task (process_page_task):
-#   - Processes a single URL
-#   - Rate limited per domain
-#   - Saves via atomic RPC
-#
 
 # Redis key prefix for rate limiting
 RATE_LIMIT_PREFIX = "crawl_ratelimit:"
@@ -1677,296 +1856,6 @@ def check_rate_limit(supabase, url: str) -> bool:
     except Exception as e:
         logger.warning(f"⚠️ Rate limit check failed: {e}")
         return True  # Allow on error
-
-
-@celery_app.task(
-    bind=True,
-    autoretry_for=(ConnectionError, TimeoutError),
-    retry_backoff=True,
-    retry_backoff_max=60,
-    max_retries=3,
-    acks_late=True
-)
-def process_page_task(
-    self,
-    url: str,
-    user_id: str,
-    crawl_id: str
-):
-    """
-    Worker task: Process a single URL.
-    
-    Designed for distributed execution - many of these run in parallel.
-    
-    Args:
-        url: Single URL to process
-        user_id: User ID for multi-tenancy
-        crawl_id: Parent crawl config ID for progress updates
-    """
-    import time
-    import random
-    
-    task_id = self.request.id
-    logger.info(f"🔗 [PageWorker:{task_id}] Processing: {url}")
-    
-    supabase = get_supabase()
-    
-    try:
-        # Rate limiting - wait if needed
-        max_wait = 5
-        waited = 0
-        while not check_rate_limit(supabase, url) and waited < max_wait:
-            time.sleep(0.5)
-            waited += 0.5
-        
-        if waited >= max_wait:
-            logger.warning(f"⏳ [PageWorker:{task_id}] Rate limit timeout for: {url}")
-        
-        # Import connector
-        from connectors.web import WebConnector
-        connector = WebConnector()
-        
-        # Ingest this URL
-        docs = connector.ingest({
-            "item_ids": [url],
-            "respect_robots": True
-        })
-        
-        if not docs:
-            logger.warning(f"⚠️ [PageWorker:{task_id}] No content from: {url}")
-            return {"status": "skipped", "url": url}
-        
-        # Embed
-        from services.embeddings import generate_embeddings_batch
-        
-        doc = docs[0]  # Single URL = single doc
-        chunk_embeddings = generate_embeddings_batch([doc.page_content])
-        chunk_embedding = chunk_embeddings[0]
-        
-        # Prepare for RPC
-        chunks_payload = [{
-            "content": doc.page_content,
-            "embedding": chunk_embedding,
-            "chunk_index": 0
-        }]
-        
-        # Atomic insert via RPC
-        content_size = len(doc.page_content.encode('utf-8'))
-        rpc_result = supabase.rpc("ingest_document_with_chunks", {
-            "p_user_id": user_id,
-            "p_doc_title": doc.metadata.get("title", url),
-            "p_source_type": doc.metadata.get("source", "web"),
-            "p_source_url": url,
-            "p_metadata": json.dumps(doc.metadata),
-            "p_chunks": json.dumps(chunks_payload),
-            "p_file_size_bytes": content_size
-        }).execute()
-        
-        if rpc_result.data:
-            logger.info(f"✅ [PageWorker:{task_id}] Ingested: {url}")
-            return {"status": "success", "url": url, "doc_id": str(rpc_result.data)}
-        else:
-            raise Exception("RPC returned no document ID")
-        
-    except Exception as e:
-        logger.error(f"❌ [PageWorker:{task_id}] Failed {url}: {e}")
-        return {"status": "failed", "url": url, "error": str(e)}
-
-
-@celery_app.task(
-    bind=True,
-    autoretry_for=(ConnectionError, TimeoutError),
-    retry_backoff=True,
-    retry_backoff_max=300,
-    max_retries=2,
-    acks_late=True
-)
-def crawl_discovery_task(
-    self,
-    user_id: str,
-    root_url: str,
-    crawl_config: Dict[str, Any]
-):
-    """
-    Master task: Discover URLs and dispatch worker tasks.
-    
-    This is the "Conductor" that:
-    1. Discovers all URLs (sitemap/recursive/single)
-    2. Deduplicates against existing documents
-    3. Dispatches process_page_task for each URL
-    4. Uses Celery Group for parallel execution
-    
-    Args:
-        user_id: User's ID
-        root_url: Starting URL
-        crawl_config: Configuration dict with crawl_id, type, depth, etc.
-    """
-    from celery import group
-    from collections import deque
-    import time
-    import random
-    
-    task_id = self.request.id
-    crawl_id = crawl_config.get("crawl_id")
-    crawl_type = crawl_config.get("crawl_type", "single")
-    max_depth = min(crawl_config.get("max_depth", 1), 10)
-    
-    logger.info(f"🕸️ [Master:{task_id}] Starting discovery for: {root_url}")
-    logger.info(f"🕸️ [Master:{task_id}] Type: {crawl_type}, Depth: {max_depth}")
-    
-    supabase = get_supabase()
-    
-    try:
-        # Update status to discovering
-        if crawl_id:
-            update_crawl_status(supabase, crawl_id, status="discovering")
-        
-        create_notification(
-            supabase, user_id,
-            "Web Crawl Started",
-            f"Discovering pages from {root_url}",
-            "info",
-            {"crawl_id": crawl_id, "crawl_type": crawl_type}
-        )
-        
-        # ===== PHASE 1: DISCOVERY =====
-        from connectors.web import WebConnector
-        connector = WebConnector()
-        
-        discovered_urls: List[str] = []
-        
-        if crawl_type == "sitemap":
-            logger.info(f"🗺️ [Master:{task_id}] Parsing sitemap...")
-            discovered_urls = connector.parse_sitemap(root_url)
-            
-        elif crawl_type == "recursive":
-            logger.info(f"🔄 [Master:{task_id}] Recursive discovery...")
-            queue = deque([(root_url, 0)])
-            seen = {root_url}
-            
-            while queue:
-                url, depth = queue.popleft()
-                discovered_urls.append(url)
-                
-                if depth < max_depth:
-                    html = connector.fetch_html(url)
-                    if html:
-                        links = connector.extract_links(html, url)
-                        for link in links:
-                            if link not in seen:
-                                seen.add(link)
-                                queue.append((link, depth + 1))
-                    
-                    time.sleep(random.uniform(0.3, 0.6))
-                
-                # Limit discovery to prevent runaway
-                if len(discovered_urls) > 10000:
-                    logger.warning(f"⚠️ [Master:{task_id}] Discovery limit reached (10k)")
-                    break
-        else:
-            discovered_urls = [root_url]
-        
-        total_discovered = len(discovered_urls)
-        logger.info(f"📊 [Master:{task_id}] Discovered {total_discovered} URLs")
-        
-        # ===== PHASE 2: DEDUPLICATION =====
-        # Check which URLs are already in the database
-        existing_urls = set()
-        try:
-            existing_res = supabase.table("documents").select("source_url").eq(
-                "user_id", user_id
-            ).in_(
-                "source_url", discovered_urls[:1000]  # Batch limit
-            ).execute()
-            
-            if existing_res.data:
-                existing_urls = {d["source_url"] for d in existing_res.data if d.get("source_url")}
-        except Exception as e:
-            logger.warning(f"⚠️ [Master:{task_id}] Dedup query failed: {e}")
-        
-        # Filter out existing URLs (unless this is a re-crawl)
-        is_recrawl = crawl_config.get("is_recrawl", False)
-        if not is_recrawl:
-            new_urls = [url for url in discovered_urls if url not in existing_urls]
-            logger.info(f"📊 [Master:{task_id}] After dedup: {len(new_urls)} new URLs (skipped {len(existing_urls)} existing)")
-        else:
-            new_urls = discovered_urls
-            logger.info(f"📊 [Master:{task_id}] Re-crawl mode: processing all {len(new_urls)} URLs")
-        
-        if not new_urls:
-            if crawl_id:
-                update_crawl_status(supabase, crawl_id, status="completed", total_pages=0)
-            return {"status": "completed", "message": "No new URLs to crawl"}
-        
-        # Update total pages found
-        if crawl_id:
-            update_crawl_status(supabase, crawl_id, status="processing", total_pages=len(new_urls))
-        
-        # ===== PHASE 3: DISPATCH WORKERS =====
-        logger.info(f"🚀 [Master:{task_id}] Dispatching {len(new_urls)} worker tasks...")
-        
-        # Create Celery Group for parallel execution
-        job = group(
-            process_page_task.s(url, user_id, crawl_id)
-            for url in new_urls
-        )
-        
-        # Apply async - workers will process in parallel
-        result = job.apply_async()
-        
-        # Wait for completion and collect results
-        # Note: For very large crawls, consider using a callback instead
-        try:
-            results = result.get(timeout=3600)  # 1 hour max
-            
-            success_count = sum(1 for r in results if r.get("status") == "success")
-            failed_count = sum(1 for r in results if r.get("status") == "failed")
-            
-            logger.info(f"✅ [Master:{task_id}] Crawl complete: {success_count} success, {failed_count} failed")
-            
-            if crawl_id:
-                update_crawl_status(
-                    supabase, crawl_id,
-                    status="completed",
-                    pages_ingested=success_count,
-                    pages_failed=failed_count
-                )
-            
-            create_notification(
-                supabase, user_id,
-                "Web Crawl Complete",
-                f"Successfully ingested {success_count} pages from {root_url}",
-                "success",
-                {"crawl_id": crawl_id, "pages_ingested": success_count}
-            )
-            
-            return {
-                "status": "success",
-                "discovered": total_discovered,
-                "processed": len(new_urls),
-                "success": success_count,
-                "failed": failed_count
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ [Master:{task_id}] Worker group failed: {e}")
-            raise
-        
-    except Exception as e:
-        logger.error(f"❌ [Master:{task_id}] Discovery failed: {e}")
-        
-        if crawl_id:
-            update_crawl_status(supabase, crawl_id, status="failed", error_message=str(e))
-        
-        create_notification(
-            supabase, user_id,
-            "Web Crawl Failed",
-            f"Failed to crawl {root_url}: {str(e)[:200]}",
-            "error",
-            {"crawl_id": crawl_id, "error": str(e)}
-        )
-        
-        raise
 
 
 @celery_app.task(bind=True)
