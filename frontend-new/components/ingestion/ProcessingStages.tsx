@@ -2,14 +2,14 @@
  * Processing Stages Component
  * 
  * Shows the current stage of file processing with visual indicators.
- * Stages: Parsing → Chunking → Embedding → Indexing
+ * Stages: Uploading → Parsing → Chunking → Embedding → Indexing
  */
 
 import React from 'react';
-import { Activity, FileText, Scissors, Sparkles, Database, CheckCircle2, Loader2, Clock, XCircle } from 'lucide-react';
+import { Activity, Upload, FileText, Scissors, Sparkles, Database, CheckCircle2, Loader2, Clock, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type Stage = 'parsing' | 'chunking' | 'embedding' | 'indexing';
+type Stage = 'uploading' | 'parsing' | 'chunking' | 'embedding' | 'indexing';
 type StageStatus = 'pending' | 'in_progress' | 'complete' | 'failed';
 
 interface ProcessingStagesProps {
@@ -19,6 +19,7 @@ interface ProcessingStagesProps {
 }
 
 const stageConfig = {
+    uploading: { label: 'Uploading', icon: Upload },
     parsing: { label: 'Parsing', icon: FileText },
     chunking: { label: 'Chunking', icon: Scissors },
     embedding: { label: 'Embedding', icon: Sparkles },

@@ -1,0 +1,584 @@
+# Axio Hub - Complete Technical Specification
+
+**Version:** 1.0  
+**Date:** January 6, 2026  
+**Status:** Production  
+**Purpose:** Enterprise RAG (Retrieval-Augmented Generation) Knowledge Management System
+
+---
+
+## Table of Contents
+1. [Project Overview](#project-overview)
+2. [Architecture](#architecture)
+3. [Technology Stack](#technology-stack)
+4. [Directory Structure](#directory-structure)
+5. [Data Flow](#data-flow)
+6. [Components](#components)
+7. [Database Schema](#database-schema)
+8. [APIs](#apis)
+9. [Deployment](#deployment)
+10. [Current Issues](#current-issues)
+
+---
+
+## 1. Project Overview
+
+### What is Axio Hub?
+
+Axio Hub is an **Enterprise Knowledge Management Platform** that allows organizations to:
+- **Ingest** documents from multiple sources (Google Drive, Notion, Web, File Upload)
+- **Process** documents into semantic chunks with AI embeddings
+- **Search** through knowledge base using natural language
+- **Chat** with documents using RAG (Retrieval-Augmented Generation)
+- **Manage** failed tasks, monitor usage, and handle billing
+
+### Business Model
+- SaaS platform with tiered pricing (Free, Pro, Enterprise)
+- Billing integration with Polar.sh
+- Multi-tenant architecture (teams & workspaces)
+
+### Target Users
+- Corporate clients needing to search/chat with internal documents
+- Knowledge workers managing large document repositories
+- Teams requiring collaborative knowledge bases
+
+---
+
+## 2. Architecture
+
+### High-Level Architecture
+
+```
+┌─────────────┐
+│   User      │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│   Frontend (Next.js on Vercel)     │
+│   - React 19                        │
+│   - Tailwind CSS                    │
+│   - Supabase Client                 │
+└──────┬──────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│   Backend API (FastAPI on Railway) │
+│   - REST endpoints                  │
+│   - OAuth integrations              │
+│   - Document management             │
+└──────┬──────────────────────────────┘
+       │
+       ├─────────────────┬─────────────────┐
+       ▼                 ▼                 ▼
+┌────────────┐  ┌───────────────┐  ┌─────────────┐
+│  Supabase  │  │ Celery Worker │  │   Redis     │
+│ (Database) │  │  (Railway)    │  │  (Broker)   │
+│    +RLS    │  │   - gevent    │  └─────────────┘
+└────────────┘  │   - 10 workers│
+                │   - Tasks:    │
+                │     • Ingest  │
+                │     • Parse   │
+                │     • Embed   │
+                └───────────────┘
+```
+
+### Deployment Topology
+
+**Frontend:**
+- Platform: Vercel
+- Repo: GitHub main branch
+- Build: Next.js static generation + SSR
+- Domain: app.axiohub.io
+
+**Backend API:**
+- Platform: Railway
+- Repo: GitHub main branch (backend/)
+- Runtime: Python 3.11 + Gunicorn
+- Port: 8080
+
+**Worker:**
+- Platform: Railway (separate container)
+- Repo: Same as backend
+- Runtime: Python 3.11 + Celery
+- Pool: gevent (10 concurrent workers)
+
+**Database:**
+- Platform: Supabase (managed PostgreSQL)
+- Features: RLS, Realtime, Auth
+
+---
+
+## 3. Technology Stack
+
+### Frontend
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| Next.js | 16.0.10 | React framework (App Router) |
+| React | 19.x | UI library |
+| TypeScript | 5.x | Type safety |
+| Tailwind CSS | 3.x | Styling |
+| Supabase JS | 2.x | Database client + Realtime |
+| Axios | Latest | HTTP requests |
+| Zustand | Latest | State management |
+| React Hook Form | Latest | Form handling |
+| Sentry | Latest | Error tracking |
+
+### Backend
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| FastAPI | 0.109.2 | Web framework |
+| Python | 3.11.14 | Language |
+| Celery | 5.3.6 | Task queue |
+| Redis | Alpine | Broker + results |
+| Supabase-py | 2.10.0 | Database client |
+| OpenAI | 1.12+ | Embeddings + Chat |
+| LangChain | 0.2.x | RAG pipeline |
+| Groq | Latest | LLM inference |
+| PyPDF/PyMuPDF | Latest | PDF parsing |
+| LlamaParse | Latest | Advanced PDF parsing |
+| Sentry | Latest | Error tracking |
+
+### Database
+
+| Technology | Purpose |
+|------------|---------|
+| PostgreSQL | 15.x via Supabase |
+| pgvector | Vector similarity search |
+| RLS | Row Level Security |
+| Realtime | WebSocket subscriptions |
+
+---
+
+## 4. Directory Structure
+
+```
+axial/
+├── backend/                    # Python FastAPI application
+│   ├── api/                   # API routes
+│   │   └── v1/               # API version 1
+│   │       ├── chat.py       # Chat endpoints
+│   │       ├── documents.py  # Document CRUD
+│   │       ├── ingest.py     # Deprecated (legacy)
+│   │       ├── integrations.py # OAuth + connectors
+│   │       ├── dlq.py        # Dead Letter Queue
+│   │       ├── settings.py   # User settings
+│   │       ├── team.py       # Team management
+│   │       ├── billing.py    # Polar.sh billing
+│   │       └── ...
+│   ├── connectors/           # Data source connectors
+│   │   ├── base.py          # BaseConnector interface
+│   │   ├── google_drive.py  # Google Drive connector
+│   │   ├── notion.py        # Notion connector
+│   │   ├── web.py           # Web scraper connector
+│   │   ├── file_upload.py   # File upload connector
+│   │   └── factory.py       # Connector factory
+│   ├── core/                # Core utilities
+│   │   ├── config.py        # Settings management
+│   │   ├── db.py            # Supabase client
+│   │   ├── security.py      # Auth + encryption
+│   │   ├── celery_app.py    # Celery configuration
+│   │   └── resilience.py    # Circuit breakers
+│   ├── services/            # Business logic
+│   │   ├── embeddings.py    # OpenAI embeddings
+│   │   ├── parsers.py       # Document parsers
+│   │   ├── email.py         # Email notifications (Resend)
+│   │   └── ingestion_pipeline.py # Legacy pipeline
+│   ├── worker/              # Celery tasks
+│   │   ├── tasks.py         # Main task definitions
+│   │   └── dlq_worker.py    # DLQ retry logic
+│   ├── models.py            # Pydantic models
+│   ├── main.py              # FastAPI app entry
+│   └── requirements.txt     # Python dependencies
+│
+├── frontend-new/            # Next.js application
+│   ├── app/                # Next.js App Router
+│   │   ├── (auth)/        # Auth pages (login, register)
+│   │   ├── dashboard/     # Main app
+│   │   │   ├── chat/      # Chat interface
+│   │   │   ├── knowledge-base/ # Document management
+│   │   │   ├── data-sources/   # Connectors UI
+│   │   │   ├── settings/  # User/team settings
+│   │   │   └── ...
+│   │   ├── oauth/         # OAuth callback
+│   │   └── (marketing)/   # Landing pages
+│   ├── components/         # React components
+│   │   ├── auth/          # Login/register forms
+│   │   ├── chat/          # Chat components
+│   │   ├── data-sources/  # Connector cards
+│   │   ├── layout/        # Layouts, sidebars
+│   │   └── ui/            # shadcn/ui components
+│   ├── hooks/             # Custom React hooks
+│   │   ├── useAuth.ts     # Authentication
+│   │   ├── useDataSources.ts # Connectors
+│   │   ├── useFileStatus.ts  # Progress tracking
+│   │   └── ...
+│   ├── lib/               # Utilities
+│   │   ├── api.ts         # Axios instance
+│   │   ├── supabase/      # Supabase clients
+│   │   └── utils.ts       # Helpers
+│   └── package.json       # Dependencies
+│
+├── supabase/              # Database migrations
+│   └── migrations/        # SQL migration files
+│       ├── 20251222081000_connector_definitions.sql
+│       ├── 20260104160000_add_ingestion_file_status.sql
+│       └── ...
+│
+├── docker/                # Docker files
+│   ├── backend.Dockerfile
+│   ├── worker.Dockerfile
+│   └── frontend.Dockerfile (deprecated)
+│
+├── .env                   # Environment variables
+└── docker-compose.yml     # Local development
+```
+
+---
+
+## 5. Data Flow
+
+### 5.1 Document Ingestion Flow
+
+```
+User selects files in UI
+       ↓
+Frontend calls API: POST /api/v1/integrations/{provider}/ingest
+       ↓
+Backend creates ingestion_jobs record
+       ↓
+Backend queues unified_ingest_task → Celery
+       ↓
+Celery Worker:
+  1. Fetches files from connector (Google Drive/Notion/etc)
+  2. Creates ingestion_file_status records
+  3. Dispatches process_file_task for each file (FAN-OUT)
+       ↓
+process_file_task (parallel for each file):
+  1. Downloads/parses file content
+  2. Splits into chunks (~500 tokens each)
+  3. Generates OpenAI embeddings
+  4. Inserts into documents + document_chunks tables
+       ↓
+finalize_job_task (callback after all files):
+  1. Updates ingestion_jobs status
+  2 Sends notification
+```
+
+### 5.2 Chat/Search Flow
+
+```
+User asks question in chat
+       ↓
+Frontend: POST /api/v1/chat
+       ↓
+Backend:
+  1. Generate embedding for query (OpenAI)
+  2. Vector similarity search (pgvector)
+  3. Retrieve top K chunks
+  4. Build prompt with context
+  5. Call LLM (OpenAI/Groq)
+  6. Stream response back
+       ↓
+Frontend: Display streaming response
+```
+
+---
+
+## 6. Components
+
+### 6.1 Frontend Components
+
+**Key React Components:**
+
+1. **ChatArea** (`components/chat/ChatArea.tsx`)
+   - Main chat interface
+   - Message streaming
+   - Source citations
+   - Virtual scrolling (TanStack Virtual)
+
+2. **DriveExplorer** ([components/drive-explorer.tsx](file:///Users/onronder/axial/frontend-new/components/drive-explorer.tsx))
+   - Google Drive file browser
+   - File selection
+   - Ingestion trigger
+   - Progress modal integration
+
+3. **IngestionProgressModal** ([components/ingest-modal.tsx](file:///Users/onronder/axial/frontend-new/components/ingest-modal.tsx))
+   - Real-time progress tracking
+   - Per-file status display
+   - Supabase Realtime subscription
+
+4. **DLQDashboard** ([components/admin/DLQDashboard.tsx](file:///Users/onronder/axial/frontend-new/components/admin/DLQDashboard.tsx))
+   - Failed task management
+   - Retry/resolve actions
+   - Statistics display
+
+**Key Hooks:**
+
+1. **useFileStatus** ([hooks/useFileStatus.ts](file:///Users/onronder/axial/frontend-new/hooks/useFileStatus.ts))
+   - Subscribes to ingestion_file_status
+   - Real-time file progress updates
+
+2. **useDataSources** ([hooks/useDataSources.ts](file:///Users/onronder/axial/frontend-new/hooks/useDataSources.ts))
+   - Manages connectors
+   - OAuth flows
+   - File fetching
+
+3. **useAuth** ([hooks/useAuth.ts](file:///Users/onronder/axial/frontend-new/hooks/useAuth.ts))
+   - Supabase authentication
+   - Session management
+
+### 6.2 Backend Components
+
+**Main Tasks (worker/tasks.py):**
+
+1. **unified_ingest_task** (line 734)
+   - Entry point for all ingestion
+   - Implements fan-out pattern
+   - Creates file status records
+
+2. **process_file_task** (line 900)
+   - Processes single file
+   - Parsing → Embedding → Storage
+   - Updates file status
+
+3. **finalize_job_task** (line 1090)
+   - Chord callback
+   - Aggregates results
+   - Updates job status
+
+**Connectors:**
+
+All connectors implement `BaseConnector` interface:
+- `list_items(parent_id)` - List files/pages
+- `fetch_content(item_ids)` - Download content
+- `supports_oauth()` - OAuth indicator
+
+---
+
+## 7. Database Schema
+
+### Key Tables
+
+**connector_definitions**
+```sql
+- id (UUID, PK)
+- type (TEXT, UNIQUE) -- 'google_drive', 'notion', 'web'
+- name (TEXT)
+- description (TEXT)
+- is_active (BOOLEAN)
+```
+
+**user_integrations**
+```sql
+- id (UUID, PK)
+- user_id (UUID, FK)
+- connector_definition_id (UUID, FK)
+- access_token (TEXT, encrypted)
+- refresh_token (TEXT, encrypted)
+- credentials (JSONB)
+- last_sync_at (TIMESTAMPTZ)
+```
+
+**ingestion_jobs**
+```sql
+- id (UUID, PK)
+- user_id (UUID)
+- provider (TEXT)
+- total_files (INT)
+- processed_files (INT)
+- status (TEXT) -- 'pending', 'processing', 'completed', 'failed'
+- progress (INT) -- 0-100
+- status_message (TEXT)
+- error_message (TEXT)
+- created_at, updated_at (TIMESTAMPTZ)
+```
+
+**ingestion_file_status**
+```sql
+- id (UUID, PK)
+- job_id (UUID, FK → ingestion_jobs)
+- user_id (UUID)
+- filename (TEXT)
+- file_size_bytes (BIGINT)
+- status (TEXT) -- 'pending', 'uploading', 'processing', 'embedding', 'indexing', 'completed', 'failed'
+- progress (INT) -- 0-100
+- status_message (TEXT)
+- error_message (TEXT)
+- chunks_total, chunks_processed (INT)
+- document_id (UUID)
+- created_at, updated_at (TIMESTAMPTZ)
+```
+
+**documents**
+```sql
+- id (UUID, PK)
+- user_id (UUID)
+- title (TEXT)
+- source_type (TEXT) -- 'google_drive', 'notion', 'web', 'file'
+- source_url (TEXT)
+- file_size_bytes (BIGINT)
+- indexing_status (TEXT)
+- metadata (JSONB)
+- created_at (TIMESTAMPTZ)
+```
+
+**document_chunks**
+```sql
+- id (UUID, PK)
+- document_id (UUID, FK)
+- user_id (UUID)
+- content (TEXT)
+- embedding (VECTOR(1536)) -- pgvector
+- chunk_index (INT)
+- token_count (INT)
+- created_at (TIMESTAMPTZ)
+```
+
+**failed_tasks**
+```sql
+- id (UUID, PK)
+- task_id (TEXT)
+- task_name (TEXT)
+- user_id (UUID)
+- error_message (TEXT)
+- attempt_count (INT)
+- status (TEXT) -- 'pending', 'retrying', 'resolved', 'permanent_failure'
+- next_retry_at (TIMESTAMPTZ)
+- created_at, updated_at (TIMESTAMPTZ)
+```
+
+---
+
+## 8. APIs
+
+### Backend API Endpoints
+
+**Base URL:** `https://axial-production.up.railway.app` or local `http://localhost:8080`
+
+#### Integrations
+
+**OAuth:**
+- `POST /api/v1/integrations/google/exchange` - Exchange OAuth code
+- `POST /api/v1/integrations/notion/exchange` - Exchange Notion code
+
+**Connectors:**
+- `GET /api/v1/integrations/available` - List all connectors
+- `GET /api/v1/integrations/status` - User's connected integrations
+- `GET /api/v1/integrations/{provider}/items?parent_id={id}` - List files/pages
+- `POST /api/v1/integrations/{provider}/ingest` - Queue ingestion
+- `DELETE /api/v1/integrations/{provider}` - Disconnect
+
+#### Documents
+- `GET /api/v1/documents` - List user documents
+- `GET /api/v1/documents/stats` - Usage statistics
+- `DELETE /api/v1/documents/{id}` - Delete document
+
+#### Chat
+- `POST /api/v1/chat` - Chat with RAG
+- `GET /api/v1/conversations` - List conversations
+- `GET /api/v1/conversations/{id}` - Get messages
+
+#### DLQ (Dead Letter Queue)
+- `GET /api/v1/dlq/my-tasks` - User's failed tasks
+- `GET /api/v1/dlq/stats` - Failure statistics
+- `POST /api/v1/dlq/retry/{task_id}` - Retry failed task
+- `POST /api/v1/dlq/resolve/{task_id}` - Mark as resolved
+
+---
+
+## 9. Deployment
+
+### Environment Variables
+
+**Frontend (.env.local):**
+```
+NEXT_PUBLIC_SUPABASE_URL=https://jxvcxmqqxwnracluelwq.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+NEXT_PUBLIC_API_URL=https://axial-production.up.railway.app
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
+NEXT_PUBLIC_NOTION_CLIENT_ID=...
+```
+
+**Backend (.env):**
+```
+SUPABASE_URL=https://jxvcxmqqxwnracluelwq.supabase.co
+SUPABASE_SERVICE_KEY=eyJ...
+REDIS_URL=redis://default:...@redis.railway.internal:6379
+OPENAI_API_KEY=sk-...
+ENVIRONMENT=production
+SENTRY_DSN=https://...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+NOTION_CLIENT_SECRET=...
+```
+
+### Deployment Process
+
+**Frontend (Vercel):**
+1. Push to [main](file:///Users/onronder/axial/backend/worker/tasks.py#1570-1575) branch
+2. Vercel auto-deploys
+3. Build command: `npm run build`
+4. Output: Static + SSR
+
+**Backend (Railway):**
+1. Push to [main](file:///Users/onronder/axial/backend/worker/tasks.py#1570-1575) branch
+2. Railway auto-deploys
+3. Dockerfile: [backend/Dockerfile](file:///Users/onronder/axial/backend/Dockerfile)
+4. Start command: `gunicorn main:app`
+
+**Worker (Railway):**
+1. Same repo, separate service
+2. Dockerfile: [backend/Dockerfile.worker](file:///Users/onronder/axial/backend/Dockerfile.worker)
+3. Start command: `celery -A core.celery_app worker --pool=gevent --concurrency=10`
+
+---
+
+## 10. Current Issues
+
+### Critical Performance Problems
+
+**Issue 1: Slow Ingestion**
+- Current: 11 files (3MB) = 25 minutes
+- Cause: Only 10 gevent workers, sequential DB writes
+- Fix needed: Increase workers to 50, batch size 50→500
+
+**Issue 2: Schema Mismatches (RESOLVED)**
+- ✅ Fixed: `file_size` → `file_size_bytes`
+- ✅ Fixed: `message` → `status_message`
+
+**Issue 3: No Streaming for Large Files**
+- Current: Entire file loaded in memory
+- Breaks on: 20GB files → OOM crash
+- Fix needed: Stream processing architecture
+
+**Issue 4: Sequential Processing**
+- Current Fan-out pattern limited by worker pool size
+-Future: Distributed workers across multiple containers
+
+### Technical Debt
+
+1. **Database Batch Size:** 50 rows/insert (should be 500+)
+2. **Embeddings:** No caching, regenerate every time
+3. **PDF Parsing:** 17s for single PDF (too slow)
+4. **No Deduplication:** Re-index same files
+5. **Connection Pooling:** Creating new DB connections per task
+
+---
+
+## Summary
+
+Axio Hub is an **enterprise RAG platform** built with:
+- **Frontend:** Next.js 16 (React 19) on Vercel
+- **Backend:** FastAPI (Python 3.11) on Railway
+- **Worker:** Celery + gevent on Railway
+- **Database:** Supabase (PostgreSQL + pgvector + Realtime)
+- **Storage:** Google Drive, Notion, Web scraping
+
+**Core Flow:** Ingest → Parse → Embed → Store → Search → Chat
+
+**Current Scale:** Handles small files (<10MB) but needs optimization for enterprise (20GB+) workloads.
+
+**Next Steps:** Performance optimization to reduce ingestion time from 25 minutes to <1 minute for typical workloads.

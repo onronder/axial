@@ -10,12 +10,15 @@ import { RealtimeChannel } from "@supabase/supabase-js";
 export type FileStatusType =
     | "pending"
     | "uploading"
-    | "processing"
+    | "parsing"
+    | "processing" // legacy alias for parsing
     | "embedding"
     | "indexing"
     | "completed"
     | "failed"
-    | "cancelled";
+    | "skipped"
+    | "cancelled"
+    | (string & {});
 
 /**
  * Per-file ingestion status record
@@ -158,7 +161,7 @@ export function useAllActiveFiles(): UseFileStatusReturn {
             const { data, error: fetchError } = await supabase
                 .from("ingestion_file_status")
                 .select("*")
-                .not("status", "in", '("completed","failed")')
+                .not("status", "in", '("completed","failed","skipped","cancelled")')
                 .order("created_at", { ascending: false })
                 .limit(20);
 
@@ -199,7 +202,7 @@ export function useAllActiveFiles(): UseFileStatusReturn {
                     if (payload.eventType === "UPDATE") {
                         setFiles((prev) => {
                             // If completed/failed, remove from active list
-                            if (newFile.status === "completed" || newFile.status === "failed") {
+                            if (["completed", "failed", "skipped", "cancelled"].includes(newFile.status)) {
                                 return prev.filter((f) => f.id !== newFile.id);
                             }
                             // Otherwise update in place
@@ -233,14 +236,16 @@ export function useAllActiveFiles(): UseFileStatusReturn {
  * Get a human-readable status label
  */
 export function getStatusLabel(status: FileStatusType): string {
-    const labels: Record<FileStatusType, string> = {
+    const labels: Record<string, string> = {
         pending: "Queued",
-        uploading: "Downloading...",
-        processing: "Processing...",
+        uploading: "Uploading...",
+        parsing: "Parsing...",
+        processing: "Parsing...",
         embedding: "Embedding...",
         indexing: "Indexing...",
         completed: "Complete",
         failed: "Failed",
+        skipped: "Skipped",
         cancelled: "Cancelled",
     };
     return labels[status] || status;
@@ -250,14 +255,16 @@ export function getStatusLabel(status: FileStatusType): string {
  * Get status color for UI
  */
 export function getStatusColor(status: FileStatusType): string {
-    const colors: Record<FileStatusType, string> = {
+    const colors: Record<string, string> = {
         pending: "text-muted-foreground",
         uploading: "text-blue-500",
+        parsing: "text-amber-500",
         processing: "text-amber-500",
         embedding: "text-purple-500",
         indexing: "text-cyan-500",
         completed: "text-green-500",
         failed: "text-red-500",
+        skipped: "text-amber-500",
         cancelled: "text-amber-500",
     };
     return colors[status] || "text-muted-foreground";

@@ -228,7 +228,7 @@ async def cancel_job(
             "status_message": "Cancelled by user",
             "progress": 0
         }).eq("job_id", job_id)\
-         .in_("status", ["pending", "uploading", "processing", "embedding", "indexing"])\
+         .in_("status", ["pending", "uploading", "parsing", "processing", "embedding", "indexing"])\
          .execute()
         
         logger.info(f"✅ Cancelled job {job_id} for user {user_id}")

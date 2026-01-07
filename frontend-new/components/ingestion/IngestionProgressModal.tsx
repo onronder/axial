@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ChevronDown, ChevronUp, X, FileText, Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { ChevronDown, ChevronUp, X, FileText, Loader2, CheckCircle2, XCircle, Clock, SkipForward } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileStatus, getStatusLabel, getStatusColor } from "@/hooks/useFileStatus";
 import { Progress } from "@/components/ui/progress";
@@ -42,11 +42,12 @@ export function IngestionProgressModal({
 
     const completedFiles = files.filter((f) => f.status === "completed").length;
     const failedFiles = files.filter((f) => f.status === "failed").length;
+    const skippedFiles = files.filter((f) => f.status === "skipped").length;
     const processingFiles = files.filter(
-        (f) => !["completed", "failed", "cancelled"].includes(f.status)
+        (f) => !["completed", "failed", "skipped", "cancelled"].includes(f.status)
     ).length;
 
-    const allComplete = completedFiles + failedFiles === totalFiles;
+    const allComplete = completedFiles + failedFiles + skippedFiles === totalFiles;
 
     // Setup keyboard shortcuts and focus trap
     useEffect(() => {
@@ -112,6 +113,7 @@ export function IngestionProgressModal({
                             <p className="text-xs text-muted-foreground">
                                 {completedFiles}/{totalFiles} completed
                                 {failedFiles > 0 && ` • ${failedFiles} failed`}
+                                {skippedFiles > 0 && ` • ${skippedFiles} skipped`}
                             </p>
                         </div>
                     </div>
@@ -184,7 +186,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const statusColor = getStatusColor(file.status);
     const statusLabel = getStatusLabel(file.status);
-    const isProcessing = !["completed", "failed", "cancelled"].includes(file.status);
+    const isProcessing = !["completed", "failed", "skipped", "cancelled"].includes(file.status);
     const isFailed = file.status === "failed";
     const hasChunks = file.chunks_total > 0;
     const hasError = !!file.error_message;
@@ -192,38 +194,56 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     // Determine processing stages based on status
     const getProcessingStages = () => {
         const stages: any = {
-            parsing: 'complete',
-            chunking: 'complete',
+            uploading: 'pending',
+            parsing: 'pending',
+            chunking: 'pending',
             embedding: 'pending',
             indexing: 'pending',
         };
 
-        if (file.status === 'processing') {
-            stages.embedding = 'in_progress';
+        if (file.status === 'uploading') {
+            stages.uploading = 'in_progress';
+        } else if (file.status === 'parsing' || file.status === 'processing') {
+            stages.uploading = 'complete';
+            stages.parsing = 'in_progress';
+            stages.chunking = 'in_progress';
         } else if (file.status === 'embedding') {
+            stages.uploading = 'complete';
+            stages.parsing = 'complete';
+            stages.chunking = 'complete';
             stages.embedding = 'in_progress';
         } else if (file.status === 'indexing') {
+            stages.uploading = 'complete';
+            stages.parsing = 'complete';
+            stages.chunking = 'complete';
             stages.embedding = 'complete';
             stages.indexing = 'in_progress';
-        } else if (file.status === 'completed') {
+        } else if (file.status === 'completed' || file.status === 'skipped') {
+            stages.uploading = 'complete';
+            stages.parsing = 'complete';
+            stages.chunking = 'complete';
             stages.embedding = 'complete';
             stages.indexing = 'complete';
         } else if (file.status === 'failed') {
-            // Mark current stage as failed
-            if (file.status_message?.includes('embedding')) {
-                stages.embedding = 'failed';
-            } else if (file.status_message?.includes('indexing')) {
+            if (file.status_message?.toLowerCase().includes('index')) {
                 stages.indexing = 'failed';
+            } else if (file.status_message?.toLowerCase().includes('embed')) {
+                stages.embedding = 'failed';
+            } else if (file.status_message?.toLowerCase().includes('parse')) {
+                stages.parsing = 'failed';
+            } else if (file.status_message?.toLowerCase().includes('upload')) {
+                stages.uploading = 'failed';
             }
         }
 
         return stages;
     };
 
-    const getCurrentStage = (): 'parsing' | 'chunking' | 'embedding' | 'indexing' => {
+    const getCurrentStage = (): 'uploading' | 'parsing' | 'chunking' | 'embedding' | 'indexing' => {
+        if (file.status === 'uploading') return 'uploading';
+        if (file.status === 'parsing' || file.status === 'processing') return 'parsing';
         if (file.status === 'embedding') return 'embedding';
         if (file.status === 'indexing') return 'indexing';
-        if (file.status === 'processing') return 'embedding';
         return 'parsing';
     };
 
@@ -234,6 +254,8 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
                 <div className="mt-0.5">
                     {file.status === "completed" ? (
                         <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : file.status === "skipped" ? (
+                        <SkipForward className="h-4 w-4 text-amber-500" />
                     ) : file.status === "failed" ? (
                         <XCircle className="h-4 w-4 text-red-500" />
                     ) : (

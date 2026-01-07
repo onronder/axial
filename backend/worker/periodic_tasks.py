@@ -97,9 +97,9 @@ def cleanup_old_file_status():
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
         
-        # Only delete completed or failed entries (not pending/processing)
+        # Only delete terminal entries (not pending/active processing)
         result = supabase.table("ingestion_file_status").delete().in_(
-            "status", ["completed", "failed", "cancelled"]
+            "status", ["completed", "failed", "skipped", "cancelled"]
         ).lt(
             "created_at", cutoff_date.isoformat()
         ).execute()
@@ -138,4 +138,3 @@ def cleanup_old_audit_logs():
     except Exception as e:
         logger.error(f"❌ [Cleanup] Failed to clean up audit logs: {e}")
         return {"error": str(e)}
-

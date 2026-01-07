@@ -228,11 +228,11 @@ def update_file_status(
     """
     Update file processing status for real-time UI feedback.
     
-    Status progression: pending → uploading → processing → embedding → indexing → completed/failed
+    Status progression: pending → uploading → parsing → embedding → indexing → completed/failed/skipped
     
     Args:
         file_status_id: The file status record ID
-        status: New status (pending/uploading/processing/embedding/indexing/completed/failed)
+        status: New status (pending/uploading/parsing/embedding/indexing/completed/failed/skipped)
         progress: Progress percentage (0-100)
         message: Human-readable status message
         error: Error message (for failed status)
@@ -578,7 +578,7 @@ def process_document_pipeline(
     try:
         # 1. Parse content
         update_file_status(supabase, file_status_id,
-            status="processing", progress=25, message="Extracting content...")
+            status="parsing", progress=25, message="Extracting content...")
         
         # Handle both bytes and string content
         if isinstance(content, str):
@@ -595,7 +595,7 @@ def process_document_pipeline(
         
         if not result.chunks:
             update_file_status(supabase, file_status_id,
-                status="completed", progress=100, message="No content found")
+                status="skipped", progress=100, message="No content found")
             return ProcessResult(success=True, chunks_count=0)
         
         update_file_status(supabase, file_status_id,
@@ -811,7 +811,7 @@ def unified_ingest_task(
         supabase.table("ingestion_jobs").update({
             "total_files": total_files,
             "progress": 5,
-            "message": f"Preparing {total_files} files for parallel processing..."
+            "status_message": f"Preparing {total_files} files for parallel processing..."
         }).eq("id", job_id).execute()
         
         # STEP 2: Create file status records and serialize documents
@@ -857,7 +857,7 @@ def unified_ingest_task(
         # Update job status
         supabase.table("ingestion_jobs").update({
             "progress": 10,
-            "message": f"Processing {total_files} files in parallel..."
+            "status_message": f"Processing {total_files} files in parallel..."
         }).eq("id", job_id).execute()
         
         # STEP 3: Dispatch all tasks in parallel using chord
@@ -947,12 +947,13 @@ def process_file_task(
     start_time = time.time()
     
     try:
-        # Update status: processing
-        supabase.table("ingestion_file_status").update({
-            "status": "processing",
-            "progress": 10,
-            "message": "Starting file processing..."
-        }).eq("id", file_status_id).execute()
+        update_file_status(
+            supabase,
+            file_status_id,
+            status="uploading",
+            progress=10,
+            message="Preparing file..."
+        )
         
         # STEP 1: Decode content and write to temp file
         content_b64 = file_data.get("content_b64")
@@ -967,11 +968,13 @@ def process_file_task(
             local_path = tmp.name
         
         # STEP 2: Parse document
-        supabase.table("ingestion_file_status").update({
-            "status": "processing",
-            "progress": 20,
-            "message": "Extracting content (may take 30-90s for PDFs)..."
-        }).eq("id", file_status_id).execute()
+        update_file_status(
+            supabase,
+            file_status_id,
+            status="parsing",
+            progress=30,
+            message="Extracting content (may take 30-90s for PDFs)..."
+        )
         
         async def parse_document():
             factory = DocumentFactory()
@@ -980,21 +983,25 @@ def process_file_task(
         chunks = asyncio.run(parse_document())
         
         if not chunks:
-            supabase.table("ingestion_file_status").update({
-                "status": "completed",
-                "progress": 100,
-                "message": "No content extracted",
-                "chunks_total": 0
-            }).eq("id", file_status_id).execute()
+            update_file_status(
+                supabase,
+                file_status_id,
+                status="skipped",
+                progress=100,
+                message="No content extracted",
+                chunks_total=0
+            )
             return {"status": "skipped", "filename": filename, "reason": "empty"}
         
         # STEP 3: Generate embeddings
-        supabase.table("ingestion_file_status").update({
-            "status": "embedding",
-            "progress": 50,
-            "message": f"Generating embeddings for {len(chunks)} chunks...",
-            "chunks_total": len(chunks)
-        }).eq("id", file_status_id).execute()
+        update_file_status(
+            supabase,
+            file_status_id,
+            status="embedding",
+            progress=60,
+            message=f"Generating embeddings for {len(chunks)} chunks...",
+            chunks_total=len(chunks)
+        )
         
         async def generate_embeddings():
             texts = [c["text"] for c in chunks]
@@ -1003,11 +1010,13 @@ def process_file_task(
         embeddings = asyncio.run(generate_embeddings())
         
         # STEP 4: Store in database
-        supabase.table("ingestion_file_status").update({
-            "status": "indexing",
-            "progress": 75,
-            "message": "Storing in database..."
-        }).eq("id", file_status_id).execute()
+        update_file_status(
+            supabase,
+            file_status_id,
+            status="indexing",
+            progress=85,
+            message="Storing in database..."
+        )
         
         # Create document record
         doc_result = supabase.table("documents").insert({
@@ -1042,14 +1051,16 @@ def process_file_task(
         
         # STEP 5: Success
         total_time = int(time.time() - start_time)
-        supabase.table("ingestion_file_status").update({
-            "status": "completed",
-            "progress": 100,
-            "message": f"✅ Completed in {total_time}s",
-            "chunks_total": len(chunks),
-            "chunks_processed": len(chunks),
-            "document_id": doc_id
-        }).eq("id", file_status_id).execute()
+        update_file_status(
+            supabase,
+            file_status_id,
+            status="completed",
+            progress=100,
+            message=f"✅ Completed in {total_time}s",
+            chunks_total=len(chunks),
+            chunks_processed=len(chunks),
+            document_id=doc_id
+        )
         
         logger.info(f"[ProcessFile:{task_id}] ✅ {filename}: {len(chunks)} chunks in {total_time}s")
         
@@ -1064,13 +1075,14 @@ def process_file_task(
     except Exception as e:
         logger.error(f"[ProcessFile:{task_id}] ❌ {filename}: {e}")
         
-        # Update file status to failed
-        supabase.table("ingestion_file_status").update({
-            "status": "failed",
-            "progress": 0,
-            "message": str(e)[:500],
-            "error": str(e)[:1000]
-        }).eq("id", file_status_id).execute()
+        update_file_status(
+            supabase,
+            file_status_id,
+            status="failed",
+            progress=0,
+            message=str(e)[:500],
+            error=str(e)[:1000]
+        )
         
         return {
             "status": "failed",

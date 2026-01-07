@@ -207,21 +207,21 @@ class IngestionPipeline:
         
         try:
             # STEP 1: Validate & quota check
-            self._update_file_status(file_status_id, "processing", 5, "Validating file...")
+            self._update_file_status(file_status_id, "uploading", 5, "Validating file...")
             await self._validate_document(doc)
             
             # STEP 2: Write to temp file
-            self._update_file_status(file_status_id, "processing", 15, "Preparing file...")
+            self._update_file_status(file_status_id, "uploading", 15, "Preparing file...")
             local_path = self._write_to_temp(doc)
             
             # STEP 3: Parse & chunk
-            self._update_file_status(file_status_id, "processing", 25, "Extracting content (this may take 30-90s for PDFs)...")
+            self._update_file_status(file_status_id, "parsing", 25, "Extracting content (this may take 30-90s for PDFs)...")
             parse_start = time.time()
             chunks = await self._parse_and_chunk(local_path, doc.filename)
             parse_time = int(time.time() - parse_start)
             
             if not chunks:
-                self._update_file_status(file_status_id, "completed", 100, 
+                self._update_file_status(file_status_id, "skipped", 100,
                     message=f"No content extracted (completed in {parse_time}s)", chunks_total=0)
                 return {"status": "skipped", "reason": "empty"}
             
@@ -464,12 +464,12 @@ class IngestionPipeline:
             
             # Determine status based on stage
             status_map = {
-                "parsing": "processing",
-                "chunking": "processing",
+                "parsing": "parsing",
+                "chunking": "parsing",
                 "embedding": "embedding",
                 "indexing": "indexing"
             }
-            status = status_map.get(current_stage, "processing")
+            status = status_map.get(current_stage, "parsing")
             
             # Create detailed status message
             stage_labels = {
