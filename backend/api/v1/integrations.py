@@ -6,7 +6,7 @@ Provides dynamic connector discovery, OAuth handling, and integration management
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
-from core.security import get_current_user, encrypt_token
+from core.security import get_current_user, encrypt_token, decrypt_token
 from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
@@ -888,5 +888,4 @@ async def get_sync_history(
     except Exception as e:
         logger.error(f"Failed to get sync history: {e}")
         raise HTTPException(status_code=500, detail="Failed to get sync history")
-
 

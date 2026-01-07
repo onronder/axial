@@ -840,7 +840,28 @@ def unified_ingest_task(
             file_status_id = file_status_result.data[0]["id"]
             
             # Serialize document content to base64 for Celery
-            content_b64 = base64.b64encode(doc.content).decode('utf-8')
+            content = doc.content
+            if isinstance(content, bytes):
+                content_b64 = base64.b64encode(content).decode("utf-8")
+            elif isinstance(content, str):
+                mime_type = (doc.mime_type or "").lower()
+                is_text = mime_type.startswith("text/") or mime_type in {
+                    "application/json",
+                    "application/xml",
+                    "application/xhtml+xml",
+                    "application/x-yaml",
+                }
+                if is_text:
+                    content_b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+                else:
+                    # Binary connectors (e.g., Drive) may already return base64 strings.
+                    try:
+                        base64.b64decode(content, validate=True)
+                        content_b64 = content
+                    except Exception:
+                        content_b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+            else:
+                raise ValueError(f"Unsupported document content type: {type(content)}")
             
             file_data = {
                 "filename": doc.filename,
@@ -889,7 +910,14 @@ def unified_ingest_task(
         
     except Exception as e:
         logger.error(f"[UnifiedIngest:{task_id}] Failed: {e}")
-        update_job_status(supabase, job_id, "failed", error_message=str(e))
+        update_job_status(
+            supabase,
+            job_id,
+            "failed",
+            error_message=str(e),
+            message=str(e),
+            progress=0,
+        )
         
         # Create failure notification
         create_notification(
@@ -944,7 +972,7 @@ def process_file_task(
     import tempfile
     import os
     import time
-    from services.parsers import DocumentFactory
+    from services.parsers import DocumentProcessorFactory
     from services.embeddings import generate_embeddings_batch
     
     task_id = self.request.id
@@ -986,9 +1014,13 @@ def process_file_task(
         )
         
         async def parse_document():
-            factory = DocumentFactory()
-            return await factory.process(local_path, filename)
-        
+            result = DocumentProcessorFactory.process(
+                file_path=local_path,
+                filename=filename,
+                mime_type=file_data.get("mime_type")
+            )
+            return result.chunks
+
         chunks = asyncio.run(parse_document())
         
         if not chunks:
@@ -1013,7 +1045,7 @@ def process_file_task(
         )
         
         async def generate_embeddings():
-            texts = [c["text"] for c in chunks]
+            texts = [chunk.content for chunk in chunks]
             return await generate_embeddings_batch(texts)
         
         embeddings = asyncio.run(generate_embeddings())
@@ -1051,7 +1083,7 @@ def process_file_task(
             for j, (chunk, embedding) in enumerate(zip(batch, batch_embeddings)):
                 chunk_records.append({
                     "document_id": doc_id,
-                    "content": chunk["text"],
+                    "content": chunk.content,
                     "embedding": embedding,
                     "chunk_index": i + j,
                 })

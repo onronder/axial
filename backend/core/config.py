@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Email
     RESEND_API_KEY: Optional[str] = None
     EMAILS_FROM_EMAIL: str = "noreply@axiohub.io"
-    APP_URL: str = "https://axiohub.io"
+    APP_URL: str = "https://app.axiohub.io"
     
     # Branding
     LOGO_URL: str = "https://raw.githubusercontent.com/onronder/axial/main/frontend-new/public/assets/axio-hub-full-light.png"

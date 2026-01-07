@@ -456,7 +456,7 @@ All connectors implement `BaseConnector` interface:
 
 ### Backend API Endpoints
 
-**Base URL:** `https://axial-production.up.railway.app` or local `http://localhost:8080`
+**Base URL:** `https://axial-production-1503.up.railway.app` or local `http://localhost:8080`
 
 #### Integrations
 
@@ -497,7 +497,7 @@ All connectors implement `BaseConnector` interface:
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://jxvcxmqqxwnracluelwq.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-NEXT_PUBLIC_API_URL=https://axial-production.up.railway.app
+NEXT_PUBLIC_API_URL=https://axial-production-1503.up.railway.app
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
 NEXT_PUBLIC_NOTION_CLIENT_ID=...
 ```

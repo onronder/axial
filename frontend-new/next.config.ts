@@ -74,12 +74,15 @@ const nextConfig: NextConfig = {
 
   // API proxying for backend
   async rewrites() {
+    const productionApiBase = (process.env.NEXT_PUBLIC_API_URL || "https://axial-production-1503.up.railway.app")
+      .replace(/\/$/, "");
+
     return [
       {
         source: '/api/py/:path*',
         destination: process.env.NODE_ENV === 'development'
           ? 'http://127.0.0.1:8000/api/v1/:path*'
-          : 'https://axial-production-1503.up.railway.app/api/v1/:path*',
+          : `${productionApiBase}/api/v1/:path*`,
       },
     ];
   },

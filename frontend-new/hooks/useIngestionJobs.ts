@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { RealtimeChannel } from "@supabase/supabase-js";
@@ -159,20 +160,8 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
     // Retry entire failed job
     const retryJob = useCallback(async (jobId: string): Promise<void> => {
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/jobs/${jobId}/retry`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                credentials: "include",
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || "Failed to retry job");
-            }
-
-            const result = await response.json();
+            const response = await api.post(`/jobs/${jobId}/retry`);
+            const result = response.data;
 
             toast({
                 title: "Job Retry Started",
@@ -182,7 +171,8 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
             // Refresh jobs to show updated status
             await fetchJobs();
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Could not retry the job.';
+            const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
+            const message = axiosErr.response?.data?.detail || axiosErr.message || 'Could not retry the job.';
             console.error("Failed to retry job:", message);
             toast({
                 title: "Retry Failed",
