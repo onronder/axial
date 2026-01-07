@@ -16,7 +16,7 @@ from worker.dlq_worker import retry_failed_tasks
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/dlq", tags=["Dead Letter Queue"])
+router = APIRouter()
 
 
 # =============================================================================
