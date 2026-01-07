@@ -1024,13 +1024,17 @@ def process_file_task(
         chunks = result.chunks
         
         if not chunks:
+            skip_message = "No content extracted"
+            if result.file_type == "pdf":
+                skip_message = "No text extracted (OCR required)"
             update_file_status(
                 supabase,
                 file_status_id,
                 status="skipped",
                 progress=100,
-                message="No content extracted",
-                chunks_total=0
+                message=skip_message,
+                chunks_total=0,
+                chunks_processed=0
             )
             return {"status": "skipped", "filename": filename, "reason": "empty"}
         

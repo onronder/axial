@@ -11,6 +11,7 @@ import io
 import os
 import re
 import logging
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
@@ -27,6 +28,7 @@ from langchain_text_splitters import (
 import tiktoken
 
 logger = logging.getLogger(__name__)
+LLAMAPARSE_LOCK = threading.Lock()
 
 # Initialize tiktoken encoder (OpenAI's cl100k_base)
 try:
@@ -393,15 +395,17 @@ class PDFProcessor(BaseProcessor):
         
         try:
             # Initialize LlamaParse with OCR settings
-            parser = LlamaParse(
-                api_key=settings.LLAMA_CLOUD_API_KEY,
-                result_type="markdown",  # Get structured markdown output
-                verbose=False,
-                language="en",
-            )
-            
-            # Parse the document (synchronous call)
-            documents = parser.load_data(tf_path)
+            # NOTE: Serialize LlamaParse calls to avoid anyio/gevent conflicts.
+            with LLAMAPARSE_LOCK:
+                parser = LlamaParse(
+                    api_key=settings.LLAMA_CLOUD_API_KEY,
+                    result_type="markdown",  # Get structured markdown output
+                    verbose=False,
+                    language="en",
+                )
+                
+                # Parse the document (synchronous call)
+                documents = parser.load_data(tf_path)
             
             if not documents:
                 raise ValueError("LlamaParse returned no documents")

@@ -87,15 +87,15 @@ export function IngestionProgressModal({
     return (
         <div
             ref={modalRef}
-            className="fixed bottom-4 right-4 z-50 w-96 shadow-2xl animate-slide-in"
+            className="fixed bottom-4 right-4 z-50 w-[420px] max-w-[92vw] shadow-2xl animate-slide-in"
             role="dialog"
             aria-modal="true"
             aria-labelledby="progress-modal-title"
             aria-describedby="progress-modal-description"
         >
-            <Card className="border-2">
+            <Card className="border border-border/60 bg-card/95 backdrop-blur-md rounded-2xl overflow-hidden">
                 {/* Header - Always Visible */}
-                <div className="flex items-center justify-between border-b bg-muted/30 p-4">
+                <div className="flex items-center justify-between border-b bg-gradient-to-r from-muted/60 via-muted/30 to-transparent p-4">
                     <div className="flex items-center gap-3 flex-1">
                         <div className="relative">
                             {allComplete ? (
@@ -105,16 +105,26 @@ export function IngestionProgressModal({
                             )}
                         </div>
                         <div className="flex-1">
-                            <h3 className="font-semibold text-sm">
+                            <h3 className="text-sm font-semibold tracking-tight">
                                 {allComplete
                                     ? "Processing Complete"
                                     : `Processing ${processingFiles} ${processingFiles === 1 ? "file" : "files"}...`}
                             </h3>
-                            <p className="text-xs text-muted-foreground">
-                                {completedFiles}/{totalFiles} completed
-                                {failedFiles > 0 && ` • ${failedFiles} failed`}
-                                {skippedFiles > 0 && ` • ${skippedFiles} skipped`}
-                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-green-500">
+                                    {completedFiles}/{totalFiles} completed
+                                </span>
+                                {failedFiles > 0 && (
+                                    <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-red-500">
+                                        {failedFiles} failed
+                                    </span>
+                                )}
+                                {skippedFiles > 0 && (
+                                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-500">
+                                        {skippedFiles} skipped
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -147,12 +157,12 @@ export function IngestionProgressModal({
                 </div>
 
                 {/* Overall Progress Bar */}
-                <div className="px-4 py-3 border-b bg-background">
+                <div className="px-4 py-3 border-b bg-background/60">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium">Overall Progress</span>
                         <span className="text-xs text-muted-foreground tabular-nums">{Math.round(overallProgress)}%</span>
                     </div>
-                    <Progress value={overallProgress} className="h-2 transition-all duration-300" />
+                    <Progress value={overallProgress} className="h-2.5 transition-all duration-300" />
                 </div>
 
                 {/* Expandable File List */}
@@ -248,7 +258,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     };
 
     return (
-        <div className="p-4 hover:bg-muted/30 transition-colors">
+        <div className="p-4 hover:bg-muted/40 transition-colors">
             <div className="flex items-start gap-3">
                 {/* Icon */}
                 <div className="mt-0.5">
@@ -271,8 +281,8 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
                             <p className="text-sm font-medium truncate" title={file.filename}>
                                 {file.filename}
                             </p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                                <span className={cn("text-xs font-medium", statusColor)}>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className={cn("text-[11px] font-semibold px-2 py-0.5 rounded-full bg-muted/40", statusColor)}>
                                     {statusLabel}
                                 </span>
                                 {file.file_size_bytes > 0 && (

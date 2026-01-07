@@ -14,6 +14,7 @@ import {
     Loader2,
     XCircle,
     FileText,
+    ChevronRight,
     X,
     Upload,
     Globe,
@@ -368,6 +369,7 @@ function JobCard({
                     </p>
                 )}
             </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground/70" />
         </motion.div>
     );
 }
