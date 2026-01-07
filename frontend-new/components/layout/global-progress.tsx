@@ -7,7 +7,7 @@
  * No more polling - updates arrive via WebSocket!
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     CheckCircle2,
@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useFileStatus } from "@/hooks/useFileStatus";
+import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 
 interface IngestionJob {
     id: string;
@@ -62,6 +64,10 @@ export function GlobalProgress() {
     const { toast } = useToast();
     const [jobs, setJobs] = useState<IngestionJob[]>([]);
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+    const [activeJobId, setActiveJobId] = useState<string | null>(null);
+    const [activeJob, setActiveJob] = useState<IngestionJob | null>(null);
+    const activeJobIdRef = useRef<string | null>(null);
+    const { files: activeFiles } = useFileStatus(activeJobId);
 
     // Setup realtime subscription
     useEffect(() => {
@@ -105,6 +111,9 @@ export function GlobalProgress() {
                         setJobs((prev) =>
                             prev.map((job) => (job.id === newJob.id ? newJob : job))
                         );
+                        if (activeJobIdRef.current === newJob.id) {
+                            setActiveJob(newJob);
+                        }
 
                         // Show completion toast
                         if (newJob.status === "completed" && oldJob?.status !== "completed") {
@@ -117,7 +126,9 @@ export function GlobalProgress() {
 
                             // Auto-dismiss after delay
                             setTimeout(() => {
-                                setJobs((prev) => prev.filter((j) => j.id !== newJob.id));
+                                setJobs((prev) =>
+                                    prev.filter((j) => j.id !== newJob.id || activeJobIdRef.current === newJob.id)
+                                );
                             }, COMPLETION_DISPLAY_TIME);
                         }
 
@@ -138,7 +149,9 @@ export function GlobalProgress() {
 
                             // Auto-dismiss after delay
                             setTimeout(() => {
-                                setJobs((prev) => prev.filter((j) => j.id !== newJob.id));
+                                setJobs((prev) =>
+                                    prev.filter((j) => j.id !== newJob.id || activeJobIdRef.current === newJob.id)
+                                );
                             }, COMPLETION_DISPLAY_TIME);
                         }
                     }
@@ -155,9 +168,21 @@ export function GlobalProgress() {
         };
     }, [user?.id, toast]);
 
+    useEffect(() => {
+        activeJobIdRef.current = activeJobId;
+        if (!activeJobId) {
+            setActiveJob(null);
+            return;
+        }
+        const job = jobs.find((j) => j.id === activeJobId) || null;
+        if (job) {
+            setActiveJob(job);
+        }
+    }, [activeJobId, jobs]);
+
     // Filter out dismissed jobs
     const visibleJobs = jobs.filter(
-        (job) => !dismissedIds.has(job.id)
+        (job) => !dismissedIds.has(job.id) && job.id !== activeJobId
     );
 
     const handleDismiss = (jobId: string) => {
@@ -165,16 +190,41 @@ export function GlobalProgress() {
         setJobs((prev) => prev.filter((j) => j.id !== jobId));
     };
 
-    if (visibleJobs.length === 0) return null;
+    const handleOpenDetails = (job: IngestionJob) => {
+        setActiveJobId(job.id);
+        setActiveJob(job);
+    };
+
+    const handleCloseDetails = () => {
+        setActiveJobId(null);
+        setActiveJob(null);
+    };
+
+    if (visibleJobs.length === 0 && !activeJobId) return null;
 
     return (
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+            {activeJobId && (
+                <IngestionProgressModal
+                    jobId={activeJobId}
+                    files={activeFiles}
+                    totalFiles={activeJob?.total_files || activeFiles.length}
+                    overallProgress={
+                        activeJob?.progress ??
+                        (activeJob?.total_files
+                            ? Math.round((activeJob.processed_files / activeJob.total_files) * 100)
+                            : 0)
+                    }
+                    onClose={handleCloseDetails}
+                />
+            )}
             <AnimatePresence mode="popLayout">
                 {visibleJobs.map((job) => (
                     <JobCard
                         key={job.id}
                         job={job}
                         onDismiss={() => handleDismiss(job.id)}
+                        onOpenDetails={() => handleOpenDetails(job)}
                     />
                 ))}
             </AnimatePresence>
@@ -182,7 +232,15 @@ export function GlobalProgress() {
     );
 }
 
-function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void }) {
+function JobCard({
+    job,
+    onDismiss,
+    onOpenDetails,
+}: {
+    job: IngestionJob;
+    onDismiss: () => void;
+    onOpenDetails: () => void;
+}) {
     const Icon = providerIcons[job.provider] || FileText;
     const label = providerLabels[job.provider] || job.provider;
 
@@ -212,9 +270,18 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: 100, scale: 0.95 }}
+            role="button"
+            tabIndex={0}
+            onClick={onOpenDetails}
+            onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onOpenDetails();
+                }
+            }}
             className={cn(
                 "relative flex items-center gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm min-w-[300px]",
-                "bg-card/95 dark:bg-card/95",
+                "bg-card/95 dark:bg-card/95 cursor-pointer",
                 isActive && "border-primary/30",
                 isComplete && "border-green-500/30 bg-green-50/50 dark:bg-green-950/20",
                 isFailed && "border-red-500/30 bg-red-50/50 dark:bg-red-950/20",
@@ -224,7 +291,10 @@ function JobCard({ job, onDismiss }: { job: IngestionJob; onDismiss: () => void 
             {/* Dismiss button */}
             {(isComplete || isFailed || isCancelled) && (
                 <button
-                    onClick={onDismiss}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onDismiss();
+                    }}
                     className="absolute top-1 right-1 p-1 rounded-full hover:bg-muted transition-colors"
                 >
                     <X className="h-3 w-3 text-muted-foreground" />

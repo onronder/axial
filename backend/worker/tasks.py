@@ -862,11 +862,16 @@ def unified_ingest_task(
             else:
                 raise ValueError(f"Unsupported document content type: {type(content)}")
             
+            storage_path = None
+            if doc.metadata:
+                storage_path = doc.metadata.get("storage_path")
+
             file_data = {
                 "filename": doc.filename,
                 "content_b64": content_b64,
                 "size_bytes": doc.size_bytes,
-                "mime_type": doc.mime_type
+                "mime_type": doc.mime_type,
+                "storage_path": storage_path
             }
             
             # Create task signature
@@ -1036,7 +1041,8 @@ def process_file_task(
             status="embedding",
             progress=60,
             message=f"Generating embeddings for {len(chunks)} chunks...",
-            chunks_total=len(chunks)
+            chunks_total=len(chunks),
+            chunks_processed=0
         )
         
         texts = [chunk.content for chunk in chunks]
@@ -1068,6 +1074,7 @@ def process_file_task(
         # Insert chunks in batches
         BATCH_SIZE = 50
         inserted_chunks = 0
+        total_chunks = len(chunks)
         for i in range(0, len(chunks), BATCH_SIZE):
             batch = chunks[i:i+BATCH_SIZE]
             batch_embeddings = embeddings[i:i+BATCH_SIZE]
@@ -1088,6 +1095,15 @@ def process_file_task(
 
             supabase.table("document_chunks").insert(chunk_records).execute()
             inserted_chunks += len(chunk_records)
+            if total_chunks > 0:
+                indexing_progress = 85 + int((inserted_chunks / total_chunks) * 15)
+                update_file_status(
+                    supabase,
+                    file_status_id,
+                    progress=indexing_progress,
+                    chunks_processed=inserted_chunks,
+                    message=f"Indexing {inserted_chunks}/{total_chunks} chunks..."
+                )
 
         if inserted_chunks == 0:
             update_file_status(
@@ -1142,6 +1158,15 @@ def process_file_task(
         }
         
     finally:
+        if connector_type == "file_upload":
+            storage_path = file_data.get("storage_path")
+            if storage_path:
+                try:
+                    supabase.storage.from_(STAGING_BUCKET).remove([storage_path])
+                    logger.info(f"[ProcessFile:{task_id}] 🧹 Removed staged upload: {storage_path}")
+                except Exception as e:
+                    logger.warning(f"[ProcessFile:{task_id}] ⚠️ Failed to remove staged upload: {e}")
+
         # Cleanup temp file
         if local_path and os.path.exists(local_path):
             try:

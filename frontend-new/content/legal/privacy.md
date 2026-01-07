@@ -7,17 +7,19 @@ Welcome to Axio Hub. We are committed to protecting your personal data. This Pri
 * **KVKK** (Personal Data Protection Law No. 6698 - Turkey)
 * **CCPA** (California Consumer Privacy Act - USA)
 
-## 2. The Zero-Copy Architecture
-**Critical: Your Files Stay Where They Are**
-Unlike traditional cloud storage, Axio Hub operates on a **Zero-Copy Architecture**. We DO NOT store your original files. Your PDFs, Notion pages, and Drive documents remain hosted on your original platforms.
-* **Vector Processing:** We process your documents to create "Vector Embeddings" (mathematical representations of text) to enable AI search.
-* **Ephemeral Processing:** Once the vectors are generated, the raw text content is discarded from our processing memory. We only retain the encrypted vectors and metadata (file names, URLs).
+## 2. Processing & Storage Model
+**Critical: We do not permanently store original files**
+Axio Hub processes your content to create searchable embeddings and text chunks. Originals remain in your source platform, and any direct uploads are temporary.
+* **Temporary Staging for Uploads:** If you upload a file directly, it is stored in our private staging bucket only for ingestion and is automatically deleted after processing.
+* **Connected Sources:** For Drive/Notion/Slack/etc., we access the content to compute embeddings; the originals remain in your source system.
+* **Stored Data:** We retain vector embeddings, extracted text chunks, and metadata (file names, URLs, IDs) to power search and chat.
 
 ## 3. Data We Collect
 * **Identity Data:** Name, email address, profile picture (via OAuth).
 * **Technical Data:** IP address, browser type, device information.
 * **Usage Data:** Search queries, chat history, and interaction logs.
 * **Vector Data:** Encrypted mathematical representations of your knowledge base content.
+* **Extracted Text Chunks:** Parsed text snippets used to enable search and retrieval.
 
 ## 4. How We Use Your Data
 * To provide the AI Search and Chat service.
