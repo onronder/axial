@@ -74,8 +74,9 @@ const nextConfig: NextConfig = {
 
   // API proxying for backend
   async rewrites() {
-    const productionApiBase = (process.env.NEXT_PUBLIC_API_URL || "https://axial-production-1503.up.railway.app")
-      .replace(/\/$/, "");
+    const rawApiBase = process.env.NEXT_PUBLIC_API_URL || "https://axial-production-1503.up.railway.app";
+    const trimmedApiBase = rawApiBase.replace(/\/$/, "");
+    const productionApiBase = trimmedApiBase.replace(/\/api\/v1\/?$/i, "");
 
     return [
       {
