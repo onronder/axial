@@ -17,9 +17,11 @@ from starlette.concurrency import run_in_threadpool
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
+from core.db_utils import insert_rows_with_retry
 from services.parsers import DocumentParser
 from core.security import decrypt_token
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
+from core.resilience import with_google_retry
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,14 @@ class DriveConnector(BaseConnector):
     - Background sync with chunking and embedding
     - Multiple file formats via DocumentParser service
     """
+
+    @with_google_retry(max_attempts=3)
+    def _drive_get(self, service, **kwargs):
+        return service.files().get(**kwargs).execute()
+
+    @with_google_retry(max_attempts=3)
+    def _drive_list(self, service, **kwargs):
+        return service.files().list(**kwargs).execute()
     
     def _download_file_content(self, service, file_meta):
         """
@@ -114,12 +124,13 @@ class DriveConnector(BaseConnector):
         page_token = None
         while True:
             try:
-                results = service.files().list(
+                results = self._drive_list(
+                    service,
                     q=query,
                     fields="nextPageToken, files(id, name, mimeType, webViewLink, size)",
                     pageSize=1000,
-                    pageToken=page_token
-                ).execute()
+                    pageToken=page_token,
+                )
                 
                 files = results.get('files', [])
                 for f in files:
@@ -282,12 +293,13 @@ class DriveConnector(BaseConnector):
         
         query_parent = parent_id if parent_id else 'root'
         
-        results = service.files().list(
+        results = self._drive_list(
+            service,
             q=f"'{query_parent}' in parents and trashed=false",
             fields="files(id, name, mimeType, iconLink, thumbnailLink, size)",
             orderBy="folder,name",
-            pageSize=1000
-        ).execute()
+            pageSize=1000,
+        )
 
         files = results.get('files', [])
         items = []
@@ -379,10 +391,11 @@ class DriveConnector(BaseConnector):
         for item_id in item_ids:
             try:
                 # Fetch metadata
-                file_meta = service.files().get(
-                    fileId=item_id, 
-                    fields="id, name, mimeType, webViewLink, size"
-                ).execute()
+                file_meta = self._drive_get(
+                    service,
+                    fileId=item_id,
+                    fields="id, name, mimeType, webViewLink, size",
+                )
                 
                 # Handle folders recursively
                 if file_meta['mimeType'] == 'application/vnd.google-apps.folder':
@@ -499,11 +512,12 @@ class DriveConnector(BaseConnector):
             ]
             query = f"({' or '.join(supported_mimes)}) and trashed=false"
             
-            results = service.files().list(
+            results = self._drive_list(
+                service,
                 q=query,
                 fields="files(id, name, mimeType, webViewLink)",
-                pageSize=20  # Increased limit to get more files
-            ).execute()
+                pageSize=20,  # Increased limit to get more files
+            )
             
             files = results.get('files', [])
             logger.info(f"🔄 [DriveSync] Found {len(files)} files to process")
@@ -652,10 +666,17 @@ class DriveConnector(BaseConnector):
                         for batch_start in range(0, len(chunk_records), DB_BATCH_SIZE):
                             batch = chunk_records[batch_start:batch_start + DB_BATCH_SIZE]
                             try:
-                                chunk_res = supabase.table("document_chunks").insert(batch).execute()
+                                chunk_res, _ = insert_rows_with_retry(
+                                    supabase,
+                                    "document_chunks",
+                                    batch,
+                                    context=f"drive_sync file={filename} batch={batch_start // DB_BATCH_SIZE + 1}",
+                                )
                                 if chunk_res.data:
                                     inserted_count += len(batch)
-                                    logger.debug(f"📦 [DriveSync] Inserted batch {batch_start//DB_BATCH_SIZE + 1}: {len(batch)} chunks")
+                                    logger.debug(
+                                        f"📦 [DriveSync] Inserted batch {batch_start//DB_BATCH_SIZE + 1}: {len(batch)} chunks"
+                                    )
                             except Exception as batch_err:
                                 logger.error(f"❌ [DriveSync] Batch insert failed for {filename}: {batch_err}")
                                 continue

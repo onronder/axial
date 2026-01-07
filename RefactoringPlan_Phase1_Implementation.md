@@ -326,6 +326,7 @@ Step completion check:
 Notes:
 - Configured embedding batch size and sleep interval via `backend/core/config.py`.
 - Async embedding helper now delegates to the synchronous implementation to avoid event-loop usage in workers.
+- Added adaptive throttle for embedding batches (duration-based + rate-limit backoff with jittered retries).
 
 ---
 
@@ -388,12 +389,13 @@ Step completion check:
 Notes:
 - Chunk insert batch size is now configurable via `backend/core/config.py` and used in the worker ingestion paths.
 - Drive and Notion sync paths now use the same configurable batch size.
+- Added retry + jitter for chunk inserts with per-batch latency logging via `backend/core/db_utils.py`.
 
 ---
 
 ## Step 6: Constrain connector concurrency and retries
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -466,7 +468,10 @@ Step completion check:
 
 
 Notes:
-- TBD
+- Connector fetches are now gated by a per-connector concurrency limiter in `backend/connectors/limits.py`.
+- Notion API requests use retry with jitter and rate-limit logging.
+- Google Drive list/get calls are retried with jitter via `with_google_retry`.
+- Defaults in config: google_drive=2, notion=1, web=2, default=2; file_upload is unlimited.
 
 ---
 

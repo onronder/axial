@@ -13,11 +13,13 @@ from typing import Dict, Any, List, Optional
 
 from core.celery_app import celery_app
 from core.db import get_supabase
+from core.db_utils import insert_rows_with_retry
 from core.config import settings
 from core.security import decrypt_token
 from services.parsers import DocumentProcessorFactory
 from services.email import email_service
 from connectors import get_connector
+from connectors.limits import connector_fetch_limit
 from services.embeddings import generate_embeddings_batch_sync
 
 logger = logging.getLogger(__name__)
@@ -155,7 +157,12 @@ def ingest_document_batched(
         
         # Insert this batch
         try:
-            supabase.table("document_chunks").insert(batch).execute()
+            insert_rows_with_retry(
+                supabase,
+                "document_chunks",
+                batch,
+                context=f"doc_id={doc_id} batch={i // DB_BATCH_SIZE + 1}",
+            )
             inserted_count += len(batch)
         except Exception as e:
             logger.error(f"❌ Failed to insert chunk batch {i//DB_BATCH_SIZE + 1}: {e}")
@@ -797,7 +804,8 @@ def unified_ingest_task(
                 documents.append(doc)
             return documents
         
-        documents = asyncio.run(collect_documents())
+        with connector_fetch_limit(connector_type):
+            documents = asyncio.run(collect_documents())
         total_files = len(documents)
         
         logger.info(f"[UnifiedIngest:{task_id}] Collected {total_files} documents for parallel processing")
@@ -1097,8 +1105,17 @@ def process_file_task(
             if not chunk_records:
                 continue
 
-            supabase.table("document_chunks").insert(chunk_records).execute()
-            inserted_chunks += len(chunk_records)
+            try:
+                insert_rows_with_retry(
+                    supabase,
+                    "document_chunks",
+                    chunk_records,
+                    context=f"doc_id={doc_id} batch={i // BATCH_SIZE + 1}",
+                )
+                inserted_chunks += len(chunk_records)
+            except Exception as e:
+                logger.error(f"❌ Failed to insert chunk batch {i//BATCH_SIZE + 1}: {e}")
+                continue
             if total_chunks > 0:
                 indexing_progress = 85 + int((inserted_chunks / total_chunks) * 15)
                 update_file_status(

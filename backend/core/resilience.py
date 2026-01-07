@@ -14,7 +14,9 @@ from tenacity import (
     retry,
     stop_after_attempt,
     wait_exponential,
+    wait_random_exponential,
     retry_if_exception_type,
+    retry_if_exception,
     before_sleep_log,
     after_log,
     RetryError,
@@ -60,6 +62,22 @@ def is_retryable_error(exception: BaseException) -> bool:
     # Check for HTTP rate limit or server errors
     if isinstance(exception, HTTPStatusError):
         return exception.response.status_code in RATE_LIMIT_STATUS_CODES
+
+    # Check for status codes on other exception types (e.g., requests, postgrest)
+    status_code = getattr(exception, "status_code", None)
+    response = getattr(exception, "response", None)
+    if status_code is None and response is not None:
+        status_code = getattr(response, "status_code", None)
+    if status_code in RATE_LIMIT_STATUS_CODES:
+        return True
+
+    # OpenAI-specific transient errors (import lazily to avoid hard dependency at import time)
+    try:
+        from openai import RateLimitError, APIError, APITimeoutError, APIConnectionError
+        if isinstance(exception, (RateLimitError, APIError, APITimeoutError, APIConnectionError)):
+            return True
+    except Exception:
+        pass
     
     return False
 
@@ -73,6 +91,8 @@ def with_retry(
     min_wait: float = 1,
     max_wait: float = 10,
     exceptions: tuple = TRANSIENT_EXCEPTIONS,
+    use_retryable: bool = False,
+    jitter: bool = False,
 ):
     """
     Decorator that adds retry logic with exponential backoff.
@@ -89,11 +109,21 @@ def with_retry(
             ...
     """
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        retry_condition = (
+            retry_if_exception(is_retryable_error)
+            if use_retryable
+            else retry_if_exception_type(exceptions)
+        )
+        wait_strategy = (
+            wait_random_exponential(multiplier=1, min=min_wait, max=max_wait)
+            if jitter
+            else wait_exponential(multiplier=1, min=min_wait, max=max_wait)
+        )
         @wraps(func)
         @retry(
             stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
-            retry=retry_if_exception_type(exceptions),
+            wait=wait_strategy,
+            retry=retry_condition,
             before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
@@ -109,16 +139,28 @@ def with_retry_sync(
     min_wait: float = 1,
     max_wait: float = 10,
     exceptions: tuple = TRANSIENT_EXCEPTIONS,
+    use_retryable: bool = False,
+    jitter: bool = False,
 ):
     """
     Synchronous version of with_retry for non-async functions.
     """
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        retry_condition = (
+            retry_if_exception(is_retryable_error)
+            if use_retryable
+            else retry_if_exception_type(exceptions)
+        )
+        wait_strategy = (
+            wait_random_exponential(multiplier=1, min=min_wait, max=max_wait)
+            if jitter
+            else wait_exponential(multiplier=1, min=min_wait, max=max_wait)
+        )
         @wraps(func)
         @retry(
             stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
-            retry=retry_if_exception_type(exceptions),
+            wait=wait_strategy,
+            retry=retry_condition,
             before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
@@ -134,6 +176,8 @@ def with_retry_async(
     min_wait: float = 1,
     max_wait: float = 10,
     exceptions: tuple = TRANSIENT_EXCEPTIONS,
+    use_retryable: bool = False,
+    jitter: bool = False,
 ):
     """
     Async retry decorator with exponential backoff.
@@ -150,11 +194,21 @@ def with_retry_async(
             ...
     """
     def decorator(func):
+        retry_condition = (
+            retry_if_exception(is_retryable_error)
+            if use_retryable
+            else retry_if_exception_type(exceptions)
+        )
+        wait_strategy = (
+            wait_random_exponential(multiplier=1, min=min_wait, max=max_wait)
+            if jitter
+            else wait_exponential(multiplier=1, min=min_wait, max=max_wait)
+        )
         @wraps(func)
         @retry(
             stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
-            retry=retry_if_exception_type(exceptions),
+            wait=wait_strategy,
+            retry=retry_condition,
             before_sleep=before_sleep_log(logger, logging.WARNING),
             after=after_log(logger, logging.INFO),
             reraise=True,
@@ -220,7 +274,7 @@ def with_google_retry(max_attempts: int = 3):
         @wraps(func)
         @retry(
             stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(multiplier=2, min=2, max=30),
+            wait=wait_random_exponential(multiplier=2, min=2, max=30),
             retry=should_retry,
             before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=True,

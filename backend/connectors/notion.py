@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
-from core.resilience import with_retry_sync
+from core.db_utils import insert_rows_with_retry
+from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync
 import requests
 from starlette.concurrency import run_in_threadpool
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
@@ -82,7 +83,7 @@ class NotionConnector(BaseConnector):
             "Content-Type": "application/json"
         }
     
-    @with_retry_sync(max_attempts=3)
+    @with_retry_sync(max_attempts=3, min_wait=1, max_wait=10, use_retryable=True, jitter=True)
     def _make_request(
         self,
         method: str,
@@ -101,7 +102,10 @@ class NotionConnector(BaseConnector):
             json=json_data,
             timeout=30
         )
-        
+
+        if response.status_code in RATE_LIMIT_STATUS_CODES:
+            logger.warning(f"⚠️ [Notion] Rate limit response {response.status_code} for {endpoint}")
+
         response.raise_for_status()
         return response.json()
     
@@ -526,7 +530,12 @@ class NotionConnector(BaseConnector):
                         for batch_start in range(0, len(chunk_records), DB_BATCH_SIZE):
                             batch = chunk_records[batch_start:batch_start + DB_BATCH_SIZE]
                             try:
-                                supabase.table("document_chunks").insert(batch).execute()
+                                insert_rows_with_retry(
+                                    supabase,
+                                    "document_chunks",
+                                    batch,
+                                    context=f"notion_sync doc={doc.get('id', 'unknown')} batch={batch_start // DB_BATCH_SIZE + 1}",
+                                )
                                 inserted_count += len(batch)
                             except Exception as batch_err:
                                 logger.error(f"❌ [NotionSync] Batch insert failed: {batch_err}")

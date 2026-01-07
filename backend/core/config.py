@@ -74,6 +74,19 @@ class Settings(BaseSettings):
     EMBEDDING_SLEEP_INTERVAL: float = 0.2  # Seconds between embedding batches
     EMBEDDING_MAX_CONCURRENCY: int = 10  # Max concurrent embedding requests (async path)
     CHUNK_INSERT_BATCH_SIZE: int = 100  # Batch size for PostgREST chunk inserts
+    EMBEDDING_ADAPTIVE_LATENCY_FACTOR: float = 0.05  # Extra sleep = batch_duration * factor
+    EMBEDDING_ADAPTIVE_MAX_SLEEP: float = 2.0  # Max extra sleep per batch
+    EMBEDDING_RATE_LIMIT_BACKOFF_STEP: float = 0.5  # Incremental backoff on rate-limit hits
+    EMBEDDING_RATE_LIMIT_BACKOFF_MAX: float = 5.0  # Cap for rate-limit backoff
+    EMBEDDING_RATE_LIMIT_DECAY: float = 0.25  # Backoff decay after successful batch
+
+    # =========================================================================
+    # Connector Concurrency Limits
+    # =========================================================================
+    CONNECTOR_CONCURRENCY_DEFAULT: int = 2
+    CONNECTOR_CONCURRENCY_GOOGLE_DRIVE: int = 2
+    CONNECTOR_CONCURRENCY_NOTION: int = 1
+    CONNECTOR_CONCURRENCY_WEB: int = 2
  
 
     # =========================================================================
