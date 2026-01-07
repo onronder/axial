@@ -63,12 +63,10 @@ export function DriveExplorer() {
 
     const handleNavigate = (folderId: string, folderName: string) => {
         setCurrentPath(prev => [...prev, { id: folderId, name: folderName }])
-        setSelection(new Set())
     }
 
     const handleBreadcrumbClick = (index: number) => {
         setCurrentPath(prev => prev.slice(0, index + 1))
-        setSelection(new Set())
     }
 
     const toggleSelection = (id: string) => {

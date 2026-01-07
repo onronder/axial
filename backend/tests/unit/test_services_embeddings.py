@@ -4,7 +4,7 @@ Tests the resilient embedding generation logic, specifically handling of empty t
 """
 import pytest
 from unittest.mock import Mock, patch
-from services.embeddings import generate_embedding, generate_embeddings_batch
+from services.embeddings import generate_embedding, generate_embeddings_batch_sync
 
 class TestEmbeddingsService:
     @pytest.mark.unit
@@ -45,7 +45,7 @@ class TestEmbeddingsService:
             ]
             mock_get_model.return_value = mock_model
 
-            results = generate_embeddings_batch(texts)
+            results = generate_embeddings_batch_sync(texts)
 
             # verify results - should preserve order and insert Nones
             assert len(results) == 4

@@ -509,7 +509,7 @@ class DriveConnector(BaseConnector):
             logger.info(f"🔄 [DriveSync] Found {len(files)} files to process")
             
             # Import required services
-            from services.embeddings import generate_embeddings_batch
+            from services.embeddings import generate_embeddings_batch_sync
             from worker.tasks import create_file_status, update_file_status
             
             # Create ingestion job for progress tracking
@@ -601,7 +601,7 @@ class DriveConnector(BaseConnector):
                             chunks_total=len(chunks))
                     
                     # Generate embeddings in batch
-                    embeddings = generate_embeddings_batch(chunks)
+                    embeddings = generate_embeddings_batch_sync(chunks)
                     
                     # =====================================================
                     # STEP A: Insert Parent Document into `documents` table

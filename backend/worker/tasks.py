@@ -18,7 +18,7 @@ from core.security import decrypt_token
 from services.parsers import DocumentProcessorFactory
 from services.email import email_service
 from connectors import get_connector
-from services.embeddings import generate_embeddings_batch
+from services.embeddings import generate_embeddings_batch_sync
 
 logger = logging.getLogger(__name__)
 logger.info("✅ Worker tasks module loaded - Cache buster 001")
@@ -607,7 +607,7 @@ def process_document_pipeline(
             status="embedding", progress=50, message="Generating embeddings...")
         
         chunk_texts = [chunk.content for chunk in result.chunks]
-        chunk_embeddings = generate_embeddings_batch(chunk_texts)
+        chunk_embeddings = generate_embeddings_batch_sync(chunk_texts)
         
         update_file_status(supabase, file_status_id,
             progress=70, message="Embeddings complete")
@@ -966,13 +966,12 @@ def process_file_task(
         file_status_id: ID of the file status record for progress tracking
         connector_type: Source type for metadata
     """
-    import asyncio
     import base64
     import tempfile
     import os
     import time
     from services.parsers import DocumentProcessorFactory
-    from services.embeddings import generate_embeddings_batch
+    from services.embeddings import generate_embeddings_batch_sync
     
     task_id = self.request.id
     filename = file_data.get("filename", "unknown")
@@ -1012,15 +1011,12 @@ def process_file_task(
             message="Extracting content (may take 30-90s for PDFs)..."
         )
         
-        async def parse_document():
-            result = DocumentProcessorFactory.process(
-                file_path=local_path,
-                filename=filename,
-                mime_type=file_data.get("mime_type")
-            )
-            return result.chunks
-
-        chunks = asyncio.run(parse_document())
+        result = DocumentProcessorFactory.process(
+            file_path=local_path,
+            filename=filename,
+            mime_type=file_data.get("mime_type")
+        )
+        chunks = result.chunks
         
         if not chunks:
             update_file_status(
@@ -1043,11 +1039,8 @@ def process_file_task(
             chunks_total=len(chunks)
         )
         
-        async def generate_embeddings():
-            texts = [chunk.content for chunk in chunks]
-            return await generate_embeddings_batch(texts)
-        
-        embeddings = asyncio.run(generate_embeddings())
+        texts = [chunk.content for chunk in chunks]
+        embeddings = generate_embeddings_batch_sync(texts)
         
         # STEP 4: Store in database
         update_file_status(
@@ -1074,12 +1067,15 @@ def process_file_task(
         
         # Insert chunks in batches
         BATCH_SIZE = 50
+        inserted_chunks = 0
         for i in range(0, len(chunks), BATCH_SIZE):
             batch = chunks[i:i+BATCH_SIZE]
             batch_embeddings = embeddings[i:i+BATCH_SIZE]
             
             chunk_records = []
             for j, (chunk, embedding) in enumerate(zip(batch, batch_embeddings)):
+                if embedding is None:
+                    continue
                 chunk_records.append({
                     "document_id": doc_id,
                     "content": chunk.content,
@@ -1087,7 +1083,22 @@ def process_file_task(
                     "chunk_index": i + j,
                 })
 
+            if not chunk_records:
+                continue
+
             supabase.table("document_chunks").insert(chunk_records).execute()
+            inserted_chunks += len(chunk_records)
+
+        if inserted_chunks == 0:
+            update_file_status(
+                supabase,
+                file_status_id,
+                status="failed",
+                progress=0,
+                message="No embeddings generated",
+                error="No embeddings generated"
+            )
+            return {"status": "failed", "filename": filename, "error": "No embeddings generated"}
         
         # STEP 5: Success
         total_time = int(time.time() - start_time)
@@ -1098,17 +1109,17 @@ def process_file_task(
             progress=100,
             message=f"✅ Completed in {total_time}s",
             chunks_total=len(chunks),
-            chunks_processed=len(chunks),
+            chunks_processed=inserted_chunks,
             document_id=doc_id
         )
         
-        logger.info(f"[ProcessFile:{task_id}] ✅ {filename}: {len(chunks)} chunks in {total_time}s")
+        logger.info(f"[ProcessFile:{task_id}] ✅ {filename}: {inserted_chunks} chunks in {total_time}s")
         
         return {
             "status": "success",
             "filename": filename,
             "doc_id": doc_id,
-            "chunks": len(chunks),
+            "chunks": inserted_chunks,
             "time": total_time
         }
         
@@ -1571,10 +1582,10 @@ def process_page_task(
             return {"status": "skipped", "url": url}
         
         # Embed
-        from services.embeddings import generate_embeddings_batch
+        from services.embeddings import generate_embeddings_batch_sync
         
         chunk_texts = [chunk.content for chunk in result.chunks]
-        chunk_embeddings = generate_embeddings_batch(chunk_texts)
+        chunk_embeddings = generate_embeddings_batch_sync(chunk_texts)
         
         # Build chunks payload with enriched metadata
         chunks_payload = []

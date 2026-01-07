@@ -86,7 +86,7 @@ class TestIngestConnectorTask:
 
     @patch('worker.tasks.get_connector')
     @patch('worker.tasks.get_supabase')
-    @patch('worker.tasks.generate_embeddings_batch')
+    @patch('worker.tasks.generate_embeddings_batch_sync')
     @patch('worker.tasks.DocumentProcessorFactory')
     def test_executes_drive_ingestion(self, mock_factory, mock_embeddings, mock_supabase, mock_get_connector):
         """Should execute drive ingestion using asyncio."""

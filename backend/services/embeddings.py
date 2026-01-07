@@ -182,3 +182,25 @@ async def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[floa
     except Exception as e:
         logger.error(f"📊 [Embeddings] Batch embedding failed: {e}")
         raise
+
+
+def generate_embeddings_batch_sync(texts: List[str]) -> List[Optional[List[float]]]:
+    """
+    Synchronous wrapper for batch embeddings.
+
+    Uses the async implementation under the hood, but safely executes it even
+    when an event loop is already running in the current thread.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(generate_embeddings_batch(texts))
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _runner() -> List[Optional[List[float]]]:
+        return asyncio.run(generate_embeddings_batch(texts))
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_runner)
+        return future.result()

@@ -416,7 +416,7 @@ class NotionConnector(BaseConnector):
 
             # 3. Chunk and Embed (using centralized service)
             from core.db import get_supabase
-            from services.embeddings import generate_embeddings_batch
+            from services.embeddings import generate_embeddings_batch_sync
             from langchain_text_splitters import RecursiveCharacterTextSplitter
             from worker.tasks import create_file_status, update_file_status
             
@@ -500,7 +500,7 @@ class NotionConnector(BaseConnector):
                             chunks_total=len(chunks))
                         
                     # Embed
-                    embeddings = generate_embeddings_batch(chunks)
+                    embeddings = generate_embeddings_batch_sync(chunks)
                     
                     # Status: Indexing
                     if file_status_id:
