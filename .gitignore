@@ -16,3 +16,6 @@ credentials/
 # Local Testing
 watched_folder/
 test_ingest.sh
+
+# Test results & local logs
+TEST_RESULTS/

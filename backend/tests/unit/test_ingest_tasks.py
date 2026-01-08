@@ -274,7 +274,7 @@ class TestEmailNotification:
         mock_supabase_instance.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
             data={"email": "test@example.com", "display_name": "Test User"}
         )
-        mock_supabase_instance.table.return_value.select.return_value.eq.return_value.eq.return_value.maybeSingle.return_value.execute.return_value = Mock(
+        mock_supabase_instance.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
             data={"enabled": True}
         )
         
@@ -293,7 +293,7 @@ class TestEmailNotification:
         mock_supabase_instance.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
             data={"email": "test@example.com"}
         )
-        mock_supabase_instance.table.return_value.select.return_value.eq.return_value.eq.return_value.maybeSingle.return_value.execute.return_value = Mock(
+        mock_supabase_instance.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
             data={"enabled": False}
         )
         

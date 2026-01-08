@@ -7,7 +7,7 @@ Provides centralized embedding generation using OpenAI's text-embedding-3-small 
 import logging
 import random
 import time
-from typing import List, Optional
+from typing import List, Optional, Sequence
 from langchain_openai import OpenAIEmbeddings
 from core.config import settings
 from core.resilience import with_retry_sync
@@ -100,17 +100,76 @@ def generate_embedding(text: str) -> Optional[List[float]]:
         raise
 
 
-async def generate_embeddings_batch(texts: List[str]) -> List[Optional[List[float]]]:
+async def generate_embeddings_batch(
+    texts: List[str],
+    token_counts: Optional[Sequence[int]] = None,
+    max_tokens_per_batch: Optional[int] = None,
+) -> List[Optional[List[float]]]:
     """
     Async-compatible wrapper for legacy callers.
 
     This intentionally delegates to the synchronous implementation to avoid
     any event-loop usage inside workers while keeping async call sites intact.
     """
-    return generate_embeddings_batch_sync(texts)
+    return generate_embeddings_batch_sync(
+        texts,
+        token_counts=token_counts,
+        max_tokens_per_batch=max_tokens_per_batch,
+    )
 
 
-def generate_embeddings_batch_sync(texts: List[str]) -> List[Optional[List[float]]]:
+def _estimate_token_count(text: str) -> int:
+    if not text:
+        return 1
+    return max(1, len(text) // 4)
+
+
+def _build_batches(
+    texts: Sequence[str],
+    token_counts: Optional[Sequence[int]],
+    batch_size: int,
+    max_tokens_per_batch: Optional[int],
+) -> List[List[str]]:
+    if not texts:
+        return []
+
+    if not token_counts or not max_tokens_per_batch or max_tokens_per_batch <= 0:
+        return [list(texts[i:i + batch_size]) for i in range(0, len(texts), batch_size)]
+
+    batches: List[List[str]] = []
+    current: List[str] = []
+    current_tokens = 0
+
+    for text, tokens in zip(texts, token_counts):
+        token_budget = tokens if tokens and tokens > 0 else _estimate_token_count(text)
+
+        if token_budget > max_tokens_per_batch:
+            if current:
+                batches.append(current)
+                current = []
+                current_tokens = 0
+            batches.append([text])
+            continue
+
+        if current and (current_tokens + token_budget > max_tokens_per_batch or len(current) >= batch_size):
+            batches.append(current)
+            current = [text]
+            current_tokens = token_budget
+        else:
+            current.append(text)
+            current_tokens += token_budget
+
+    if current:
+        batches.append(current)
+
+    return batches
+
+
+def generate_embeddings_batch_sync(
+    texts: List[str],
+    token_counts: Optional[Sequence[int]] = None,
+    max_tokens_per_batch: Optional[int] = None,
+) -> List[Optional[List[float]]]:
     """
     Synchronous batch embeddings helper.
 
@@ -140,15 +199,19 @@ def generate_embeddings_batch_sync(texts: List[str]) -> List[Optional[List[float
     # OpenAI allows up to 2048 embeddings per request; keep a safe cap.
     batch_size = max(1, min(settings.EMBEDDING_BATCH_SIZE, 1000))
     sleep_interval = max(0.0, settings.EMBEDDING_SLEEP_INTERVAL)
+    max_tokens = max_tokens_per_batch or settings.EMBEDDING_MAX_TOKENS_PER_REQUEST
+
+    valid_token_counts: Optional[List[int]] = None
+    if token_counts and len(token_counts) == len(texts):
+        valid_token_counts = [token_counts[i] for i in valid_indices]
+    elif max_tokens and max_tokens > 0:
+        valid_token_counts = [_estimate_token_count(text) for text in valid_texts]
 
     @with_retry_sync(max_attempts=3, min_wait=2, max_wait=10, use_retryable=True, jitter=True)
     def embed_batch(batch_texts: List[str]) -> List[List[float]]:
         return model.embed_documents(batch_texts)
 
-    batches = []
-    for batch_start in range(0, len(valid_texts), batch_size):
-        batch_end = min(batch_start + batch_size, len(valid_texts))
-        batches.append(valid_texts[batch_start:batch_end])
+    batches = _build_batches(valid_texts, valid_token_counts, batch_size, max_tokens)
 
     all_embeddings: List[List[float]] = []
     total_duration = 0.0

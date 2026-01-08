@@ -76,17 +76,27 @@ def insert_rows_with_retry(
             duration = time.perf_counter() - start
             retryable = is_retryable_supabase_error(exc)
             status_code = _get_status_code(exc)
+            error_code = getattr(exc, "code", None)
+            error_details = getattr(exc, "details", None) or getattr(exc, "detail", None)
+            error_hint = getattr(exc, "hint", None)
+            error_type = type(exc).__name__
+            error_repr = repr(exc)
             if retry_total and retryable:
                 retry_total.labels("supabase", f"insert:{table}").inc()
             logger.warning(
-                "⚠️ [DB] Insert attempt %s/%s failed for %s (%s). retryable=%s status=%s error=%s",
+                "⚠️ [DB] Insert attempt %s/%s failed for %s (%s). retryable=%s status=%s error_type=%s error=%s code=%s details=%s hint=%s repr=%s",
                 attempt,
                 max_attempts,
                 table,
                 context,
                 retryable,
                 status_code,
+                error_type,
                 exc,
+                error_code,
+                error_details,
+                error_hint,
+                error_repr,
             )
             if attempt >= max_attempts or not retryable:
                 if retry_failure:
@@ -138,17 +148,27 @@ def delete_rows_with_retry(
             duration = time.perf_counter() - start
             retryable = is_retryable_supabase_error(exc)
             status_code = _get_status_code(exc)
+            error_code = getattr(exc, "code", None)
+            error_details = getattr(exc, "details", None) or getattr(exc, "detail", None)
+            error_hint = getattr(exc, "hint", None)
+            error_type = type(exc).__name__
+            error_repr = repr(exc)
             if retry_total and retryable:
                 retry_total.labels("supabase", f"delete:{table}").inc()
             logger.warning(
-                "⚠️ [DB] Delete attempt %s/%s failed for %s (%s). retryable=%s status=%s error=%s",
+                "⚠️ [DB] Delete attempt %s/%s failed for %s (%s). retryable=%s status=%s error_type=%s error=%s code=%s details=%s hint=%s repr=%s",
                 attempt,
                 max_attempts,
                 table,
                 context,
                 retryable,
                 status_code,
+                error_type,
                 exc,
+                error_code,
+                error_details,
+                error_hint,
+                error_repr,
             )
             if attempt >= max_attempts or not retryable:
                 if retry_failure:

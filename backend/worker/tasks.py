@@ -597,7 +597,7 @@ def create_notification(
                     .select("enabled")\
                     .eq("user_id", user_id)\
                     .eq("setting_key", check_setting_key)\
-                    .maybeSingle()\
+                    .maybe_single()\
                     .execute()
                 
                 # If preference exists and is explicitly False, skip notification
@@ -649,7 +649,7 @@ def send_email_notification(
     try:
         # Fetch user name from profile (table does not have email)
         try:
-            user_response = supabase.table("user_profiles").select("display_name, full_name").eq("user_id", user_id).single().execute()
+            user_response = supabase.table("user_profiles").select("display_name,full_name").eq("user_id", user_id).single().execute()
             user_data = user_response.data or {}
             name = user_data.get("display_name") or user_data.get("full_name") or "there"
         except Exception:
@@ -720,7 +720,7 @@ def send_failure_email_notification(
     try:
         # Fetch user name from profile (table does not have email)
         try:
-            user_response = supabase.table("user_profiles").select("display_name, full_name").eq("user_id", user_id).single().execute()
+            user_response = supabase.table("user_profiles").select("display_name,full_name").eq("user_id", user_id).single().execute()
             user_data = user_response.data or {}
             name = user_data.get("display_name") or user_data.get("full_name") or "there"
         except Exception:
@@ -782,6 +782,14 @@ class ProcessResult:
     document_id: str = None
     chunks_count: int = 0
     error: str = None
+
+
+def _sanitize_text(value: str) -> str:
+    if not value:
+        return value
+    if "\x00" in value:
+        return value.replace("\x00", "")
+    return value
 
 
 def process_document_pipeline(
@@ -862,6 +870,22 @@ def process_document_pipeline(
                 error="Parsing timeout",
             )
             return ProcessResult(success=False, error="Parsing timeout")
+
+        if result.file_type == "unsupported":
+            reason = (result.metadata or {}).get("unsupported_reason")
+            message = "Unsupported file type"
+            if reason == "binary_content":
+                message = "Unsupported binary file"
+            update_file_status(
+                supabase,
+                file_status_id,
+                status="skipped",
+                progress=100,
+                message=message,
+                chunks_total=0,
+                chunks_processed=0
+            )
+            return ProcessResult(success=True, chunks_count=0)
         
         if not result.chunks:
             update_file_status(supabase, file_status_id,
@@ -876,19 +900,20 @@ def process_document_pipeline(
         update_file_status(supabase, file_status_id,
             status="embedding", progress=50, message="Generating embeddings...")
         
-        chunk_texts = [chunk.content for chunk in result.chunks]
-        chunk_embeddings = generate_embeddings_batch_sync(chunk_texts)
+        chunk_texts = [_sanitize_text(chunk.content) for chunk in result.chunks]
+        token_counts = [chunk.token_count for chunk in result.chunks]
+        chunk_embeddings = generate_embeddings_batch_sync(chunk_texts, token_counts=token_counts)
         
         update_file_status(supabase, file_status_id,
             progress=70, message="Embeddings complete")
         
         # 3. Build chunks payload
         chunks_payload = []
-        for chunk, embedding in zip(result.chunks, chunk_embeddings):
+        for chunk, embedding, chunk_text in zip(result.chunks, chunk_embeddings, chunk_texts):
             if embedding is None:
                 continue
             chunks_payload.append({
-                "content": chunk.content,
+                "content": chunk_text,
                 "embedding": embedding,
                 "chunk_index": chunk.chunk_index,
                 "metadata": {
@@ -1331,6 +1356,29 @@ def process_file_task(
                 "failed",
             )
             return {"status": "failed", "filename": filename, "error": "Parsing timeout"}
+
+        if result.file_type == "unsupported":
+            reason = (result.metadata or {}).get("unsupported_reason")
+            message = "Unsupported file type"
+            if reason == "binary_content":
+                message = "Unsupported binary file"
+            update_file_status(
+                supabase,
+                file_status_id,
+                status="skipped",
+                progress=100,
+                message=message,
+                chunks_total=0,
+                chunks_processed=0
+            )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "skipped",
+            )
+            return {"status": "skipped", "filename": filename, "reason": reason or "unsupported"}
         chunks = result.chunks
         
         if not chunks:
@@ -1366,8 +1414,9 @@ def process_file_task(
             chunks_processed=0
         )
         
-        texts = [chunk.content for chunk in chunks]
-        embeddings = generate_embeddings_batch_sync(texts)
+        texts = [_sanitize_text(chunk.content) for chunk in chunks]
+        token_counts = [chunk.token_count for chunk in chunks]
+        embeddings = generate_embeddings_batch_sync(texts, token_counts=token_counts)
         
         # STEP 4: Store in database
         update_file_status(
@@ -1423,14 +1472,15 @@ def process_file_task(
         for i in range(0, len(chunks), BATCH_SIZE):
             batch = chunks[i:i+BATCH_SIZE]
             batch_embeddings = embeddings[i:i+BATCH_SIZE]
+            batch_texts = texts[i:i+BATCH_SIZE]
             
             chunk_records = []
-            for j, (chunk, embedding) in enumerate(zip(batch, batch_embeddings)):
+            for j, (chunk, embedding, chunk_text) in enumerate(zip(batch, batch_embeddings, batch_texts)):
                 if embedding is None:
                     continue
                 chunk_records.append({
                     "document_id": doc_id,
-                    "content": chunk.content,
+                    "content": chunk_text,
                     "embedding": embedding,
                     "chunk_index": i + j,
                 })
@@ -2027,20 +2077,21 @@ def process_page_task(
         # Embed
         from services.embeddings import generate_embeddings_batch_sync
         
-        chunk_texts = [chunk.content for chunk in result.chunks]
-        chunk_embeddings = generate_embeddings_batch_sync(chunk_texts)
+        chunk_texts = [_sanitize_text(chunk.content) for chunk in result.chunks]
+        token_counts = [chunk.token_count for chunk in result.chunks]
+        chunk_embeddings = generate_embeddings_batch_sync(chunk_texts, token_counts=token_counts)
         
         # Build chunks payload with enriched metadata
         chunks_payload = []
         failed_chunks = 0
-        for chunk, embedding in zip(result.chunks, chunk_embeddings):
+        for chunk, embedding, chunk_text in zip(result.chunks, chunk_embeddings, chunk_texts):
             if embedding is None:
                 failed_chunks += 1
                 logger.warning(f"⚠️ [Page:{task_id}] Skipped chunk {chunk.chunk_index} for {url} due to failed embedding")
                 continue
                 
             chunks_payload.append({
-                "content": chunk.content,
+                "content": chunk_text,
                 "embedding": embedding,
                 "chunk_index": chunk.chunk_index,
                 "metadata": {

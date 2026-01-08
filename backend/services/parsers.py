@@ -636,6 +636,9 @@ class PlainTextProcessor(BaseProcessor):
         except UnicodeDecodeError:
             text = content.decode("utf-8", errors="replace")
         
+        # Remove null bytes that cannot be stored in Postgres text
+        text = text.replace("\x00", "")
+        
         if not text.strip():
             return ProcessedDocument(chunks=[], file_type="text")
         
@@ -730,6 +733,40 @@ class DocumentProcessorFactory:
         "text/html": CodeProcessor,
         "application/json": CodeProcessor,
     }
+
+    # Explicitly unsupported (binary) extensions to avoid unsafe parsing
+    UNSUPPORTED_EXTENSIONS = {
+        ".pptx",
+        ".xlsx",
+        ".numbers",
+        ".key",
+    }
+
+    TEXT_MIME_TYPES = {
+        "text/plain",
+        "text/markdown",
+        "text/csv",
+        "text/html",
+        "application/json",
+        "application/xml",
+        "application/xhtml+xml",
+        "application/x-yaml",
+    }
+
+    @staticmethod
+    def _looks_like_binary(content: bytes) -> bool:
+        if not content:
+            return False
+        if b"\x00" in content:
+            return True
+        sample = content[:2048]
+        if not sample:
+            return False
+        non_text = 0
+        for byte in sample:
+            if byte < 9 or (14 <= byte < 32) or byte == 127:
+                non_text += 1
+        return (non_text / len(sample)) > 0.30
     
     @classmethod
     def process(
@@ -770,9 +807,32 @@ class DocumentProcessorFactory:
             processor_class = cls.MIME_MAP.get(mime_type)
         
         if not processor_class:
-            # Default to plain text
-            logger.warning(f"[Factory] Unknown file type {ext}, using PlainTextProcessor")
-            processor_class = PlainTextProcessor
+            if ext in cls.UNSUPPORTED_EXTENSIONS:
+                logger.warning(f"[Factory] Unsupported file type {ext}, skipping parse")
+                return ProcessedDocument(
+                    chunks=[],
+                    file_type="unsupported",
+                    metadata={"unsupported_reason": "unsupported_extension"}
+                )
+            if mime_type and (mime_type.startswith("text/") or mime_type in cls.TEXT_MIME_TYPES):
+                processor_class = PlainTextProcessor
+            elif not cls._looks_like_binary(content):
+                processor_class = PlainTextProcessor
+            else:
+                logger.warning(f"[Factory] Binary content detected for {ext}, skipping parse")
+                return ProcessedDocument(
+                    chunks=[],
+                    file_type="unsupported",
+                    metadata={"unsupported_reason": "binary_content"}
+                )
+
+        if processor_class is PlainTextProcessor and cls._looks_like_binary(content):
+            logger.warning(f"[Factory] Binary content detected for {ext}, skipping plain text parse")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "binary_content"}
+            )
         
         # Process
         processor = processor_class()

@@ -33,7 +33,7 @@ class TestSendEmailNotification:
         # Settings query
         settings_mock = Mock()
         settings_mock.data = {"enabled": True}
-        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.maybeSingle.return_value.execute.return_value = settings_mock
+        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
         
         with patch('worker.tasks.email_service') as mock_email:
             mock_email.send_ingestion_complete.return_value = True
@@ -53,7 +53,7 @@ class TestSendEmailNotification:
         # Settings query - disabled
         settings_mock = Mock()
         settings_mock.data = {"enabled": False}
-        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.maybeSingle.return_value.execute.return_value = settings_mock
+        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
         
         with patch('worker.tasks.email_service') as mock_email:
             from worker.tasks import send_email_notification
@@ -77,7 +77,7 @@ class TestSendEmailNotification:
             if table_name == "profiles":
                 table_mock.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
             elif table_name == "user_notification_settings":
-                table_mock.select.return_value.eq.return_value.eq.return_value.maybeSingle.return_value.execute.return_value = settings_mock
+                table_mock.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
             return table_mock
         
         mock_supabase.table.side_effect = table_side_effect
@@ -132,7 +132,7 @@ class TestSendEmailNotification:
             if table_name == "profiles":
                 table_mock.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
             elif table_name == "user_notification_settings":
-                table_mock.select.return_value.eq.return_value.eq.return_value.maybeSingle.return_value.execute.return_value = settings_mock
+                table_mock.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
             return table_mock
         
         mock_supabase.table.side_effect = table_side_effect
@@ -160,7 +160,7 @@ class TestSendEmailNotification:
             if table_name == "profiles":
                 table_mock.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
             elif table_name == "user_notification_settings":
-                table_mock.select.return_value.eq.return_value.eq.return_value.maybeSingle.return_value.execute.return_value = settings_mock
+                table_mock.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
             return table_mock
         
         mock_supabase.table.side_effect = table_side_effect
@@ -195,7 +195,7 @@ class TestSendEmailNotification:
             if table_name == "profiles":
                 table_mock.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
             elif table_name == "user_notification_settings":
-                table_mock.select.return_value.eq.return_value.eq.return_value.maybeSingle.return_value.execute.return_value = settings_mock
+                table_mock.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
             return table_mock
         
         mock_supabase.table.side_effect = table_side_effect

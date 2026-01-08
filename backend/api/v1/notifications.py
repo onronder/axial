@@ -54,7 +54,7 @@ def create_notification(
                 .select("enabled")\
                 .eq("user_id", user_id)\
                 .eq("setting_key", check_setting_key)\
-                .maybeSingle()\
+                .maybe_single()\
                 .execute()
             
             # If preference exists and is explicitly False, skip notification

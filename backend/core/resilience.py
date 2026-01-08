@@ -61,19 +61,26 @@ def is_retryable_error(exception: BaseException) -> bool:
     
     # Check for HTTP rate limit or server errors
     if isinstance(exception, HTTPStatusError):
-        return exception.response.status_code in RATE_LIMIT_STATUS_CODES
+        status_code = exception.response.status_code
+        if status_code in RATE_LIMIT_STATUS_CODES or status_code >= 500:
+            return True
+        return False
 
     # Check for status codes on other exception types (e.g., requests, postgrest)
     status_code = getattr(exception, "status_code", None)
     response = getattr(exception, "response", None)
     if status_code is None and response is not None:
         status_code = getattr(response, "status_code", None)
-    if status_code in RATE_LIMIT_STATUS_CODES:
-        return True
+    if status_code is not None:
+        if status_code in RATE_LIMIT_STATUS_CODES or status_code >= 500:
+            return True
+        return False
 
     # OpenAI-specific transient errors (import lazily to avoid hard dependency at import time)
     try:
-        from openai import RateLimitError, APIError, APITimeoutError, APIConnectionError
+        from openai import RateLimitError, APIError, APITimeoutError, APIConnectionError, BadRequestError
+        if isinstance(exception, BadRequestError):
+            return False
         if isinstance(exception, (RateLimitError, APIError, APITimeoutError, APIConnectionError)):
             return True
     except Exception:
