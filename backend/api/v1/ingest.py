@@ -69,6 +69,26 @@ def sanitize_filename(filename: str) -> str:
     # Limit length
     return clean_name[:255]
 
+
+def get_idempotency_key(request: Request) -> Optional[str]:
+    key = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+    if not key:
+        return None
+    key = key.strip()
+    return key if key else None
+
+
+def find_existing_ingestion_job(supabase, user_id: str, provider: str, idempotency_key: str) -> Optional[dict]:
+    if not idempotency_key:
+        return None
+    existing = supabase.table("ingestion_jobs").select("id,status").eq(
+        "user_id", user_id
+    ).eq("provider", provider).eq("idempotency_key", idempotency_key).order(
+        "created_at", desc=True
+    ).limit(1).execute()
+    existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
+    return existing_data[0] if existing_data else None
+
 # Rate limiter instance
 limiter = Limiter(key_func=get_remote_address)
 
@@ -117,6 +137,8 @@ async def ingest_document(
     This endpoint is still supported for URL, Drive, and Notion ingestion.
     """
     supabase = get_supabase()
+    idempotency_key = get_idempotency_key(request)
+    idempotency_key = get_idempotency_key(request)
     
     # 1. RBAC Check: Viewers cannot ingest content
     team = await team_service.get_user_team(user_id)
@@ -213,6 +235,11 @@ async def ingest_document(
         connector_type = "drive" if drive_id else "notion"
         item_id = drive_id if drive_id else notion_page_id
         
+        if idempotency_key:
+            existing_job = find_existing_ingestion_job(supabase, user_id, connector_type, idempotency_key)
+            if existing_job:
+                return IngestResponse(status=existing_job.get("status", "queued"), doc_id=existing_job["id"])
+
         # Create ingestion job for tracking
         job_data = {
             "user_id": user_id,
@@ -223,6 +250,8 @@ async def ingest_document(
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
+        if idempotency_key:
+            job_data["idempotency_key"] = idempotency_key
         
         job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
         if not job_res.data:
@@ -322,6 +351,11 @@ async def ingest_document(
                 detail=f"Failed to stage file: {str(e)}"
             )
         
+        if idempotency_key:
+            existing_job = find_existing_ingestion_job(supabase, user_id, "file", idempotency_key)
+            if existing_job:
+                return IngestResponse(status=existing_job.get("status", "queued"), doc_id=existing_job["id"])
+
         # Create ingestion job for tracking
         job_data = {
             "user_id": user_id,
@@ -332,6 +366,8 @@ async def ingest_document(
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
+        if idempotency_key:
+            job_data["idempotency_key"] = idempotency_key
         
         job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
         if not job_res.data:
@@ -516,6 +552,11 @@ async def ingest_file_reference(
             pass
         raise HTTPException(status_code=403, detail=quota_check["reason"])
     
+    if idempotency_key:
+        existing_job = find_existing_ingestion_job(supabase, user_id, "file", idempotency_key)
+        if existing_job:
+            return IngestResponse(status=existing_job.get("status", "queued"), doc_id=existing_job["id"])
+
     # 3. Create ingestion job
     job_data = {
         "user_id": user_id,
@@ -526,6 +567,8 @@ async def ingest_file_reference(
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
+    if idempotency_key:
+        job_data["idempotency_key"] = idempotency_key
     
     job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
     if not job_res.data:

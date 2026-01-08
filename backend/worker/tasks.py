@@ -41,11 +41,17 @@ try:
         job_counters_missing,
         job_counters_reconciled,
         job_counters_finalize,
+        idempotency_hits,
+        parser_rejections,
+        timeout_total,
     )
 except Exception:
     job_counters_missing = None
     job_counters_reconciled = None
     job_counters_finalize = None
+    idempotency_hits = None
+    parser_rejections = None
+    timeout_total = None
 
 logger = logging.getLogger(__name__)
 logger.info("✅ Worker tasks module loaded - Cache buster 001")
@@ -348,10 +354,13 @@ def ingest_document_batched(
         existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
             "title", doc_title
         ).eq("content_hash", content_hash).limit(1).execute()
-        if existing.data:
-            existing_doc_id = existing.data[0]["id"]
+        existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
+        if existing_data:
+            existing_doc_id = existing_data[0]["id"]
 
     if existing_doc_id:
+        if idempotency_hits:
+            idempotency_hits.labels(source_type or "unknown").inc()
         delete_rows_with_retry(
             supabase,
             "document_chunks",
@@ -838,6 +847,8 @@ def process_document_pipeline(
             content_bytes = content
 
         if len(content_bytes) > settings.MAX_FILE_SIZE:
+            if parser_rejections:
+                parser_rejections.labels("file_too_large", source_type or "unknown").inc()
             update_file_status(
                 supabase,
                 file_status_id,
@@ -861,6 +872,10 @@ def process_document_pipeline(
 
         parse_elapsed = time.time() - parse_start
         if parse_timeout and parse_elapsed > parse_timeout:
+            if timeout_total:
+                timeout_total.labels("parse").inc()
+            if parser_rejections:
+                parser_rejections.labels("parse_timeout", source_type or "unknown").inc()
             update_file_status(
                 supabase,
                 file_status_id,
@@ -876,6 +891,8 @@ def process_document_pipeline(
             message = "Unsupported file type"
             if reason == "binary_content":
                 message = "Unsupported binary file"
+            if parser_rejections:
+                parser_rejections.labels("unsupported", source_type or "unknown").inc()
             update_file_status(
                 supabase,
                 file_status_id,
@@ -888,6 +905,8 @@ def process_document_pipeline(
             return ProcessResult(success=True, chunks_count=0)
         
         if not result.chunks:
+            if parser_rejections:
+                parser_rejections.labels("empty", source_type or "unknown").inc()
             update_file_status(supabase, file_status_id,
                 status="skipped", progress=100, message="No content found")
             return ProcessResult(success=True, chunks_count=0)
@@ -1298,6 +1317,8 @@ def process_file_task(
         content = base64.b64decode(content_b64)
 
         if len(content) > settings.MAX_FILE_SIZE:
+            if parser_rejections:
+                parser_rejections.labels("file_too_large", connector_type or "unknown").inc()
             update_file_status(
                 supabase,
                 file_status_id,
@@ -1340,6 +1361,10 @@ def process_file_task(
         )
         parse_elapsed = time.time() - parse_start
         if parse_timeout and parse_elapsed > parse_timeout:
+            if timeout_total:
+                timeout_total.labels("parse").inc()
+            if parser_rejections:
+                parser_rejections.labels("parse_timeout", connector_type or "unknown").inc()
             update_file_status(
                 supabase,
                 file_status_id,
@@ -1362,6 +1387,8 @@ def process_file_task(
             message = "Unsupported file type"
             if reason == "binary_content":
                 message = "Unsupported binary file"
+            if parser_rejections:
+                parser_rejections.labels("unsupported", connector_type or "unknown").inc()
             update_file_status(
                 supabase,
                 file_status_id,
@@ -1385,6 +1412,8 @@ def process_file_task(
             skip_message = "No content extracted"
             if result.file_type == "pdf":
                 skip_message = "No text extracted (OCR required)"
+            if parser_rejections:
+                parser_rejections.labels("empty", connector_type or "unknown").inc()
             update_file_status(
                 supabase,
                 file_status_id,
@@ -2125,17 +2154,37 @@ def process_page_task(
             "total_chunks": len(result.chunks),
         }
         
-        # Store using atomic RPC
-        content_size = len(page_content.encode("utf-8"))
-        supabase.rpc("ingest_document_with_chunks", {
-            "p_user_id": user_id,
-            "p_doc_title": page_title,
-            "p_source_type": "web",
-            "p_source_url": source_url,
-            "p_metadata": json.dumps(doc_metadata),
-            "p_chunks": json.dumps(chunks_payload),
-            "p_file_size_bytes": content_size
-        }).execute()
+        content_bytes = page_content.encode("utf-8")
+        content_size = len(content_bytes)
+        content_hash = compute_content_hash(content_bytes)
+
+        doc_id = ingest_document_batched(
+            supabase=supabase,
+            user_id=user_id,
+            doc_title=page_title,
+            source_type="web",
+            metadata=doc_metadata,
+            chunks_payload=chunks_payload,
+            file_size_bytes=content_size,
+            source_url=source_url,
+            content_hash=content_hash,
+        )
+
+        if not doc_id:
+            logger.warning(f"⚠️ [Page:{task_id}] Failed to store: {url}")
+            if crawl_id:
+                supabase.rpc("increment_crawl_counter", {
+                    "p_crawl_id": crawl_id,
+                    "p_field": "pages_failed"
+                }).execute()
+            _record_crawl_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                crawl_id,
+                url,
+                "failed",
+            )
+            return {"status": "failed", "url": url, "error": "db_insert_failed"}
         
         logger.info(f"✅ [Page:{task_id}] Stored: {url} ({len(result.chunks)} chunks)")
         

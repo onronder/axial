@@ -574,7 +574,7 @@ Notes:
 
 ## Step 8: Add ingestion idempotency and strict retry policy
 
-Status: In Progress
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -612,12 +612,12 @@ User inputs (fill below):
   - Status: implemented but not configurable per service.
 
 Sub-task checklist:
-- [ ] Define idempotency keys and lifecycle for jobs, files, and chunks.
-- [ ] Update ingestion API to accept or generate idempotency keys.
-- [ ] Implement idempotency checks before processing and inserting.
-- [ ] Define retry policies for transient vs permanent errors.
-- [ ] Ensure DLQ preserves idempotency context.
-- [ ] Add metrics for duplicate detection and retry counts.
+- [x] Define idempotency keys and lifecycle for jobs, files, and chunks.
+- [x] Update ingestion API to accept or generate idempotency keys.
+- [x] Implement idempotency checks before processing and inserting.
+- [x] Define retry policies for transient vs permanent errors.
+- [x] Ensure DLQ preserves idempotency context.
+- [x] Add metrics for duplicate detection and retry counts.
 
 Deliverables:
 - Idempotency specification.
@@ -640,12 +640,15 @@ Step completion check:
 Notes:
 - Added `content_hash` to `documents` with index (migration required).
 - Unified ingestion and connector sync now reuse existing documents by title + content hash and replace chunks.
+- Added `idempotency_key` to `ingestion_jobs` with unique index (user_id + provider + key); API honors Idempotency-Key headers.
+- Web ingestion and the ingestion pipeline now use idempotent batched inserts with content hashes.
+- Added `pipeline_idempotency_hits_total` metric for duplicate detection.
 
 ---
 
 ## Step 9: Add parser safety guardrails
 
-Status: In Progress
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -663,11 +666,11 @@ User inputs (fill below):
   - PDF (OCR/Scanned): 600 seconds (10 minutes, requires LlamaParse).
 
 Sub-task checklist:
-- [ ] Inventory supported file types and associated parsers.
-- [ ] Define safe file size limits and timeouts for each parser.
-- [ ] Implement early exits for risky or oversized files.
-- [ ] Define how the system reports partial or skipped parsing.
-- [ ] Add metrics for parser timeouts and file rejections.
+- [x] Inventory supported file types and associated parsers.
+- [x] Define safe file size limits and timeouts for each parser.
+- [x] Implement early exits for risky or oversized files.
+- [x] Define how the system reports partial or skipped parsing.
+- [x] Add metrics for parser timeouts and file rejections.
 
 Deliverables:
 - Parser safety policy.
@@ -690,6 +693,8 @@ Step completion check:
 Notes:
 - Enforced max file size checks in ingestion and connector sync paths.
 - Added soft parse-time thresholds for text-like files and PDFs (OCR/non-OCR).
+- Unsupported/binary files are now skipped with explicit status reasons (unsupported/binary_content).
+- Added `pipeline_parser_rejections_total` and parse timeout counters for observability.
 
 ---
 
@@ -832,13 +837,13 @@ User inputs (fill below):
 
 
 Sub-task checklist:
-- [ ] Inventory all secrets and access keys used by API and workers.
+- [x] Inventory all secrets and access keys used by API and workers.
 - [ ] Rotate secrets and update deployments.
-- [ ] Audit RLS policies for all ingestion-related tables.
+- [x] Audit RLS policies for all ingestion-related tables.
 - [ ] Add or update tests that validate cross-tenant isolation.
-- [ ] Identify sensitive fields in logs and DLQ payloads.
-- [ ] Implement log and DLQ redaction for sensitive fields.
-- [ ] Review and tighten CORS configuration.
+- [x] Identify sensitive fields in logs and DLQ payloads.
+- [x] Implement log and DLQ redaction for sensitive fields.
+- [x] Review and tighten CORS configuration.
 - [ ] Validate that changes do not break ingestion or UI flows.
 
 Deliverables:
@@ -862,6 +867,7 @@ Step completion check:
 
 Notes:
 - DLQ payloads now redact sensitive fields before persistence.
+- Added `.gitignore` rule for `TEST_RESULTS/` to prevent log/secrets from being committed.
 
 ---
 

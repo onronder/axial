@@ -154,6 +154,18 @@ embeddings_generated = Counter(
     'Total embeddings generated'
 )
 
+idempotency_hits = Counter(
+    'pipeline_idempotency_hits_total',
+    'Total idempotent reuses of existing documents',
+    ['source_type']
+)
+
+parser_rejections = Counter(
+    'pipeline_parser_rejections_total',
+    'Total parser rejections and skips',
+    ['reason', 'source_type']
+)
+
 # =============================================================================
 # Dead Letter Queue Metrics
 # =============================================================================

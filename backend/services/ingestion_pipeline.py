@@ -23,12 +23,21 @@ from services.parsers import DocumentProcessorFactory
 from services.embeddings import generate_embeddings_batch
 from core.db import get_supabase
 from datetime import datetime, timezone
+from core.hashing import compute_content_hash
 
 logger = logging.getLogger(__name__)
 
 # Constants
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 STAGING_BUCKET = "ephemeral-staging"
+
+
+def _sanitize_text(value: str) -> str:
+    if not value:
+        return value
+    if "\x00" in value:
+        return value.replace("\x00", "")
+    return value
 
 
 class IngestionPipeline:
@@ -236,9 +245,28 @@ class IngestionPipeline:
             # STEP 3: Parse & chunk
             self._update_file_status(file_status_id, "parsing", 25, "Extracting content (this may take 30-90s for PDFs)...")
             parse_start = time.time()
-            chunks = await self._parse_and_chunk(local_path, doc.filename)
+            result = await self._parse_and_chunk(local_path, doc.filename)
             parse_time = int(time.time() - parse_start)
-            
+
+            file_type = getattr(result, "file_type", None)
+            result_metadata = getattr(result, "metadata", None) or {}
+
+            if file_type == "unsupported":
+                reason = result_metadata.get("unsupported_reason")
+                message = "Unsupported file type"
+                if reason == "binary_content":
+                    message = "Unsupported binary file"
+                self._update_file_status(
+                    file_status_id,
+                    "skipped",
+                    100,
+                    message=f"{message} (completed in {parse_time}s)",
+                    chunks_total=0,
+                )
+                return {"status": "skipped", "reason": reason or "unsupported"}
+
+            chunks = result.chunks
+
             if not chunks:
                 self._update_file_status(file_status_id, "skipped", 100,
                     message=f"No content extracted (completed in {parse_time}s)", chunks_total=0)
@@ -256,7 +284,7 @@ class IngestionPipeline:
             self._update_file_status(file_status_id, "embedding", 50, 
                 f"Generating embeddings for {len(chunks)} chunks (est. {len(chunks)//100 * 2}s)...")
             embed_start = time.time()
-            embeddings = await self._generate_embeddings(chunks)
+            embeddings, chunk_texts = await self._generate_embeddings(chunks)
             embed_time = int(time.time() - embed_start)
             
             # Update: Embedding complete, starting indexing
@@ -278,7 +306,7 @@ class IngestionPipeline:
                 current_stage="indexing"
             )
             
-            doc_id = await self._store_document(doc, chunks, embeddings)
+            doc_id = await self._store_document(doc, chunks, embeddings, chunk_texts)
             
             # STEP 6: Success
             total_time = int(time.time() - start_time)
@@ -341,61 +369,78 @@ class IngestionPipeline:
                 tmp.write(doc.content.encode('utf-8'))
             return tmp.name
     
-    async def _parse_and_chunk(self, file_path: str, filename: str) -> list:
-        """Parse document and create chunks."""
-        result = DocumentProcessorFactory.process(
+    async def _parse_and_chunk(self, file_path: str, filename: str):
+        """Parse document and return processed result."""
+        return DocumentProcessorFactory.process(
             file_path=file_path,
             filename=filename
         )
-        return result.chunks
     
-    async def _generate_embeddings(self, chunks: list) -> list:
+    async def _generate_embeddings(self, chunks: list):
         """Generate embeddings for chunks with timeout protection."""
         from core.resilience import with_timeout, Timeouts
         
-        chunk_texts = [chunk.content for chunk in chunks]
+        chunk_texts = [_sanitize_text(chunk.content) for chunk in chunks]
+        token_counts = [chunk.token_count for chunk in chunks]
         
         # Generate embeddings with timeout
         embeddings = await with_timeout(
-            generate_embeddings_batch(chunk_texts),
+            generate_embeddings_batch(chunk_texts, token_counts=token_counts),
             Timeouts.EMBEDDING_BATCH * len(chunk_texts) / 100,  # Scale timeout by batch count
             f"Generating {len(chunk_texts)} embeddings"
         )
         
-        return embeddings
+        return embeddings, chunk_texts
     
-    async def _store_document(self, doc: SourceDocument, chunks, embeddings) -> str:
-        """Store document and chunks atomically using RPC."""
-        # Prepare chunks for RPC
+    async def _store_document(self, doc: SourceDocument, chunks, embeddings, chunk_texts) -> str:
+        """Store document and chunks using batched inserts (idempotent)."""
+        from worker.tasks import ingest_document_batched
+
+        source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
+
+        doc_metadata = {
+            **(doc.metadata or {}),
+            "source_id": doc.source_id,
+            "source_type": source_type,
+        }
+
         chunks_data = []
-        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        for i, (chunk, embedding, chunk_text) in enumerate(zip(chunks, embeddings, chunk_texts)):
+            if embedding is None:
+                continue
             chunks_data.append({
-                "content": chunk.content,
+                "content": chunk_text,
                 "embedding": embedding,
+                "chunk_index": i,
                 "metadata": {
                     **chunk.metadata,
                     "chunk_index": i,
-                    "source_id": doc.source_id,
-                    "source_type": doc.source_type.value
-                }
+                },
             })
-        
-        # Call RPC with parameters matching database function signature exactly
-        # Function: ingest_document_with_chunks(p_user_id, p_doc_title, p_source_type, p_source_url, p_metadata, p_chunks, p_file_size_bytes)
-        result = self.supabase.rpc("ingest_document_with_chunks", {
-            "p_user_id": self.user_id,
-            "p_doc_title": doc.filename,  # Database expects p_doc_title (not p_filename)
-            "p_source_type": doc.source_type.value,
-            "p_source_url": doc.metadata.get("source_url", ""),  # Required parameter
-            "p_metadata": doc.metadata,  # Database expects p_metadata (not p_source_metadata)
-            "p_chunks": chunks_data,
-            "p_file_size_bytes": doc.size_bytes
-        }).execute()
-        
-        if not result.data:
+
+        if isinstance(doc.content, bytes):
+            content_bytes = doc.content
+        else:
+            content_bytes = (doc.content or "").encode("utf-8")
+
+        content_hash = compute_content_hash(content_bytes) if content_bytes else None
+
+        doc_id = ingest_document_batched(
+            supabase=self.supabase,
+            user_id=self.user_id,
+            doc_title=doc.filename,
+            source_type=source_type,
+            metadata=doc_metadata,
+            chunks_payload=chunks_data,
+            file_size_bytes=doc.size_bytes,
+            source_url=doc_metadata.get("source_url", ""),
+            content_hash=content_hash,
+        )
+
+        if not doc_id:
             raise Exception("Failed to store document")
-        
-        return result.data[0]["document_id"]
+
+        return doc_id
     
     # Helper methods for status tracking
     def _update_job_status(self, status: str, progress: int, message: str = ""):
