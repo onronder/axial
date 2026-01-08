@@ -138,3 +138,58 @@ def cleanup_old_audit_logs():
     except Exception as e:
         logger.error(f"❌ [Cleanup] Failed to clean up audit logs: {e}")
         return {"error": str(e)}
+
+
+# ============================================================
+# RECONCILIATION TASKS
+# ============================================================
+
+@celery_app.task(name="worker.periodic_tasks.reconcile_ingestion_jobs")
+def reconcile_ingestion_jobs():
+    """
+    Reconcile ingestion jobs when Redis counters are missing or delayed.
+
+    Ensures jobs complete based on database file status counts.
+    """
+    try:
+        supabase = get_supabase()
+        jobs_res = supabase.table("ingestion_jobs").select("id,user_id,total_files,status").eq(
+            "status", "processing"
+        ).execute()
+
+        jobs = jobs_res.data or []
+        if not jobs:
+            return {"status": "ok", "jobs_checked": 0, "jobs_finalized": 0}
+
+        jobs_finalized = 0
+        for job in jobs:
+            job_id = job.get("id")
+            user_id = job.get("user_id")
+            total_files = job.get("total_files") or 0
+            if not job_id or total_files <= 0:
+                continue
+
+            status_res = supabase.table("ingestion_file_status").select("status").eq(
+                "job_id", job_id
+            ).execute()
+
+            counts = {"completed": 0, "failed": 0, "skipped": 0}
+            for row in status_res.data or []:
+                status = row.get("status")
+                if status in counts:
+                    counts[status] += 1
+
+            processed_total = counts["completed"] + counts["failed"] + counts["skipped"]
+            if processed_total >= total_files:
+                from worker.tasks import finalize_job_task
+                finalize_job_task.apply_async(kwargs={"user_id": user_id, "job_id": job_id})
+                jobs_finalized += 1
+
+        return {
+            "status": "ok",
+            "jobs_checked": len(jobs),
+            "jobs_finalized": jobs_finalized,
+        }
+    except Exception as e:
+        logger.error(f"❌ [Reconcile] Failed to reconcile jobs: {e}")
+        return {"error": str(e)}

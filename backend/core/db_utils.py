@@ -10,6 +10,13 @@ import time
 from typing import Any, Iterable, Tuple
 
 from core.resilience import SUPABASE_RETRY_CONFIG, RATE_LIMIT_STATUS_CODES, is_retryable_error
+try:
+    from core.metrics import retry_total, retry_success, retry_failure, operation_duration
+except Exception:
+    retry_total = None
+    retry_success = None
+    retry_failure = None
+    operation_duration = None
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +60,10 @@ def insert_rows_with_retry(
         try:
             result = supabase.table(table).insert(rows).execute()
             duration = time.perf_counter() - start
+            if operation_duration:
+                operation_duration.labels("supabase_insert").observe(duration)
+            if retry_success and attempt > 1:
+                retry_success.labels("supabase", f"insert:{table}").inc()
             logger.info(
                 "🧩 [DB] Inserted %s rows into %s in %.2fs (%s)",
                 len(rows),
@@ -65,6 +76,8 @@ def insert_rows_with_retry(
             duration = time.perf_counter() - start
             retryable = is_retryable_supabase_error(exc)
             status_code = _get_status_code(exc)
+            if retry_total and retryable:
+                retry_total.labels("supabase", f"insert:{table}").inc()
             logger.warning(
                 "⚠️ [DB] Insert attempt %s/%s failed for %s (%s). retryable=%s status=%s error=%s",
                 attempt,
@@ -76,6 +89,8 @@ def insert_rows_with_retry(
                 exc,
             )
             if attempt >= max_attempts or not retryable:
+                if retry_failure:
+                    retry_failure.labels("supabase", f"insert:{table}").inc()
                 raise
 
             backoff = min(max_wait, min_wait * (2 ** (attempt - 1)))
@@ -106,6 +121,10 @@ def delete_rows_with_retry(
         try:
             result = supabase.table(table).delete().eq(filter_column, filter_value).execute()
             duration = time.perf_counter() - start
+            if operation_duration:
+                operation_duration.labels("supabase_delete").observe(duration)
+            if retry_success and attempt > 1:
+                retry_success.labels("supabase", f"delete:{table}").inc()
             logger.info(
                 "🧹 [DB] Deleted rows from %s where %s=%s in %.2fs (%s)",
                 table,
@@ -119,6 +138,8 @@ def delete_rows_with_retry(
             duration = time.perf_counter() - start
             retryable = is_retryable_supabase_error(exc)
             status_code = _get_status_code(exc)
+            if retry_total and retryable:
+                retry_total.labels("supabase", f"delete:{table}").inc()
             logger.warning(
                 "⚠️ [DB] Delete attempt %s/%s failed for %s (%s). retryable=%s status=%s error=%s",
                 attempt,
@@ -130,6 +151,8 @@ def delete_rows_with_retry(
                 exc,
             )
             if attempt >= max_attempts or not retryable:
+                if retry_failure:
+                    retry_failure.labels("supabase", f"delete:{table}").inc()
                 raise
 
             backoff = min(max_wait, min_wait * (2 ** (attempt - 1)))

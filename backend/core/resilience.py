@@ -263,6 +263,12 @@ def with_google_retry(max_attempts: int = 3):
                 status = exception.resp.status
                 # Retry on rate limit and server errors
                 if status in {403, 429, 500, 502, 503, 504}:
+                    if status in {403, 429}:
+                        try:
+                            from core.metrics import retry_total
+                            retry_total.labels("google_drive", "rate_limit").inc()
+                        except Exception:
+                            pass
                     logger.warning(f"🔄 Google API error {status}, will retry: {exception}")
                     return True
         except ImportError:

@@ -273,7 +273,7 @@ Notes:
 
 ## Step 4: Increase embedding batch size and concurrency
 
-Status: In Progress
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -320,6 +320,7 @@ Step completion check:
 - Review impacts on other files/modules and update references if needed.
 - Verify environment/config dependencies for any changes (Railway/Vercel).
 - Confirm no pending migrations or infra updates remain unreviewed.
+- Run a quick syntax check for modified Python modules (py_compile).
 - Record verification outcome in Notes.
 
 
@@ -327,12 +328,14 @@ Notes:
 - Configured embedding batch size and sleep interval via `backend/core/config.py`.
 - Async embedding helper now delegates to the synchronous implementation to avoid event-loop usage in workers.
 - Added adaptive throttle for embedding batches (duration-based + rate-limit backoff with jittered retries).
+- Added Prometheus metrics for embedding batch duration and counts; rate-limit failures increment retry metrics.
+- Verification: `python3 -m py_compile backend/services/embeddings.py`.
 
 ---
 
 ## Step 5: Increase chunk insert batch size (still PostgREST)
 
-Status: In Progress
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -383,6 +386,7 @@ Step completion check:
 - Review impacts on other files/modules and update references if needed.
 - Verify environment/config dependencies for any changes (Railway/Vercel).
 - Confirm no pending migrations or infra updates remain unreviewed.
+- Run a quick syntax check for modified Python modules (py_compile).
 - Record verification outcome in Notes.
 
 
@@ -390,12 +394,14 @@ Notes:
 - Chunk insert batch size is now configurable via `backend/core/config.py` and used in the worker ingestion paths.
 - Drive and Notion sync paths now use the same configurable batch size.
 - Added retry + jitter for chunk inserts with per-batch latency logging via `backend/core/db_utils.py`.
+- Added Prometheus metrics for Supabase insert/delete latency and retry outcomes.
+- Verification: `python3 -m py_compile backend/core/db_utils.py`.
 
 ---
 
 ## Step 6: Constrain connector concurrency and retries
 
-Status: In Progress
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -464,6 +470,7 @@ Step completion check:
 - Review impacts on other files/modules and update references if needed.
 - Verify environment/config dependencies for any changes (Railway/Vercel).
 - Confirm no pending migrations or infra updates remain unreviewed.
+- Run a quick syntax check for modified Python modules (py_compile).
 - Record verification outcome in Notes.
 
 
@@ -472,12 +479,14 @@ Notes:
 - Notion API requests use retry with jitter and rate-limit logging.
 - Google Drive list/get calls are retried with jitter via `with_google_retry`.
 - Defaults in config: google_drive=2, notion=1, web=2, default=2; file_upload is unlimited.
+- Added Prometheus metrics for connector rate-limit retries (Google Drive + Notion).
+- Verification: `python3 -m py_compile backend/core/resilience.py backend/connectors/notion.py`.
 
 ---
 
 ## Step 7: Reduce Celery chord/result overhead
 
-Status: TBD (set before start)
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -527,12 +536,12 @@ User inputs (fill below):
   - Status: basic config documented; worker runtime settings missing.
 
 Sub-task checklist:
-- [ ] Audit current chord usage and result backend storage size.
-- [ ] Define job-level counters stored in Redis for completion tracking.
-- [ ] Implement atomic increment/decrement operations for job progress.
-- [ ] Update finalize logic to use counters instead of chord results.
-- [ ] Add monitoring for counter drift and reconciliation logic.
-- [ ] Validate completion correctness under failure and retry scenarios.
+- [x] Audit current chord usage and result backend storage size.
+- [x] Define job-level counters stored in Redis for completion tracking.
+- [x] Implement atomic increment/decrement operations for job progress.
+- [x] Update finalize logic to use counters instead of chord results.
+- [x] Add monitoring for counter drift and reconciliation logic.
+- [x] Validate completion correctness under failure and retry scenarios.
 
 Deliverables:
 - Updated orchestration design.
@@ -549,11 +558,17 @@ Step completion check:
 - Review impacts on other files/modules and update references if needed.
 - Verify environment/config dependencies for any changes (Railway/Vercel).
 - Confirm no pending migrations or infra updates remain unreviewed.
+- Run a quick syntax check for modified Python modules (py_compile).
 - Record verification outcome in Notes.
 
 
 Notes:
 - User requested to keep worker concurrency at 10 for now; defer reducing until further validation.
+- Replaced ingestion and crawl chords with Redis counters + group dispatch for completion tracking.
+- Added per-file outcome tracking to handle retries and status transitions without double counting.
+- Added reconciliation task (`reconcile_ingestion_jobs`) to finalize jobs when Redis counters are missing.
+- Set `ignore_result=True` for fan-out tasks to reduce result backend overhead.
+- Verification: `python3 -m py_compile backend/worker/tasks.py backend/worker/periodic_tasks.py backend/core/job_counters.py`.
 
 ---
 

@@ -112,6 +112,28 @@ task_duration = Histogram(
 )
 
 # =============================================================================
+# Job Counter Metrics
+# =============================================================================
+
+job_counters_missing = Counter(
+    'job_counters_missing_total',
+    'Redis job counters missing or unavailable',
+    ['job_type']
+)
+
+job_counters_reconciled = Counter(
+    'job_counters_reconciled_total',
+    'Job counters reconciled using database counts',
+    ['job_type']
+)
+
+job_counters_finalize = Counter(
+    'job_counters_finalize_total',
+    'Job finalizations triggered',
+    ['job_type', 'source']
+)
+
+# =============================================================================
 # Document Processing Metrics
 # =============================================================================
 

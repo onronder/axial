@@ -11,6 +11,12 @@ from typing import List, Optional
 from langchain_openai import OpenAIEmbeddings
 from core.config import settings
 from core.resilience import with_retry_sync
+try:
+    from core.metrics import embeddings_generated, operation_duration, retry_failure
+except Exception:
+    embeddings_generated = None
+    operation_duration = None
+    retry_failure = None
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +178,8 @@ def generate_embeddings_batch_sync(texts: List[str]) -> List[Optional[List[float
             if is_rate_limit_error(exc):
                 rate_limit_hits += 1
                 _EMBEDDING_THROTTLE.record_rate_limit()
+            if retry_failure:
+                retry_failure.labels("openai", "embedding_batch").inc()
             logger.error(
                 f"📊 [Embeddings] Batch {batch_idx + 1}/{len(batches)} failed: {exc}"
             )
@@ -183,6 +191,10 @@ def generate_embeddings_batch_sync(texts: List[str]) -> List[Optional[List[float
 
         all_embeddings.extend(embeddings)
         rate = len(batch_texts) / batch_duration if batch_duration > 0 else 0.0
+        if operation_duration:
+            operation_duration.labels("embedding_batch").observe(batch_duration)
+        if embeddings_generated:
+            embeddings_generated.inc(len(batch_texts))
         logger.info(
             "📊 [Embeddings] Batch %s/%s: %s texts in %.2fs (%.1f/sec)",
             batch_idx + 1,

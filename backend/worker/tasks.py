@@ -19,11 +19,33 @@ from core.db_utils import insert_rows_with_retry, delete_rows_with_retry
 from core.config import settings
 from core.security import decrypt_token
 from core.hashing import compute_content_hash
+from core.job_counters import (
+    init_ingest_job_counters,
+    record_ingest_outcome,
+    get_ingest_job_counters,
+    mark_ingest_job_finalizing,
+    clear_ingest_job_counters,
+    init_crawl_counters,
+    record_crawl_outcome,
+    get_crawl_counters,
+    mark_crawl_finalizing,
+    clear_crawl_counters,
+)
 from services.parsers import DocumentProcessorFactory
 from services.email import email_service
 from connectors import get_connector
 from connectors.limits import connector_fetch_limit
 from services.embeddings import generate_embeddings_batch_sync
+try:
+    from core.metrics import (
+        job_counters_missing,
+        job_counters_reconciled,
+        job_counters_finalize,
+    )
+except Exception:
+    job_counters_missing = None
+    job_counters_reconciled = None
+    job_counters_finalize = None
 
 logger = logging.getLogger(__name__)
 logger.info("✅ Worker tasks module loaded - Cache buster 001")
@@ -133,6 +155,142 @@ def update_job_progress(supabase, job_id: str, progress: int, message: str = Non
         supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
     except Exception as e:
         logger.warning(f"⚠️ [Job:{job_id}] Failed to update progress: {e}")
+
+
+def _should_emit_job_progress_update(job_id: str, processed: int, total: int) -> bool:
+    if total <= 0 or processed <= 0:
+        return False
+    if processed >= total:
+        return True
+    batch_size = max(1, settings.REDIS_JOB_PROGRESS_UPDATE_BATCH)
+    if processed == 1 or processed % batch_size == 0:
+        return True
+    try:
+        import redis
+        client = redis.from_url(settings.REDIS_URL)
+        throttle_key = f"ingest_job:progress:{job_id}"
+        return bool(
+            client.set(
+                throttle_key,
+                "1",
+                nx=True,
+                ex=settings.REDIS_JOB_PROGRESS_UPDATE_INTERVAL,
+            )
+        )
+    except Exception:
+        return False
+
+
+def _update_job_progress_from_counters(supabase, job_id: str, counters: Dict[str, int]) -> None:
+    if not counters:
+        return
+    total = counters.get("total", 0)
+    processed = counters.get("processed", 0)
+    failed = counters.get("failed", 0)
+    skipped = counters.get("skipped", 0)
+
+    if total <= 0 or processed <= 0:
+        return
+    if not _should_emit_job_progress_update(job_id, processed, total):
+        return
+
+    progress = min(99, int((processed / total) * 100)) if processed < total else 100
+    message = f"Processed {processed}/{total} files"
+    if skipped:
+        message += f", {skipped} skipped"
+    if failed:
+        message += f", {failed} failed"
+
+    update_job_status(
+        supabase,
+        job_id,
+        "processing",
+        processed_files=processed,
+        failed_files=failed,
+        progress=progress,
+        message=message,
+    )
+
+
+def _get_ingestion_counts_from_db(supabase, job_id: str) -> Dict[str, int]:
+    counts = {"success": 0, "failed": 0, "skipped": 0}
+    try:
+        result = supabase.table("ingestion_file_status").select("status").eq("job_id", job_id).execute()
+        for row in result.data or []:
+            status = row.get("status")
+            if status == "completed":
+                counts["success"] += 1
+            elif status == "failed":
+                counts["failed"] += 1
+            elif status == "skipped":
+                counts["skipped"] += 1
+    except Exception as e:
+        logger.warning(f"⚠️ [Job:{job_id}] Failed to load file status counts: {e}")
+
+    counts["processed"] = counts["success"] + counts["failed"] + counts["skipped"]
+    return counts
+
+
+def _record_ingest_outcome_and_maybe_finalize(
+    supabase,
+    user_id: str,
+    job_id: str,
+    file_status_id: str,
+    outcome: str,
+) -> None:
+    if not job_id or not file_status_id:
+        return
+
+    counters = record_ingest_outcome(job_id, file_status_id, outcome)
+    if not counters:
+        if job_counters_missing:
+            job_counters_missing.labels("ingest").inc()
+        return
+
+    _update_job_progress_from_counters(supabase, job_id, counters)
+
+    total = counters.get("total", 0)
+    processed = counters.get("processed", 0)
+    if total <= 0:
+        try:
+            job_res = supabase.table("ingestion_jobs").select("total_files").eq("id", job_id).single().execute()
+            total = job_res.data.get("total_files") if job_res.data else 0
+        except Exception:
+            total = 0
+    if total > 0 and processed >= total:
+        if mark_ingest_job_finalizing(job_id):
+            finalize_job_task.apply_async(kwargs={"user_id": user_id, "job_id": job_id})
+
+
+def _record_crawl_outcome_and_maybe_finalize(
+    supabase,
+    user_id: str,
+    crawl_id: Optional[str],
+    url: str,
+    outcome: str,
+) -> None:
+    if not crawl_id:
+        return
+
+    counters = record_crawl_outcome(crawl_id, url, outcome)
+    if not counters:
+        if job_counters_missing:
+            job_counters_missing.labels("crawl").inc()
+        return
+
+    total = counters.get("total", 0)
+    processed = counters.get("processed", 0)
+    if total <= 0:
+        try:
+            config_res = supabase.table("web_crawl_configs").select("total_pages_found").eq(
+                "id", crawl_id
+            ).single().execute()
+            total = config_res.data.get("total_pages_found") if config_res.data else 0
+        except Exception:
+            total = 0
+    if total > 0 and processed >= total:
+        if mark_crawl_finalizing(crawl_id):
+            finalize_crawl_task.apply_async(kwargs={"user_id": user_id, "crawl_id": crawl_id})
 
 
 def ingest_document_batched(
@@ -859,7 +1017,7 @@ def unified_ingest_task(
     1. Fetch all files from connector
     2. Create file status records
     3. Dispatch parallel process_file_task for each file
-    4. chord callback aggregates results
+    4. Redis counters trigger finalize when all files complete
     
     Args:
         user_id: User ID
@@ -870,7 +1028,7 @@ def unified_ingest_task(
     """
     import asyncio
     import base64
-    from celery import chord, group
+    from celery import group
     
     task_id = self.request.id
     logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}")
@@ -1008,22 +1166,20 @@ def unified_ingest_task(
             "status_message": f"Processing {total_files} files in parallel..."
         }).eq("id", job_id).execute()
         
-        # STEP 3: Dispatch all tasks in parallel using chord
-        # chord = group of tasks + callback when all complete
-        job = chord(
-            group(file_tasks),
-            finalize_job_task.s(user_id=user_id, job_id=job_id, total_files=total_files)
-        )
+        counters_ready = init_ingest_job_counters(job_id, total_files)
+        if not counters_ready:
+            logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Redis counters unavailable; relying on reconciliation")
         
-        result = job.apply_async()
+        # STEP 3: Dispatch all tasks in parallel using a group
+        result = group(file_tasks).apply_async()
         
-        logger.info(f"[UnifiedIngest:{task_id}] ✅ Dispatched chord with {total_files} tasks, chord_id: {result.id}")
+        logger.info(f"[UnifiedIngest:{task_id}] ✅ Dispatched group with {total_files} tasks, group_id: {result.id}")
         
         return {
             "status": "dispatched",
             "job_id": job_id,
             "total_files": total_files,
-            "chord_id": result.id
+            "group_id": result.id
         }
         
     except Exception as e:
@@ -1062,7 +1218,8 @@ def unified_ingest_task(
     max_retries=2,
     acks_late=True,
     soft_time_limit=600,  # 10 min per file
-    time_limit=660  # Hard kill at 11 min
+    time_limit=660,  # Hard kill at 11 min
+    ignore_result=True
 )
 def process_file_task(
     self,
@@ -1124,6 +1281,13 @@ def process_file_task(
                 message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
                 error="File too large",
             )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "failed",
+            )
             return {"status": "failed", "filename": filename, "error": "File too large"}
 
         content_hash = compute_content_hash(content)
@@ -1159,6 +1323,13 @@ def process_file_task(
                 message=f"Parsing exceeded {parse_timeout}s (took {int(parse_elapsed)}s)",
                 error="Parsing timeout",
             )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "failed",
+            )
             return {"status": "failed", "filename": filename, "error": "Parsing timeout"}
         chunks = result.chunks
         
@@ -1174,6 +1345,13 @@ def process_file_task(
                 message=skip_message,
                 chunks_total=0,
                 chunks_processed=0
+            )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "skipped",
             )
             return {"status": "skipped", "filename": filename, "reason": "empty"}
         
@@ -1290,6 +1468,13 @@ def process_file_task(
                 message="No embeddings generated",
                 error="No embeddings generated"
             )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "failed",
+            )
             return {"status": "failed", "filename": filename, "error": "No embeddings generated"}
         
         # STEP 5: Success
@@ -1303,6 +1488,14 @@ def process_file_task(
             chunks_total=len(chunks),
             chunks_processed=inserted_chunks,
             document_id=doc_id
+        )
+        
+        _record_ingest_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            job_id,
+            file_status_id,
+            "success",
         )
         
         logger.info(f"[ProcessFile:{task_id}] ✅ {filename}: {inserted_chunks} chunks in {total_time}s")
@@ -1325,6 +1518,14 @@ def process_file_task(
             progress=0,
             message=str(e)[:500],
             error=str(e)[:1000]
+        )
+        
+        _record_ingest_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            job_id,
+            file_status_id,
+            "failed",
         )
         
         return {
@@ -1353,41 +1554,68 @@ def process_file_task(
 
 @celery_app.task(
     bind=True,
-    name="finalize_job_task"
+    name="finalize_job_task",
+    ignore_result=True
 )
-def finalize_job_task(self, results: list, user_id: str, job_id: str, total_files: int):
+def finalize_job_task(self, user_id: str, job_id: str):
     """
-    Callback task that runs after all file processing tasks complete.
-    
-    Aggregates results and updates job status.
-    
-    Args:
-        results: List of results from all process_file_task calls
-        user_id: User ID
-        job_id: Job ID
-        total_files: Total number of files submitted
+    Finalize an ingestion job based on Redis counters or DB reconciliation.
     """
     task_id = self.request.id
-    logger.info(f"[FinalizeJob:{task_id}] Aggregating results for job {job_id}")
-    
+    logger.info(f"[FinalizeJob:{task_id}] Finalizing job {job_id}")
+
     supabase = get_supabase()
-    
-    # Count successes and failures
-    successful = [r for r in results if r and r.get("status") == "success"]
-    failed = [r for r in results if r and r.get("status") == "failed"]
-    skipped = [r for r in results if r and r.get("status") == "skipped"]
 
-    successful_count = len(successful)
-    failed_count = len(failed)
-    skipped_count = len(skipped)
-    processed_count = successful_count + skipped_count
+    job_res = supabase.table("ingestion_jobs").select("status,total_files").eq("id", job_id).single().execute()
+    if not job_res.data:
+        logger.warning(f"[FinalizeJob:{task_id}] Job {job_id} not found")
+        return
 
-    total_chunks = sum(r.get("chunks", 0) for r in successful)
+    current_status = job_res.data.get("status")
+    if current_status in {"completed", "failed", "cancelled"}:
+        logger.info(f"[FinalizeJob:{task_id}] Job {job_id} already {current_status}")
+        return
 
-    # Determine final status
+    total_files = job_res.data.get("total_files") or 0
+    counters = get_ingest_job_counters(job_id)
+    counts_source = "redis"
+
+    if counters:
+        counts = counters
+        if not total_files:
+            total_files = counters.get("total", 0)
+
+        db_counts = _get_ingestion_counts_from_db(supabase, job_id)
+        if db_counts.get("processed", 0) and db_counts["processed"] != counters.get("processed", 0):
+            counts = db_counts
+            counts_source = "db"
+            if job_counters_reconciled:
+                job_counters_reconciled.labels("ingest").inc()
+    else:
+        if job_counters_missing:
+            job_counters_missing.labels("ingest").inc()
+        counts = _get_ingestion_counts_from_db(supabase, job_id)
+        counts_source = "db"
+        if job_counters_reconciled:
+            job_counters_reconciled.labels("ingest").inc()
+
+    success_count = counts.get("success", 0)
+    failed_count = counts.get("failed", 0)
+    skipped_count = counts.get("skipped", 0)
+    processed_total = success_count + failed_count + skipped_count
+
+    if total_files <= 0:
+        total_files = processed_total
+
+    if total_files > 0 and processed_total < total_files:
+        logger.info(
+            f"[FinalizeJob:{task_id}] Job {job_id} not complete ({processed_total}/{total_files})"
+        )
+        return
+
     if failed_count == 0:
         final_status = "completed"
-    elif processed_count > 0:
+    elif (success_count + skipped_count) > 0:
         final_status = "completed"
     else:
         final_status = "failed"
@@ -1395,56 +1623,47 @@ def finalize_job_task(self, results: list, user_id: str, job_id: str, total_file
     if final_status == "failed":
         status_msg = f"All {failed_count} files failed"
     else:
-        status_parts = [f"Processed {processed_count}/{total_files} files"]
+        status_parts = [f"Processed {processed_total}/{total_files} files"]
         if skipped_count:
             status_parts.append(f"{skipped_count} skipped")
         if failed_count:
             status_parts.append(f"{failed_count} failed")
-        if total_chunks:
-            status_parts.append(f"{total_chunks} chunks")
         status_msg = ", ".join(status_parts)
 
-    # Update job status
     supabase.table("ingestion_jobs").update({
         "status": final_status,
         "progress": 100,
         "message": status_msg,
         "status_message": status_msg,
-        "processed_files": processed_count,
+        "processed_files": processed_total,
         "failed_files": failed_count,
         "total_files": total_files,
         "error_message": status_msg if final_status == "failed" else None,
     }).eq("id", job_id).execute()
 
-    # Create completion notification
-    if final_status == "failed":
-        notification_type = "error"
-    elif failed_count > 0:
-        notification_type = "warning"
-    else:
-        notification_type = "success"
+    if job_counters_finalize:
+        job_counters_finalize.labels("ingest", counts_source).inc()
+
+    clear_ingest_job_counters(job_id)
+
+    notification_type = "error" if final_status == "failed" else "warning" if failed_count > 0 else "success"
     create_notification(
         supabase, user_id,
         "Ingestion Complete" if final_status != "failed" else "Ingestion Failed",
         status_msg,
         notification_type,
-        {"job_id": job_id, "successful": successful_count, "failed": failed_count, "skipped": skipped_count}
+        {
+            "job_id": job_id,
+            "successful": success_count,
+            "failed": failed_count,
+            "skipped": skipped_count,
+        }
     )
-    
-    # Send email if configured
-    if len(successful) > 0:
-        send_email_notification(supabase, user_id, len(successful))
-    
+
+    if success_count > 0:
+        send_email_notification(supabase, user_id, success_count)
+
     logger.info(f"[FinalizeJob:{task_id}] ✅ Job {job_id}: {status_msg}")
-    
-    return {
-        "job_id": job_id,
-        "status": final_status,
-        "successful": len(successful),
-        "failed": len(failed),
-        "skipped": len(skipped),
-        "total_chunks": total_chunks
-    }
 
 
 # ============================================================
@@ -1503,9 +1722,9 @@ def crawl_discovery_task(
     Master task for distributed web crawling.
     
     Discovers URLs (via sitemap or recursive) and dispatches
-    individual page processing tasks using a Celery chord.
+    individual page processing tasks using Redis counters + group.
     """
-    from celery import chord, group
+    from celery import group
     from collections import deque
     import time
     import random
@@ -1651,6 +1870,11 @@ def crawl_discovery_task(
             update_crawl_status(supabase, crawl_id, status="processing", total_pages=len(urls_to_process))
         
         # ===== DISPATCH PHASE: Parallel processing =====
+        if crawl_id:
+            counters_ready = init_crawl_counters(crawl_id, len(urls_to_process))
+            if not counters_ready:
+                logger.warning(f"🕸️ [Discovery:{task_id}] ⚠️ Redis counters unavailable; relying on reconciliation")
+
         page_tasks = group(
             process_page_task.s(
                 user_id=user_id,
@@ -1660,11 +1884,7 @@ def crawl_discovery_task(
             ) for url in urls_to_process
         )
         
-        job = chord(
-            page_tasks,
-            finalize_crawl_task.s(user_id=user_id, crawl_id=crawl_id, root_url=root_url)
-        )
-        result = job.apply_async()
+        result = page_tasks.apply_async()
         
         logger.info(f"🚀 [Discovery:{task_id}] Dispatched {len(urls_to_process)} page tasks")
         
@@ -1672,7 +1892,7 @@ def crawl_discovery_task(
             "status": "dispatched",
             "crawl_id": crawl_id,
             "total_pages": len(urls_to_process),
-            "chord_id": str(result.id)
+            "group_id": str(result.id)
         }
         
     except Exception as e:
@@ -1701,7 +1921,8 @@ def crawl_discovery_task(
     autoretry_for=(ConnectionError, TimeoutError),
     retry_backoff=True,
     max_retries=3,
-    rate_limit="10/s"
+    rate_limit="10/s",
+    ignore_result=True
 )
 def process_page_task(
     self,
@@ -1736,6 +1957,13 @@ def process_page_task(
                     "p_crawl_id": crawl_id,
                     "p_field": "pages_failed"
                 }).execute()
+            _record_crawl_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                crawl_id,
+                url,
+                "failed",
+            )
             return {"status": "failed", "url": url, "error": "unsafe_url"}
         
         # Rate limiting - wait if needed
@@ -1762,6 +1990,13 @@ def process_page_task(
                     "p_crawl_id": crawl_id,
                     "p_field": "pages_failed"
                 }).execute()
+            _record_crawl_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                crawl_id,
+                url,
+                "skipped",
+            )
             return {"status": "skipped", "url": url}
         
         doc = docs[0]
@@ -1780,6 +2015,13 @@ def process_page_task(
                     "p_crawl_id": crawl_id,
                     "p_field": "pages_failed"
                 }).execute()
+            _record_crawl_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                crawl_id,
+                url,
+                "skipped",
+            )
             return {"status": "skipped", "url": url}
         
         # Embed
@@ -1814,6 +2056,13 @@ def process_page_task(
                     "p_crawl_id": crawl_id,
                     "p_field": "pages_failed"
                 }).execute()
+            _record_crawl_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                crawl_id,
+                url,
+                "failed",
+            )
             return {"status": "failed", "url": url, "error": "no_embeddings"}
         
         # Document metadata
@@ -1848,6 +2097,14 @@ def process_page_task(
             except Exception:
                 pass
         
+        _record_crawl_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            crawl_id,
+            url,
+            "success",
+        )
+        
         return {"status": "success", "url": url}
         
     except Exception as e:
@@ -1862,29 +2119,82 @@ def process_page_task(
             except Exception:
                 pass
         
+        _record_crawl_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            crawl_id,
+            url,
+            "failed",
+        )
+        
         send_failure_email_notification(supabase, user_id, url, str(e))
         
         raise
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, ignore_result=True)
 def finalize_crawl_task(
     self,
-    results: List[Dict[str, Any]],
     user_id: str,
-    crawl_id: str,
-    root_url: str
+    crawl_id: str
 ):
     """Finalize crawl after all page tasks complete."""
     task_id = self.request.id
     supabase = get_supabase()
-    
-    success_count = sum(1 for r in results if r.get("status") == "success")
-    failed_count = sum(1 for r in results if r.get("status") == "failed")
-    skipped_count = sum(1 for r in results if r.get("status") == "skipped")
-    
-    logger.info(f"✅ [FinalizeCrawl:{task_id}] Crawl done: {success_count} success, {failed_count} failed, {skipped_count} skipped")
-    
+
+    config_res = supabase.table("web_crawl_configs").select(
+        "status,root_url,total_pages_found,pages_ingested,pages_failed"
+    ).eq("id", crawl_id).single().execute()
+    if not config_res.data:
+        logger.warning(f"[FinalizeCrawl:{task_id}] Crawl {crawl_id} not found")
+        return
+
+    config = config_res.data
+    current_status = config.get("status")
+    if current_status in {"completed", "failed", "cancelled"}:
+        logger.info(f"[FinalizeCrawl:{task_id}] Crawl {crawl_id} already {current_status}")
+        return
+
+    total_pages = config.get("total_pages_found") or 0
+    counters = get_crawl_counters(crawl_id)
+    counts_source = "redis"
+
+    if counters:
+        success_count = counters.get("success", 0)
+        failed_count = counters.get("failed", 0)
+        skipped_count = counters.get("skipped", 0)
+        if not total_pages:
+            total_pages = counters.get("total", 0)
+
+        db_success = config.get("pages_ingested") or 0
+        db_failed = config.get("pages_failed") or 0
+        if (db_success + db_failed) and (db_success != success_count or db_failed != failed_count):
+            success_count = db_success
+            failed_count = db_failed
+            counts_source = "db"
+            if job_counters_reconciled:
+                job_counters_reconciled.labels("crawl").inc()
+    else:
+        if job_counters_missing:
+            job_counters_missing.labels("crawl").inc()
+        success_count = config.get("pages_ingested") or 0
+        failed_count = config.get("pages_failed") or 0
+        skipped_count = 0
+        counts_source = "db"
+        if job_counters_reconciled:
+            job_counters_reconciled.labels("crawl").inc()
+
+    processed_total = success_count + failed_count + skipped_count
+    if total_pages > 0 and processed_total < total_pages:
+        logger.info(
+            f"[FinalizeCrawl:{task_id}] Crawl {crawl_id} not complete ({processed_total}/{total_pages})"
+        )
+        return
+
+    logger.info(
+        f"✅ [FinalizeCrawl:{task_id}] Crawl done: {success_count} success, {failed_count} failed, {skipped_count} skipped"
+    )
+
     final_status = "completed" if success_count > 0 or skipped_count > 0 else "failed"
     update_crawl_status(
         supabase,
@@ -1893,7 +2203,13 @@ def finalize_crawl_task(
         pages_ingested=success_count,
         pages_failed=failed_count
     )
-    
+
+    if job_counters_finalize:
+        job_counters_finalize.labels("crawl", counts_source).inc()
+
+    clear_crawl_counters(crawl_id)
+
+    root_url = config.get("root_url") or "website"
     create_notification(
         supabase, user_id,
         "Web Crawl Complete" if final_status == "completed" else "Web Crawl Failed",
@@ -1901,13 +2217,6 @@ def finalize_crawl_task(
         "success" if final_status == "completed" else "error",
         {"crawl_id": crawl_id, "pages_ingested": success_count, "pages_failed": failed_count}
     )
-    
-    return {
-        "status": final_status,
-        "pages_ingested": success_count,
-        "pages_failed": failed_count,
-        "pages_skipped": skipped_count
-    }
 
 
 # Legacy alias (backward compatibility)

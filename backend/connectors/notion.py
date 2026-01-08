@@ -106,6 +106,12 @@ class NotionConnector(BaseConnector):
 
         if response.status_code in RATE_LIMIT_STATUS_CODES:
             logger.warning(f"⚠️ [Notion] Rate limit response {response.status_code} for {endpoint}")
+            if response.status_code == 429:
+                try:
+                    from core.metrics import retry_total
+                    retry_total.labels("notion", "rate_limit").inc()
+                except Exception:
+                    pass
 
         response.raise_for_status()
         return response.json()

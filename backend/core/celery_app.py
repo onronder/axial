@@ -106,6 +106,11 @@ celery_app.conf.update(
             "task": "worker.dlq_worker.retry_failed_tasks",
             "schedule": 300.0,  # Every 5 minutes
         },
+        # Reconcile ingestion jobs in case counters are missing/delayed
+        "reconcile-ingestion-jobs": {
+            "task": "worker.periodic_tasks.reconcile_ingestion_jobs",
+            "schedule": 300.0,  # Every 5 minutes
+        },
         # Update memory metrics every minute
         "update-memory-metrics": {
             "task": "worker.periodic_tasks.update_memory_metrics",

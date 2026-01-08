@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_JOB_COUNTER_TTL_SECONDS: int = 86400  # 24 hours
+    REDIS_JOB_FINALIZE_TTL_SECONDS: int = 3600  # 1 hour
+    REDIS_JOB_PROGRESS_UPDATE_BATCH: int = 10
+    REDIS_JOB_PROGRESS_UPDATE_INTERVAL: int = 30
     
     # Email
     RESEND_API_KEY: Optional[str] = None

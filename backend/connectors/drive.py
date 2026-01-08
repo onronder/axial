@@ -582,10 +582,10 @@ class DriveConnector(BaseConnector):
                             update_file_status(
                                 supabase,
                                 file_status_id,
-                                status=\"failed\",
+                                status="failed",
                                 progress=0,
-                                message=f\"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit\",
-                                error=\"File too large\",
+                                message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
+                                error="File too large",
                             )
                         continue
 
