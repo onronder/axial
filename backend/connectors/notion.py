@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
-from core.db_utils import insert_rows_with_retry
+from core.db_utils import delete_rows_with_retry, insert_rows_with_retry
+from core.hashing import compute_content_hash
 from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync
 import requests
 from starlette.concurrency import run_in_threadpool
@@ -469,26 +470,61 @@ class NotionConnector(BaseConnector):
                             status="parsing", progress=20, message="Extracting content...")
                     
                     # Insert Parent Document
+                    content_bytes = doc.page_content.encode("utf-8", errors="ignore")
+                    if len(content_bytes) > settings.MAX_FILE_SIZE:
+                        if file_status_id:
+                            update_file_status(
+                                supabase,
+                                file_status_id,
+                                status="failed",
+                                progress=0,
+                                message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
+                                error="File too large",
+                            )
+                        continue
+                    content_hash = compute_content_hash(content_bytes)
                     parent_doc_data = {
                         "user_id": user_id,
                         "title": doc_title,
                         "source_type": "notion",
                         "source_url": doc.metadata.get("source_url"),
+                        "file_size_bytes": len(content_bytes),
+                        "content_hash": content_hash,
                         "metadata": {
                             "page_id": doc.metadata.get("page_id"),
                             "source": "notion"
                         },
                         "created_at": datetime.now(timezone.utc).isoformat()
                     }
-                    
-                    doc_res = supabase.table("documents").insert(parent_doc_data).execute()
-                    if not doc_res.data:
-                        if file_status_id:
-                            update_file_status(supabase, file_status_id,
-                                status="failed", progress=0, error="Failed to create document")
-                        continue
-                    
-                    parent_doc_id = doc_res.data[0]['id']
+
+                    existing_doc_id = None
+                    if content_hash:
+                        existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
+                            "title", doc_title
+                        ).eq("content_hash", content_hash).limit(1).execute()
+                        if existing.data:
+                            existing_doc_id = existing.data[0]["id"]
+
+                    if existing_doc_id:
+                        delete_rows_with_retry(
+                            supabase,
+                            "document_chunks",
+                            "document_id",
+                            existing_doc_id,
+                            context=f"notion_sync replace doc_id={existing_doc_id}",
+                        )
+                        update_data = {**parent_doc_data, "updated_at": datetime.now(timezone.utc).isoformat()}
+                        update_data.pop("created_at", None)
+                        supabase.table("documents").update(update_data).eq("id", existing_doc_id).execute()
+                        parent_doc_id = existing_doc_id
+                    else:
+                        doc_res = supabase.table("documents").insert(parent_doc_data).execute()
+                        if not doc_res.data:
+                            if file_status_id:
+                                update_file_status(supabase, file_status_id,
+                                    status="failed", progress=0, error="Failed to create document")
+                            continue
+                        parent_doc_id = doc_res.data[0]['id']
                     
                     # Chunk
                     chunks = text_splitter.split_text(doc.page_content)

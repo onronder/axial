@@ -8,14 +8,17 @@ These run in a separate worker process to avoid blocking the FastAPI server.
 import logging
 import json
 import base64
+import os
+import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from core.celery_app import celery_app
 from core.db import get_supabase
-from core.db_utils import insert_rows_with_retry
+from core.db_utils import insert_rows_with_retry, delete_rows_with_retry
 from core.config import settings
 from core.security import decrypt_token
+from core.hashing import compute_content_hash
 from services.parsers import DocumentProcessorFactory
 from services.email import email_service
 from connectors import get_connector
@@ -64,6 +67,58 @@ def update_job_status(
         logger.error(f"❌ [Job:{job_id}] Failed to update status: {e}")
 
 
+TEXT_LIKE_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".log",
+    ".doc",
+    ".docx",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".xml",
+    ".html",
+    ".css",
+    ".sql",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".java",
+    ".go",
+    ".cpp",
+    ".c",
+    ".cs",
+    ".rb",
+    ".php",
+    ".rs",
+    ".scala",
+    ".swift",
+    ".kt",
+}
+
+
+def get_parse_timeout_seconds(filename: str, mime_type: str | None) -> int | None:
+    ext = os.path.splitext(filename or "")[1].lower()
+    mime = (mime_type or "").lower()
+
+    if ext == ".pdf" or mime == "application/pdf":
+        return (
+            settings.PDF_PARSE_TIMEOUT_OCR
+            if settings.LLAMA_CLOUD_API_KEY
+            else settings.PDF_PARSE_TIMEOUT
+        )
+
+    if ext in TEXT_LIKE_EXTENSIONS or mime.startswith("text/"):
+        return settings.TEXT_PARSE_TIMEOUT
+
+    return None
+
+
 def update_job_progress(supabase, job_id: str, progress: int, message: str = None):
     """Update job progress percentage for granular UX feedback."""
     try:
@@ -90,7 +145,8 @@ def ingest_document_batched(
     file_size_bytes: int = 0,
     job_id: str = None,
     source_url: str = None,
-    file_status_id: str = None  # NEW: for per-file progress tracking
+    file_status_id: str = None,  # NEW: for per-file progress tracking
+    content_hash: str | None = None
 ) -> str:
     """
     Insert document and chunks in batches to prevent DB timeouts.
@@ -125,14 +181,36 @@ def ingest_document_batched(
         "source_url": source_url,
         "metadata": metadata,
         "file_size_bytes": file_size_bytes,
+        "content_hash": content_hash,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     
-    doc_result = supabase.table("documents").insert(doc_data).execute()
-    if not doc_result.data:
-        raise Exception("Failed to create document record")
-    
-    doc_id = doc_result.data[0]["id"]
+    existing_doc_id = None
+    if content_hash:
+        existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
+            "title", doc_title
+        ).eq("content_hash", content_hash).limit(1).execute()
+        if existing.data:
+            existing_doc_id = existing.data[0]["id"]
+
+    if existing_doc_id:
+        delete_rows_with_retry(
+            supabase,
+            "document_chunks",
+            "document_id",
+            existing_doc_id,
+            context=f"replace doc_id={existing_doc_id}",
+        )
+        update_data = {**doc_data, "updated_at": datetime.now(timezone.utc).isoformat()}
+        update_data.pop("created_at", None)
+        supabase.table("documents").update(update_data).eq("id", existing_doc_id).execute()
+        doc_id = existing_doc_id
+        logger.info(f"♻️ Reusing document {doc_id} for {doc_title}")
+    else:
+        doc_result = supabase.table("documents").insert(doc_data).execute()
+        if not doc_result.data:
+            raise Exception("Failed to create document record")
+        doc_id = doc_result.data[0]["id"]
     logger.info(f"📄 Created document {doc_id}: {doc_title}")
     
     # Step 2: Insert chunks in batches with progress tracking
@@ -592,13 +670,40 @@ def process_document_pipeline(
             content_bytes = content.encode('utf-8')
         else:
             content_bytes = content
-        
+
+        if len(content_bytes) > settings.MAX_FILE_SIZE:
+            update_file_status(
+                supabase,
+                file_status_id,
+                status="failed",
+                progress=0,
+                message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
+                error="File too large",
+            )
+            return ProcessResult(success=False, error="File too large")
+
+        content_hash = compute_content_hash(content_bytes)
+        parse_timeout = get_parse_timeout_seconds(filename, metadata.get("mime_type") if metadata else None)
+        parse_start = time.time()
+
         # Process through document factory
         result = DocumentProcessorFactory.process(
             content=content_bytes,
             filename=filename,
             mime_type=metadata.get('mime_type') if metadata else None
         )
+
+        parse_elapsed = time.time() - parse_start
+        if parse_timeout and parse_elapsed > parse_timeout:
+            update_file_status(
+                supabase,
+                file_status_id,
+                status="failed",
+                progress=0,
+                message=f"Parsing exceeded {parse_timeout}s (took {int(parse_elapsed)}s)",
+                error="Parsing timeout",
+            )
+            return ProcessResult(success=False, error="Parsing timeout")
         
         if not result.chunks:
             update_file_status(supabase, file_status_id,
@@ -657,7 +762,8 @@ def process_document_pipeline(
             file_size_bytes=len(content_bytes),
             job_id=job_id,
             source_url=source_url,
-            file_status_id=file_status_id
+            file_status_id=file_status_id,
+            content_hash=content_hash
         )
         
         # 5. Complete
@@ -982,7 +1088,6 @@ def process_file_task(
     import base64
     import tempfile
     import os
-    import time
     from services.parsers import DocumentProcessorFactory
     from services.embeddings import generate_embeddings_batch_sync
     
@@ -1009,6 +1114,19 @@ def process_file_task(
             raise ValueError("No content provided")
         
         content = base64.b64decode(content_b64)
+
+        if len(content) > settings.MAX_FILE_SIZE:
+            update_file_status(
+                supabase,
+                file_status_id,
+                status="failed",
+                progress=0,
+                message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
+                error="File too large",
+            )
+            return {"status": "failed", "filename": filename, "error": "File too large"}
+
+        content_hash = compute_content_hash(content)
         
         suffix = os.path.splitext(filename)[1] or ".bin"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -1024,11 +1142,24 @@ def process_file_task(
             message="Extracting content (may take 30-90s for PDFs)..."
         )
         
+        parse_timeout = get_parse_timeout_seconds(filename, file_data.get("mime_type"))
+        parse_start = time.time()
         result = DocumentProcessorFactory.process(
             file_path=local_path,
             filename=filename,
             mime_type=file_data.get("mime_type")
         )
+        parse_elapsed = time.time() - parse_start
+        if parse_timeout and parse_elapsed > parse_timeout:
+            update_file_status(
+                supabase,
+                file_status_id,
+                status="failed",
+                progress=0,
+                message=f"Parsing exceeded {parse_timeout}s (took {int(parse_elapsed)}s)",
+                error="Parsing timeout",
+            )
+            return {"status": "failed", "filename": filename, "error": "Parsing timeout"}
         chunks = result.chunks
         
         if not chunks:
@@ -1069,19 +1200,43 @@ def process_file_task(
             message="Storing in database..."
         )
         
-        # Create document record
-        doc_result = supabase.table("documents").insert({
+        existing_doc_id = None
+        if content_hash:
+            existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
+                "title", filename
+            ).eq("content_hash", content_hash).limit(1).execute()
+            if existing.data:
+                existing_doc_id = existing.data[0]["id"]
+
+        doc_payload = {
             "user_id": user_id,
             "title": filename,
             "source_type": connector_type,
             "file_size_bytes": file_data.get("size_bytes", len(content)),
+            "content_hash": content_hash,
             "metadata": {
                 "job_id": job_id,
                 "mime_type": file_data.get("mime_type", "application/octet-stream"),
             },
-        }).execute()
-        
-        doc_id = doc_result.data[0]["id"]
+        }
+
+        if existing_doc_id:
+            delete_rows_with_retry(
+                supabase,
+                "document_chunks",
+                "document_id",
+                existing_doc_id,
+                context=f"replace doc_id={existing_doc_id}",
+            )
+            doc_update = {**doc_payload, "updated_at": datetime.now(timezone.utc).isoformat()}
+            supabase.table("documents").update(doc_update).eq("id", existing_doc_id).execute()
+            doc_id = existing_doc_id
+            logger.info(f"♻️ Reusing document {doc_id} for {filename}")
+        else:
+            doc_result = supabase.table("documents").insert(doc_payload).execute()
+            if not doc_result.data:
+                raise Exception("Failed to create document record")
+            doc_id = doc_result.data[0]["id"]
         
         # Insert chunks in batches
         BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))

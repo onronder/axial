@@ -13,6 +13,45 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
+SENSITIVE_KEYS = {
+    "content_b64",
+    "access_token",
+    "refresh_token",
+    "token",
+    "authorization",
+    "api_key",
+    "openai_api_key",
+    "supabase_service_key",
+    "supabase_secret_key",
+    "secret",
+    "password",
+    "credentials",
+}
+
+
+def _redact_value(value: Any) -> str:
+    if isinstance(value, (bytes, bytearray)):
+        return f"<redacted:{len(value)} bytes>"
+    if isinstance(value, str):
+        return "<redacted>"
+    return "<redacted>"
+
+
+def redact_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        redacted = {}
+        for key, value in payload.items():
+            if key and str(key).lower() in SENSITIVE_KEYS:
+                redacted[key] = _redact_value(value)
+            else:
+                redacted[key] = redact_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_payload(item) for item in payload]
+    if isinstance(payload, tuple):
+        return [redact_payload(item) for item in payload]
+    return payload
+
 
 def log_task_failure(
     task_id: str,
@@ -44,6 +83,9 @@ def log_task_failure(
         # First retry: 5 minutes, second: 15 minutes, third: 1 hour
         retry_delays = [5, 15, 60]  # minutes
         
+        safe_args = redact_payload(list(args) if args else [])
+        safe_kwargs = redact_payload(kwargs or {})
+
         # Check if task already exists in DLQ
         existing = supabase.table("failed_tasks").select("*").eq(
             "task_id", task_id
@@ -68,6 +110,8 @@ def log_task_failure(
                 "exception_type": type(exc).__name__,
                 "exception_message": str(exc),
                 "traceback": traceback_str,
+                "args": safe_args,
+                "kwargs": safe_kwargs,
                 "status": status,
                 "next_retry_at": next_retry.isoformat() if next_retry else None,
                 "updated_at": datetime.now(timezone.utc).isoformat()
@@ -86,8 +130,8 @@ def log_task_failure(
                 "task_name": task_name,
                 "user_id": user_id,
                 "job_id": job_id,
-                "args": list(args) if args else [],
-                "kwargs": kwargs or {},
+                "args": safe_args,
+                "kwargs": safe_kwargs,
                 "exception_type": type(exc).__name__,
                 "exception_message": str(exc),
                 "traceback": traceback_str,

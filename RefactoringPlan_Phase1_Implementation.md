@@ -559,7 +559,7 @@ Notes:
 
 ## Step 8: Add ingestion idempotency and strict retry policy
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -623,13 +623,14 @@ Step completion check:
 
 
 Notes:
-- TBD
+- Added `content_hash` to `documents` with index (migration required).
+- Unified ingestion and connector sync now reuse existing documents by title + content hash and replace chunks.
 
 ---
 
 ## Step 9: Add parser safety guardrails
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -672,13 +673,14 @@ Step completion check:
 
 
 Notes:
-- TBD
+- Enforced max file size checks in ingestion and connector sync paths.
+- Added soft parse-time thresholds for text-like files and PDFs (OCR/non-OCR).
 
 ---
 
 ## Step 10: Security quick wins
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -844,7 +846,7 @@ Step completion check:
 
 
 Notes:
-- TBD
+- DLQ payloads now redact sensitive fields before persistence.
 
 ---
 

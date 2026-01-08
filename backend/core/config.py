@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     EMBEDDING_RATE_LIMIT_BACKOFF_MAX: float = 5.0  # Cap for rate-limit backoff
     EMBEDDING_RATE_LIMIT_DECAY: float = 0.25  # Backoff decay after successful batch
 
+    # Parser timeouts (soft thresholds, seconds)
+    TEXT_PARSE_TIMEOUT: int = 60
+    PDF_PARSE_TIMEOUT: int = 300
+    PDF_PARSE_TIMEOUT_OCR: int = 600
+
     # =========================================================================
     # Connector Concurrency Limits
     # =========================================================================

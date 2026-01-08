@@ -17,11 +17,12 @@ from starlette.concurrency import run_in_threadpool
 from .base import BaseConnector, ConnectorDocument, ConnectorItem
 from core.db import get_supabase
 from core.config import settings
-from core.db_utils import insert_rows_with_retry
+from core.db_utils import delete_rows_with_retry, insert_rows_with_retry
 from services.parsers import DocumentParser
 from core.security import decrypt_token
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 from core.resilience import with_google_retry
+from core.hashing import compute_content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -574,6 +575,21 @@ class DriveConnector(BaseConnector):
                         continue
                         
                     content_bytes, _, _ = content_tuple
+
+                    if len(content_bytes) > settings.MAX_FILE_SIZE:
+                        logger.warning(f"⚠️ [DriveSync] File too large: {filename}")
+                        if file_status_id:
+                            update_file_status(
+                                supabase,
+                                file_status_id,
+                                status=\"failed\",
+                                progress=0,
+                                message=f\"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit\",
+                                error=\"File too large\",
+                            )
+                        continue
+
+                    content_hash = compute_content_hash(content_bytes)
                     
                     # Status: Processing
                     if file_status_id:
@@ -625,21 +641,44 @@ class DriveConnector(BaseConnector):
                         "title": file_meta['name'],
                         "source_type": "drive",  # Matches the enum value
                         "source_url": file_meta.get('webViewLink', ''),
+                        "file_size_bytes": file_meta.get("size") or len(content_bytes),
+                        "content_hash": content_hash,
                         "metadata": {
                             "file_id": file_meta['id'],
                             "mime_type": file_meta.get('mimeType', 'unknown')
                         },
                         "created_at": datetime.now(timezone.utc).isoformat()
                     }
-                    
-                    doc_res = supabase.table("documents").insert(parent_doc_data).execute()
-                    if not doc_res.data:
-                        logger.error(f"❌ [DriveSync] Failed to create parent document for {file_meta['name']}")
-                        errors.append(f"DB insert failed: {file_meta['name']}")
-                        continue
-                    
-                    parent_doc_id = doc_res.data[0]['id']
-                    logger.info(f"✅ [DriveSync] Created parent document: {parent_doc_id}")
+
+                    existing_doc_id = None
+                    if content_hash:
+                        existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
+                            "title", file_meta['name']
+                        ).eq("content_hash", content_hash).limit(1).execute()
+                        if existing.data:
+                            existing_doc_id = existing.data[0]["id"]
+
+                    if existing_doc_id:
+                        delete_rows_with_retry(
+                            supabase,
+                            "document_chunks",
+                            "document_id",
+                            existing_doc_id,
+                            context=f"drive_sync replace doc_id={existing_doc_id}",
+                        )
+                        update_data = {**parent_doc_data, "updated_at": datetime.now(timezone.utc).isoformat()}
+                        update_data.pop("created_at", None)
+                        supabase.table("documents").update(update_data).eq("id", existing_doc_id).execute()
+                        parent_doc_id = existing_doc_id
+                        logger.info(f"♻️ [DriveSync] Reusing parent document: {parent_doc_id}")
+                    else:
+                        doc_res = supabase.table("documents").insert(parent_doc_data).execute()
+                        if not doc_res.data:
+                            logger.error(f"❌ [DriveSync] Failed to create parent document for {file_meta['name']}")
+                            errors.append(f"DB insert failed: {file_meta['name']}")
+                            continue
+                        parent_doc_id = doc_res.data[0]['id']
+                        logger.info(f"✅ [DriveSync] Created parent document: {parent_doc_id}")
                     
                     # =====================================================
                     # STEP B: Insert Chunks into `document_chunks` table
