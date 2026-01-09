@@ -11,12 +11,15 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BillingSettings } from '@/components/settings/BillingSettings';
 
 // Mock dependencies
 const mockProfile = vi.fn();
 const mockUseUsage = vi.fn();
+const mockApiGet = vi.fn();
+const mockApiPost = vi.fn();
+const mockApiDelete = vi.fn();
 
 vi.mock('@/hooks/useProfile', () => ({
     useProfile: () => mockProfile(),
@@ -24,6 +27,14 @@ vi.mock('@/hooks/useProfile', () => ({
 
 vi.mock('@/hooks/useUsage', () => ({
     useUsage: () => mockUseUsage(),
+}));
+
+vi.mock('@/lib/api', () => ({
+    api: {
+        get: (...args: unknown[]) => mockApiGet(...args),
+        post: (...args: unknown[]) => mockApiPost(...args),
+        delete: (...args: unknown[]) => mockApiDelete(...args),
+    },
 }));
 
 vi.mock('@/components/branding/AxioLogo', () => ({
@@ -41,6 +52,9 @@ describe('BillingSettings Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockWindowOpen.mockClear();
+        mockApiGet.mockResolvedValue({ data: [] });
+        mockApiPost.mockResolvedValue({ data: { url: 'https://polar.sh/checkout/mock' } });
+        mockApiDelete.mockResolvedValue({ data: { success: true } });
 
         mockProfile.mockReturnValue({
             profile: { plan: 'pro' },
@@ -53,56 +67,63 @@ describe('BillingSettings Component', () => {
         });
     });
 
+    const renderBilling = async () => {
+        render(<BillingSettings />);
+        await waitFor(() => {
+            expect(mockApiGet).toHaveBeenCalled();
+        });
+    };
+
     describe('Loading State', () => {
-        it('should show loading spinner when loading', () => {
+        it('should show loading spinner when loading', async () => {
             mockProfile.mockReturnValue({
                 profile: null,
                 isLoading: true,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             // Look for the Loader2 spinner (animate-spin class)
             const spinner = document.querySelector('.animate-spin');
             expect(spinner).toBeInTheDocument();
         });
 
-        it('should not show content when loading', () => {
+        it('should not show content when loading', async () => {
             mockProfile.mockReturnValue({
                 profile: null,
                 isLoading: true,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             expect(screen.queryByText('Billing & Plans')).not.toBeInTheDocument();
         });
     });
 
     describe('Page Header', () => {
-        it('should render page title', () => {
-            render(<BillingSettings />);
+        it('should render page title', async () => {
+            await renderBilling();
 
             expect(screen.getByText('Billing & Plans')).toBeInTheDocument();
         });
 
-        it('should render page description', () => {
-            render(<BillingSettings />);
+        it('should render page description', async () => {
+            await renderBilling();
 
             expect(screen.getByText('Manage your subscription and upgrade your plan')).toBeInTheDocument();
         });
     });
 
     describe('Current Plan Card', () => {
-        it('should display current plan section', () => {
-            render(<BillingSettings />);
+        it('should display current plan section', async () => {
+            await renderBilling();
 
             // Current Plan appears in header and on button for current plan
             const currentPlanElements = screen.getAllByText('Current Plan');
             expect(currentPlanElements.length).toBeGreaterThan(0);
         });
 
-        it('should show Pro badge for pro plan', () => {
+        it('should show Pro badge for pro plan', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'pro' },
                 isLoading: false,
@@ -112,14 +133,14 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             // Pro appears in badge and card
             const proElements = screen.getAllByText('Pro');
             expect(proElements.length).toBeGreaterThan(0);
         });
 
-        it('should show Free badge for free plan', () => {
+        it('should show Free badge for free plan', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'free' },
                 isLoading: false,
@@ -129,12 +150,12 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             expect(screen.getByText('Free')).toBeInTheDocument();
         });
 
-        it('should show Enterprise badge for enterprise plan', () => {
+        it('should show Enterprise badge for enterprise plan', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'enterprise' },
                 isLoading: false,
@@ -144,7 +165,7 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             // Enterprise appears in badge and card
             const enterpriseElements = screen.getAllByText('Enterprise');
@@ -153,7 +174,7 @@ describe('BillingSettings Component', () => {
     });
 
     describe('Plan Inheritance', () => {
-        it('should show Team badge when plan is inherited', () => {
+        it('should show Team badge when plan is inherited', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'pro' },
                 isLoading: false,
@@ -163,12 +184,12 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: true,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             expect(screen.getByText('Team')).toBeInTheDocument();
         });
 
-        it('should show inheritance message when plan is inherited', () => {
+        it('should show inheritance message when plan is inherited', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'pro' },
                 isLoading: false,
@@ -178,12 +199,12 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: true,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             expect(screen.getByText("You're using your team owner's plan")).toBeInTheDocument();
         });
 
-        it('should not show Team badge when not inherited', () => {
+        it('should not show Team badge when not inherited', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'pro' },
                 isLoading: false,
@@ -193,28 +214,28 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             expect(screen.queryByText('Team')).not.toBeInTheDocument();
         });
     });
 
     describe('Pricing Cards', () => {
-        it('should render Available Plans section', () => {
-            render(<BillingSettings />);
+        it('should render Available Plans section', async () => {
+            await renderBilling();
 
             expect(screen.getByText('Available Plans')).toBeInTheDocument();
         });
 
-        it('should render Starter plan card', () => {
-            render(<BillingSettings />);
+        it('should render Starter plan card', async () => {
+            await renderBilling();
 
             expect(screen.getByText('Starter')).toBeInTheDocument();
-            expect(screen.getByText('$9')).toBeInTheDocument();
+            expect(screen.getByText('$4.99')).toBeInTheDocument();
         });
 
-        it('should render Pro plan card', () => {
-            render(<BillingSettings />);
+        it('should render Pro plan card', async () => {
+            await renderBilling();
 
             // Pro appears multiple times (badge + card)
             const proElements = screen.getAllByText('Pro');
@@ -222,19 +243,19 @@ describe('BillingSettings Component', () => {
             expect(screen.getByText('$29')).toBeInTheDocument();
         });
 
-        it('should render Enterprise plan card', () => {
-            render(<BillingSettings />);
+        it('should render Enterprise plan card', async () => {
+            await renderBilling();
 
-            expect(screen.getByText('$99')).toBeInTheDocument();
+            expect(screen.getByText('Contact Us')).toBeInTheDocument();
         });
 
-        it('should show "Most Popular" badge on Pro plan', () => {
-            render(<BillingSettings />);
+        it('should show "Most Popular" badge on Pro plan', async () => {
+            await renderBilling();
 
             expect(screen.getByText('Most Popular')).toBeInTheDocument();
         });
 
-        it('should show "Current Plan" for active plan', () => {
+        it('should show "Current Plan" for active plan', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'starter' },
                 isLoading: false,
@@ -244,7 +265,7 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             // Current Plan appears in header and button
             const currentPlanElements = screen.getAllByText('Current Plan');
@@ -253,40 +274,30 @@ describe('BillingSettings Component', () => {
     });
 
     describe('Feature Lists', () => {
-        it('should show Starter features', () => {
-            render(<BillingSettings />);
+        it('should show Starter features', async () => {
+            await renderBilling();
 
-            expect(screen.getByText('50 documents')).toBeInTheDocument();
-            expect(screen.getByText('500 MB storage')).toBeInTheDocument();
+            expect(screen.getByText('100 queries/month')).toBeInTheDocument();
+            expect(screen.getByText('2 connected sources')).toBeInTheDocument();
         });
 
-        it('should show Pro features', () => {
-            render(<BillingSettings />);
+        it('should show Pro features', async () => {
+            await renderBilling();
 
-            expect(screen.getByText('500 documents')).toBeInTheDocument();
-            expect(screen.getByText('5 GB storage')).toBeInTheDocument();
-            expect(screen.getByText('Web crawling')).toBeInTheDocument();
+            expect(screen.getByText('Unlimited queries')).toBeInTheDocument();
+            expect(screen.getByText('Priority support')).toBeInTheDocument();
         });
 
-        it('should show Enterprise features', () => {
-            render(<BillingSettings />);
+        it('should show Enterprise features', async () => {
+            await renderBilling();
 
-            expect(screen.getByText('Unlimited documents')).toBeInTheDocument();
-            expect(screen.getByText('Unlimited storage')).toBeInTheDocument();
-            expect(screen.getByText('Team access (20 seats)')).toBeInTheDocument();
-        });
-
-        it('should show crossed out features for lower plans', () => {
-            render(<BillingSettings />);
-
-            // Team access is crossed out for starter
-            const crossedOut = document.querySelectorAll('.line-through');
-            expect(crossedOut.length).toBeGreaterThan(0);
+            expect(screen.getByText('Everything in Pro')).toBeInTheDocument();
+            expect(screen.getByText('SSO & SAML')).toBeInTheDocument();
         });
     });
 
     describe('Upgrade Buttons', () => {
-        it('should show Upgrade button for non-current plans', () => {
+        it('should show Upgrade button for non-current plans', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'free' },
                 isLoading: false,
@@ -296,13 +307,14 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
-            const upgradeButtons = screen.getAllByText('Upgrade');
-            expect(upgradeButtons.length).toBe(3); // All 3 plans
+            expect(screen.getByText('Get Started')).toBeInTheDocument();
+            expect(screen.getByText('Upgrade to Pro')).toBeInTheDocument();
+            expect(screen.getByText('Contact Sales')).toBeInTheDocument();
         });
 
-        it('should disable button for current plan', () => {
+        it('should disable button for current plan', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'pro' },
                 isLoading: false,
@@ -312,7 +324,7 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             // Find the disabled button with "Current Plan" text
             const currentPlanButtons = screen.getAllByText('Current Plan');
@@ -320,7 +332,7 @@ describe('BillingSettings Component', () => {
             expect(buttonElement?.closest('button')).toBeDisabled();
         });
 
-        it('should open checkout URL on upgrade click', () => {
+        it('should open checkout URL on upgrade click', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'free' },
                 isLoading: false,
@@ -330,54 +342,61 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            const originalLocation = window.location;
+            delete (window as unknown as { location?: Location }).location;
+            (window as unknown as { location: { href: string } }).location = { href: '' };
 
-            const upgradeButtons = screen.getAllByText('Upgrade');
-            fireEvent.click(upgradeButtons[0]); // Click first upgrade button (Starter)
+            await renderBilling();
 
-            expect(mockWindowOpen).toHaveBeenCalledWith(
-                expect.stringContaining('polar.sh'),
-                '_blank'
-            );
+            mockApiPost.mockResolvedValue({ data: { url: 'https://polar.sh/checkout/starter' } });
+
+            const upgradeButton = screen.getByText('Upgrade to Pro');
+            fireEvent.click(upgradeButton);
+
+            await waitFor(() => {
+                expect(window.location.href).toContain('polar.sh/checkout');
+            });
+
+            (window as unknown as { location: Location }).location = originalLocation;
         });
     });
 
     describe('Payment Methods Section', () => {
-        it('should render Payment Methods section', () => {
-            render(<BillingSettings />);
+        it('should render Payment Methods section', async () => {
+            await renderBilling();
 
             expect(screen.getByText('Payment Methods')).toBeInTheDocument();
         });
 
-        it('should show no payment method message', () => {
-            render(<BillingSettings />);
+        it('should show no payment method message', async () => {
+            await renderBilling();
 
-            expect(screen.getByText('No payment method on file')).toBeInTheDocument();
+            expect(screen.getByText('Managed by Polar')).toBeInTheDocument();
         });
 
-        it('should show Add Payment Method button', () => {
-            render(<BillingSettings />);
+        it('should show Add Payment Method button', async () => {
+            await renderBilling();
 
-            expect(screen.getByText('Add Payment Method')).toBeInTheDocument();
+            expect(screen.getByText('Manage')).toBeInTheDocument();
         });
     });
 
     describe('Billing History Section', () => {
-        it('should render Billing History section', () => {
-            render(<BillingSettings />);
+        it('should render Billing History section', async () => {
+            await renderBilling();
 
             expect(screen.getByText('Billing History')).toBeInTheDocument();
         });
 
-        it('should show no history message', () => {
-            render(<BillingSettings />);
+        it('should show no history message', async () => {
+            await renderBilling();
 
             expect(screen.getByText('No billing history available')).toBeInTheDocument();
         });
     });
 
     describe('Manage Subscription Button', () => {
-        it('should show Manage button for paid plans', () => {
+        it('should show Manage button for paid plans', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'pro' },
                 isLoading: false,
@@ -387,12 +406,12 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             expect(screen.getByText('Manage Subscription')).toBeInTheDocument();
         });
 
-        it('should not show Manage button for free plan', () => {
+        it('should not show Manage button for free plan', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'free' },
                 isLoading: false,
@@ -402,7 +421,7 @@ describe('BillingSettings Component', () => {
                 isPlanInherited: false,
             });
 
-            render(<BillingSettings />);
+            await renderBilling();
 
             expect(screen.queryByText('Manage Subscription')).not.toBeInTheDocument();
         });

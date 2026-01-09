@@ -15,6 +15,7 @@ from core.config import settings
 logger = logging.getLogger(__name__)
 
 OUTCOME_FIELDS = {"success", "failed", "skipped"}
+UPDATE_FIELDS = {"job_status_updates", "file_status_updates"}
 
 INGEST_NAMESPACE = "ingest_job"
 CRAWL_NAMESPACE = "crawl_job"
@@ -77,6 +78,8 @@ def init_job_counters(namespace: str, job_id: str, total: int) -> bool:
                 "success": 0,
                 "failed": 0,
                 "skipped": 0,
+                "job_status_updates": 0,
+                "file_status_updates": 0,
             },
         )
         client.expire(counter_key, settings.REDIS_JOB_COUNTER_TTL_SECONDS)
@@ -95,7 +98,18 @@ def get_job_counters(namespace: str, job_id: str, client=None) -> Optional[Dict[
         return None
     try:
         counter_key = _counter_key(namespace, job_id)
-        values = client.hmget(counter_key, ["total", "processed", "success", "failed", "skipped"])
+        values = client.hmget(
+            counter_key,
+            [
+                "total",
+                "processed",
+                "success",
+                "failed",
+                "skipped",
+                "job_status_updates",
+                "file_status_updates",
+            ],
+        )
         if not any(values):
             return None
         return {
@@ -104,6 +118,8 @@ def get_job_counters(namespace: str, job_id: str, client=None) -> Optional[Dict[
             "success": _to_int(values[2]),
             "failed": _to_int(values[3]),
             "skipped": _to_int(values[4]),
+            "job_status_updates": _to_int(values[5]),
+            "file_status_updates": _to_int(values[6]),
         }
     except Exception as exc:
         logger.warning("[Counters] Failed to read counters for %s: %s", job_id, exc)
@@ -147,6 +163,23 @@ def record_job_outcome(
         return None
 
     return get_job_counters(namespace, job_id, client=client)
+
+
+def record_job_update(namespace: str, job_id: str, field: str) -> None:
+    if not job_id:
+        return
+    if field not in UPDATE_FIELDS:
+        logger.warning("[Counters] Unknown update field for %s: %s", job_id, field)
+        return
+    client = _get_redis_client()
+    if not client:
+        return
+    try:
+        counter_key = _counter_key(namespace, job_id)
+        client.hincrby(counter_key, field, 1)
+        client.expire(counter_key, settings.REDIS_JOB_COUNTER_TTL_SECONDS)
+    except Exception as exc:
+        logger.warning("[Counters] Failed to record update for %s: %s", job_id, exc)
 
 
 def mark_job_finalizing(namespace: str, job_id: str) -> bool:
@@ -203,6 +236,18 @@ def clear_ingest_job_counters(job_id: str) -> None:
 
 def init_crawl_counters(crawl_id: str, total_pages: int) -> bool:
     return init_job_counters(CRAWL_NAMESPACE, crawl_id, total_pages)
+
+
+def record_ingest_job_update(job_id: str) -> None:
+    record_job_update(INGEST_NAMESPACE, job_id, "job_status_updates")
+
+
+def record_ingest_file_update(job_id: str) -> None:
+    record_job_update(INGEST_NAMESPACE, job_id, "file_status_updates")
+
+
+def record_crawl_job_update(crawl_id: str) -> None:
+    record_job_update(CRAWL_NAMESPACE, crawl_id, "job_status_updates")
 
 
 def record_crawl_outcome(crawl_id: str, url: str, outcome: str) -> Optional[Dict[str, int]]:

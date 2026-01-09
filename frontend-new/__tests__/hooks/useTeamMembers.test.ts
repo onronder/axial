@@ -69,9 +69,12 @@ describe('useTeamMembers', () => {
     });
 
     describe('Initial State', () => {
-        it('should start with loading true', () => {
+        it('should start with loading true', async () => {
             const { result } = renderHook(() => useTeamMembers());
             expect(result.current.isLoading).toBe(true);
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
         });
 
         it('should fetch members and stats on mount', async () => {

@@ -69,12 +69,6 @@ import { useUsage } from "@/hooks/useUsage";
 import { bulkInvite } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
-const roleStyles: Record<Role, string> = {
-  admin: "bg-accent/10 text-accent border-accent/20",
-  editor: "bg-primary/10 text-primary border-primary/20",
-  viewer: "bg-muted text-muted-foreground border-border",
-};
-
 const statusStyles: Record<MemberStatus, { label: string; className: string }> = {
   active: { label: "Active", className: "bg-success/10 text-success border-success/20" },
   pending: { label: "Pending", className: "bg-warning/10 text-warning border-warning/20" },

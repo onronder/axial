@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Search,
   RefreshCw,
@@ -10,8 +10,6 @@ import {
   Upload,
   Database,
   MessageSquare,
-  ChevronUp,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   PlayCircle,
@@ -23,7 +21,6 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -57,7 +54,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Document } from "@/types";
 import { useDocuments } from "@/hooks/useDocuments";
 import { useProfile } from "@/hooks/useProfile";
 import { StorageMeter } from "@/components/documents/StorageMeter";
@@ -105,9 +101,6 @@ const statusStyles: Record<string, { label: string; className: string; dotClass:
     dotClass: "bg-red-500"
   },
 };
-
-type SortField = "name" | "source" | "status" | "addedAt" | "size";
-type SortDirection = "asc" | "desc";
 
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
 

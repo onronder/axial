@@ -450,43 +450,10 @@ class WebConnector(BaseConnector):
         Used by the worker for recursive crawling.
         """
         try:
-            max_bytes = max_bytes or self.MAX_HTML_BYTES
-            response = self.session.get(
-                url,
-                timeout=(10, 30),
-                allow_redirects=True,
-                stream=True
-            )
-            response.raise_for_status()
-
-            content_type = (response.headers.get("Content-Type") or "").lower()
-            if content_type and not any(ct in content_type for ct in self.ALLOWED_CONTENT_TYPES):
-                logger.info(f"⚠️ [Web] Skipping non-HTML content: {url} ({content_type})")
-                response.close()
-                return None
-
-            content_length = response.headers.get("Content-Length")
-            if content_length and int(content_length) > max_bytes:
-                logger.info(f"⚠️ [Web] Skipping large page ({content_length} bytes): {url}")
-                response.close()
-                return None
-
-            chunks = []
-            total = 0
-            for chunk in response.iter_content(chunk_size=8192):
-                if not chunk:
-                    continue
-                total += len(chunk)
-                if total > max_bytes:
-                    logger.info(f"⚠️ [Web] Page exceeded max size ({max_bytes} bytes): {url}")
-                    response.close()
-                    return None
-                chunks.append(chunk)
-
-            encoding = response.encoding or "utf-8"
-            html = b"".join(chunks).decode(encoding, errors="replace")
-            response.close()
-            return html
+            html = trafilatura.fetch_url(url)
+            if html is not None:
+                return html
+            return None
         except Exception as e:
             logger.error(f"❌ [Web] HTML fetch failed for {url}: {e}")
             return None
@@ -595,12 +562,20 @@ class WebConnector(BaseConnector):
     @lru_cache(maxsize=256)
     def _get_robots_parser(self, robots_url: str):
         from urllib.robotparser import RobotFileParser
+        class _AllowAll:
+            def can_fetch(self, *_args, **_kwargs):
+                return True
+
+            def crawl_delay(self, *_args, **_kwargs):
+                return None
+
         rp = RobotFileParser()
         try:
-            response = self.session.get(robots_url, timeout=(10, 30))
+            response = requests.get(robots_url, timeout=(10, 30), headers=self.DEFAULT_HEADERS)
             if response.status_code >= 400:
-                return rp
+                return _AllowAll()
             rp.parse(response.text.splitlines())
         except Exception as e:
             logger.warning(f"⚠️ [Web] robots.txt fetch failed for {robots_url}: {e}")
+            return _AllowAll()
         return rp

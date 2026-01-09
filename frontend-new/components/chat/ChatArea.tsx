@@ -38,6 +38,7 @@ export function ChatArea({
   const showEmptyState = messages.length === 0 && !isTyping && !streamingMessage;
 
   // Virtual scrolling for performance with large message lists
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => parentRef.current,

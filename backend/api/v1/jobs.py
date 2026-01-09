@@ -81,12 +81,19 @@ async def get_job_by_id(
     supabase = get_supabase()
     
     try:
-        response = supabase.table("ingestion_jobs")\
-            .select("*")\
-            .eq("id", job_id)\
-            .eq("user_id", user_id)\
-            .single()\
-            .execute()
+        try:
+            response = supabase.table("ingestion_jobs")\
+                .select("*")\
+                .eq("id", job_id)\
+                .eq("user_id", user_id)\
+                .single()\
+                .execute()
+        except Exception as e:
+            message = str(e)
+            if "PGRST116" in message or "JSON object requested" in message:
+                raise HTTPException(status_code=404, detail="Job not found")
+            logger.error(f"Failed to fetch job {job_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to fetch job status")
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Job not found")

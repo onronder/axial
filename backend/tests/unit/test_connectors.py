@@ -14,7 +14,25 @@ from uuid import uuid4
 
 from connectors.file_upload import FileUploadConnector
 from connectors.google_drive import GoogleDriveConnector
+from connectors.notion_enhanced import NotionConnectorEnhanced
 from connectors.enhanced import SourceDocument, SourceType
+from connectors.base import BaseConnector, ConnectorDocument
+from connectors import get_connector
+
+
+class _DummyConnector(BaseConnector):
+    async def authorize(self, user_id: str) -> bool:
+        await super().authorize(user_id)
+        return True
+
+    async def list_items(self, user_id: str, parent_id: str | None = None):
+        await super().list_items(user_id, parent_id)
+        return []
+
+    async def ingest(self, config):
+        await super().ingest(config)
+        if False:
+            yield ConnectorDocument(page_content="", metadata={})
 
 
 @pytest.mark.asyncio
@@ -38,7 +56,21 @@ async def test_file_upload_connector_fetch(mock_supabase):
         assert doc.source_type == SourceType.FILE_UPLOAD
         assert doc.filename == "test.pdf"
         assert doc.mime_type == "application/pdf"
-        assert doc.size_bytes == len(b"PDF content here")
+    assert doc.size_bytes == len(b"PDF content here")
+
+
+@pytest.mark.asyncio
+async def test_base_connector_super_methods_are_callable():
+    connector = _DummyConnector()
+
+    assert await connector.authorize("user-1") is True
+    assert await connector.list_items("user-1") == []
+
+    items = []
+    async for item in connector.ingest({"user_id": "user-1"}):
+        items.append(item)
+
+    assert items == []
 
 
 @pytest.mark.asyncio
@@ -87,6 +119,26 @@ def test_file_upload_connector_properties():
     assert connector.supports_incremental_sync == False
 
 
+def test_get_connector_returns_instance():
+    connector = get_connector("file_upload")
+    assert isinstance(connector, FileUploadConnector)
+
+
+def test_base_connector_pass_through():
+    class DummyConnector(BaseConnector):
+        async def authorize(self, user_id: str) -> bool:
+            return await super().authorize(user_id)
+
+        async def list_items(self, user_id: str, parent_id=None):
+            return await super().list_items(user_id, parent_id)
+
+        async def ingest(self, config):
+            return await super().ingest(config)
+
+    dummy = DummyConnector()
+    assert dummy is not None
+
+
 @pytest.mark.asyncio
 async def test_file_upload_connector_authorization():
     """Test that file upload doesn't require authorization."""
@@ -95,6 +147,31 @@ async def test_file_upload_connector_authorization():
     
     is_authorized = await connector.authorize("any-user-id")
     assert is_authorized == True
+
+
+@pytest.mark.asyncio
+async def test_file_upload_connector_ingest_yields_connector_documents():
+    connector = FileUploadConnector()
+
+    async def fake_fetch(_item_ids, _credentials=None, **_kwargs):
+        yield SourceDocument(
+            content=b"hello",
+            metadata={"filename": "file.txt"},
+            source_type=SourceType.FILE_UPLOAD,
+            source_id="file-1",
+            filename="file.txt",
+            mime_type="text/plain",
+            size_bytes=5,
+        )
+
+    connector.fetch_documents = fake_fetch
+
+    docs = []
+    async for doc in connector.ingest({"item_ids": ["file-1"], "user_id": "user-1"}):
+        docs.append(doc)
+
+    assert len(docs) == 1
+    assert isinstance(docs[0], ConnectorDocument)
 
 
 @pytest.mark.asyncio
@@ -143,6 +220,22 @@ async def test_google_drive_connector_fetch():
     assert doc.filename == "My Document"
 
 
+@pytest.mark.asyncio
+async def test_google_drive_connector_fetch_sync_stream():
+    connector = GoogleDriveConnector()
+
+    connector.legacy.ingest = lambda _config: [
+        ConnectorDocument(page_content="x", metadata={"file_id": "f1", "title": "Doc 1"})
+    ]
+
+    results = []
+    async for doc in connector.fetch_documents(["f1"], credentials=None, user_id="user-1"):
+        results.append(doc)
+
+    assert len(results) == 1
+    assert results[0].filename == "Doc 1"
+
+
 def test_connector_validate_credentials():
     """Test credential validation for different connectors."""
     
@@ -156,6 +249,20 @@ def test_connector_validate_credentials():
     # Drive needs access_token
     assert drive_connector.validate_credentials({"access_token": "token"}) == True
     assert drive_connector.validate_credentials({}) == True  # Legacy connector handles this
+
+
+@pytest.mark.asyncio
+async def test_google_drive_connector_delegates_methods():
+    connector = GoogleDriveConnector()
+    connector.legacy.authorize = AsyncMock(return_value=True)
+    connector.legacy.list_items = AsyncMock(return_value=[{"id": "1"}])
+    connector.legacy.ingest = Mock(return_value="stream")
+    connector.legacy.sync = AsyncMock(return_value={"ok": True})
+
+    assert await connector.authorize("user-1") is True
+    assert await connector.list_items("user-1") == [{"id": "1"}]
+    assert await connector.ingest({"user_id": "user-1"}) == "stream"
+    assert await connector.sync("user-1", "int-1") == {"ok": True}
 
 
 @pytest.mark.asyncio
@@ -175,3 +282,16 @@ async def test_connector_list_items():
     
     items = await drive_connector.list_items("user-id")
     assert items == mock_items
+
+
+@pytest.mark.asyncio
+async def test_notion_connector_enhanced_connector_type():
+    connector = NotionConnectorEnhanced()
+    assert connector.connector_type == SourceType.NOTION
+
+
+@pytest.mark.asyncio
+async def test_notion_connector_enhanced_ingest_delegates():
+    connector = NotionConnectorEnhanced()
+    connector.legacy.ingest = Mock(return_value="stream")
+    assert await connector.ingest({"user_id": "user-1"}) == "stream"

@@ -23,7 +23,7 @@ interface HelpSidebarProps {
     categories: Record<string, ArticleMeta[]>;
 }
 
-export function HelpSidebar({ articles, categories }: HelpSidebarProps) {
+export function HelpSidebar({ articles: _articles, categories }: HelpSidebarProps) {
     const pathname = usePathname();
 
     return (

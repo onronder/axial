@@ -739,12 +739,7 @@ async def ingest_provider_items(
             integration = None
         
         # Prepare credentials based on connector type
-        if provider == "web":
-            # Web provider doesn't require explicit connection
-            credentials = {}
-            if integration:
-                credentials = integration.get('credentials', {}) or {}
-        elif provider in ["google_drive", "notion"]:
+        if provider in ["google_drive", "notion"]:
             # OAuth connectors: Pass integration_id for automatic token refresh
             if not integration or not integration.get('access_token'):
                 raise HTTPException(status_code=401, detail=f"Not connected to {provider}. Please reconnect.")

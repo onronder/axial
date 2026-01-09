@@ -26,6 +26,19 @@ export interface GroupedConversation {
     conversations: ChatConversation[];
 }
 
+type ApiError = {
+    response?: {
+        data?: {
+            detail?: string;
+        };
+    };
+};
+
+const getErrorDetail = (error: unknown, fallback: string): string => {
+    const apiError = error as ApiError;
+    return apiError.response?.data?.detail || fallback;
+};
+
 interface ChatHistoryContextType {
     conversations: ChatConversation[];
     isLoading: boolean;
@@ -81,10 +94,10 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
                 [newChat, ...(old || [])]
             );
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             toast({
                 title: 'Error',
-                description: error.response?.data?.detail || 'Failed to create new chat.',
+                description: getErrorDetail(error, 'Failed to create new chat.'),
                 variant: 'destructive',
             });
         },
@@ -110,13 +123,13 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
                 description: 'The conversation has been removed.',
             });
         },
-        onError: (error: any, _id, context) => {
+        onError: (error: unknown, _id, context) => {
             if (context?.previous) {
                 queryClient.setQueryData(CHAT_HISTORY_KEY, context.previous);
             }
             toast({
                 title: 'Error',
-                description: error.response?.data?.detail || 'Failed to delete chat.',
+                description: getErrorDetail(error, 'Failed to delete chat.'),
                 variant: 'destructive',
             });
         },
@@ -137,10 +150,10 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
                 description: 'The conversation has been updated.',
             });
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             toast({
                 title: 'Error',
-                description: error.response?.data?.detail || 'Failed to rename chat.',
+                description: getErrorDetail(error, 'Failed to rename chat.'),
                 variant: 'destructive',
             });
         },

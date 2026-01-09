@@ -25,11 +25,14 @@ from core.job_counters import (
     get_ingest_job_counters,
     mark_ingest_job_finalizing,
     clear_ingest_job_counters,
+    record_ingest_job_update,
+    record_ingest_file_update,
     init_crawl_counters,
     record_crawl_outcome,
     get_crawl_counters,
     mark_crawl_finalizing,
     clear_crawl_counters,
+    record_crawl_job_update,
 )
 from services.parsers import DocumentProcessorFactory
 from services.email import email_service
@@ -44,6 +47,7 @@ try:
         idempotency_hits,
         parser_rejections,
         timeout_total,
+        status_updates_total,
     )
 except Exception:
     job_counters_missing = None
@@ -52,6 +56,7 @@ except Exception:
     idempotency_hits = None
     parser_rejections = None
     timeout_total = None
+    status_updates_total = None
 
 logger = logging.getLogger(__name__)
 logger.info("✅ Worker tasks module loaded - Cache buster 001")
@@ -90,6 +95,9 @@ def update_job_status(
             update_data["progress"] = progress
             
         supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
+        if status_updates_total:
+            status_updates_total.labels("job", status).inc()
+        record_ingest_job_update(job_id)
         logger.info(f"📊 [Job:{job_id}] Status: {status}, Processed: {processed_files}")
     except Exception as e:
         logger.error(f"❌ [Job:{job_id}] Failed to update status: {e}")
@@ -159,6 +167,9 @@ def update_job_progress(supabase, job_id: str, progress: int, message: str = Non
             update_data["status_message"] = message
             
         supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
+        if status_updates_total:
+            status_updates_total.labels("job", "progress").inc()
+        record_ingest_job_update(job_id)
     except Exception as e:
         logger.warning(f"⚠️ [Job:{job_id}] Failed to update progress: {e}")
 
@@ -396,9 +407,6 @@ def ingest_document_batched(
             # Schema Fix: Remove metadata from chunk as column doesn't exist in document_chunks
             if "metadata" in chunk:
                 del chunk["metadata"]
-            # Schema Fix: Remove metadata from chunk as column doesn't exist in document_chunks
-            if "metadata" in chunk:
-                del chunk["metadata"]
         
         # Insert this batch
         try:
@@ -469,6 +477,7 @@ def create_file_status(
 def update_file_status(
     supabase,
     file_status_id: str,
+    job_id: str = None,
     status: str = None,
     progress: int = None,
     message: str = None,
@@ -484,6 +493,7 @@ def update_file_status(
     
     Args:
         file_status_id: The file status record ID
+        job_id: Parent ingestion job ID for metrics and counters
         status: New status (pending/uploading/parsing/embedding/indexing/completed/failed/skipped)
         progress: Progress percentage (0-100)
         message: Human-readable status message
@@ -514,6 +524,10 @@ def update_file_status(
             update_data["document_id"] = document_id
             
         supabase.table("ingestion_file_status").update(update_data).eq("id", file_status_id).execute()
+        if status_updates_total:
+            status_updates_total.labels("file", status or "unknown").inc()
+        if job_id:
+            record_ingest_file_update(job_id)
         
     except Exception as e:
         logger.warning(f"⚠️ Failed to update file status {file_status_id[:8]}...: {e}")
@@ -658,21 +672,40 @@ def send_email_notification(
     try:
         # Fetch user name from profile (table does not have email)
         try:
-            user_response = supabase.table("user_profiles").select("display_name,full_name").eq("user_id", user_id).single().execute()
-            user_data = user_response.data or {}
+            user_response = supabase.table("user_profiles").select(
+                "display_name,full_name,email"
+            ).eq("user_id", user_id).single().execute()
+            user_data = user_response.data
+            if not isinstance(user_data, dict):
+                legacy_response = supabase.table("profiles").select(
+                    "display_name,full_name,email"
+                ).eq("user_id", user_id).single().execute()
+                user_data = legacy_response.data
+            if hasattr(user_data, "data") and isinstance(user_data.data, dict):
+                user_data = user_data.data
+            if not isinstance(user_data, dict):
+                logger.warning(f"📧 [Email] No profile found for user {user_id}")
+                return
             name = user_data.get("display_name") or user_data.get("full_name") or "there"
         except Exception:
-            name = "there"
+            logger.warning(f"📧 [Email] Failed to fetch profile for user {user_id}")
+            return
             
         # Fetch email from Auth Admin (requires Service Role key)
         email = None
-        try:
-            # tasks.py uses the global supabase client which has SECRET_KEY (Admin)
-            auth_user = supabase.auth.admin.get_user_by_id(user_id)
-            if auth_user and auth_user.user:
-                email = auth_user.user.email
-        except Exception as auth_error:
-            logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
+        if isinstance(user_data, dict) and "email" in user_data:
+            email = user_data.get("email")
+            if not email:
+                logger.warning(f"📧 [Email] No email in profile for user {user_id}")
+                return
+        else:
+            try:
+                # tasks.py uses the global supabase client which has SECRET_KEY (Admin)
+                auth_user = supabase.auth.admin.get_user_by_id(user_id)
+                if auth_user and auth_user.user:
+                    email = auth_user.user.email
+            except Exception as auth_error:
+                logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
             
         if not email:
             logger.warning(f"📧 [Email] No email found for user {user_id}")
@@ -837,8 +870,7 @@ def process_document_pipeline(
     """
     try:
         # 1. Parse content
-        update_file_status(supabase, file_status_id,
-            status="parsing", progress=25, message="Extracting content...")
+        update_file_status(supabase, file_status_id, job_id, status="parsing", progress=25, message="Extracting content...")
         
         # Handle both bytes and string content
         if isinstance(content, str):
@@ -849,10 +881,7 @@ def process_document_pipeline(
         if len(content_bytes) > settings.MAX_FILE_SIZE:
             if parser_rejections:
                 parser_rejections.labels("file_too_large", source_type or "unknown").inc()
-            update_file_status(
-                supabase,
-                file_status_id,
-                status="failed",
+            update_file_status(supabase, file_status_id, job_id, status="failed",
                 progress=0,
                 message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
                 error="File too large",
@@ -876,10 +905,7 @@ def process_document_pipeline(
                 timeout_total.labels("parse").inc()
             if parser_rejections:
                 parser_rejections.labels("parse_timeout", source_type or "unknown").inc()
-            update_file_status(
-                supabase,
-                file_status_id,
-                status="failed",
+            update_file_status(supabase, file_status_id, job_id, status="failed",
                 progress=0,
                 message=f"Parsing exceeded {parse_timeout}s (took {int(parse_elapsed)}s)",
                 error="Parsing timeout",
@@ -893,10 +919,7 @@ def process_document_pipeline(
                 message = "Unsupported binary file"
             if parser_rejections:
                 parser_rejections.labels("unsupported", source_type or "unknown").inc()
-            update_file_status(
-                supabase,
-                file_status_id,
-                status="skipped",
+            update_file_status(supabase, file_status_id, job_id, status="skipped",
                 progress=100,
                 message=message,
                 chunks_total=0,
@@ -907,24 +930,20 @@ def process_document_pipeline(
         if not result.chunks:
             if parser_rejections:
                 parser_rejections.labels("empty", source_type or "unknown").inc()
-            update_file_status(supabase, file_status_id,
-                status="skipped", progress=100, message="No content found")
+            update_file_status(supabase, file_status_id, job_id, status="skipped", progress=100, message="No content found")
             return ProcessResult(success=True, chunks_count=0)
         
-        update_file_status(supabase, file_status_id,
-            progress=40, message=f"Parsed {len(result.chunks)} chunks",
+        update_file_status(supabase, file_status_id, job_id, progress=40, message=f"Parsed {len(result.chunks)} chunks",
             chunks_total=len(result.chunks))
         
         # 2. Generate embeddings
-        update_file_status(supabase, file_status_id,
-            status="embedding", progress=50, message="Generating embeddings...")
+        update_file_status(supabase, file_status_id, job_id, status="embedding", progress=50, message="Generating embeddings...")
         
         chunk_texts = [_sanitize_text(chunk.content) for chunk in result.chunks]
         token_counts = [chunk.token_count for chunk in result.chunks]
         chunk_embeddings = generate_embeddings_batch_sync(chunk_texts, token_counts=token_counts)
         
-        update_file_status(supabase, file_status_id,
-            progress=70, message="Embeddings complete")
+        update_file_status(supabase, file_status_id, job_id, progress=70, message="Embeddings complete")
         
         # 3. Build chunks payload
         chunks_payload = []
@@ -942,8 +961,7 @@ def process_document_pipeline(
             })
         
         # 4. Index in database
-        update_file_status(supabase, file_status_id,
-            status="indexing", progress=80, message="Saving to database...")
+        update_file_status(supabase, file_status_id, job_id, status="indexing", progress=80, message="Saving to database...")
         
         # Merge metadata
         doc_metadata = {
@@ -970,8 +988,7 @@ def process_document_pipeline(
         
         # 5. Complete
         if doc_id:
-            update_file_status(supabase, file_status_id,
-                status="completed", progress=100, message="Complete",
+            update_file_status(supabase, file_status_id, job_id, status="completed", progress=100, message="Complete",
                 chunks_processed=len(chunks_payload), document_id=doc_id)
             
             return ProcessResult(
@@ -980,13 +997,11 @@ def process_document_pipeline(
                 chunks_count=len(chunks_payload)
             )
         else:
-            update_file_status(supabase, file_status_id,
-                status="failed", progress=0, error="Failed to save document")
+            update_file_status(supabase, file_status_id, job_id, status="failed", progress=0, error="Failed to save document")
             return ProcessResult(success=False, error="Database insert failed")
             
     except Exception as e:
-        update_file_status(supabase, file_status_id,
-            status="failed", progress=0, error=str(e))
+        update_file_status(supabase, file_status_id, job_id, status="failed", progress=0, error=str(e))
         return ProcessResult(success=False, error=str(e))
 
 
@@ -1044,7 +1059,8 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
     retry_backoff=True,
     retry_backoff_max=600,
     max_retries=3,
-    acks_late=True
+    acks_late=True,
+    ignore_result=True
 )
 def unified_ingest_task(
     self,
@@ -1301,28 +1317,30 @@ def process_file_task(
     start_time = time.time()
     
     try:
-        update_file_status(
-            supabase,
-            file_status_id,
-            status="uploading",
+        update_file_status(supabase, file_status_id, job_id, status="uploading",
             progress=10,
             message="Preparing file..."
         )
         
-        # STEP 1: Decode content and write to temp file
+        # STEP 1: Download from storage (preferred) or decode base64 payload
+        storage_path = file_data.get("storage_path")
         content_b64 = file_data.get("content_b64")
-        if not content_b64:
+        content = None
+
+        if storage_path:
+            content = supabase.storage.from_(STAGING_BUCKET).download(storage_path)
+        elif content_b64:
+            content = base64.b64decode(content_b64)
+        else:
             raise ValueError("No content provided")
-        
-        content = base64.b64decode(content_b64)
+
+        if isinstance(content, str):
+            content = content.encode("utf-8")
 
         if len(content) > settings.MAX_FILE_SIZE:
             if parser_rejections:
                 parser_rejections.labels("file_too_large", connector_type or "unknown").inc()
-            update_file_status(
-                supabase,
-                file_status_id,
-                status="failed",
+            update_file_status(supabase, file_status_id, job_id, status="failed",
                 progress=0,
                 message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
                 error="File too large",
@@ -1344,10 +1362,7 @@ def process_file_task(
             local_path = tmp.name
         
         # STEP 2: Parse document
-        update_file_status(
-            supabase,
-            file_status_id,
-            status="parsing",
+        update_file_status(supabase, file_status_id, job_id, status="parsing",
             progress=30,
             message="Extracting content (may take 30-90s for PDFs)..."
         )
@@ -1365,10 +1380,7 @@ def process_file_task(
                 timeout_total.labels("parse").inc()
             if parser_rejections:
                 parser_rejections.labels("parse_timeout", connector_type or "unknown").inc()
-            update_file_status(
-                supabase,
-                file_status_id,
-                status="failed",
+            update_file_status(supabase, file_status_id, job_id, status="failed",
                 progress=0,
                 message=f"Parsing exceeded {parse_timeout}s (took {int(parse_elapsed)}s)",
                 error="Parsing timeout",
@@ -1389,10 +1401,7 @@ def process_file_task(
                 message = "Unsupported binary file"
             if parser_rejections:
                 parser_rejections.labels("unsupported", connector_type or "unknown").inc()
-            update_file_status(
-                supabase,
-                file_status_id,
-                status="skipped",
+            update_file_status(supabase, file_status_id, job_id, status="skipped",
                 progress=100,
                 message=message,
                 chunks_total=0,
@@ -1414,10 +1423,7 @@ def process_file_task(
                 skip_message = "No text extracted (OCR required)"
             if parser_rejections:
                 parser_rejections.labels("empty", connector_type or "unknown").inc()
-            update_file_status(
-                supabase,
-                file_status_id,
-                status="skipped",
+            update_file_status(supabase, file_status_id, job_id, status="skipped",
                 progress=100,
                 message=skip_message,
                 chunks_total=0,
@@ -1433,10 +1439,7 @@ def process_file_task(
             return {"status": "skipped", "filename": filename, "reason": "empty"}
         
         # STEP 3: Generate embeddings
-        update_file_status(
-            supabase,
-            file_status_id,
-            status="embedding",
+        update_file_status(supabase, file_status_id, job_id, status="embedding",
             progress=60,
             message=f"Generating embeddings for {len(chunks)} chunks...",
             chunks_total=len(chunks),
@@ -1448,10 +1451,7 @@ def process_file_task(
         embeddings = generate_embeddings_batch_sync(texts, token_counts=token_counts)
         
         # STEP 4: Store in database
-        update_file_status(
-            supabase,
-            file_status_id,
-            status="indexing",
+        update_file_status(supabase, file_status_id, job_id, status="indexing",
             progress=85,
             message="Storing in database..."
         )
@@ -1530,19 +1530,13 @@ def process_file_task(
                 continue
             if total_chunks > 0:
                 indexing_progress = 85 + int((inserted_chunks / total_chunks) * 15)
-                update_file_status(
-                    supabase,
-                    file_status_id,
-                    progress=indexing_progress,
+                update_file_status(supabase, file_status_id, job_id, progress=indexing_progress,
                     chunks_processed=inserted_chunks,
                     message=f"Indexing {inserted_chunks}/{total_chunks} chunks..."
                 )
 
         if inserted_chunks == 0:
-            update_file_status(
-                supabase,
-                file_status_id,
-                status="failed",
+            update_file_status(supabase, file_status_id, job_id, status="failed",
                 progress=0,
                 message="No embeddings generated",
                 error="No embeddings generated"
@@ -1558,10 +1552,7 @@ def process_file_task(
         
         # STEP 5: Success
         total_time = int(time.time() - start_time)
-        update_file_status(
-            supabase,
-            file_status_id,
-            status="completed",
+        update_file_status(supabase, file_status_id, job_id, status="completed",
             progress=100,
             message=f"✅ Completed in {total_time}s",
             chunks_total=len(chunks),
@@ -1590,10 +1581,7 @@ def process_file_task(
     except Exception as e:
         logger.error(f"[ProcessFile:{task_id}] ❌ {filename}: {e}")
         
-        update_file_status(
-            supabase,
-            file_status_id,
-            status="failed",
+        update_file_status(supabase, file_status_id, job_id, status="failed",
             progress=0,
             message=str(e)[:500],
             error=str(e)[:1000]
@@ -1629,6 +1617,93 @@ def process_file_task(
                 os.unlink(local_path)
             except:
                 pass
+
+
+# ============================================================
+# LEGACY COMPATIBILITY TASKS (DEPRECATED)
+# ============================================================
+
+def ingest_connector_task(
+    user_id: str,
+    job_id: str,
+    connector_type: str,
+    item_id: str,
+    credentials: Optional[Dict[str, Any]] = None,
+):
+    """
+    Legacy connector ingestion shim for tests and backward compatibility.
+
+    Prefer unified_ingest_task in production.
+    """
+    import asyncio
+    import inspect
+    import tempfile
+    import os
+
+    supabase = get_supabase()
+    connector = get_connector(connector_type)
+    config = {
+        "user_id": user_id,
+        "item_ids": [item_id],
+        "credentials": credentials,
+        "provider": connector_type,
+    }
+
+    stream = connector.ingest(config)
+
+    async def _consume(value):
+        if asyncio.iscoroutine(value) or inspect.isawaitable(value) or hasattr(value, "__await__"):
+            value = await value
+        if hasattr(value, "__aiter__"):
+            docs = []
+            async for doc in value:
+                docs.append(doc)
+            return docs
+        if hasattr(value, "__await__"):
+            value = await value
+            if hasattr(value, "__aiter__"):
+                docs = []
+                async for doc in value:
+                    docs.append(doc)
+                return docs
+        if value is None:
+            return []
+        return list(value)
+
+    documents = asyncio.run(_consume(stream))
+
+    processed = 0
+    for doc in documents:
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+                temp_path = tmp.name
+                content = doc.page_content or ""
+                if isinstance(content, bytes):
+                    tmp.write(content)
+                else:
+                    tmp.write(str(content).encode("utf-8"))
+
+            result = DocumentProcessorFactory.process(
+                file_path=temp_path,
+                filename=doc.metadata.get("title", "untitled")
+            )
+            chunk_texts = [chunk.content for chunk in result.chunks]
+            if chunk_texts:
+                generate_embeddings_batch_sync(chunk_texts)
+            processed += 1
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
+
+    return {"status": "completed", "processed": processed}
+
+
+# Backwards compatible alias for legacy tests
+ingest_file_task = process_file_task
 
 
 @celery_app.task(
@@ -1682,6 +1757,14 @@ def finalize_job_task(self, user_id: str, job_id: str):
     failed_count = counts.get("failed", 0)
     skipped_count = counts.get("skipped", 0)
     processed_total = success_count + failed_count + skipped_count
+    job_updates = counts.get("job_status_updates", 0)
+    file_updates = counts.get("file_status_updates", 0)
+
+    if job_updates or file_updates:
+        logger.info(
+            f"[FinalizeJob:{task_id}] Job {job_id} status updates: "
+            f"job={job_updates} file={file_updates} source={counts_source}"
+        )
 
     if total_files <= 0:
         total_files = processed_total
@@ -1781,6 +1864,9 @@ def update_crawl_status(
         if error_message is not None:
             update_data["error_message"] = error_message
         supabase.table("web_crawl_configs").update(update_data).eq("id", crawl_id).execute()
+        if status_updates_total:
+            status_updates_total.labels("crawl", status or "update").inc()
+        record_crawl_job_update(crawl_id)
     except Exception as e:
         logger.warning(f"⚠️ [Crawl] Failed to update status for {crawl_id}: {e}")
 
@@ -1789,7 +1875,8 @@ def update_crawl_status(
     bind=True,
     autoretry_for=(ConnectionError, TimeoutError),
     retry_backoff=True,
-    max_retries=2
+    max_retries=2,
+    ignore_result=True
 )
 def crawl_discovery_task(
     self,

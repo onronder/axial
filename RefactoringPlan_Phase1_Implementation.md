@@ -12,7 +12,7 @@ Status key:
 
 ## Step 1: Define SLOs and baseline metrics
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -136,7 +136,7 @@ Notes:
 
 ## Step 3: Stage-based progress updates (no per-chunk writes)
 
-Status: In Progress
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -237,14 +237,14 @@ User inputs (fill below):
     - Monitor PostgREST throughput and Realtime fan-out at 50+ parallel uploads.
 
 Sub-task checklist:
-- [ ] Inventory all current ingestion status update points in workers.
-- [ ] Define the stage-transition update policy and mapping to UI states.
-- [ ] Update status update logic to write on each stage transition (no per-chunk loops).
-- [ ] Ensure job-level progress uses aggregated metrics rather than per-chunk updates.
-- [ ] Update frontend progress UI to align with granular stage statuses.
-- [ ] Update Supabase realtime subscriptions to handle granular status updates.
-- [ ] Verify that progress information remains accurate and non-misleading.
-- [ ] Add metrics for update count per job.
+- [x] Inventory all current ingestion status update points in workers.
+- [x] Define the stage-transition update policy and mapping to UI states.
+- [x] Update status update logic to write on each stage transition (no per-chunk loops).
+- [x] Ensure job-level progress uses aggregated metrics rather than per-chunk updates.
+- [x] Update frontend progress UI to align with granular stage statuses.
+- [x] Update Supabase realtime subscriptions to handle granular status updates.
+- [x] Verify that progress information remains accurate and non-misleading.
+- [x] Add metrics for update count per job.
 
 Deliverables:
 - Updated progress update policy document.
@@ -268,6 +268,7 @@ Step completion check:
 Notes:
 - Reminder: Apply `supabase db push` for the status constraint migration before deploy; `git push` is OK. Verify in Supabase Table Editor during the next smoke test.
 - Implementation detail: ingestion_jobs writes update both `message` and `status_message` for compatibility; frontend prefers `message`.
+- Added `pipeline_status_updates_total` metric and Redis counters for per-job update counts; finalize logs include job/file update totals.
 
 ---
 
@@ -700,7 +701,7 @@ Notes:
 
 ## Step 10: Security quick wins
 
-Status: In Progress
+Status: In Progress (rotation pending)
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -838,13 +839,48 @@ User inputs (fill below):
 
 Sub-task checklist:
 - [x] Inventory all secrets and access keys used by API and workers.
-- [ ] Rotate secrets and update deployments.
+- [x] Define rotation order, blast radius, and downtime requirements.
+- [ ] Rotate secrets and update deployments. (Deferred per user; keep current env values.)
 - [x] Audit RLS policies for all ingestion-related tables.
-- [ ] Add or update tests that validate cross-tenant isolation.
+- [x] Add or update tests that validate cross-tenant isolation.
 - [x] Identify sensitive fields in logs and DLQ payloads.
 - [x] Implement log and DLQ redaction for sensitive fields.
 - [x] Review and tighten CORS configuration.
 - [ ] Validate that changes do not break ingestion or UI flows.
+
+Rotation execution plan (detailed, no steps skipped):
+1) Pre-rotation snapshot
+   - Export current env var list for Railway API, Railway workers, and Vercel (keys only, no values).
+   - Confirm current Supabase project keys and JWT secret in the Supabase dashboard.
+   - Confirm whether OAuth tokens are encrypted with ENCRYPTION_KEY (they are; rotation requires re-encryption).
+2) Rotate low-risk secrets first (no session impact)
+   - OPENAI_API_KEY, RESEND_API_KEY, SENTRY_DSN, GROQ_API_KEY, LLAMA_CLOUD_API_KEY.
+   - Update Railway API + workers + Vercel (frontend) where used.
+   - Redeploy services and run smoke tests (login, chat, ingestion, email, Sentry event).
+3) Rotate Supabase service role key (backend-only impact)
+   - Regenerate service role key in Supabase.
+   - Update SUPABASE_SECRET_KEY in Railway API + workers.
+   - Redeploy and verify DB read/write on health check and ingestion.
+4) Rotate SUPABASE_JWT_SECRET (session impact; requires maintenance window)
+   - Announce maintenance window (24h notice per policy).
+   - Regenerate JWT secret in Supabase and update SUPABASE_JWT_SECRET in Railway.
+   - Expect all active sessions to be invalidated; force re-login.
+   - Verify auth flows after redeploy.
+5) Rotate ENCRYPTION_KEY (token impact; requires re-encryption or re-auth)
+   - If rotating: decrypt existing OAuth tokens with old key, re-encrypt with new key, and write back.
+   - If re-encryption is not implemented yet: force connector re-auth and purge old tokens.
+   - Validate connector access post-rotation (Google Drive, Notion).
+6) Rotate POLAR_ACCESS_TOKEN / POLAR_WEBHOOK_SECRET (billing impact)
+   - Update tokens in Polar, update env vars, redeploy API.
+   - Confirm webhook delivery and billing plan fetch.
+7) Post-rotation validation checklist
+   - Auth: login/logout/refresh token.
+   - Ingestion: upload + drive connector ingest.
+   - Billing: list plans, checkout (test mode).
+   - Notifications: test email + in-app notifications.
+   - Sentry: verify new events are received.
+8) Rotation log
+   - Record date, rotated keys, impacted services, and verification results in Notes.
 
 Deliverables:
 - Secret rotation log.
@@ -868,6 +904,12 @@ Step completion check:
 Notes:
 - DLQ payloads now redact sensitive fields before persistence.
 - Added `.gitignore` rule for `TEST_RESULTS/` to prevent log/secrets from being committed.
+- Added security test for cross-tenant document access in `backend/tests/security/test_rls_cross_tenant.py`.
+- Applied RLS recursion fix via `supabase/migrations/20260108125000_fix_rls_team_recursion.sql`; security tests pass locally.
+- Rotation is pending execution in production; follow the rotation execution plan and record results here.
+- Backend unit coverage: 100% (venv: `python -m pytest backend/tests/unit --cov=backend --cov-report=term-missing`).
+- Added multi-key decrypt support for ENCRYPTION_KEY rotation (comma-separated; first key used for encrypt).
+- Per user direction: do not rotate keys now; use existing env values and validate behavior.
 
 ---
 
@@ -890,7 +932,7 @@ User inputs (fill below):
     - Latency (p50): < 30s for standard text PDFs.
     - Blocker: any 500 Internal Server Error during ingestion blocks release.
 - Benchmark dataset definitions:
-  - Status: not defined in code.
+  - Status: defined below (manifest required before execution).
   - Test harness found:
     - Location: `backend/tests/unit/test_performance.py`.
     - Framework: pytest with pytest-benchmark.
@@ -951,31 +993,95 @@ User inputs (fill below):
   - Integration tests: 4 files in tests/integration.
   - Load tests: 2 files in tests/load.
   - CI/CD config: none found (.github/workflows or .gitlab-ci.yml).
-❌ No pytest-cov configuration
-❌ No coverage thresholds
 Summary
 Benchmarks:
 
 ✅ pytest-benchmark framework configured
 ✅ 6 performance tests exist
-❌ No formal benchmark datasets
-❌ No real-world test corpus
+✅ Benchmark dataset manifest defined (A-E; IDs pending)
+❌ No real-world test corpus populated yet
 Test Harness:
 
 ✅ pytest with asyncio support
 ✅ Unit/integration/benchmark markers
 ✅ Mock fixtures for DB and APIs
-❌ No load test framework
+✅ Locust load tests present (`backend/tests/load/locustfile.py`)
 Release Gates:
 
-❌ Not defined in code
-❌ No performance baselines
-❌ No coverage requirements
+❌ Not defined in code (explicit gates defined below)
+❌ No performance baselines recorded yet
+✅ Coverage requirements defined (`backend/.coveragerc` fail_under=100)
 ❌ No CI/CD gates
 
+Benchmark dataset manifest (Phase 1, minimum; must be supplied before execution):
+- Dataset A: Quick Win Pack (baseline)
+  - Files: 10 total
+  - Types: 6 x PDF (text-only, 10-20 pages), 2 x DOCX, 1 x TXT, 1 x MD
+  - Size: 1-3 MB each (total <= 25 MB)
+  - Expected: 100% processed, p50 < 30s
+  - Source: Google Drive folder ID `1k3rAFal3UfVOuSyJFybYFEk5AzSWVPrK`
+- Dataset B: Enterprise Pack
+  - Files: 4 total (per dataset contents)
+  - Types: heavy PDFs + DOCX (PPTX not present)
+  - Size: 5-20 MB each (total <= 80 MB) — size not yet confirmed
+  - Expected: p95 < 2 minutes, >95% success
+  - Source: Google Drive folder ID `13FO5FdeGUW7CNiZlbXn4IdTUL6efCRAz`
+- Dataset C: Stress Pack (within 100 MB limit)
+  - Files: 1 total (per dataset contents)
+  - Types: 1 x PDF (large text)
+  - Size: 50-90 MB — size not yet confirmed
+  - Gap: OCR/scanned PDF not yet included
+  - Expected: p99 < 5 minutes; no OOM; success >= 95%
+  - Source: Google Drive folder ID `1bxDZhlERdd0OE78etTZADMiApNfdCZSt`
+- Dataset D: Connector Load Pack
+  - Files: 100 total
+  - Types: small TXT/MD/DOCX (1-200 KB each)
+  - Size: <= 15 MB total
+  - Expected: throughput stable, no rate-limit storms
+  - Source: Google Drive folder ID `1YuNiZxQFI1XQz5KWGLYA9AeOddtZjJv0`
+- Dataset E: Web Crawl Pack
+  - Targets: 5-10 URLs across 2 domains; one domain with sitemap, one without
+  - Expected: respects robots.txt, no unsafe URL fetches, stable rate limiting
+  - Source (provided):
+    - https://www.python.org/
+    - https://www.python.org/doc/
+    - https://www.python.org/sitemap.xml
+    - https://news.ycombinator.com/
+    - https://news.ycombinator.com/newest
+    - (Optional alternative) https://stripe.com/blog
+
+Benchmark execution plan (no steps skipped):
+1) Load datasets into the approved Google Drive folders (A-D) and record folder IDs in the manifest.
+   - Parent folder: Axial Dataset (`1wWvvIXmNZOR4zs7FXQK29X2SpG494gmj`)
+2) Confirm environment targets (Railway API + workers in us-east-1, Supabase us-east-1, Vercel prod).
+3) Run ingestion on each dataset as separate jobs; record job_id, start/end timestamps, and outcomes.
+4) Collect metrics:
+   - p50/p95/p99 latency per file and per job.
+   - Success/failure/skip counts.
+   - Embedding throughput (chunks/sec).
+   - Supabase insert latency and error rates.
+5) Run Locust load tests (`backend/tests/load/locustfile.py`) for ingestion API endpoints.
+6) Capture Sentry error counts and rate-limit errors during the run.
+7) Compare results to release gates; mark pass/fail per dataset.
+8) Record results in `TEST_RESULTS/benchmark_YYYYMMDD.md` with dataset IDs.
+
+Release gates (Phase 1; approved + explicit):
+- Success rate: >= 95% of files complete without error (per dataset).
+- Latency p50 (text PDF baseline): < 30s.
+- Latency p95 (enterprise pack): < 2 minutes.
+- Latency p99 (stress pack): < 5 minutes.
+- Blocker: any 500 error during ingestion is a release blocker.
+- Stability: no worker crashes/OOM during stress pack.
+
+Optional gates (require approval before enforcement):
+- Rate-limit errors < 2% of requests.
+- Retry rate < 10% across connectors.
+- Supabase write error rate < 0.5%.
+
 Sub-task checklist:
-- [ ] Define benchmark scenarios and datasets for 15, 150, 1,500 files.
-- [ ] Implement or configure a repeatable benchmark harness.
+- [x] Define benchmark scenarios and dataset manifest (A-E).
+- [x] Populate datasets and record Drive folder IDs / URL lists.
+- [x] Implement or configure a repeatable benchmark harness.
 - [ ] Run baseline benchmarks and record results.
 - [ ] Run post-change benchmarks and compare results.
 - [ ] Define release gate thresholds and publish results.
@@ -1000,4 +1106,9 @@ Step completion check:
 
 
 Notes:
-- TBD
+- Dataset manifest defined and populated with Drive folder IDs and URL list.
+- Run results should be recorded in `TEST_RESULTS/benchmark_YYYYMMDD.md`.
+- Benchmark runner: `backend/tests/load/run_benchmarks.py` (requires env vars in load README).
+- Benchmark runner supports `LOAD_TEST_JWT` to avoid password-based auth.
+- Production benchmark attempt hit `/api/v1/jobs/{id}` 500; added safe handling for PostgREST single() no-row errors in `backend/api/v1/jobs.py` + tests. Deploy needed before rerun.
+- Production Sentry error `PGRST204` (documents.updated_at missing) addressed with migration `supabase/migrations/20260109101500_add_documents_updated_at.sql`. Run `supabase db push` and redeploy.

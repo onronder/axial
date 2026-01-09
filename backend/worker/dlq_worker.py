@@ -5,6 +5,7 @@ Handles failed task tracking and automatic retry logic.
 """
 
 import logging
+import traceback
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from celery import Celery
@@ -56,12 +57,13 @@ def redact_payload(payload: Any) -> Any:
 def log_task_failure(
     task_id: str,
     task_name: str,
-    args: tuple,
-    kwargs: dict,
+    args: Optional[tuple],
+    kwargs: Optional[dict],
     exc: Exception,
     traceback_str: str,
     user_id: Optional[str] = None,
-    job_id: Optional[str] = None
+    job_id: Optional[str] = None,
+    supabase_client=None,
 ) -> None:
     """
     Log failed task to dead letter queue.
@@ -77,7 +79,7 @@ def log_task_failure(
         job_id: Optional job ID
     """
     try:
-        supabase = get_supabase()
+        supabase = supabase_client or get_supabase()
         
         # Calculate next retry time (exponential backoff)
         # First retry: 5 minutes, second: 15 minutes, third: 1 hour
@@ -90,10 +92,12 @@ def log_task_failure(
         existing = supabase.table("failed_tasks").select("*").eq(
             "task_id", task_id
         ).execute()
-        
-        if existing.data:
+
+        existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
+
+        if existing_data:
             # Update existing record
-            attempt_count = existing.data[0]['attempt_count'] + 1
+            attempt_count = existing_data[0].get("attempt_count", 0) + 1
             
             if attempt_count <= 3:
                 # Schedule retry
@@ -148,6 +152,35 @@ def log_task_failure(
             
     except Exception as e:
         logger.error(f"❌ [DLQ] Failed to log task failure: {e}")
+
+
+def log_failed_task(
+    supabase,
+    task_id: str,
+    task_name: str,
+    exception: Exception,
+    user_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+    kwargs: Optional[dict] = None,
+    args: Optional[tuple] = None,
+) -> None:
+    """
+    Backwards-compatible wrapper for logging failed tasks.
+
+    Maintains older call signature used in tests and legacy code.
+    """
+    trace = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+    log_task_failure(
+        task_id=task_id,
+        task_name=task_name,
+        args=args,
+        kwargs=kwargs,
+        exc=exception,
+        traceback_str=trace,
+        user_id=user_id,
+        job_id=job_id,
+        supabase_client=supabase,
+    )
 
 
 def retry_failed_tasks() -> Dict[str, Any]:

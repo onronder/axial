@@ -6,7 +6,7 @@
 
 "use client";
 
-import { Sparkles, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import { AxioLogo } from '@/components/branding/AxioLogo';

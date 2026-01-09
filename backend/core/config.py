@@ -1,5 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+import os
+import sys
 
 class Settings(BaseSettings):
     SUPABASE_URL: str
@@ -40,9 +42,14 @@ class Settings(BaseSettings):
     
     # Error Tracking
     SENTRY_DSN: Optional[str] = None
+    ENVIRONMENT: str = "development"
 
     # Rate Limiting
     RATE_LIMIT_DEFAULT: str = "50/minute"
+
+    # Celery time limits (seconds)
+    CELERY_TASK_SOFT_TIME_LIMIT: int = 900
+    CELERY_TASK_TIME_LIMIT: int = 1200
     
     # =========================================================================
     # AI & Multi-Model Configuration
@@ -164,7 +171,14 @@ settings = Settings()
 # Sentry Integration for Error Tracking
 # =============================================================================
 
-if settings.SENTRY_DSN:
+def _is_test_runtime() -> bool:
+    return (
+        settings.ENVIRONMENT == "test"
+        or "PYTEST_CURRENT_TEST" in os.environ
+        or "pytest" in sys.modules
+    )
+
+if settings.SENTRY_DSN and not _is_test_runtime():
     try:
         import sentry_sdk
         import logging as py_logging  # Import BEFORE using logging.INFO/ERROR
@@ -173,7 +187,7 @@ if settings.SENTRY_DSN:
         
         sentry_sdk.init(
             dsn=settings.SENTRY_DSN,
-            environment="production",
+            environment=settings.ENVIRONMENT,
             integrations=[
                 CeleryIntegration(),
                 LoggingIntegration(

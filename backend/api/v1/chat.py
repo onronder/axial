@@ -98,6 +98,8 @@ async def get_conversation(
         if not response.data:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return response.data
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch conversation: {str(e)}")
 
@@ -119,6 +121,8 @@ async def update_conversation(
         if not response.data:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return response.data[0]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update conversation: {str(e)}")
 
@@ -272,9 +276,6 @@ def condense_question(query: str, history: List[Dict[str, str]]) -> str:
         role = msg.get("role", "user")
         content = msg.get("content", "")[:500]  # Truncate long messages
         history_text += f"{role.upper()}: {content}\n"
-    
-    if not history_text.strip():
-        return query
     
     try:
         llm = ChatOpenAI(
@@ -544,13 +545,17 @@ async def chat_endpoint(
 
     # ========== STEP 10: GET SELECTED LLM & ENFORCE PLAN ==========
     # Task 1: Hard-Enforce Limits via Factory
-    llm, _ = LLMFactory.get_model(
+    llm_result = LLMFactory.get_model(
         provider=model_selection.provider,
         model_name=model_selection.model,
         user_plan=user_plan,  # Must pass plan for enforcement
         temperature=0.1,
         streaming=payload.stream
     )
+    if isinstance(llm_result, tuple):
+        llm, _ = llm_result
+    else:
+        llm = llm_result
     
     # ALWAYS use RAG prompt - never fall back to generic AI
     # The context will indicate "no documents found" if empty
@@ -680,4 +685,3 @@ def save_messages(supabase, conversation_id: str, query: str, answer: str, sourc
         logger.warning(f"WARNING: Failed to save messages: {e}")
         sentry_sdk.capture_exception(e)
         return None
-

@@ -33,6 +33,27 @@ interface ProfileContextType {
 
 const ProfileContext = createContext<ProfileContextType | null>(null);
 
+type ApiError = {
+    response?: {
+        status?: number;
+        data?: {
+            detail?: string;
+        };
+    };
+    message?: string;
+};
+
+const getErrorMessage = (error: unknown, fallback: string): string => {
+    const apiError = error as ApiError;
+    if (apiError.response?.data?.detail) {
+        return apiError.response.data.detail;
+    }
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+    return fallback;
+};
+
 /**
  * Provider component that wraps the app and provides profile state.
  * This ensures only ONE fetch happens regardless of how many components use the hook.
@@ -52,9 +73,10 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
             const { data } = await api.get('/settings/profile');
             console.log('📋 [useProfile] ✅ Profile fetched:', data?.first_name, data?.last_name);
             setProfile(data);
-        } catch (err: any) {
-            console.error('📋 [useProfile] ❌ Failed:', err.response?.status, err.message);
-            setError(err.message || 'Failed to fetch profile');
+        } catch (err: unknown) {
+            const apiError = err as ApiError;
+            console.error('📋 [useProfile] ❌ Failed:', apiError.response?.status, apiError.message);
+            setError(getErrorMessage(err, 'Failed to fetch profile'));
         } finally {
             setIsLoading(false);
         }
@@ -79,11 +101,12 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
                 description: 'Your profile information has been saved.',
             });
             return true;
-        } catch (err: any) {
-            console.error('📋 [useProfile] ❌ Update failed:', err.message);
+        } catch (err: unknown) {
+            const apiError = err as ApiError;
+            console.error('📋 [useProfile] ❌ Update failed:', apiError.message);
             toast({
                 title: 'Error',
-                description: err.response?.data?.detail || 'Failed to update profile.',
+                description: getErrorMessage(err, 'Failed to update profile.'),
                 variant: 'destructive',
             });
             return false;

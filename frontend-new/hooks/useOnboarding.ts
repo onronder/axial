@@ -10,12 +10,6 @@ import { useState, useEffect } from 'react';
 
 export type OnboardingStep = 'welcome' | 'connect' | 'upload' | 'complete';
 
-interface _OnboardingState {
-    currentStep: OnboardingStep;
-    isComplete: boolean;
-    hasSkipped: boolean;
-}
-
 export function useOnboarding() {
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome');

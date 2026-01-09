@@ -26,9 +26,10 @@ export function useDocumentCount() {
                 const { data } = await api.get<DocumentStats>('/documents/stats');
                 setCount(data.total_documents);
                 setLastUpdated(data.last_updated);
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('[useDocumentCount] Error:', err);
-                setError(err.message);
+                const message = err instanceof Error ? err.message : "Failed to load document count";
+                setError(message);
                 setCount(0); // Assume 0 on error to show onboarding
             } finally {
                 setIsLoading(false);

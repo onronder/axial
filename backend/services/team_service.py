@@ -83,7 +83,7 @@ class TeamService:
                 plan = response.data
                 logger.debug(f"[TeamService] User {user_id[:8]}... effective plan: {plan}")
                 # Legacy RPC can return stale "free"/"none" if subscriptions table is source of truth.
-                if plan in {"starter", "pro", "enterprise"}:
+                if plan in {"starter", "pro", "enterprise", "free"}:
                     return plan
                 return await self._get_effective_plan_direct(user_id)
             

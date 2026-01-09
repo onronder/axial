@@ -4,10 +4,38 @@ Prometheus Metrics for Production Monitoring
 Tracks retry attempts, timeouts, circuit breaker states, and memory usage.
 """
 
-from prometheus_client import Counter, Histogram, Gauge, Info
 import logging
 
+try:
+    from prometheus_client import Counter, Histogram, Gauge, Info
+    METRICS_ENABLED = True
+except Exception:
+    METRICS_ENABLED = False
+
+    class _DummyMetric:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def labels(self, *args, **kwargs):
+            return self
+
+        def inc(self, *args, **kwargs):
+            return None
+
+        def observe(self, *args, **kwargs):
+            return None
+
+        def set(self, *args, **kwargs):
+            return None
+
+        def info(self, *args, **kwargs):
+            return None
+
+    Counter = Histogram = Gauge = Info = _DummyMetric
+
 logger = logging.getLogger(__name__)
+if not METRICS_ENABLED:
+    logger.warning("📊 Prometheus client not available; metrics disabled")
 
 # =============================================================================
 # Retry Metrics
@@ -74,25 +102,40 @@ circuit_breaker_opens = Counter(
 # Memory Metrics
 # =============================================================================
 
-memory_usage_percent = Gauge(
+MEMORY_USAGE = Gauge(
     'pipeline_memory_usage_percent',
     'Current memory usage percentage'
 )
 
-memory_available_mb = Gauge(
+MEMORY_AVAILABLE_MB = Gauge(
     'pipeline_memory_available_mb',
     'Available memory in megabytes'
 )
 
-memory_warnings = Counter(
+MEMORY_WARNINGS = Counter(
     'pipeline_memory_warnings_total',
     'Total memory warnings (>85% usage)'
 )
 
-memory_critical = Counter(
+MEMORY_CRITICAL = Counter(
     'pipeline_memory_critical_total',
     'Total memory critical events (>95% usage)'
 )
+
+PROCESS_CPU_PERCENT = Gauge(
+    'pipeline_process_cpu_percent',
+    'CPU usage percent for worker process'
+)
+
+OPEN_FILES = Gauge(
+    'pipeline_process_open_files',
+    'Open file handles for worker process'
+)
+
+memory_usage_percent = MEMORY_USAGE
+memory_available_mb = MEMORY_AVAILABLE_MB
+memory_warnings = MEMORY_WARNINGS
+memory_critical = MEMORY_CRITICAL
 
 # =============================================================================
 # Task Metrics
@@ -109,6 +152,16 @@ task_duration = Histogram(
     'Task duration in seconds',
     ['task_name'],
     buckets=[10, 30, 60, 120, 300, 600, 1800, 3600]  # 10s to 1hr
+)
+
+# =============================================================================
+# Progress Update Metrics
+# =============================================================================
+
+status_updates_total = Counter(
+    'pipeline_status_updates_total',
+    'Total status/progress updates written',
+    ['scope', 'status']
 )
 
 # =============================================================================
@@ -170,17 +223,30 @@ parser_rejections = Counter(
 # Dead Letter Queue Metrics
 # =============================================================================
 
-dlq_tasks_total = Gauge(
+DLQ_TASKS_TOTAL = Gauge(
     'dlq_tasks_total',
     'Total tasks in dead letter queue',
     ['status']
 )
 
-dlq_retries_total = Counter(
+DLQ_RETRY_ATTEMPTS = Counter(
     'dlq_retries_total',
     'Total DLQ retry attempts',
     ['result']  # success or failure
 )
+
+DLQ_PERMANENTLY_FAILED = Counter(
+    'dlq_permanently_failed_total',
+    'Total DLQ tasks permanently failed'
+)
+
+DLQ_TASKS_PENDING = Gauge(
+    'dlq_tasks_pending',
+    'Pending tasks in dead letter queue'
+)
+
+dlq_tasks_total = DLQ_TASKS_TOTAL
+dlq_retries_total = DLQ_RETRY_ATTEMPTS
 
 # =============================================================================
 # System Info

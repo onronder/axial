@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { MessageSquare, Loader2 } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useChatHistory, groupConversationsByDate } from "@/hooks/useChatHistory";
 import { ChatHistoryItem } from "./ChatHistoryItem";

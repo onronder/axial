@@ -5,14 +5,45 @@ Provides Supabase client with connection pooling and optimization.
 """
 
 import logging
-from supabase import create_client, Client
-from supabase.lib.client_options import ClientOptions
+from supabase import create_client, Client, ClientOptions
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # ✅ Singleton pattern for connection pooling
 _supabase_client: Client | None = None
+
+def _build_client_options() -> ClientOptions:
+    """Build Supabase client options with compatibility fallbacks."""
+    try:
+        options = ClientOptions(
+            postgrest_client_timeout=10,
+            storage_client_timeout=10,
+            schema="public",
+            auto_refresh_token=True,
+            persist_session=False
+        )
+    except TypeError:
+        # Older client versions may not accept these kwargs.
+        options = ClientOptions()
+        for key, value in {
+            "postgrest_client_timeout": 10,
+            "storage_client_timeout": 10,
+            "schema": "public",
+            "auto_refresh_token": True,
+            "persist_session": False,
+        }.items():
+            if hasattr(options, key):
+                setattr(options, key, value)
+
+    if not hasattr(options, "storage"):
+        try:
+            from supabase_auth._sync.storage import SyncMemoryStorage
+            options.storage = SyncMemoryStorage()
+        except Exception:
+            options.storage = None
+
+    return options
 
 def get_supabase() -> Client:
     """
@@ -35,13 +66,7 @@ def get_supabase() -> Client:
             _supabase_client = create_client(
                 supabase_url=settings.SUPABASE_URL,
                 supabase_key=settings.SUPABASE_SECRET_KEY,
-                options=ClientOptions(
-                    postgrest_client_timeout=10,
-                    storage_client_timeout=10,
-                    schema="public",
-                    auto_refresh_token=True,
-                    persist_session=False
-                )
+                options=_build_client_options()
             )
             
             logger.info("✅ Supabase client initialized successfully")

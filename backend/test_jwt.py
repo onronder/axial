@@ -1,20 +1,40 @@
-import jwt
 import time
+import jwt
 
-# Create a token that is expired
-payload = {
-    "sub": "1234567890",
-    "name": "John Doe",
-    "exp": int(time.time()) - 3600  # Expired 1 hour ago
-}
-secret = "secret"
-token = jwt.encode(payload, secret, algorithm="HS256")
 
-print(f"Testing expired token: {token}")
+def build_expired_token(secret: str = "secret", now: float | None = None) -> str:
+    """Build an expired JWT for local verification testing."""
+    timestamp = int(now if now is not None else time.time())
+    payload = {
+        "sub": "1234567890",
+        "name": "John Doe",
+        "exp": timestamp - 3600,
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
 
-try:
+
+def decode_token(token: str) -> dict:
+    """Decode a JWT without verifying the signature."""
+    try:
+        decoded = jwt.decode(token, options={"verify_signature": False})
+        return {"decoded": decoded}
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def run_demo():
+    token = build_expired_token()
+    print(f"Testing expired token: {token}")
+
     print("Attempting decode with verify_signature=False...")
-    decoded = jwt.decode(token, options={"verify_signature": False})
-    print(f"Success! Decoded: {decoded}")
-except Exception as e:
-    print(f"Failed: {type(e).__name__}: {e}")
+    result = decode_token(token)
+    if "decoded" in result:
+        print(f"Success! Decoded: {result['decoded']}")
+    else:
+        print(f"Failed: {result['error']}")
+
+    return result
+
+
+if __name__ == "__main__":
+    run_demo()

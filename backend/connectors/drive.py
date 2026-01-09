@@ -326,6 +326,10 @@ class DriveConnector(BaseConnector):
         from starlette.concurrency import iterate_in_threadpool
         return iterate_in_threadpool(self._ingest_implementation(config))
 
+    def ingest_sync(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
+        """Synchronous ingestion generator (used by worker tasks/tests)."""
+        return self._ingest_implementation(config)
+
     def _ingest_implementation(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
         """
         Synchronous ingestion implementation (Generator).

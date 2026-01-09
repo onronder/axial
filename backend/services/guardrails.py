@@ -109,11 +109,14 @@ class GuardrailService:
             except Exception as e:
                 logger.warning(f"⚠️ [Guardrails] Groq unavailable, falling back to OpenAI: {e}")
                 # Fallback to OpenAI if Groq is not available
-                self._model = LLMFactory.get_model(
+                fallback = LLMFactory.get_model(
                     provider="openai",
                     model_name="gpt-4o-mini",
                     temperature=0
                 )
+                if isinstance(fallback, tuple):
+                    fallback = fallback[0]
+                self._model = fallback
         return self._model
     
     async def analyze_query(self, query: str) -> GuardrailResult:

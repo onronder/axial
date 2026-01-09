@@ -57,7 +57,7 @@ export interface ChatPayload {
 
 export type StreamEvent =
     | { type: 'token'; content: string }
-    | { type: 'sources'; sources: any[] }
+    | { type: 'sources'; sources: unknown[] }
     | { type: 'done'; message_id?: string }
     | { type: 'error'; message: string };
 
@@ -106,7 +106,7 @@ export async function* streamChatResponse(payload: ChatPayload): AsyncGenerator<
                     try {
                         const event = JSON.parse(jsonStr) as StreamEvent;
                         yield event;
-                    } catch (e) {
+                    } catch {
                         console.warn("Failed to parse SSE event:", jsonStr);
                     }
                 }

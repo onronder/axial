@@ -47,6 +47,50 @@ class TestEmailServiceInitialization:
                 # Service should set API key on resend module
                 assert mock_resend.api_key == "re_test_key_123"
 
+    def test_service_disabled_without_resend_dependency(self):
+        """Service should disable when resend import fails."""
+        import builtins
+        import importlib
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "resend":
+                raise ImportError("boom")
+            return real_import(name, *args, **kwargs)
+
+        with patch('services.email.settings') as mock_settings:
+            mock_settings.RESEND_API_KEY = "re_test_key_123"
+            mock_settings.EMAILS_FROM_EMAIL = "noreply@axiohub.io"
+            mock_settings.APP_URL = "https://axiohub.io"
+
+            with patch.object(builtins, "__import__", side_effect=fake_import):
+                reloaded = importlib.reload(services.email)
+                service = reloaded.EmailService()
+
+                assert reloaded.resend is None
+                assert service.enabled is False
+
+            importlib.reload(services.email)
+
+    def test_service_warns_when_templates_missing(self):
+        """Service should handle missing templates directory."""
+        with patch('services.email.settings') as mock_settings:
+            mock_settings.RESEND_API_KEY = "re_test_key_123"
+            mock_settings.EMAILS_FROM_EMAIL = "noreply@axiohub.io"
+            mock_settings.APP_URL = "https://axiohub.io"
+
+            with patch('services.email.resend') as mock_resend, \
+                 patch('services.email.TEMPLATES_DIR') as templates_dir:
+                templates_dir.exists.return_value = False
+                mock_resend.Emails = Mock()
+                mock_resend.Emails.send = Mock(return_value={"id": "email_123"})
+
+                from services.email import EmailService
+                service = EmailService()
+
+                assert service.jinja_env is None
+
 
 class TestEmailServiceSendIngestionComplete:
     """Tests for send_ingestion_complete method."""
@@ -283,3 +327,198 @@ class TestEmailServiceEdgeCases:
                 )
                 
                 assert result == True
+
+
+class TestEmailServiceAdditionalNotifications:
+    def _build_service(self, mock_resend):
+        with patch('services.email.settings') as mock_settings:
+            mock_settings.RESEND_API_KEY = "re_test_key_123"
+            mock_settings.EMAILS_FROM_EMAIL = "noreply@axiohub.io"
+            mock_settings.APP_URL = "https://axiohub.io"
+
+            mock_resend.Emails = Mock()
+            mock_resend.Emails.send = Mock(return_value={"id": "email_999"})
+
+            from services.email import EmailService
+            service = EmailService()
+            service.enabled = True
+            service.jinja_env = None
+            return service
+
+    def test_send_ingestion_failed_fallback(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+
+            result = service.send_ingestion_failed(
+                to_email="user@example.com",
+                name="Jane",
+                filename="file.pdf",
+                error_message="boom",
+            )
+
+            assert result is True
+            call_args = mock_resend.Emails.send.call_args[0][0]
+            assert "Ingestion Failed" in call_args["subject"]
+            assert "boom" in call_args["html"]
+
+    def test_send_retry_scheduled_fallback(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+
+            result = service.send_retry_scheduled_email(
+                to_email="user@example.com",
+                name="Jane",
+                task_name="Task A",
+                next_retry_at="2026-01-01T00:00:00Z",
+            )
+
+            assert result is True
+            call_args = mock_resend.Emails.send.call_args[0][0]
+            assert "Retry Scheduled" in call_args["subject"]
+            assert "Next retry" in call_args["html"]
+
+    def test_send_retry_succeeded_fallback(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+
+            result = service.send_retry_succeeded_email(
+                to_email="user@example.com",
+                name="Jane",
+                task_name="Task A",
+            )
+
+            assert result is True
+            call_args = mock_resend.Emails.send.call_args[0][0]
+            assert "Retry Succeeded" in call_args["subject"]
+
+    def test_send_permanently_failed_fallback(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+
+            result = service.send_permanently_failed_email(
+                to_email="user@example.com",
+                name="Jane",
+                task_name="Task A",
+            )
+
+            assert result is True
+            call_args = mock_resend.Emails.send.call_args[0][0]
+            assert "Task Failed" in call_args["subject"]
+
+    def test_send_enterprise_inquiry_fallback(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+
+            result = service.send_enterprise_inquiry(
+                from_name="Alice",
+                from_email="alice@example.com",
+                company="Acme",
+                team_size="100",
+                message="Hello",
+                user_id="user-1234567890",
+            )
+
+            assert result is True
+            call_args = mock_resend.Emails.send.call_args[0][0]
+            assert call_args["to"] == ["sales@axiohub.io"]
+            assert call_args["reply_to"] == "alice@example.com"
+
+
+class TestEmailServiceDisabledPaths:
+    def _build_service(self):
+        with patch('services.email.settings') as mock_settings:
+            mock_settings.RESEND_API_KEY = "re_test_key_123"
+            mock_settings.EMAILS_FROM_EMAIL = "noreply@axiohub.io"
+            mock_settings.APP_URL = "https://axiohub.io"
+
+            with patch('services.email.resend') as mock_resend:
+                mock_resend.Emails = Mock()
+                mock_resend.Emails.send = Mock(return_value={"id": "email_123"})
+
+                from services.email import EmailService
+                service = EmailService()
+                service.enabled = False
+                service.jinja_env = None
+                return service
+
+    def test_send_welcome_email_disabled(self):
+        service = self._build_service()
+        assert service.send_welcome_email("user@example.com", "Jane") is False
+
+    def test_send_ingestion_failed_disabled(self):
+        service = self._build_service()
+        assert service.send_ingestion_failed("user@example.com", "Jane", "file.pdf", "boom") is False
+
+    def test_send_retry_scheduled_disabled(self):
+        service = self._build_service()
+        assert service.send_retry_scheduled_email("user@example.com", "Jane", "Task", None) is False
+
+    def test_send_retry_succeeded_disabled(self):
+        service = self._build_service()
+        assert service.send_retry_succeeded_email("user@example.com", "Jane", "Task") is False
+
+    def test_send_permanently_failed_disabled(self):
+        service = self._build_service()
+        assert service.send_permanently_failed_email("user@example.com", "Jane", "Task") is False
+
+    @pytest.mark.asyncio
+    async def test_send_team_invite_disabled(self):
+        service = self._build_service()
+        assert await service.send_team_invite("user@example.com", "link", "Team") is False
+
+    def test_send_enterprise_inquiry_disabled(self):
+        service = self._build_service()
+        assert service.send_enterprise_inquiry("Alice", "a@example.com", "Acme") is False
+
+
+class TestEmailServiceExceptionPaths:
+    def _build_service(self, mock_resend):
+        with patch('services.email.settings') as mock_settings:
+            mock_settings.RESEND_API_KEY = "re_test_key_123"
+            mock_settings.EMAILS_FROM_EMAIL = "noreply@axiohub.io"
+            mock_settings.APP_URL = "https://axiohub.io"
+
+            mock_resend.Emails = Mock()
+            mock_resend.Emails.send = Mock(side_effect=Exception("boom"))
+
+            from services.email import EmailService
+            service = EmailService()
+            service.enabled = True
+            service.jinja_env = None
+            return service
+
+    def test_send_welcome_email_exception(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+            assert service.send_welcome_email("user@example.com", "Jane") is False
+
+    def test_send_ingestion_failed_exception(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+            assert service.send_ingestion_failed("user@example.com", "Jane", "file.pdf", "boom") is False
+
+    def test_send_retry_scheduled_exception(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+            assert service.send_retry_scheduled_email("user@example.com", "Jane", "Task", None) is False
+
+    def test_send_retry_succeeded_exception(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+            assert service.send_retry_succeeded_email("user@example.com", "Jane", "Task") is False
+
+    def test_send_permanently_failed_exception(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+            assert service.send_permanently_failed_email("user@example.com", "Jane", "Task") is False
+
+    @pytest.mark.asyncio
+    async def test_send_team_invite_exception(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+            assert await service.send_team_invite("user@example.com", "link", "Team") is False
+
+    def test_send_enterprise_inquiry_exception(self):
+        with patch('services.email.resend') as mock_resend:
+            service = self._build_service(mock_resend)
+            assert service.send_enterprise_inquiry("Alice", "a@example.com", "Acme") is False

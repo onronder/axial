@@ -10,6 +10,7 @@ Tests for:
 - DELETE /api/v1/team/members/{member_id} - Remove member
 """
 
+import asyncio
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
@@ -296,7 +297,19 @@ class TestRemoveMemberEndpoint:
     @pytest.mark.unit
     def test_remove_member_deletes_record(self):
         """Should delete team_member record."""
-        pass
+        from api.v1.team import remove_team_member
+
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[{"id": "member-123"}])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.team.get_supabase", return_value=mock_supabase):
+            result = asyncio.run(remove_team_member("member-123", user_id="owner-1"))
+
+        assert result == {"status": "success", "id": "member-123"}
     
     @pytest.mark.unit
     def test_cannot_remove_self(self):

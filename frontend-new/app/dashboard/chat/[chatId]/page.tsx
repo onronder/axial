@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { useChatHistory, Message } from "@/hooks/useChatHistory";
 import { useDocumentCount } from "@/hooks/useDocumentCount";
 import { useProfile } from "@/hooks/useProfile";
 import { ChatArea } from "@/components/chat/ChatArea";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
 import { generateSmartTitle, streamChatResponse } from "@/lib/chat-utils";
 import { ModelId } from "@/lib/types";
 
@@ -20,7 +19,6 @@ import { ModelId } from "@/lib/types";
  * URL is the single source of truth for which chat is active.
  */
 export default function ChatPage() {
-    const router = useRouter();
     const params = useParams();
     const chatId = params.chatId as string;
     const isNewChat = chatId === "new";

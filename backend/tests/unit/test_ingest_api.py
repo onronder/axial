@@ -1,352 +1,1058 @@
 """
-Unit Tests for Ingest API Endpoint
+Unit tests for ingest API endpoints and helpers.
 
-Tests the /ingest endpoint behaviors:
-- File upload handling
-- URL web crawling dispatch
-- Drive/Notion connector dispatch
-- MIME type validation
-- Storage upload
+Focuses on:
+- Input sanitization
+- Idempotency
+- Web crawl and file upload dispatch
+- Presigned upload flow
+- Crawl config deletion
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+import io
 import sys
-import os
+import itertools
+from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock, patch, AsyncMock
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import pytest
+from fastapi import HTTPException, UploadFile
+from starlette.requests import Request
 
+if "magic" not in sys.modules:
+    sys.modules["magic"] = SimpleNamespace(from_buffer=lambda *args, **kwargs: "text/plain")
 
-class TestIngestEndpointFileUpload:
-    """Test file upload ingestion."""
-    
-    def test_file_upload_queues_task(self):
-        """Should upload file to storage and queue Celery task."""
-        # The endpoint should call ingest_file_task.delay() after upload
-        task_method = "delay"
-        assert task_method == "delay"
-    
-    def test_validates_mime_type(self):
-        """Should validate file MIME type using magic bytes."""
-        # Should use python-magic to detect content type
-        allowed_mimes = [
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "text/plain",
-            "text/markdown",
-            "text/html"
-        ]
-        assert "application/pdf" in allowed_mimes
-    
-    def test_rejects_dangerous_mime_types(self):
-        """Should reject executable and dangerous file types."""
-        dangerous_mimes = [
-            "application/x-dosexec",
-            "application/x-executable",
-            "application/x-msdownload",
-        ]
-        assert "application/x-executable" in dangerous_mimes
-    
-    def test_rejects_extension_mismatch(self):
-        """Should reject files where extension doesn't match content."""
-        # File named .txt but detected as PDF should be rejected
-        file_ext = ".txt"
-        detected_mime = "application/pdf"
-        allowed_for_pdf = [".pdf"]
-        is_mismatch = file_ext not in allowed_for_pdf
-        assert is_mismatch is True
-    
-    def test_uploads_to_staging_bucket(self):
-        """Should upload file to ephemeral-staging bucket."""
-        bucket_name = "ephemeral-staging"
-        assert bucket_name == "ephemeral-staging"
-    
-    def test_returns_job_id(self):
-        """Should return job_id in response for frontend polling."""
-        response = {"status": "queued", "doc_id": "job-456"}
-        assert response["status"] == "queued"
-        assert "doc_id" in response
+import api.v1.ingest as ingest_module
 
 
-class TestIngestEndpointWebUrl:
-    """Test web URL ingestion."""
-    
-    def test_web_url_queues_crawl_task(self):
-        """Should create WebCrawlConfig and queue crawl task."""
-        # Should call crawl_web_task.delay()
-        task_name = "crawl_web_task"
-        assert task_name == "crawl_web_task"
-    
-    def test_creates_web_crawl_config(self):
-        """Should create entry in web_crawl_configs table."""
-        table_name = "web_crawl_configs"
-        assert table_name == "web_crawl_configs"
-    
-    def test_parses_crawl_options_from_metadata(self):
-        """Should extract crawl_type and depth from metadata."""
-        metadata = {"crawl_type": "sitemap", "depth": 3}
-        assert metadata["crawl_type"] == "sitemap"
-        assert metadata["depth"] == 3
-    
-    def test_limits_max_depth(self):
-        """Should cap max_depth at 10."""
-        requested_depth = 20
-        max_depth = min(requested_depth, 10)
-        assert max_depth == 10
+TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
-class TestIngestEndpointConnectors:
-    """Test Drive/Notion connector ingestion."""
-    
-    def test_drive_ingestion_queues_task(self):
-        """Should queue connector task for Drive file."""
-        connector_type = "drive"
-        assert connector_type == "drive"
-    
-    def test_notion_ingestion_queues_task(self):
-        """Should queue connector task for Notion page."""
-        connector_type = "notion"
-        assert connector_type == "notion"
-    
-    def test_creates_ingestion_job(self):
-        """Should create entry in ingestion_jobs table."""
-        table_name = "ingestion_jobs"
-        assert table_name == "ingestion_jobs"
+_REQUEST_COUNTER = itertools.count(1)
 
 
-class TestIngestEndpointValidation:
-    """Test input validation."""
-    
-    def test_requires_at_least_one_source(self):
-        """Should return 400 if no file, url, drive_id, or notion_page_id."""
-        error_message = "Either 'file', 'url', 'drive_id', or 'notion_page_id' must be provided."
-        assert "file" in error_message
-    
-    def test_requires_authentication(self):
-        """Should return 401 without valid auth token."""
-        status_code = 401
-        assert status_code == 401
-    
-    def test_rate_limiting(self):
-        """Should respect rate limit of 10 requests per minute."""
-        rate_limit = "10/minute"
-        assert "10" in rate_limit
+def make_request(headers=None):
+    headers = headers or {}
+    raw_headers = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+    client_ip = f"127.0.0.{next(_REQUEST_COUNTER)}"
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/ingest",
+        "headers": raw_headers,
+        "client": (client_ip, 1234),
+    }
+    return Request(scope)
 
 
-class TestIngestEndpointMetadata:
-    """Test metadata handling."""
-    
-    def test_parses_json_metadata(self):
-        """Should parse metadata JSON string."""
-        import json
-        metadata_str = '{"key": "value"}'
-        parsed = json.loads(metadata_str)
-        assert parsed["key"] == "value"
-    
-    def test_handles_invalid_json_metadata(self):
-        """Should handle malformed metadata JSON gracefully."""
-        import json
-        invalid_json = "not-json"
-        try:
-            json.loads(invalid_json)
-            result = "parsed"
-        except:
-            result = "fallback_to_empty_dict"
-        assert result == "fallback_to_empty_dict"
+class TestHelpers:
+    def test_sanitize_filename_blocks_path_traversal(self):
+        name = "../../etc/passwd"
+        assert ingest_module.sanitize_filename(name) == "passwd"
+
+    def test_sanitize_filename_handles_empty(self):
+        assert ingest_module.sanitize_filename("") == "unnamed_file"
+
+    def test_sanitize_filename_preserves_extension(self):
+        assert ingest_module.sanitize_filename("report.pdf") == "report.pdf"
+
+    def test_get_idempotency_key_accepts_header(self):
+        request = make_request({"Idempotency-Key": "  key-123 "})
+        assert ingest_module.get_idempotency_key(request) == "key-123"
+
+    def test_find_existing_ingestion_job_returns_latest(self):
+        supabase = MagicMock()
+        table = supabase.table.return_value
+        table.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = Mock(
+            data=[{"id": "job-1", "status": "pending"}]
+        )
+
+        result = ingest_module.find_existing_ingestion_job(
+            supabase, TEST_USER_ID, "file", "key-123"
+        )
+        assert result["id"] == "job-1"
+
+    def test_sanitize_filename_handles_bad_unquote(self):
+        with patch("urllib.parse.unquote", side_effect=Exception("boom")):
+            assert ingest_module.sanitize_filename("file.txt") == "file.txt"
+
+    def test_sanitize_filename_returns_unnamed_for_dots(self):
+        assert ingest_module.sanitize_filename("...") == "unnamed_file"
+
+    def test_find_existing_ingestion_job_returns_none_without_key(self):
+        supabase = MagicMock()
+        assert ingest_module.find_existing_ingestion_job(supabase, TEST_USER_ID, "file", None) is None
 
 
-class TestIngestEndpointErrorHandling:
-    """Test error handling."""
-    
-    def test_handles_storage_upload_failure(self):
-        """Should return 500 if storage upload fails."""
-        error_code = 500
-        assert error_code == 500
-    
-    def test_handles_database_insert_failure(self):
-        """Should cleanup storage if database insert fails."""
-        # If DB insert fails, staged file should be removed
-        cleanup_called = True
-        assert cleanup_called is True
+class TestIngestWebUrl:
+    @pytest.mark.asyncio
+    async def test_ingest_url_queues_web_crawl(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.queue_web_crawl", return_value={"task_id": "task-1", "crawl_id": "crawl-1"}), \
+             patch("api.v1.ingest.WebConnector") as mock_connector:
+            connector = mock_connector.return_value
+            connector.normalize_url.return_value = "https://example.com"
+            connector.is_safe_url.return_value = True
+
+            response = await ingest_module.ingest_document(
+                request,
+                url="https://example.com",
+                metadata="{}",
+                user_id=TEST_USER_ID,
+            )
+
+        assert response.status == "queued"
+        assert response.doc_id == "crawl-1"
+
+    @pytest.mark.asyncio
+    async def test_ingest_url_safe_parsing_defaults(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.queue_web_crawl", return_value={"task_id": "task-1", "crawl_id": "crawl-1"}) as queue_crawl, \
+             patch("api.v1.ingest.WebConnector") as mock_connector:
+            connector = mock_connector.return_value
+            connector.normalize_url.return_value = "https://example.com"
+            connector.is_safe_url.return_value = True
+
+            response = await ingest_module.ingest_document(
+                request,
+                url="https://example.com",
+                metadata='{"crawl_type": "recursive", "depth": "bad", "max_pages": "bad", '
+                         '"allow_subdomains": true, "respect_robots": "yes"}',
+                user_id=TEST_USER_ID,
+            )
+
+        assert response.status == "queued"
+        _, kwargs = queue_crawl.call_args
+        assert kwargs["max_depth"] == 1
+        assert kwargs["max_pages"] == 500
+        assert kwargs["allow_subdomains"] is True
+        assert kwargs["respect_robots"] is True
+
+    @pytest.mark.asyncio
+    async def test_ingest_url_rejects_invalid_crawl_type(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.WebConnector") as mock_connector:
+            connector = mock_connector.return_value
+            connector.normalize_url.return_value = "https://example.com"
+            connector.is_safe_url.return_value = True
+
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    url="https://example.com",
+                    metadata='{"crawl_type": "bad"}',
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_blocks_viewer_role(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value={"user_role": "viewer"})), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    url="https://example.com",
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_url_blocks_feature(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_feature_access", new=AsyncMock(return_value={"allowed": False, "reason": "no"})):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    url="https://example.com",
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_url_invalid_url(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.WebConnector") as mock_connector:
+            connector = mock_connector.return_value
+            connector.normalize_url.return_value = None
+
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    url="bad",
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_url_queue_failure(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.queue_web_crawl", side_effect=Exception("down")), \
+             patch("api.v1.ingest.WebConnector") as mock_connector:
+            connector = mock_connector.return_value
+            connector.normalize_url.return_value = "https://example.com"
+            connector.is_safe_url.return_value = True
+
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    url="https://example.com",
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_url_unsafe_rejected(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.WebConnector") as mock_connector:
+            connector = mock_connector.return_value
+            connector.normalize_url.return_value = "https://example.com"
+            connector.is_safe_url.return_value = False
+
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    url="https://example.com",
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_url_metadata_parse_failure(self):
+        request = make_request()
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.queue_web_crawl", return_value={"task_id": "task-1", "crawl_id": "crawl-1"}), \
+             patch("api.v1.ingest.WebConnector") as mock_connector:
+            connector = mock_connector.return_value
+            connector.normalize_url.return_value = "https://example.com"
+            connector.is_safe_url.return_value = True
+
+            response = await ingest_module.ingest_document(
+                request,
+                url="https://example.com",
+                metadata="not-json",
+                user_id=TEST_USER_ID,
+            )
+
+        assert response.status == "queued"
 
 
-class TestStoragePath:
-    """Test storage path generation."""
-    
-    def test_path_includes_user_id(self):
-        """Should include user_id in storage path for isolation."""
-        user_id = "user-123"
-        file_uuid = "uuid-456"
-        filename = "document.pdf"
-        path = f"{user_id}/{file_uuid}/{filename}"
-        assert user_id in path
-    
-    def test_path_includes_uuid(self):
-        """Should include UUID for uniqueness."""
-        import uuid
-        file_uuid = str(uuid.uuid4())
-        assert len(file_uuid) == 36  # UUID format
-    
-    def test_path_includes_filename(self):
-        """Should preserve original filename."""
-        filename = "my-document.pdf"
-        path = f"user/uuid/{filename}"
-        assert filename in path
+class TestIngestFileUpload:
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_queues_task(self):
+        request = make_request()
+        file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
 
-
-class TestMimeTypeMapping:
-    """Test MIME type to extension mapping."""
-    
-    def test_pdf_mime_type(self):
-        """Should map PDF MIME type correctly."""
-        mime_map = {"application/pdf": [".pdf"]}
-        assert ".pdf" in mime_map["application/pdf"]
-    
-    def test_docx_mime_type(self):
-        """Should map DOCX MIME type correctly."""
-        mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        expected_ext = ".docx"
-        assert expected_ext == ".docx"
-    
-    def test_plain_text_mime_type(self):
-        """Should map plain text MIME type correctly."""
-        mime_map = {"text/plain": [".txt"]}
-        assert ".txt" in mime_map["text/plain"]
-
-
-# =============================================================================
-# Tests for Web Crawl Config Delete Endpoint (NEW)
-# =============================================================================
-
-class TestDeleteCrawlConfigEndpoint:
-    """Tests for DELETE /api/v1/ingest/web/{config_id}."""
-    
-    @pytest.fixture
-    def mock_supabase_with_crawl_config(self):
-        """Mock Supabase with crawl configuration."""
-        mock = MagicMock()
-        
-        # Mock config lookup
-        config_response = MagicMock()
-        config_response.data = {
-            "id": "config-123",
-            "user_id": "user-123",
-            "celery_task_id": "task-abc",
-            "status": "processing"
-        }
-        
-        # Mock delete response
-        delete_response = MagicMock()
-        delete_response.data = [{"id": "config-123"}]
-        
+        supabase = MagicMock()
+        storage_bucket = MagicMock()
+        supabase.storage.from_.return_value = storage_bucket
         table = MagicMock()
-        table.select.return_value = table
-        table.eq.return_value = table
-        table.single.return_value = table
-        table.delete.return_value = table
-        table.execute.side_effect = [config_response, delete_response]
-        
-        mock.table.return_value = table
-        return mock
-    
-    @pytest.mark.unit
-    def test_delete_config_removes_record(self, mock_supabase_with_crawl_config):
-        """Should delete web_crawl_configs record."""
-        deleted = True
-        assert deleted is True
-    
-    @pytest.mark.unit
-    def test_delete_config_verifies_ownership(self):
-        """Should verify user owns the config."""
-        # Query should filter by both id AND user_id
-        user_id = "user-123"
-        config_user_id = "user-123"
-        assert user_id == config_user_id
-    
-    @pytest.mark.unit
-    def test_delete_config_returns_404_for_nonexistent(self):
-        """Should return 404 when config not found."""
-        mock = MagicMock()
-        config_response = MagicMock()
-        config_response.data = None
-        
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.magic.from_buffer", return_value="text/plain"), \
+             patch("worker.tasks.unified_ingest_task") as mock_task:
+            mock_task.delay.return_value = SimpleNamespace(id="task-1")
+
+            response = await ingest_module.ingest_document(
+                request,
+                file=file,
+                url=None,
+                drive_id=None,
+                notion_page_id=None,
+                metadata="{}",
+                user_id=TEST_USER_ID,
+            )
+
+        assert response.status == "queued"
+        assert response.doc_id == "job-1"
+        storage_bucket.upload.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_blocks_dangerous_mime(self):
+        request = make_request()
+        file = UploadFile(filename="bad.exe", file=io.BytesIO(b"MZ"))
+
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.magic.from_buffer", return_value="application/x-executable"):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    file=file,
+                    url=None,
+                    drive_id=None,
+                    notion_page_id=None,
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_extension_mismatch(self):
+        request = make_request()
+        file = UploadFile(filename="bad.pdf", file=io.BytesIO(b"data"))
+
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.magic.from_buffer", return_value="text/plain"):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    file=file,
+                    url=None,
+                    drive_id=None,
+                    notion_page_id=None,
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_dispatch_failure_cleans_up(self):
+        request = make_request()
+        file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
+
+        supabase = MagicMock()
+        storage_bucket = MagicMock()
+        supabase.storage.from_.return_value = storage_bucket
         table = MagicMock()
-        table.select.return_value = table
-        table.eq.return_value = table
-        table.single.return_value = table
-        table.execute.return_value = config_response
-        mock.table.return_value = table
-        
-        assert config_response.data is None
-    
-    @pytest.mark.unit
-    def test_delete_config_cancels_running_task(self):
-        """Should revoke Celery task if still running."""
-        # If status is 'pending' or 'processing', should call task.revoke()
-        running_statuses = ["pending", "processing"]
-        config_status = "processing"
-        should_cancel = config_status in running_statuses
-        assert should_cancel is True
-    
-    @pytest.mark.unit
-    def test_delete_config_skips_cancel_for_completed(self):
-        """Should not try to cancel completed tasks."""
-        completed_statuses = ["completed", "failed", "cancelled"]
-        config_status = "completed"
-        should_cancel = config_status not in completed_statuses
-        assert should_cancel is False
-    
-    @pytest.mark.unit
-    def test_delete_config_returns_success_response(self):
-        """Should return success status and config_id."""
-        response = {
-            "status": "success",
-            "message": "Crawl configuration deleted",
-            "config_id": "config-123"
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.magic.from_buffer", return_value="text/plain"), \
+             patch("worker.tasks.unified_ingest_task.delay", side_effect=Exception("boom")):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    file=file,
+                    url=None,
+                    drive_id=None,
+                    notion_page_id=None,
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+        storage_bucket.remove.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_includes_idempotency_key(self):
+        request = make_request({"Idempotency-Key": "key-1"})
+        file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
+
+        supabase = MagicMock()
+        storage_bucket = MagicMock()
+        supabase.storage.from_.return_value = storage_bucket
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.magic.from_buffer", return_value="text/plain"), \
+             patch("api.v1.ingest.find_existing_ingestion_job", return_value=None), \
+             patch("worker.tasks.unified_ingest_task") as mock_task:
+            mock_task.delay.return_value = SimpleNamespace(id="task-1")
+
+            await ingest_module.ingest_document(
+                request,
+                file=file,
+                url=None,
+                drive_id=None,
+                notion_page_id=None,
+                metadata="{}",
+                user_id=TEST_USER_ID,
+            )
+
+        payload = table.insert.call_args[0][0]
+        assert payload["idempotency_key"] == "key-1"
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_dispatch_failure_cleanup_error(self):
+        request = make_request()
+        file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
+
+        supabase = MagicMock()
+        storage_bucket = MagicMock()
+        storage_bucket.remove.side_effect = Exception("cleanup failed")
+        supabase.storage.from_.return_value = storage_bucket
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.magic.from_buffer", return_value="text/plain"), \
+             patch("worker.tasks.unified_ingest_task.delay", side_effect=Exception("boom")):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    file=file,
+                    url=None,
+                    drive_id=None,
+                    notion_page_id=None,
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+        storage_bucket.remove.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_quota_blocked(self):
+        request = make_request()
+        file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
+
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": False, "reason": "limit"})):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    file=file,
+                    url=None,
+                    drive_id=None,
+                    notion_page_id=None,
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_magic_error_logs(self):
+        request = make_request()
+        file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
+
+        supabase = MagicMock()
+        storage_bucket = MagicMock()
+        supabase.storage.from_.return_value = storage_bucket
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.magic.from_buffer", side_effect=Exception("boom")), \
+             patch("worker.tasks.unified_ingest_task") as mock_task:
+            mock_task.delay.return_value = SimpleNamespace(id="task-1")
+
+            response = await ingest_module.ingest_document(
+                request,
+                file=file,
+                url=None,
+                drive_id=None,
+                notion_page_id=None,
+                metadata="{}",
+                user_id=TEST_USER_ID,
+            )
+
+        assert response.status == "queued"
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_upload_storage_failure(self):
+        request = make_request()
+        file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
+
+        supabase = MagicMock()
+        storage_bucket = MagicMock()
+        storage_bucket.upload.side_effect = Exception("boom")
+        supabase.storage.from_.return_value = storage_bucket
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+             patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.magic.from_buffer", return_value="text/plain"):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_document(
+                    request,
+                    file=file,
+                    url=None,
+                    drive_id=None,
+                    notion_page_id=None,
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+
+@pytest.mark.asyncio
+async def test_ingest_requires_payload():
+    request = make_request()
+    with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+         patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+         patch("api.v1.ingest.check_quota", new=AsyncMock()):
+        with pytest.raises(HTTPException) as exc:
+            await ingest_module.ingest_document(
+                request,
+                file=None,
+                url=None,
+                drive_id=None,
+                notion_page_id=None,
+                metadata="{}",
+                user_id=TEST_USER_ID,
+            )
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_upload_idempotency_returns_existing():
+    request = make_request({"Idempotency-Key": "key-1"})
+    file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
+
+    supabase = MagicMock()
+    storage_bucket = MagicMock()
+    supabase.storage.from_.return_value = storage_bucket
+    supabase.table.return_value.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+
+    with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+         patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+         patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+         patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+         patch("api.v1.ingest.magic.from_buffer", return_value="text/plain"), \
+         patch("api.v1.ingest.find_existing_ingestion_job", return_value={"id": "job-1", "status": "queued"}):
+        response = await ingest_module.ingest_document(
+            request,
+            file=file,
+            url=None,
+            drive_id=None,
+            notion_page_id=None,
+            metadata="{}",
+            user_id=TEST_USER_ID,
+        )
+
+    assert response.doc_id == "job-1"
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_upload_job_create_failure():
+    request = make_request()
+    file = UploadFile(filename="test.txt", file=io.BytesIO(b"hello"))
+
+    supabase = MagicMock()
+    storage_bucket = MagicMock()
+    supabase.storage.from_.return_value = storage_bucket
+    supabase.table.return_value.insert.return_value.execute.return_value = Mock(data=None)
+
+    with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+         patch("api.v1.ingest.team_service.get_user_team", new=AsyncMock(return_value=None)), \
+         patch("api.v1.ingest.check_quota", new=AsyncMock()), \
+         patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+         patch("api.v1.ingest.magic.from_buffer", return_value="text/plain"):
+        with pytest.raises(HTTPException):
+            await ingest_module.ingest_document(
+                request,
+                file=file,
+                url=None,
+                drive_id=None,
+                notion_page_id=None,
+                metadata="{}",
+                user_id=TEST_USER_ID,
+            )
+
+    storage_bucket.remove.assert_called_once()
+
+
+class TestIngestConnectors:
+    @pytest.mark.asyncio
+    async def test_ingest_connector_idempotency_returns_existing(self):
+        request = make_request({"Idempotency-Key": "key-1"})
+        supabase = MagicMock()
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.find_existing_ingestion_job", return_value={"id": "job-1", "status": "queued"}):
+            response = await ingest_module.ingest_document(
+                request,
+                url=None,
+                file=None,
+                drive_id="drive-1",
+                notion_page_id=None,
+                metadata="{}",
+                user_id=TEST_USER_ID,
+            )
+
+        assert response.doc_id == "job-1"
+
+    @pytest.mark.asyncio
+    async def test_ingest_connector_job_creation_failure(self):
+        request = make_request()
+        supabase = MagicMock()
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await ingest_module.ingest_document(
+                    request,
+                    url=None,
+                    file=None,
+                    drive_id="drive-1",
+                    notion_page_id=None,
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+        assert exc.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_ingest_connector_dispatch_failure(self):
+        request = make_request()
+        supabase = MagicMock()
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("worker.tasks.unified_ingest_task.delay", side_effect=Exception("boom")):
+            with pytest.raises(HTTPException) as exc:
+                await ingest_module.ingest_document(
+                    request,
+                    url=None,
+                    file=None,
+                    drive_id="drive-1",
+                    notion_page_id=None,
+                    metadata="{}",
+                    user_id=TEST_USER_ID,
+                )
+
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_ingest_connector_includes_idempotency_key(self):
+        request = make_request({"Idempotency-Key": "key-1"})
+        supabase = MagicMock()
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-1"}])
+        supabase.table.return_value = table
+
+        task = MagicMock()
+        task.delay.return_value = SimpleNamespace(id="task-1")
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.find_existing_ingestion_job", return_value=None), \
+             patch("worker.tasks.unified_ingest_task", task):
+            await ingest_module.ingest_document(
+                request,
+                url=None,
+                file=None,
+                drive_id="drive-1",
+                notion_page_id=None,
+                metadata="{}",
+                user_id=TEST_USER_ID,
+            )
+
+        payload = table.insert.call_args[0][0]
+        assert payload["idempotency_key"] == "key-1"
+
+
+class TestPresignedUploadFlow:
+    @pytest.mark.asyncio
+    async def test_generate_upload_url_rejects_invalid_type(self):
+        request = make_request()
+        body = ingest_module.UploadUrlRequest(
+            filename="file.exe",
+            file_type="application/x-executable",
+            file_size=10,
+        )
+
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
+            with pytest.raises(HTTPException):
+                await ingest_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_generate_upload_url_success(self):
+        request = make_request()
+        body = ingest_module.UploadUrlRequest(
+            filename="file.pdf",
+            file_type="application/pdf",
+            file_size=10,
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.create_signed_upload_url.return_value = {
+            "signed_url": "https://signed.example.com",
         }
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
+            response = await ingest_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
+
+        assert response.upload_url == "https://signed.example.com"
+        assert response.storage_path.startswith(f"uploads/{TEST_USER_ID}/")
+
+    @pytest.mark.asyncio
+    async def test_generate_upload_url_missing_signed_url(self):
+        request = make_request()
+        body = ingest_module.UploadUrlRequest(
+            filename="file.pdf",
+            file_type="application/pdf",
+            file_size=10,
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.create_signed_upload_url.return_value = {"no_url": True}
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
+            with pytest.raises(HTTPException):
+                await ingest_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_generate_upload_url_quota_blocked(self):
+        request = make_request()
+        body = ingest_module.UploadUrlRequest(
+            filename="file.pdf",
+            file_type="application/pdf",
+            file_size=10,
+        )
+
+        with patch("api.v1.ingest.get_supabase", return_value=MagicMock()), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": False, "reason": "limit"})):
+            with pytest.raises(HTTPException):
+                await ingest_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_generate_upload_url_none_response(self):
+        request = make_request()
+        body = ingest_module.UploadUrlRequest(
+            filename="file.pdf",
+            file_type="application/pdf",
+            file_size=10,
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.create_signed_upload_url.return_value = None
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
+            with pytest.raises(HTTPException):
+                await ingest_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_generate_upload_url_exception(self):
+        request = make_request()
+        body = ingest_module.UploadUrlRequest(
+            filename="file.pdf",
+            file_type="application/pdf",
+            file_size=10,
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.create_signed_upload_url.side_effect = RuntimeError("boom")
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
+            with pytest.raises(HTTPException):
+                await ingest_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_dispatches_task(self):
+        request = make_request()
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/file.txt",
+            filename="file.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.list.return_value = [{"name": "file.txt"}]
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-2"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("worker.tasks.unified_ingest_task") as mock_task:
+            mock_task.delay.return_value = SimpleNamespace(id="task-2")
+
+            response = await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+        assert response.status == "queued"
+        assert response.doc_id == "job-2"
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_404_when_missing(self):
+        request = make_request()
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/missing.txt",
+            filename="missing.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.list.return_value = [{"name": "other.txt"}]
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_cleans_up_on_quota_block(self):
+        request = make_request()
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/file.txt",
+            filename="file.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.list.return_value = [{"name": "file.txt"}]
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": False, "reason": "limit"})):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+        supabase.storage.from_.return_value.remove.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_cleanup_error_on_quota_block(self):
+        request = make_request()
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/file.txt",
+            filename="file.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        storage_bucket = MagicMock()
+        storage_bucket.list.return_value = [{"name": "file.txt"}]
+        storage_bucket.remove.side_effect = Exception("cleanup failed")
+        supabase.storage.from_.return_value = storage_bucket
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": False, "reason": "limit"})):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_includes_idempotency_key(self):
+        request = make_request({"Idempotency-Key": "key-1"})
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/file.txt",
+            filename="file.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.list.return_value = [{"name": "file.txt"}]
+        supabase.table.return_value.insert.return_value.execute.return_value = Mock(data=[{"id": "job-2"}])
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.find_existing_ingestion_job", return_value=None), \
+             patch("worker.tasks.unified_ingest_task") as mock_task:
+            mock_task.delay.return_value = SimpleNamespace(id="task-2")
+            await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+        payload = supabase.table.return_value.insert.call_args[0][0]
+        assert payload["idempotency_key"] == "key-1"
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_verification_error_continues(self):
+        request = make_request()
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/file.txt",
+            filename="file.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.list.side_effect = Exception("boom")
+        table = MagicMock()
+        table.insert.return_value.execute.return_value = Mock(data=[{"id": "job-2"}])
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("worker.tasks.unified_ingest_task") as mock_task:
+            mock_task.delay.return_value = SimpleNamespace(id="task-2")
+
+            response = await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+        assert response.status == "queued"
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_idempotency_returns_existing(self):
+        request = make_request({"Idempotency-Key": "key-1"})
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/file.txt",
+            filename="file.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.list.return_value = [{"name": "file.txt"}]
+        supabase.table.return_value.insert.return_value.execute.return_value = Mock(data=[{"id": "job-2"}])
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.ingest.find_existing_ingestion_job", return_value={"id": "job-2", "status": "queued"}):
+            response = await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+        assert response.doc_id == "job-2"
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_job_create_failure(self):
+        request = make_request()
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/file.txt",
+            filename="file.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.list.return_value = [{"name": "file.txt"}]
+        supabase.table.return_value.insert.return_value.execute.return_value = Mock(data=None)
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_ingest_file_reference_dispatch_failure_remove_error(self):
+        request = make_request()
+        body = ingest_module.FileReferenceRequest(
+            storage_path=f"uploads/{TEST_USER_ID}/uuid/file.txt",
+            filename="file.txt",
+            file_size=10,
+            metadata={},
+        )
+
+        supabase = MagicMock()
+        storage_bucket = MagicMock()
+        storage_bucket.list.return_value = [{"name": "file.txt"}]
+        storage_bucket.remove.side_effect = Exception("boom")
+        supabase.storage.from_.return_value = storage_bucket
+        supabase.table.return_value.insert.return_value.execute.return_value = Mock(data=[{"id": "job-2"}])
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("api.v1.ingest.check_can_upload", new=AsyncMock(return_value={"allowed": True})), \
+             patch("worker.tasks.unified_ingest_task.delay", side_effect=Exception("boom")):
+            with pytest.raises(HTTPException):
+                await ingest_module.ingest_file_reference(request, body, user_id=TEST_USER_ID)
+
+
+class TestDeleteCrawlConfig:
+    @pytest.mark.asyncio
+    async def test_delete_crawl_config_not_found(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+            data=None
+        )
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException):
+                await ingest_module.delete_crawl_config("cfg-1", user_id="user-1")
+
+    @pytest.mark.asyncio
+    async def test_delete_crawl_config_revokes_task(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+            data={"id": "cfg-1", "celery_task_id": "task-1", "status": "processing"}
+        )
+        table.delete.return_value.eq.return_value.eq.return_value.execute.return_value = Mock(data=[])
+        supabase.table.return_value = table
+
+        mock_result = MagicMock()
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("celery.result.AsyncResult", return_value=mock_result):
+            response = await ingest_module.delete_crawl_config("cfg-1", user_id="user-1")
+
         assert response["status"] == "success"
-        assert response["config_id"] == "config-123"
-    
-    @pytest.mark.unit
-    def test_delete_config_handles_revoke_failure(self):
-        """Should continue deletion even if task revoke fails."""
-        # Non-blocking failure for task cancellation
-        revoke_failed = True
-        delete_succeeded = True  # Should still delete
-        
-        assert delete_succeeded is True
-    
-    @pytest.mark.unit
-    def test_delete_config_cascades_documents(self):
-        """Deletion may cascade to associated documents via FK."""
-        # Depending on schema, documents with this config may be deleted
-        pass
+        mock_result.revoke.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_delete_crawl_config_revoke_failure(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+            data={"id": "cfg-1", "celery_task_id": "task-1", "status": "processing"}
+        )
+        table.delete.return_value.eq.return_value.eq.return_value.execute.return_value = Mock(data=[])
+        supabase.table.return_value = table
 
-class TestCleanupOldFileStatusTask:
-    """Tests for cleanup_old_file_status Celery task."""
-    
-    @pytest.mark.unit
-    def test_cleanup_deletes_old_records(self):
-        """Should delete records older than 30 days."""
-        retention_days = 30
-        from datetime import datetime, timedelta
-        cutoff = datetime.now() - timedelta(days=retention_days)
-        
-        assert retention_days == 30
-    
-    @pytest.mark.unit
-    def test_cleanup_only_deletes_terminal_statuses(self):
-        """Should only delete completed/failed/cancelled, not pending."""
-        deletable_statuses = ["completed", "failed", "cancelled"]
-        protected_statuses = ["pending", "processing"]
-        
-        assert "pending" not in deletable_statuses
-        assert "processing" not in deletable_statuses
-    
-    @pytest.mark.unit
-    def test_cleanup_returns_deleted_count(self):
-        """Should return count of deleted records."""
-        result = {"deleted": 42}
-        assert result["deleted"] == 42
+        mock_result = MagicMock()
+        mock_result.revoke.side_effect = Exception("boom")
+        with patch("api.v1.ingest.get_supabase", return_value=supabase), \
+             patch("celery.result.AsyncResult", return_value=mock_result):
+            response = await ingest_module.delete_crawl_config("cfg-1", user_id="user-1")
 
+        assert response["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_delete_crawl_config_delete_failure(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+            data={"id": "cfg-1", "celery_task_id": None, "status": "completed"}
+        )
+        table.delete.return_value.eq.return_value.eq.return_value.execute.side_effect = Exception("boom")
+        supabase.table.return_value = table
+
+        with patch("api.v1.ingest.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException):
+                await ingest_module.delete_crawl_config("cfg-1", user_id="user-1")

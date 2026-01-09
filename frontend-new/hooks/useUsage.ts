@@ -62,7 +62,7 @@ export function UsageProvider({ children }: UsageProviderProps) {
 
         try {
             const [usageData, planData] = await Promise.all([
-                getUsageStats().catch(() => null),
+                getUsageStats(),
                 getEffectivePlan().catch(() => null)
             ]);
 
@@ -70,7 +70,7 @@ export function UsageProvider({ children }: UsageProviderProps) {
             if (planData) setEffectivePlan(planData);
             lastFetchTime.current = Date.now();
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Failed to fetch user data';
+            const message = err instanceof Error ? err.message : 'Failed to fetch usage';
             setError(message);
         } finally {
             setIsLoading(false);

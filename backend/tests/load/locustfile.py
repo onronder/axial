@@ -11,9 +11,13 @@ logger = logging.getLogger(__name__)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+LOAD_TEST_EMAIL = os.getenv("LOAD_TEST_EMAIL")
+LOAD_TEST_PASSWORD = os.getenv("LOAD_TEST_PASSWORD")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     logger.warning("SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY not set. Auth might fail.")
+if not LOAD_TEST_EMAIL or not LOAD_TEST_PASSWORD:
+    logger.warning("LOAD_TEST_EMAIL or LOAD_TEST_PASSWORD not set. Login will fail.")
 
 # Global cache for token to avoid rate limiting
 import time
@@ -48,11 +52,15 @@ def get_auth_token(client):
         # Race condition: Multiple users might enter here at start.
         # It's acceptable for a few to race, better than 250.
         
+        if not LOAD_TEST_EMAIL or not LOAD_TEST_PASSWORD:
+            logger.error("Skipping login due to missing load test credentials")
+            return None
+
         response = client.post(
             auth_url, 
             json={
-                "email": "test@example.com",
-                "password": "password"
+                "email": LOAD_TEST_EMAIL,
+                "password": LOAD_TEST_PASSWORD
             },
             headers={
                 "apikey": SUPABASE_KEY,
@@ -180,5 +188,4 @@ class AxioUser(HttpUser):
                      response.failure("Profile failed: 401 and refresh failed")
             else:
                  response.failure(f"Profile fetch failed: {response.status_code} - {response.text}")
-
 

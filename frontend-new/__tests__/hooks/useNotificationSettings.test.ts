@@ -89,9 +89,12 @@ describe('useNotificationSettings', () => {
             expect(result.current.error).toBeTruthy();
         });
 
-        it('should start with loading state true', () => {
+        it('should start with loading state true', async () => {
             const { result } = renderHook(() => useNotificationSettings());
             expect(result.current.isLoading).toBe(true);
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
         });
     });
 

@@ -75,8 +75,8 @@ class TestUnifiedIngestTask:
             file_size=1024
         )
         
-        # Should call insert on file_status table
-        mock_supabase.table.assert_called_with("file_status")
+        # Should call insert on ingestion_file_status table
+        mock_supabase.table.assert_called_with("ingestion_file_status")
 
     def test_job_cancellation_check(self, mock_supabase):
         """Verify job cancellation is properly detected."""
@@ -85,17 +85,17 @@ class TestUnifiedIngestTask:
         job_id = str(uuid4())
         
         # Mock cancelled job
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-            {"status": "cancelled"}
-        ]
+        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+            "status": "cancelled"
+        }
         
         result = check_job_cancelled(mock_supabase, job_id)
         assert result is True
         
         # Mock active job
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-            {"status": "processing"}
-        ]
+        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+            "status": "processing"
+        }
         
         result = check_job_cancelled(mock_supabase, job_id)
         assert result is False
@@ -123,20 +123,20 @@ class TestIngestionPipeline:
     @pytest.fixture
     def mock_embeddings(self):
         """Mock the embeddings service."""
-        with patch("services.embeddings.generate_embeddings_batch") as mock:
+        with patch("services.embeddings.generate_embeddings_batch_sync") as mock:
             mock.return_value = [[0.1] * 1536]  # Mock embedding vector
             yield mock
 
     @pytest.fixture  
     def mock_parser(self):
         """Mock document parser."""
-        with patch("services.parsers.DocumentProcessorFactory.get_processor") as mock:
-            processor = MagicMock()
-            processor.process.return_value = MagicMock(
+        with patch("services.parsers.DocumentProcessorFactory.process") as mock:
+            mock.return_value = MagicMock(
                 chunks=[MagicMock(content="test chunk", metadata={})],
-                total_tokens=100
+                total_tokens=100,
+                file_type="text",
+                metadata={},
             )
-            mock.return_value = processor
             yield mock
 
     def test_pipeline_processes_document(self, mock_embeddings, mock_parser):
@@ -148,8 +148,7 @@ class TestIngestionPipeline:
         
         from services.parsers import DocumentProcessorFactory
         
-        processor = DocumentProcessorFactory.get_processor("test.pdf")
-        result = processor.process(b"PDF content", "test.pdf")
+        result = DocumentProcessorFactory.process(content=b"PDF content", filename="test.pdf")
         
         assert result is not None
         assert len(result.chunks) > 0
@@ -205,15 +204,13 @@ class TestErrorHandling:
 
     def test_parse_error_handling(self):
         """Verify parsing errors are properly caught and logged."""
-        with patch("services.parsers.DocumentProcessorFactory.get_processor") as mock:
-            mock.return_value.process.side_effect = Exception("Parse error")
-            
+        with patch("services.parsers.DocumentProcessorFactory.process") as mock:
+            mock.side_effect = Exception("Parse error")
+
             from services.parsers import DocumentProcessorFactory
-            
-            processor = DocumentProcessorFactory.get_processor("bad.pdf")
-            
+
             with pytest.raises(Exception, match="Parse error"):
-                processor.process(b"bad content", "bad.pdf")
+                DocumentProcessorFactory.process(content=b"bad content", filename="bad.pdf")
 
     def test_embedding_timeout_handling(self):
         """Verify embedding timeouts are handled gracefully."""
@@ -226,19 +223,24 @@ class TestErrorHandling:
 
     def test_dlq_integration_on_failure(self):
         """Verify failed tasks are logged to DLQ."""
-        from worker.dlq_worker import log_failed_task
+        from worker.dlq_worker import log_task_failure
         
         mock_supabase = MagicMock()
+        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
         mock_supabase.table.return_value.insert.return_value.execute.return_value.data = [{"id": str(uuid4())}]
-        
-        log_failed_task(
-            supabase=mock_supabase,
-            task_id=str(uuid4()),
-            task_name="unified_ingest_task",
-            exception=Exception("Test failure"),
-            user_id=str(uuid4()),
-            job_id=str(uuid4()),
-            kwargs={}
-        )
-        
+
+        with patch("worker.dlq_worker.get_supabase") as mock_get_supabase:
+            mock_get_supabase.return_value = mock_supabase
+
+            log_task_failure(
+                task_id=str(uuid4()),
+                task_name="unified_ingest_task",
+                args=(),
+                kwargs={},
+                exc=Exception("Test failure"),
+                traceback_str="traceback",
+                user_id=str(uuid4()),
+                job_id=str(uuid4()),
+            )
+
         mock_supabase.table.assert_called_with("failed_tasks")

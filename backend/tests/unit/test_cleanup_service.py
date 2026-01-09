@@ -106,14 +106,21 @@ class TestVectorCleanup:
         """Should delete all document_chunks for the user."""
         service, mock_supabase = service_with_supabase
         
-        mock_response = Mock()
-        mock_response.data = [{"id": "1"}, {"id": "2"}, {"id": "3"}]
-        mock_supabase.table.return_value.delete.return_value.eq.return_value.execute.return_value = mock_response
+        documents_table = Mock()
+        documents_table.select.return_value.eq.return_value.execute.return_value = Mock(
+            data=[{"id": "doc-1"}, {"id": "doc-2"}]
+        )
+        chunks_table = Mock()
+        chunks_table.delete.return_value.in_.return_value.execute.return_value = Mock(
+            data=[{"id": "chunk-1"}, {"id": "chunk-2"}, {"id": "chunk-3"}]
+        )
+        mock_supabase.table.side_effect = [documents_table, chunks_table]
         
         result = await service._cleanup_vectors("user-123")
         
-        mock_supabase.table.assert_called_with("document_chunks")
-        mock_supabase.table.return_value.delete.return_value.eq.assert_called_with("user_id", "user-123")
+        assert mock_supabase.table.call_args_list[0][0][0] == "documents"
+        assert mock_supabase.table.call_args_list[1][0][0] == "document_chunks"
+        chunks_table.delete.return_value.in_.assert_called_with("document_id", ["doc-1", "doc-2"])
         assert result["deleted"] == 3
         assert result["status"] == "success"
     
@@ -122,9 +129,9 @@ class TestVectorCleanup:
         """Should handle case where user has no vectors."""
         service, mock_supabase = service_with_supabase
         
-        mock_response = Mock()
-        mock_response.data = []
-        mock_supabase.table.return_value.delete.return_value.eq.return_value.execute.return_value = mock_response
+        documents_table = Mock()
+        documents_table.select.return_value.eq.return_value.execute.return_value = Mock(data=[])
+        mock_supabase.table.side_effect = [documents_table]
         
         result = await service._cleanup_vectors("user-123")
         
@@ -209,6 +216,21 @@ class TestStorageCleanup:
         assert result["status"] == "success"
         assert result["deleted"] == 0
 
+    @pytest.mark.asyncio
+    async def test_cleanup_storage_handles_unexpected_failure(self, service_with_supabase, monkeypatch):
+        service, mock_supabase = service_with_supabase
+
+        mock_storage = Mock()
+        mock_supabase.storage.from_.return_value = mock_storage
+        mock_storage.list.side_effect = Exception("Bucket missing")
+
+        monkeypatch.setattr("services.cleanup.logger.warning", Mock(side_effect=RuntimeError("log fail")))
+
+        result = await service._cleanup_storage("user-123")
+
+        assert result["status"] == "error"
+        assert result["deleted"] == 0
+
 
 class TestDatabaseCleanup:
     """Tests for _cleanup_database method."""
@@ -234,7 +256,6 @@ class TestDatabaseCleanup:
         
         result = await service._cleanup_database("user-123")
         
-        # Verify all tables are cleaned
         expected_tables = [
             "documents",
             "conversations",
@@ -250,6 +271,135 @@ class TestDatabaseCleanup:
             assert table in actual_table_calls, f"Table {table} was not cleaned"
         
         assert result["status"] == "success"
+
+
+class TestDocumentCleanup:
+    @pytest.fixture
+    def service_with_supabase(self):
+        with patch("services.cleanup.get_supabase") as mock_get_supabase:
+            mock_supabase = Mock()
+            mock_get_supabase.return_value = mock_supabase
+            from services.cleanup import AccountCleanupService
+            service = AccountCleanupService()
+            yield service, mock_supabase
+
+    @pytest.mark.asyncio
+    async def test_delete_single_document_removes_storage_and_db(self, service_with_supabase):
+        service, supabase = service_with_supabase
+
+        doc_table = Mock()
+        doc_table.select.return_value = doc_table
+        doc_table.eq.return_value = doc_table
+        doc_table.single.return_value = doc_table
+        doc_table.delete.return_value = doc_table
+        doc_table.execute.return_value = Mock(
+            data={
+                "id": "doc-1",
+                "user_id": "user-1",
+                "source_type": "file",
+                "metadata": {"storage_path": "user-1/file.pdf"},
+                "source_url": "",
+            }
+        )
+
+        chunks_table = Mock()
+        chunks_table.delete.return_value = chunks_table
+        chunks_table.eq.return_value = chunks_table
+        chunks_table.execute.return_value = Mock(data=[])
+
+        supabase.table.side_effect = lambda name: doc_table if name == "documents" else chunks_table
+
+        storage = Mock()
+        supabase.storage.from_.return_value = storage
+
+        result = await service.delete_single_document("doc-1", "user-1")
+
+        assert result["status"] == "success"
+        storage.remove.assert_called_once_with(["user-1/file.pdf"])
+
+    @pytest.mark.asyncio
+    async def test_delete_single_document_handles_storage_error(self, service_with_supabase):
+        service, supabase = service_with_supabase
+
+        doc_table = Mock()
+        doc_table.select.return_value = doc_table
+        doc_table.eq.return_value = doc_table
+        doc_table.single.return_value = doc_table
+        doc_table.delete.return_value = doc_table
+        doc_table.execute.return_value = Mock(
+            data={
+                "id": "doc-1",
+                "user_id": "user-1",
+                "source_type": "file",
+                "metadata": {},
+                "source_url": "user-1/path/file.pdf",
+            }
+        )
+
+        chunks_table = Mock()
+        chunks_table.delete.return_value = chunks_table
+        chunks_table.eq.return_value = chunks_table
+        chunks_table.execute.return_value = Mock(data=[])
+
+        supabase.table.side_effect = lambda name: doc_table if name == "documents" else chunks_table
+
+        storage = Mock()
+        storage.remove.side_effect = Exception("storage error")
+        supabase.storage.from_.return_value = storage
+
+        result = await service.delete_single_document("doc-1", "user-1")
+
+        assert result["status"] == "success"
+        storage.remove.assert_called_once_with(["user-1/path/file.pdf"])
+
+    @pytest.mark.asyncio
+    async def test_delete_single_document_handles_nested_storage_path(self, service_with_supabase):
+        service, supabase = service_with_supabase
+
+        doc_table = Mock()
+        doc_table.select.return_value = doc_table
+        doc_table.eq.return_value = doc_table
+        doc_table.single.return_value = doc_table
+        doc_table.delete.return_value = doc_table
+        doc_table.execute.return_value = Mock(
+            data={
+                "id": "doc-2",
+                "user_id": "user-1",
+                "source_type": "file",
+                "metadata": {"storage_path": "user-1/folder/file.pdf"},
+                "source_url": "",
+            }
+        )
+
+        chunks_table = Mock()
+        chunks_table.delete.return_value = chunks_table
+        chunks_table.eq.return_value = chunks_table
+        chunks_table.execute.return_value = Mock(data=[])
+
+        supabase.table.side_effect = lambda name: doc_table if name == "documents" else chunks_table
+
+        storage = Mock()
+        supabase.storage.from_.return_value = storage
+
+        result = await service.delete_single_document("doc-2", "user-1")
+
+        assert result["status"] == "success"
+        storage.remove.assert_called_once_with(["user-1/folder/file.pdf"])
+
+    @pytest.mark.asyncio
+    async def test_delete_single_document_raises_when_not_found(self, service_with_supabase):
+        service, supabase = service_with_supabase
+
+        doc_table = Mock()
+        doc_table.select.return_value = doc_table
+        doc_table.eq.return_value = doc_table
+        doc_table.single.return_value = doc_table
+        doc_table.execute.return_value = Mock(data=None)
+
+        supabase.table.side_effect = lambda name: doc_table
+
+        with pytest.raises(Exception):
+            await service.delete_single_document("doc-missing", "user-1")
     
     @pytest.mark.asyncio
     async def test_cleanup_database_handles_error(self, service_with_supabase):

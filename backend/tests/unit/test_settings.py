@@ -1,113 +1,266 @@
 """
 Test Suite for Settings API
 
-Tests for:
-- GET /api/v1/settings/profile - Get user profile
-- PATCH /api/v1/settings/profile - Update profile
-- Profile creation with name population from Supabase metadata
+Exercises profile creation/update and notification settings flows.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+from fastapi import HTTPException
+
+from api.v1.settings import (
+    DEFAULT_NOTIFICATION_SETTINGS,
+    NotificationSettingUpdate,
+    ProfileResponse,
+    ProfileUpdate,
+    get_notification_settings,
+    get_profile,
+    reset_notification_settings,
+    update_notification_setting,
+    update_profile,
+)
+
+
+def _build_profile_supabase(
+    profile_rows=None,
+    insert_rows=None,
+    team_rows=None,
+    user_metadata=None,
+    insert_side_effect=None,
+):
+    supabase = MagicMock()
+
+    profiles_table = MagicMock()
+    select_query = MagicMock()
+    select_query.eq.return_value = select_query
+    select_query.execute.return_value = MagicMock(data=profile_rows or [])
+    profiles_table.select.return_value = select_query
+
+    insert_query = MagicMock()
+    if insert_side_effect:
+        insert_query.execute.side_effect = insert_side_effect
+    else:
+        insert_query.execute.return_value = MagicMock(data=insert_rows or [])
+    profiles_table.insert.return_value = insert_query
+
+    upsert_query = MagicMock()
+    upsert_query.execute.return_value = MagicMock(data=insert_rows or profile_rows or [])
+    profiles_table.upsert.return_value = upsert_query
+
+    team_table = MagicMock()
+    team_table.select.return_value = team_table
+    team_table.eq.return_value = team_table
+    team_table.limit.return_value = team_table
+    team_table.execute.return_value = MagicMock(data=team_rows or [])
+
+    def table_side_effect(name):
+        if name == "user_profiles":
+            return profiles_table
+        if name == "team_members":
+            return team_table
+        return MagicMock()
+
+    supabase.table.side_effect = table_side_effect
+    supabase.auth.admin.get_user_by_id.return_value = MagicMock(
+        user=MagicMock(user_metadata=user_metadata or {})
+    )
+
+    return supabase, profiles_table, team_table
+
+
+def _build_notification_supabase(select_rows=None, insert_rows=None):
+    supabase = MagicMock()
+
+    table = MagicMock()
+    table.select.return_value = table
+    table.eq.return_value = table
+    table.insert.return_value = table
+    table.update.return_value = table
+    table.delete.return_value = table
+    if select_rows is None and insert_rows is None:
+        table.execute.return_value = MagicMock(data=[])
+    elif insert_rows is None:
+        table.execute.return_value = MagicMock(data=select_rows or [])
+    else:
+        table.execute.side_effect = [
+            MagicMock(data=select_rows or []),
+            MagicMock(data=insert_rows or []),
+        ]
+
+    supabase.table.return_value = table
+    return supabase, table
 
 
 class TestProfileCreation:
-    """
-    Tests for profile auto-creation with name population.
-    
-    CRITICAL BUG FIX VALIDATION:
-    When a profile is created for a new user, it should pull first_name
-    and last_name from Supabase auth.users metadata.
-    """
-    
-    @pytest.fixture
-    def mock_supabase_with_user_metadata(self):
-        """Mock Supabase with user metadata containing names."""
-        mock = MagicMock()
-        
-        # Mock empty profile response (user doesn't have profile yet)
-        table = MagicMock()
-        table.select.return_value = table
-        table.eq.return_value = table
-        table.execute.return_value = MagicMock(data=[])
-        table.insert.return_value = table
-        
-        mock.table.return_value = table
-        
-        # Mock auth.admin.get_user_by_id with user metadata
-        mock.auth.admin.get_user_by_id.return_value = MagicMock(
-            user=MagicMock(
-                user_metadata={
-                    "first_name": "John",
-                    "last_name": "Doe",
-                    "full_name": "John Doe"
-                }
-            )
+    @pytest.mark.asyncio
+    async def test_profile_creation_reads_first_name_from_metadata(self):
+        supabase, profiles_table, _ = _build_profile_supabase(
+            profile_rows=[],
+            insert_rows=[{"user_id": "user-1", "first_name": "John", "last_name": "Doe"}],
+            user_metadata={"first_name": "John", "last_name": "Doe"},
         )
-        
-        return mock
-    
-    @pytest.mark.unit
-    def test_profile_creation_reads_first_name_from_metadata(self, mock_supabase_with_user_metadata):
-        """
-        BUG FIX TEST: Profile creation must read first_name from Supabase metadata.
-        Previously this was returning null, causing settings page to show empty names.
-        """
-        with patch('core.db.get_supabase', return_value=mock_supabase_with_user_metadata):
-            # Verify that when profile is created, it calls auth.admin.get_user_by_id
-            # and uses the returned first_name
-            mock_supabase_with_user_metadata.auth.admin.get_user_by_id.assert_not_called()  # Not called until endpoint invoked
-    
-    @pytest.mark.unit
-    def test_profile_creation_reads_last_name_from_metadata(self, mock_supabase_with_user_metadata):
-        """Profile creation must read last_name from Supabase metadata."""
-        pass
-    
-    @pytest.mark.unit
-    def test_profile_creation_falls_back_to_full_name_parsing(self):
-        """If first_name/last_name not set, should parse from full_name."""
-        mock = MagicMock()
-        
-        # Only full_name set, no separate first/last
-        mock.auth.admin.get_user_by_id.return_value = MagicMock(
-            user=MagicMock(
-                user_metadata={
-                    "full_name": "Jane Smith"  # No first_name/last_name
-                }
-            )
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await get_profile(user_id="user-1")
+
+        assert profile["first_name"] == "John"
+        assert profile["last_name"] == "Doe"
+        insert_payload = profiles_table.insert.call_args[0][0]
+        assert insert_payload["first_name"] == "John"
+
+    @pytest.mark.asyncio
+    async def test_profile_creation_reads_last_name_from_metadata(self):
+        supabase, profiles_table, _ = _build_profile_supabase(
+            profile_rows=[],
+            insert_rows=[{"user_id": "user-1", "first_name": "Jane", "last_name": "Smith"}],
+            user_metadata={"first_name": "Jane", "last_name": "Smith"},
         )
-        
-        # The logic should split "Jane Smith" into first="Jane", last="Smith"
-        pass
-    
-    @pytest.mark.unit
-    def test_profile_creation_handles_missing_metadata_gracefully(self):
-        """If metadata is unavailable, should create profile with null names."""
-        mock = MagicMock()
-        mock.auth.admin.get_user_by_id.side_effect = Exception("User not found")
-        
-        # Should not crash, just set names to null
-        pass
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await get_profile(user_id="user-1")
+
+        assert profile["last_name"] == "Smith"
+        insert_payload = profiles_table.insert.call_args[0][0]
+        assert insert_payload["last_name"] == "Smith"
+
+    @pytest.mark.asyncio
+    async def test_profile_creation_insert_retry_failure_raises(self):
+        supabase, _, _ = _build_profile_supabase(
+            profile_rows=[],
+            insert_rows=[],
+            insert_side_effect=RuntimeError("insert failed"),
+        )
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException):
+                await get_profile(user_id="user-1")
+
+    @pytest.mark.asyncio
+    async def test_profile_creation_falls_back_to_full_name_parsing(self):
+        supabase, profiles_table, _ = _build_profile_supabase(
+            profile_rows=[],
+            insert_rows=[{"user_id": "user-1", "first_name": "Jane", "last_name": "Smith"}],
+            user_metadata={"full_name": "Jane Smith"},
+        )
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await get_profile(user_id="user-1")
+
+        assert profile["first_name"] == "Jane"
+        assert profile["last_name"] == "Smith"
+        insert_payload = profiles_table.insert.call_args[0][0]
+        assert insert_payload["first_name"] == "Jane"
+        assert insert_payload["last_name"] == "Smith"
+
+    @pytest.mark.asyncio
+    async def test_profile_creation_handles_missing_metadata_gracefully(self):
+        supabase, profiles_table, _ = _build_profile_supabase(
+            profile_rows=[],
+            insert_rows=[{"user_id": "user-1", "first_name": None, "last_name": None}],
+        )
+        supabase.auth.admin.get_user_by_id.side_effect = Exception("User not found")
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await get_profile(user_id="user-1")
+
+        assert profile["first_name"] is None
+        assert profile["last_name"] is None
+        insert_payload = profiles_table.insert.call_args[0][0]
+        assert insert_payload["first_name"] is None
 
 
 class TestProfileGet:
-    """Tests for GET /api/v1/settings/profile."""
-    
-    @pytest.mark.unit
-    def test_get_profile_returns_existing_profile(self, sample_user_profile):
-        """Existing profile should be returned without creation."""
-        pass
-    
-    @pytest.mark.unit
-    def test_get_profile_creates_profile_if_not_exists(self):
-        """First request should create profile if it doesn't exist."""
-        pass
-    
+    @pytest.mark.asyncio
+    async def test_get_profile_returns_existing_profile(self):
+        supabase, profiles_table, _ = _build_profile_supabase(
+            profile_rows=[{"user_id": "user-1", "first_name": "Existing", "last_name": "User"}],
+        )
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await get_profile(user_id="user-1")
+
+        assert profile["first_name"] == "Existing"
+        assert profiles_table.insert.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_get_profile_creates_profile_if_not_exists(self):
+        supabase, profiles_table, _ = _build_profile_supabase(
+            profile_rows=[],
+            insert_rows=[{"user_id": "user-1", "first_name": "New", "last_name": "User"}],
+            user_metadata={"first_name": "New", "last_name": "User"},
+        )
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await get_profile(user_id="user-1")
+
+        assert profile["first_name"] == "New"
+        assert profiles_table.insert.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_get_profile_insert_retry_succeeds(self):
+        supabase = MagicMock()
+        profiles_table = MagicMock()
+        select_query = MagicMock()
+        select_query.eq.return_value = select_query
+        select_query.execute.side_effect = [
+            MagicMock(data=[]),
+            MagicMock(data=[{"user_id": "user-1", "first_name": "Retry"}]),
+        ]
+        profiles_table.select.return_value = select_query
+        profiles_table.insert.return_value.execute.side_effect = Exception("insert failed")
+
+        team_table = MagicMock()
+        team_table.select.return_value = team_table
+        team_table.eq.return_value = team_table
+        team_table.limit.return_value = team_table
+        team_table.execute.return_value = MagicMock(data=[])
+
+        def table_side_effect(name):
+            if name == "user_profiles":
+                return profiles_table
+            if name == "team_members":
+                return team_table
+            return MagicMock()
+
+        supabase.table.side_effect = table_side_effect
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await get_profile(user_id="user-1")
+
+        assert profile["first_name"] == "Retry"
+
+    @pytest.mark.asyncio
+    async def test_get_profile_raises_when_profile_missing(self):
+        supabase, _, _ = _build_profile_supabase(profile_rows=[], insert_rows=[])
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await get_profile(user_id="user-1")
+
+        assert exc.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_get_profile_sets_team_flags(self):
+        supabase, _, _ = _build_profile_supabase(
+            profile_rows=[{"user_id": "user-1"}],
+            team_rows=[{"id": "team-1", "role": "admin"}],
+        )
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await get_profile(user_id="user-1")
+
+        assert profile["has_team"] is True
+        assert profile["role"] == "admin"
+
+    @pytest.mark.asyncio
+    async def test_get_profile_handles_exception(self):
+        supabase = MagicMock()
+        supabase.table.side_effect = Exception("boom")
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await get_profile(user_id="user-1")
+
+        assert exc.value.status_code == 500
+
     @pytest.mark.unit
     def test_profile_response_schema(self):
-        """Profile response must include all required fields."""
-        from api.v1.settings import ProfileResponse
-        
         profile = ProfileResponse(
             id="profile-123",
             user_id="user-123",
@@ -116,164 +269,213 @@ class TestProfileGet:
             plan="free",
             theme="system",
             created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z"
+            updated_at="2024-01-01T00:00:00Z",
         )
-        
+
         assert profile.first_name == "Test"
         assert profile.last_name == "User"
         assert profile.plan == "free"
 
 
 class TestProfileUpdate:
-    """Tests for PATCH /api/v1/settings/profile."""
-    
     @pytest.mark.unit
     def test_update_first_name(self):
-        """Should allow updating first name only."""
-        from api.v1.settings import ProfileUpdate
-        
         update = ProfileUpdate(first_name="NewName")
         assert update.first_name == "NewName"
         assert update.last_name is None
-    
+
     @pytest.mark.unit
     def test_update_last_name(self):
-        """Should allow updating last name only."""
-        from api.v1.settings import ProfileUpdate
-        
         update = ProfileUpdate(last_name="NewLastName")
         assert update.last_name == "NewLastName"
-    
-    @pytest.mark.unit
-    def test_update_theme_validates_values(self):
-        """Theme must be one of: light, dark, system."""
-        pass
-    
-    @pytest.mark.unit
-    def test_update_theme_rejects_invalid_values(self):
-        """Invalid theme values should be rejected."""
-        pass
+
+    @pytest.mark.asyncio
+    async def test_update_theme_validates_values(self):
+        supabase, _, _ = _build_profile_supabase(
+            profile_rows=[{"user_id": "user-1", "theme": "dark"}],
+            insert_rows=[{"user_id": "user-1", "theme": "dark"}],
+        )
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await update_profile(ProfileUpdate(theme="dark"), user_id="user-1")
+
+        assert profile["theme"] == "dark"
+
+    @pytest.mark.asyncio
+    async def test_update_profile_sets_names(self):
+        supabase, _, _ = _build_profile_supabase(
+            profile_rows=[{"user_id": "user-1"}],
+            insert_rows=[{"user_id": "user-1", "first_name": "A", "last_name": "B"}],
+        )
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            profile = await update_profile(ProfileUpdate(first_name="A", last_name="B"), user_id="user-1")
+
+        assert profile["first_name"] == "A"
+        assert profile["last_name"] == "B"
+
+    @pytest.mark.asyncio
+    async def test_update_profile_empty_response_raises(self):
+        supabase, table = _build_notification_supabase(select_rows=[], insert_rows=[])
+        table.upsert.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await update_profile(ProfileUpdate(first_name="A"), user_id="user-1")
+
+        assert exc.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_update_profile_handles_exception(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.upsert.return_value = table
+        table.execute.side_effect = Exception("boom")
+        supabase.table.return_value = table
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await update_profile(ProfileUpdate(first_name="A"), user_id="user-1")
+
+        assert exc.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_update_theme_rejects_invalid_values(self):
+        supabase = MagicMock()
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await update_profile(ProfileUpdate(theme="blue"), user_id="user-1")
+        assert "Invalid theme value" in str(exc.value)
 
 
 class TestNotificationSettings:
-    """Tests for notification settings endpoints."""
-    
-    @pytest.mark.unit
-    def test_get_notifications_creates_defaults_for_new_user(self):
-        """New users should get default notification settings."""
-        pass
-    
-    @pytest.mark.unit
-    def test_toggle_notification_setting(self):
-        """Should be able to toggle notification on/off."""
-        pass
+    @pytest.mark.asyncio
+    async def test_get_notifications_creates_defaults_for_new_user(self):
+        supabase, table = _build_notification_supabase(
+            select_rows=[],
+            insert_rows=[{"setting_key": s["setting_key"]} for s in DEFAULT_NOTIFICATION_SETTINGS],
+        )
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            settings = await get_notification_settings(user_id="user-1")
 
+        assert len(settings) == len(DEFAULT_NOTIFICATION_SETTINGS)
+        table.insert.assert_called()
 
-# =============================================================================
-# Tests for Reset Notification Settings (NEW)
-# =============================================================================
+    @pytest.mark.asyncio
+    async def test_toggle_notification_setting(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[{"setting_key": "email_on_ingestion_complete", "enabled": False}]
+        )
+        supabase.table.return_value = table
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            result = await update_notification_setting(
+                NotificationSettingUpdate(setting_key="email_on_ingestion_complete", enabled=False),
+                user_id="user-1",
+            )
+        assert result["enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_get_notifications_handles_error(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.execute.side_effect = RuntimeError("db down")
+        supabase.table.return_value = table
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException):
+                await get_notification_settings(user_id="user-1")
+
+    @pytest.mark.asyncio
+    async def test_update_notification_setting_handles_error(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.side_effect = RuntimeError("db down")
+        supabase.table.return_value = table
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException):
+                await update_notification_setting(
+                    NotificationSettingUpdate(setting_key="email_on_ingestion_complete", enabled=True),
+                    user_id="user-1",
+                )
+
 
 class TestResetNotificationSettings:
-    """Tests for DELETE /api/v1/settings/notifications."""
-    
-    @pytest.fixture
-    def mock_supabase_with_notifications(self):
-        """Mock Supabase with notification settings."""
-        mock = MagicMock()
-        
-        delete_response = MagicMock()
-        delete_response.data = [
-            {"id": "setting-1"},
-            {"id": "setting-2"},
-            {"id": "setting-3"}
-        ]
-        
+    @pytest.mark.asyncio
+    async def test_reset_deletes_all_user_settings(self):
+        supabase = MagicMock()
         table = MagicMock()
         table.delete.return_value = table
         table.eq.return_value = table
-        table.execute.return_value = delete_response
-        
-        mock.table.return_value = table
-        return mock
-    
-    @pytest.mark.unit
-    def test_reset_deletes_all_user_settings(self, mock_supabase_with_notifications):
-        """Should delete all notification settings for user."""
-        deleted_count = 3
-        assert deleted_count == 3
-    
+        table.execute.return_value = MagicMock(data=[{"id": "s1"}, {"id": "s2"}])
+        supabase.table.return_value = table
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            result = await reset_notification_settings(user_id="user-1")
+        assert result["deleted_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_reset_notification_settings_handles_error(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.side_effect = RuntimeError("db down")
+        supabase.table.return_value = table
+
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException):
+                await reset_notification_settings(user_id="user-1")
+
     @pytest.mark.unit
     def test_reset_returns_deleted_count(self):
-        """Should return count of deleted settings."""
         response = {
             "status": "success",
             "message": "Notification settings reset to defaults",
-            "deleted_count": 5
+            "deleted_count": 5,
         }
         assert response["deleted_count"] == 5
-    
+
     @pytest.mark.unit
     def test_reset_only_affects_requesting_user(self):
-        """Should only delete settings for the requesting user."""
         user_id = "user-123"
         filter_column = "user_id"
         assert filter_column == "user_id"
-    
-    @pytest.mark.unit
-    def test_reset_settings_recreated_on_next_get(self):
-        """After reset, GET should recreate default settings."""
-        # After DELETE, next GET /settings/notifications creates defaults
-        pass
-    
+        assert user_id == "user-123"
+
+    @pytest.mark.asyncio
+    async def test_reset_settings_recreated_on_next_get(self):
+        supabase, table = _build_notification_supabase(
+            select_rows=[],
+            insert_rows=[{"setting_key": s["setting_key"]} for s in DEFAULT_NOTIFICATION_SETTINGS],
+        )
+        with patch("api.v1.settings.get_supabase", return_value=supabase):
+            settings = await get_notification_settings(user_id="user-1")
+        assert len(settings) == len(DEFAULT_NOTIFICATION_SETTINGS)
+        table.insert.assert_called()
+
     @pytest.mark.unit
     def test_reset_handles_no_existing_settings(self):
-        """Should handle case when user has no settings to delete."""
-        deleted_count = 0
-        # Should still return success
-        response = {
-            "status": "success",
-            "deleted_count": deleted_count
-        }
+        response = {"status": "success", "deleted_count": 0}
         assert response["status"] == "success"
-    
+
     @pytest.mark.unit
     def test_default_notification_settings_count(self):
-        """Should have 5 default notification settings."""
-        from api.v1.settings import DEFAULT_NOTIFICATION_SETTINGS
-        
         assert len(DEFAULT_NOTIFICATION_SETTINGS) == 5
-    
+
     @pytest.mark.unit
     def test_default_settings_include_email_category(self):
-        """Defaults should include email notification settings."""
-        from api.v1.settings import DEFAULT_NOTIFICATION_SETTINGS
-        
         email_settings = [s for s in DEFAULT_NOTIFICATION_SETTINGS if s["category"] == "email"]
         assert len(email_settings) >= 2
-    
+
     @pytest.mark.unit
     def test_default_settings_include_system_category(self):
-        """Defaults should include system notification settings."""
-        from api.v1.settings import DEFAULT_NOTIFICATION_SETTINGS
-        
         system_settings = [s for s in DEFAULT_NOTIFICATION_SETTINGS if s["category"] == "system"]
         assert len(system_settings) >= 2
-
-
-# =============================================================================
-# Fixtures specific to this test file
-# =============================================================================
-
-@pytest.fixture
-def sample_user_profile():
-    """Sample user profile data."""
-    return {
-        "id": "profile-123",
-        "user_id": "test-user-id",
-        "first_name": "Test",
-        "last_name": "User",
-        "plan": "free",
-        "theme": "system",
-        "created_at": "2024-01-01T00:00:00Z",
-        "updated_at": "2024-01-01T00:00:00Z"
-    }

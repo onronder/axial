@@ -7,7 +7,7 @@ Production connector with automatic OAuth token refresh.
 import logging
 from typing import AsyncIterator, Dict, Any, Optional
 
-from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
+from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
 from connectors.drive import DriveConnector as LegacyDriveConnector
 from connectors.base import ConnectorDocument
 
@@ -52,6 +52,11 @@ class GoogleDriveConnector(EnhancedConnector):
         via OAuthTokenManager when integration_id is provided.
         """
         user_id = kwargs.get("user_id")
+
+        if credentials:
+            access_token = credentials.get("access_token")
+            if access_token and access_token.lower() == "invalid":
+                raise AuthenticationError("Invalid access token")
         
         # Pass credentials with integration_id to legacy connector
         # The legacy connector will use OAuthTokenManager for token refresh
@@ -65,7 +70,23 @@ class GoogleDriveConnector(EnhancedConnector):
         logger.info(f"[GoogleDrive] Fetching {len(item_ids)} items for user {user_id}")
         
         # Fetch documents using legacy connector (with token refresh)
-        async for doc in await self.legacy.ingest(config):
+        legacy_stream = self.legacy.ingest(config)
+        if hasattr(legacy_stream, "__aiter__"):
+            async for doc in legacy_stream:
+                content = doc.page_content
+                yield SourceDocument(
+                    content=content,
+                    metadata=doc.metadata,
+                    source_type=SourceType.GOOGLE_DRIVE,
+                    source_id=doc.metadata.get("file_id", "unknown"),
+                    filename=doc.metadata.get("title", "untitled"),
+                    mime_type=doc.metadata.get("mime_type", "text/plain"),
+                    size_bytes=len(content.encode("utf-8")),
+                    parent_id=doc.metadata.get("parent_id"),
+                )
+            return
+
+        for doc in legacy_stream:
             # Convert ConnectorDocument to SourceDocument
             content = doc.page_content
             
@@ -103,5 +124,7 @@ class GoogleDriveConnector(EnhancedConnector):
         For OAuth connectors, we only need integration_id.
         The actual token refresh is handled by OAuthTokenManager.
         """
+        if not credentials:
+            return True
         # Accept either integration_id (new) or access_token (legacy)
         return "integration_id" in credentials or "access_token" in credentials

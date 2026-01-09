@@ -179,7 +179,7 @@ export const useDocuments = (
             });
             queryClient.invalidateQueries({ queryKey: ["documents"] });
         },
-        onError: (err: any) => {
+        onError: (err: unknown) => {
             console.error("Failed to update document", err);
             toast({
                 title: "Error",

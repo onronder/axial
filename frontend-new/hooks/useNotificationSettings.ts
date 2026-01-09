@@ -29,9 +29,10 @@ export const useNotificationSettings = () => {
         try {
             const { data } = await api.get('/settings/notifications');
             setSettings(data);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Failed to fetch notification settings:', err);
-            setError(err.message || 'Failed to fetch settings');
+            const message = err instanceof Error ? err.message : 'Failed to fetch settings';
+            setError(message);
         } finally {
             setIsLoading(false);
         }
@@ -69,7 +70,7 @@ export const useNotificationSettings = () => {
                 description: 'Your notification settings have been saved.',
             });
             return true;
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Failed to update notification setting:', err);
 
             // Revert optimistic update

@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Bell, CheckCircle2, AlertTriangle, XCircle, Info, Check, Trash2, X } from "lucide-react";
+import { Bell, CheckCircle2, AlertTriangle, XCircle, Info, Check, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -174,7 +174,6 @@ export function NotificationCenter() {
         notifications,
         unreadCount,
         isLoading,
-        isRealtimeConnected,
         fetchNotifications,
         markAsRead,
         markAllAsRead,

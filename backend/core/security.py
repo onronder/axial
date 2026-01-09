@@ -9,23 +9,33 @@ from core.config import settings
 try:
     from cryptography.fernet import Fernet, InvalidToken
     ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+    ENCRYPTION_KEYS = [
+        key.strip()
+        for key in (ENCRYPTION_KEY or "").split(",")
+        if key.strip()
+    ]
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     
     # SECURITY: Mandatory encryption in production
-    if ENVIRONMENT == "production" and not ENCRYPTION_KEY:
+    if ENVIRONMENT == "production" and not ENCRYPTION_KEYS:
         raise RuntimeError(
             "FATAL: ENCRYPTION_KEY is required in production. "
             "Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
         )
     
-    if ENCRYPTION_KEY:
-        cipher_suite = Fernet(ENCRYPTION_KEY.encode())
+    if ENCRYPTION_KEYS:
+        cipher_suite = Fernet(ENCRYPTION_KEYS[0].encode())
+        cipher_suites = [cipher_suite]
+        for key in ENCRYPTION_KEYS[1:]:
+            cipher_suites.append(Fernet(key.encode()))
         HAS_ENCRYPTION = True
     else:
         cipher_suite = None
+        cipher_suites = None
         HAS_ENCRYPTION = False
 except ImportError:
     cipher_suite = None
+    cipher_suites = None
     HAS_ENCRYPTION = False
 
 logger = logging.getLogger(__name__)
@@ -75,16 +85,20 @@ def decrypt_token(token: str) -> str:
     if not token:
         return token
     
-    if not HAS_ENCRYPTION or not cipher_suite:
+    suites = cipher_suites or ([cipher_suite] if cipher_suite else [])
+    if not HAS_ENCRYPTION or not suites:
         # No encryption configured, return as-is
         return token
     
     try:
-        # Attempt decryption
-        decrypted = cipher_suite.decrypt(token.encode()).decode()
-        logger.debug("[Security] Token decrypted successfully")
-        return decrypted
-    except InvalidToken:
+        # Attempt decryption with all configured keys
+        for suite in suites:
+            try:
+                decrypted = suite.decrypt(token.encode()).decode()
+                logger.debug("[Security] Token decrypted successfully")
+                return decrypted
+            except InvalidToken:
+                continue
         # Token is not encrypted (legacy plain-text data)
         logger.debug("[Security] Token appears to be plain text (legacy), using as-is")
         return token
@@ -118,4 +132,3 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-

@@ -48,9 +48,12 @@ describe('useProfile', () => {
     });
 
     describe('Initial State', () => {
-        it('should start with loading state', () => {
+        it('should start with loading state', async () => {
             const { result } = renderHook(() => useProfile(), { wrapper });
             expect(result.current.isLoading).toBe(true);
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
         });
 
         it('should fetch profile on mount', async () => {

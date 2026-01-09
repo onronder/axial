@@ -147,6 +147,12 @@ class TestModelTierEnforcement:
         # Should NOT give premium access
         assert result.provider == "groq"
         assert "llama" in result.model.lower()
+
+    @pytest.mark.unit
+    def test_unknown_plan_logs_and_defaults_when_limits_raise(self, monkeypatch, router):
+        monkeypatch.setattr("services.router.get_plan_limits", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad plan")))
+        result = router.select_model(plan="mystery", complexity="SIMPLE")
+        assert result.provider == "groq"
     
     @pytest.mark.unit
     def test_none_plan_defaults_to_basic_tier(self, router):
@@ -163,6 +169,12 @@ class TestModelTierEnforcement:
         
         assert result.provider == "groq"
         assert "llama" in result.model.lower()
+
+    @pytest.mark.unit
+    def test_get_model_for_plan_handles_limits_error(self, monkeypatch, router):
+        monkeypatch.setattr("services.router.get_plan_limits", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad plan")))
+        result = router.get_model_for_plan("unknown")
+        assert result.provider == "groq"
     
     @pytest.mark.unit
     def test_case_insensitive_plan_handling(self, router):

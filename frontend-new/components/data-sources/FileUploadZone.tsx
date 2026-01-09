@@ -36,7 +36,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
    * 2. Upload file directly to Supabase Storage
    * 3. Trigger ingestion via our backend
    */
-  const uploadFile = async (file: File): Promise<boolean> => {
+  const uploadFile = useCallback(async (file: File): Promise<boolean> => {
     try {
       // Step 1: Get presigned upload URL
       setUploadStage("Getting upload URL...");
@@ -68,8 +68,8 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
       );
 
       // Capture job ID for progress tracking
-      if (ingestionResponse?.job_id && !currentJobId) {
-        setCurrentJobId(ingestionResponse.job_id);
+      if (ingestionResponse?.job_id) {
+        setCurrentJobId((prev) => prev ?? ingestionResponse.job_id);
       }
 
       return true;
@@ -78,7 +78,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
       console.error(`Failed to upload ${file.name}:`, message);
       return false;
     }
-  };
+  }, []);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {

@@ -576,7 +576,7 @@ class NotionConnector(BaseConnector):
                                     supabase,
                                     "document_chunks",
                                     batch,
-                                    context=f"notion_sync doc={doc.get('id', 'unknown')} batch={batch_start // DB_BATCH_SIZE + 1}",
+                                    context=f"notion_sync doc={doc.metadata.get('page_id', 'unknown')} batch={batch_start // DB_BATCH_SIZE + 1}",
                                 )
                                 inserted_count += len(batch)
                             except Exception as batch_err:

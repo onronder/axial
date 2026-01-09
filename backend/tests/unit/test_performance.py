@@ -21,8 +21,7 @@ async def test_benchmark_single_document_processing(
     sample_source_document,
     mock_document_processor,
     mock_embeddings,
-    mock_quota_check,
-    benchmark
+    mock_quota_check
 ):
     """Benchmark processing a single document."""
     
@@ -32,8 +31,7 @@ async def test_benchmark_single_document_processing(
         
         return await ingestion_pipeline.process_stream(mock_stream(), "file_upload")
     
-    # Run benchmark
-    result = benchmark(lambda: asyncio.run(process()))
+    result = await process()
     
     assert result["status"] == "completed"
 

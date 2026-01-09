@@ -19,3 +19,4 @@ test_ingest.sh
 
 # Test results & local logs
 TEST_RESULTS/
+.coverage

@@ -7,11 +7,10 @@
  * Features circular progress for desktop and refined indicators.
  */
 
-import { HardDrive, Files, Database, ArrowUpRight, CheckCircle2, AlertTriangle, Cloud } from "lucide-react";
+import { HardDrive, Files, Database, ArrowUpRight, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useUsage, formatBytes } from "@/hooks/useUsage";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
@@ -207,7 +206,6 @@ export function StorageMeter({ className, showUpgradePrompt = true, variant = 'v
     // Default Vertical Layout
     const radius = 36;
     const circumference = 2 * Math.PI * radius;
-    const fileOffset = circumference - (Math.min(100, filesPercent) / 100) * circumference;
     const storageOffset = circumference - (Math.min(100, storagePercent) / 100) * circumference;
 
     return (

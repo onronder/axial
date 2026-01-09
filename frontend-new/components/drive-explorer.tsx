@@ -52,7 +52,7 @@ export function DriveExplorer() {
                     setError("Received invalid data from Google Drive.")
                 }
 
-            } catch (e) {
+            } catch {
                 setError("Failed to load files. Please try again.")
             } finally {
                 setIsLoading(false)

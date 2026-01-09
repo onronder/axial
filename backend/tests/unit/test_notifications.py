@@ -10,9 +10,13 @@ Comprehensive tests for:
 - DELETE /api/v1/notifications/{id} - Delete single
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
+import asyncio
+import json
 from datetime import datetime
+from unittest.mock import Mock, MagicMock, patch
+
+import pytest
+from fastapi import HTTPException
 
 
 class TestListNotifications:
@@ -30,7 +34,7 @@ class TestListNotifications:
         table.order.return_value = table
         table.limit.return_value = table
         table.offset.return_value = table
-        table.execute.return_value = MagicMock(
+        list_response = MagicMock(
             data=[
                 {
                     "id": "notif-1",
@@ -39,8 +43,8 @@ class TestListNotifications:
                     "message": "Successfully processed 5 files",
                     "type": "success",
                     "is_read": False,
-                    "metadata": {"job_id": "job-1"},
-                    "created_at": "2024-01-01T00:00:00Z"
+                    "extra_data": json.dumps({"job_id": "job-1"}),
+                    "created_at": "2024-01-01T00:00:00Z",
                 },
                 {
                     "id": "notif-2",
@@ -49,12 +53,14 @@ class TestListNotifications:
                     "message": "Processing 3 files",
                     "type": "info",
                     "is_read": True,
-                    "metadata": {},
-                    "created_at": "2024-01-01T00:00:01Z"
-                }
+                    "extra_data": None,
+                    "created_at": "2024-01-01T00:00:01Z",
+                },
             ],
-            count=2
+            count=2,
         )
+        unread_response = MagicMock(count=1, data=[])
+        table.execute.side_effect = [list_response, unread_response]
         
         mock.table.return_value = table
         return mock
@@ -63,32 +69,114 @@ class TestListNotifications:
     def test_returns_notifications_for_user(self, mock_supabase_with_notifications):
         """Should return list of notifications for the current user."""
         # Verify the endpoint filters by user_id
-        pass
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase_with_notifications):
+            from api.v1.notifications import list_notifications
+
+            result = asyncio.run(list_notifications(user_id="user-123"))
+
+        assert result.total == 2
+        mock_supabase_with_notifications.table.return_value.eq.assert_any_call("user_id", "user-123")
     
     @pytest.mark.unit
     def test_orders_by_created_at_desc(self):
         """Should return most recent notifications first."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.offset.return_value = table
+        table.execute.side_effect = [MagicMock(data=[], count=0), MagicMock(count=0, data=[])]
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import list_notifications
+
+            asyncio.run(list_notifications(user_id="user-123"))
+
+        table.order.assert_called_with("created_at", desc=True)
     
     @pytest.mark.unit
     def test_supports_pagination_with_limit_and_offset(self):
         """Should support pagination parameters."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.offset.return_value = table
+        table.execute.side_effect = [MagicMock(data=[], count=0), MagicMock(count=0, data=[])]
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import list_notifications
+
+            asyncio.run(list_notifications(user_id="user-123", limit=10, offset=5))
+
+        table.limit.assert_called_with(10)
+        table.offset.assert_called_with(5)
     
     @pytest.mark.unit
     def test_supports_unread_only_filter(self):
         """Should filter to unread notifications when unread_only=true."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.offset.return_value = table
+        table.execute.side_effect = [MagicMock(data=[], count=0), MagicMock(count=0, data=[])]
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import list_notifications
+
+            asyncio.run(list_notifications(user_id="user-123", unread_only=True))
+
+        table.eq.assert_any_call("is_read", False)
     
     @pytest.mark.unit
     def test_returns_total_count(self):
         """Response should include total count of notifications."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.offset.return_value = table
+        table.execute.side_effect = [MagicMock(data=[], count=5), MagicMock(count=0, data=[])]
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import list_notifications
+
+            result = asyncio.run(list_notifications(user_id="user-123"))
+
+        assert result.total == 5
     
     @pytest.mark.unit
     def test_returns_unread_count(self):
         """Response should include count of unread notifications."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.offset.return_value = table
+        table.execute.side_effect = [MagicMock(data=[], count=0), MagicMock(count=3, data=[])]
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import list_notifications
+
+            result = asyncio.run(list_notifications(user_id="user-123"))
+
+        assert result.unread_count == 3
     
     @pytest.mark.unit
     def test_default_limit_is_50(self):
@@ -103,28 +191,184 @@ class TestGetUnreadCount:
     @pytest.mark.unit
     def test_returns_count_of_unread_notifications(self):
         """Should return count of notifications where is_read=false."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(count=4)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import get_unread_count
+
+            result = asyncio.run(get_unread_count(user_id="user-123"))
+
+        assert result.count == 4
     
     @pytest.mark.unit
     def test_returns_zero_when_all_read(self):
         """Should return 0 when all notifications are read."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(count=0)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import get_unread_count
+
+            result = asyncio.run(get_unread_count(user_id="user-123"))
+
+        assert result.count == 0
     
     @pytest.mark.unit
     def test_returns_zero_when_no_notifications(self):
         """Should return 0 when user has no notifications."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(count=None)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import get_unread_count
+
+            result = asyncio.run(get_unread_count(user_id="user-123"))
+
+        assert result.count == 0
     
     @pytest.mark.unit
     def test_is_lightweight_query(self):
         """Query should only count, not fetch full notification data."""
         # Should use count="exact" and minimal select
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(count=1)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import get_unread_count
+
+            asyncio.run(get_unread_count(user_id="user-123"))
+
+        table.select.assert_called_with("id", count="exact")
+
+
+class TestNotificationHelpers:
+    @pytest.mark.unit
+    def test_create_notification_skips_when_disabled(self):
+        pref_table = MagicMock()
+        pref_table.select.return_value = pref_table
+        pref_table.eq.return_value = pref_table
+        pref_table.maybe_single.return_value = pref_table
+        pref_table.execute.return_value = MagicMock(data={"enabled": False})
+
+        notifications_table = MagicMock()
+        notifications_table.insert.return_value.execute.return_value = MagicMock(data=[])
+
+        supabase = MagicMock()
+        supabase.table.side_effect = lambda name: {
+            "user_notification_settings": pref_table,
+            "notifications": notifications_table,
+        }[name]
+
+        from api.v1.notifications import create_notification
+        result = create_notification(
+            supabase,
+            user_id="user-1",
+            title="Title",
+            message="Message",
+            notification_type="info",
+            metadata={"job_id": "job-1"},
+            check_setting_key="ingestion_complete",
+        )
+
+        assert result is None
+        notifications_table.insert.assert_not_called()
+
+    @pytest.mark.unit
+    def test_create_notification_inserts_payload(self):
+        pref_table = MagicMock()
+        pref_table.select.return_value = pref_table
+        pref_table.eq.return_value = pref_table
+        pref_table.maybe_single.return_value = pref_table
+        pref_table.execute.return_value = MagicMock(data=None)
+
+        notifications_table = MagicMock()
+        notifications_table.insert.return_value.execute.return_value = MagicMock(
+            data=[{"id": "notif-1"}]
+        )
+
+        supabase = MagicMock()
+        supabase.table.side_effect = lambda name: {
+            "user_notification_settings": pref_table,
+            "notifications": notifications_table,
+        }[name]
+
+        from api.v1.notifications import create_notification
+        result = create_notification(
+            supabase,
+            user_id="user-1",
+            title="Title",
+            message="Message",
+            notification_type="info",
+            metadata={"job_id": "job-1"},
+        )
+
+        assert result["id"] == "notif-1"
+
+
+class TestNotificationErrors:
+    @pytest.mark.unit
+    def test_mark_as_read_404(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=supabase):
+            from api.v1.notifications import mark_as_read
+
+            with pytest.raises(HTTPException):
+                asyncio.run(mark_as_read("notif-1", user_id="user-1"))
+
+    @pytest.mark.unit
+    def test_delete_notification_404(self):
+        supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=supabase):
+            from api.v1.notifications import delete_notification
+
+            with pytest.raises(HTTPException):
+                asyncio.run(delete_notification("notif-1", user_id="user-1"))
     
     @pytest.mark.unit
     def test_filters_by_user_id(self):
         """Should only count notifications for the current user."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(count=1)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import get_unread_count
+
+            asyncio.run(get_unread_count(user_id="user-123"))
+
+        table.eq.assert_any_call("user_id", "user-123")
 
 
 class TestMarkAsRead:
@@ -133,27 +377,92 @@ class TestMarkAsRead:
     @pytest.mark.unit
     def test_marks_notification_as_read(self):
         """Should set is_read=true for the notification."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[{"id": "notif-1", "title": "Test", "type": "info", "is_read": True}]
+        )
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_as_read
+
+            result = asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+
+        assert result.is_read is True
     
     @pytest.mark.unit
     def test_returns_updated_notification(self):
         """Should return the updated notification object."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[{"id": "notif-1", "title": "Test", "type": "info", "is_read": True}]
+        )
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_as_read
+
+            result = asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+
+        assert result.id == "notif-1"
     
     @pytest.mark.unit
     def test_returns_404_for_nonexistent_notification(self):
         """Should return 404 if notification doesn't exist."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_as_read
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+        assert exc.value.status_code == 404
     
     @pytest.mark.unit
     def test_returns_404_for_other_users_notification(self):
         """Should return 404 if notification belongs to another user."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_as_read
+
+            with pytest.raises(HTTPException):
+                asyncio.run(mark_as_read("notif-1", user_id="user-123"))
     
     @pytest.mark.unit
     def test_is_idempotent(self):
         """Marking already-read notification as read should succeed."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[{"id": "notif-1", "title": "Test", "type": "info", "is_read": True}]
+        )
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_as_read
+
+            result = asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+
+        assert result.is_read is True
 
 
 class TestMarkAllAsRead:
@@ -162,12 +471,36 @@ class TestMarkAllAsRead:
     @pytest.mark.unit
     def test_marks_all_unread_as_read(self):
         """Should set is_read=true for all user's unread notifications."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_all_as_read
+
+            result = asyncio.run(mark_all_as_read(user_id="user-123"))
+
+        assert result["status"] == "success"
     
     @pytest.mark.unit
     def test_only_affects_current_user(self):
         """Should only mark current user's notifications as read."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_all_as_read
+
+            asyncio.run(mark_all_as_read(user_id="user-123"))
+
+        table.eq.assert_any_call("user_id", "user-123")
     
     @pytest.mark.unit
     def test_returns_success_status(self):
@@ -178,7 +511,18 @@ class TestMarkAllAsRead:
     @pytest.mark.unit
     def test_succeeds_when_no_unread_notifications(self):
         """Should succeed even if there are no unread notifications."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_all_as_read
+
+            result = asyncio.run(mark_all_as_read(user_id="user-123"))
+        assert result["status"] == "success"
 
 
 class TestClearAllNotifications:
@@ -187,22 +531,69 @@ class TestClearAllNotifications:
     @pytest.mark.unit
     def test_deletes_all_user_notifications(self):
         """Should delete all notifications for the current user."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import clear_all_notifications
+
+            result = asyncio.run(clear_all_notifications(user_id="user-123"))
+
+        assert result["status"] == "success"
     
     @pytest.mark.unit
     def test_only_affects_current_user(self):
         """Should only delete current user's notifications."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import clear_all_notifications
+
+            asyncio.run(clear_all_notifications(user_id="user-123"))
+
+        table.eq.assert_any_call("user_id", "user-123")
     
     @pytest.mark.unit
     def test_returns_success_status(self):
         """Should return success status."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import clear_all_notifications
+
+            result = asyncio.run(clear_all_notifications(user_id="user-123"))
+
+        assert result["status"] == "success"
     
     @pytest.mark.unit
     def test_succeeds_when_no_notifications(self):
         """Should succeed even if there are no notifications to delete."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import clear_all_notifications
+
+            result = asyncio.run(clear_all_notifications(user_id="user-123"))
+        assert result["status"] == "success"
 
 
 class TestDeleteSingleNotification:
@@ -211,22 +602,67 @@ class TestDeleteSingleNotification:
     @pytest.mark.unit
     def test_deletes_specified_notification(self):
         """Should delete the specified notification."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[{"id": "notif-1"}])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import delete_notification
+
+            result = asyncio.run(delete_notification("notif-1", user_id="user-123"))
+        assert result["status"] == "success"
     
     @pytest.mark.unit
     def test_returns_404_for_nonexistent_notification(self):
         """Should return 404 if notification doesn't exist."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import delete_notification
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(delete_notification("notif-1", user_id="user-123"))
+        assert exc.value.status_code == 404
     
     @pytest.mark.unit
     def test_returns_404_for_other_users_notification(self):
         """Should return 404 if notification belongs to another user."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import delete_notification
+
+            with pytest.raises(HTTPException):
+                asyncio.run(delete_notification("notif-1", user_id="user-123"))
     
     @pytest.mark.unit
     def test_returns_success_status(self):
         """Should return success status on successful deletion."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=[{"id": "notif-1"}])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import delete_notification
+
+            result = asyncio.run(delete_notification("notif-1", user_id="user-123"))
+        assert result["status"] == "success"
 
 
 class TestNotificationResponse:
@@ -301,7 +737,7 @@ class TestCreateNotificationHelper:
         mock_table.insert.return_value = mock_table
         mock_table.execute.return_value = MagicMock()
         
-        from worker.tasks import create_notification
+        from api.v1.notifications import create_notification
         
         create_notification(
             mock_supabase,
@@ -324,7 +760,7 @@ class TestCreateNotificationHelper:
         mock_table.insert.return_value = mock_table
         mock_table.execute.return_value = MagicMock()
         
-        from worker.tasks import create_notification
+        from api.v1.notifications import create_notification
         
         create_notification(
             mock_supabase,
@@ -346,7 +782,7 @@ class TestCreateNotificationHelper:
         mock_table.insert.return_value = mock_table
         mock_table.execute.return_value = MagicMock()
         
-        from worker.tasks import create_notification
+        from api.v1.notifications import create_notification
         
         create_notification(
             mock_supabase,
@@ -368,7 +804,7 @@ class TestCreateNotificationHelper:
         mock_table.insert.return_value = mock_table
         mock_table.execute.return_value = MagicMock()
         
-        from worker.tasks import create_notification
+        from api.v1.notifications import create_notification
         
         metadata = {"job_id": "job-123", "file_count": 5}
         
@@ -395,7 +831,7 @@ class TestCreateNotificationHelper:
         mock_table.insert.return_value = mock_table
         mock_table.execute.return_value = MagicMock()
         
-        from worker.tasks import create_notification
+        from api.v1.notifications import create_notification
         
         create_notification(
             mock_supabase,
@@ -419,7 +855,7 @@ class TestCreateNotificationHelper:
         mock_table.insert.return_value = mock_table
         mock_table.execute.side_effect = Exception("Database error")
         
-        from worker.tasks import create_notification
+        from api.v1.notifications import create_notification
         
         # Should not raise
         create_notification(
@@ -530,3 +966,245 @@ class TestNotificationMetadata:
         """Failure metadata should include error message."""
         metadata = {"error": "Connection timeout"}
         assert "error" in metadata
+
+
+class TestNotificationErrorPaths:
+    @pytest.mark.unit
+    def test_create_notification_skips_disabled_setting(self):
+        supabase = MagicMock()
+        pref_table = MagicMock()
+        pref_table.select.return_value = pref_table
+        pref_table.eq.return_value = pref_table
+        pref_table.maybe_single.return_value = pref_table
+        pref_table.execute.return_value = MagicMock(data={"enabled": False})
+
+        supabase.table.side_effect = lambda name: pref_table
+
+        from api.v1.notifications import create_notification
+
+        result = create_notification(
+            supabase, "user-123", "Title", check_setting_key="notify_ingest"
+        )
+        assert result is None
+
+    @pytest.mark.unit
+    def test_create_notification_pref_error_allows_insert(self):
+        supabase = MagicMock()
+        pref_table = MagicMock()
+        pref_table.select.return_value = pref_table
+        pref_table.eq.return_value = pref_table
+        pref_table.maybe_single.return_value = pref_table
+        pref_table.execute.side_effect = Exception("boom")
+
+        notifications_table = MagicMock()
+        notifications_table.insert.return_value.execute.return_value = MagicMock(
+            data=[{"id": "notif-1"}]
+        )
+
+        supabase.table.side_effect = lambda name: {
+            "user_notification_settings": pref_table,
+            "notifications": notifications_table,
+        }[name]
+
+        from api.v1.notifications import create_notification
+
+        result = create_notification(
+            supabase, "user-123", "Title", check_setting_key="notify_ingest"
+        )
+        assert result["id"] == "notif-1"
+
+    @pytest.mark.unit
+    def test_create_notification_insert_error_returns_none(self):
+        supabase = MagicMock()
+        notifications_table = MagicMock()
+        notifications_table.insert.return_value.execute.side_effect = Exception("boom")
+        supabase.table.return_value = notifications_table
+
+        from api.v1.notifications import create_notification
+
+        result = create_notification(supabase, "user-123", "Title")
+        assert result is None
+
+    @pytest.mark.unit
+    def test_list_notifications_invalid_json_metadata(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.offset.return_value = table
+        list_response = MagicMock(
+            data=[
+                {
+                    "id": "notif-1",
+                    "user_id": "user-123",
+                    "title": "Title",
+                    "message": "Message",
+                    "type": "info",
+                    "is_read": False,
+                    "extra_data": "{bad-json",
+                    "created_at": "2024-01-01T00:00:00Z",
+                }
+            ],
+            count=1,
+        )
+        unread_response = MagicMock(count=0, data=[])
+        table.execute.side_effect = [list_response, unread_response]
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import list_notifications
+
+            result = asyncio.run(list_notifications(user_id="user-123"))
+
+        assert result.notifications[0].metadata is None
+
+    @pytest.mark.unit
+    def test_list_notifications_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.offset.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import list_notifications
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(list_notifications(user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_get_unread_count_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import get_unread_count
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_unread_count(user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_mark_as_read_not_found(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=None)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_as_read
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+        assert exc.value.status_code == 404
+
+    @pytest.mark.unit
+    def test_mark_as_read_invalid_json(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[{"id": "notif-1", "title": "t", "type": "info", "is_read": True, "extra_data": "{bad"}]
+        )
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_as_read
+
+            result = asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+
+        assert result.metadata is None
+
+    @pytest.mark.unit
+    def test_mark_as_read_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_as_read
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_mark_all_as_read_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.update.return_value = table
+        table.eq.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import mark_all_as_read
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(mark_all_as_read(user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_clear_all_notifications_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import clear_all_notifications
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(clear_all_notifications(user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_delete_notification_not_found(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.return_value = MagicMock(data=None)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import delete_notification
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(delete_notification("notif-1", user_id="user-123"))
+        assert exc.value.status_code == 404
+
+    @pytest.mark.unit
+    def test_delete_notification_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.delete.return_value = table
+        table.eq.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
+            from api.v1.notifications import delete_notification
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(delete_notification("notif-1", user_id="user-123"))
+        assert exc.value.status_code == 500

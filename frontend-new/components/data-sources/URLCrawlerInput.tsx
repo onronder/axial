@@ -13,6 +13,14 @@ interface URLCrawlerInputProps {
   source: DataSource;
 }
 
+type ApiError = {
+  response?: {
+    data?: {
+      detail?: string;
+    };
+  };
+};
+
 export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
   const { toast } = useToast();
   const [url, setUrl] = useState("");
@@ -52,11 +60,12 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
       });
       setUrl("");
       setDepth(1); // Reset depth
-    } catch (error: any) {
-      console.error("Crawl failed:", error);
+    } catch (error: unknown) {
+      const apiError = error as ApiError;
+      console.error("Crawl failed:", apiError);
       toast({
         title: "Crawl Failed",
-        description: error.response?.data?.detail || "Could not crawl the URL. Please try again.",
+        description: apiError.response?.data?.detail || "Could not crawl the URL. Please try again.",
         variant: "destructive",
       });
     } finally {

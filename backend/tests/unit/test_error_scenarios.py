@@ -69,7 +69,7 @@ async def test_llamaparse_timeout():
                 size_bytes=100
             )
         
-        result = await pipeline.process_stream(doc_stream())
+        result = await pipeline.process_stream(doc_stream(), "file_upload")
         
         # Should handle timeout gracefully
         assert result["failed"] >= 1
@@ -87,8 +87,10 @@ async def test_openai_rate_limit():
     
     # Mock embeddings service to hit rate limit
     with patch('services.ingestion_pipeline.get_embeddings') as mock:
-        from openai import RateLimitError
-        mock.side_effect = RateLimitError("Rate limit exceeded")
+        class DummyRateLimitError(Exception):
+            pass
+
+        mock.side_effect = DummyRateLimitError("Rate limit exceeded")
         
         async def doc_stream():
             yield SourceDocument(
@@ -102,7 +104,7 @@ async def test_openai_rate_limit():
             )
         
         # Should retry or handle gracefully
-        result = await pipeline.process_stream(doc_stream())
+        result = await pipeline.process_stream(doc_stream(), "file_upload")
         assert result is not None
 
 
@@ -128,10 +130,10 @@ async def test_storage_quota_exceeded():
         )
     
     # Mock quota check to fail
-    with patch.object(pipeline, '_check_quota') as mock:
+    with patch.object(pipeline, '_check_quota', new=AsyncMock()) as mock:
         mock.side_effect = QuotaExceededError("Storage quota exceeded")
         
-        result = await pipeline.process_stream(doc_stream())
+        result = await pipeline.process_stream(doc_stream(), "file_upload")
         
         assert result["failed"] >= 1
 
@@ -158,7 +160,7 @@ async def test_malformed_document():
         )
     
     # Should handle parsing errors
-    result = await pipeline.process_stream(doc_stream())
+    result = await pipeline.process_stream(doc_stream(), "file_upload")
     
     # Document should fail but not crash pipeline
     assert result["failed"] >= 0  # May fail or skip
@@ -194,8 +196,9 @@ async def test_item_not_found():
         mock.return_value.storage.from_.return_value.download.return_value = None
         
         with pytest.raises(ItemNotFoundError):
+            documents = []
             async for doc in connector.fetch_documents(["nonexistent.pdf"]):
-                pass
+                documents.append(doc)
 
 
 @pytest.mark.asyncio
@@ -208,22 +211,24 @@ async def test_authentication_failure():
     
     # Mock invalid credentials
     with pytest.raises((AuthenticationError, Exception)):
+        documents = []
         async for doc in connector.fetch_documents(
             ["file-id"],
             credentials={"access_token": "invalid"}
         ):
-            pass
+            documents.append(doc)
 
 
 @pytest.mark.asyncio
-async def test_concurrent_processing_error():
+async def test_concurrent_processing_error(
+    ingestion_pipeline,
+    mock_document_processor,
+    mock_embeddings,
+    mock_quota_check
+):
     """Test error handling during concurrent processing."""
     
-    pipeline = IngestionPipeline(
-        user_id=str(uuid4()),
-        job_id=str(uuid4()),
-        supabase_client=Mock()
-    )
+    pipeline = ingestion_pipeline
     
     # Create multiple documents, some will fail
     async def doc_stream():
@@ -250,7 +255,7 @@ async def test_concurrent_processing_error():
     
     pipeline._process_single_document = failing_process
     
-    result = await pipeline.process_stream(doc_stream())
+    result = await pipeline.process_stream(doc_stream(), "file_upload")
     
     # Should have partial success
     assert result["processed"] >= 1
@@ -268,9 +273,13 @@ async def test_database_constraint_violation():
         supabase_client=Mock()
     )
     
-    # Mock database to raise constraint error
-    with patch.object(pipeline.supabase.table('documents'), 'insert') as mock:
+    try:
         from psycopg2 import IntegrityError
+    except ImportError:
+        IntegrityError = Exception
+
+    # Mock database to raise constraint error
+    with patch("worker.tasks.ingest_document_batched") as mock:
         mock.side_effect = IntegrityError("Duplicate key violation")
         
         async def doc_stream():
@@ -284,7 +293,7 @@ async def test_database_constraint_violation():
                 size_bytes=50
             )
         
-        result = await pipeline.process_stream(doc_stream())
+        result = await pipeline.process_stream(doc_stream(), "file_upload")
         
         # Should handle constraint error
         assert result["failed"] >= 1

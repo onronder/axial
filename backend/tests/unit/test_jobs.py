@@ -8,9 +8,14 @@ Tests for:
 - Job progress tracking integration
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+import asyncio
+import sys
+import types
 from datetime import datetime
+from unittest.mock import Mock, patch, MagicMock
+
+import pytest
+from fastapi import HTTPException
 
 
 class TestGetActiveJob:
@@ -61,14 +66,22 @@ class TestGetActiveJob:
     @pytest.mark.unit
     def test_returns_active_job_when_processing(self, mock_supabase_with_active_job):
         """Should return job when status is 'processing'."""
-        with patch('core.db.get_supabase', return_value=mock_supabase_with_active_job):
-            # Verify query filters by status IN ('pending', 'processing')
-            mock_supabase_with_active_job.table.return_value.in_.assert_not_called()  # Not called until endpoint
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_with_active_job):
+            from api.v1.jobs import get_active_job
+
+            result = asyncio.run(get_active_job(user_id="user-123"))
+
+        assert result.id == "job-123"
     
     @pytest.mark.unit
     def test_returns_none_when_no_active_job(self, mock_supabase_no_active_job):
         """Should return None/204 when no active job exists."""
-        pass
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_no_active_job):
+            from api.v1.jobs import get_active_job
+
+            result = asyncio.run(get_active_job(user_id="user-123"))
+
+        assert result is None
     
     @pytest.mark.unit
     def test_calculates_percent_correctly(self):
@@ -92,13 +105,36 @@ class TestGetActiveJob:
     def test_filters_by_user_id(self, mock_supabase_with_active_job):
         """Should only return jobs for the current user."""
         # This tests that user isolation is enforced
-        pass
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_with_active_job):
+            from api.v1.jobs import get_active_job
+
+            asyncio.run(get_active_job(user_id="user-123"))
+
+        mock_supabase_with_active_job.table.return_value.eq.assert_any_call("user_id", "user-123")
     
     @pytest.mark.unit
     def test_returns_most_recent_job(self):
         """Should return the most recently created active job when multiple exist."""
         # Ordered by created_at DESC, limit 1
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.in_.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[{"id": "job-1", "provider": "google_drive", "status": "processing"}]
+        )
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_active_job
+
+            asyncio.run(get_active_job(user_id="user-123"))
+
+        table.order.assert_called_with("created_at", desc=True)
+        table.limit.assert_called_with(1)
 
 
 class TestGetJobById:
@@ -107,18 +143,101 @@ class TestGetJobById:
     @pytest.mark.unit
     def test_returns_job_when_exists(self):
         """Should return job details when job exists."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.execute.return_value = MagicMock(
+            data={
+                "id": "job-1",
+                "provider": "google_drive",
+                "total_files": 2,
+                "processed_files": 1,
+                "status": "processing",
+            }
+        )
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_job_by_id
+
+            result = asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+
+        assert result.id == "job-1"
     
     @pytest.mark.unit
     def test_returns_404_when_not_found(self):
         """Should return 404 when job doesn't exist."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.execute.return_value = MagicMock(data=None)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_job_by_id
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+        assert exc.value.status_code == 404
     
     @pytest.mark.unit
     def test_returns_404_for_other_users_job(self):
         """Should return 404 when job belongs to different user."""
         # Ensures user isolation
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.execute.return_value = MagicMock(data=None)
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_job_by_id
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+        assert exc.value.status_code == 404
+
+    @pytest.mark.unit
+    def test_handles_single_no_rows_error(self):
+        """Should return 404 when PostgREST single() returns no rows."""
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.execute.side_effect = Exception("PGRST116: JSON object requested, multiple (or no) rows returned")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_job_by_id
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+        assert exc.value.status_code == 404
+
+    @pytest.mark.unit
+    def test_handles_unexpected_response_error(self):
+        """Should return 500 when an unexpected error occurs."""
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.execute.return_value = object()  # Missing expected attributes
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_job_by_id
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+        assert exc.value.status_code == 500
 
 
 class TestListJobs:
@@ -127,17 +246,61 @@ class TestListJobs:
     @pytest.mark.unit
     def test_returns_user_jobs(self):
         """Should return list of user's jobs."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[{"id": "job-1", "provider": "web", "status": "completed"}]
+        )
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import list_recent_jobs
+
+            result = asyncio.run(list_recent_jobs(user_id="user-123", limit=10))
+
+        assert len(result) == 1
     
     @pytest.mark.unit
     def test_respects_limit_parameter(self):
         """Should limit results to specified count."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import list_recent_jobs
+
+            asyncio.run(list_recent_jobs(user_id="user-123", limit=5))
+
+        table.limit.assert_called_with(5)
     
     @pytest.mark.unit
     def test_orders_by_created_at_desc(self):
         """Should return most recent jobs first."""
-        pass
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = MagicMock(data=[])
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import list_recent_jobs
+
+            asyncio.run(list_recent_jobs(user_id="user-123", limit=5))
+
+        table.order.assert_called_with("created_at", desc=True)
 
 
 class TestIngestionJobResponse:
@@ -325,9 +488,33 @@ class TestRetryJobEndpoint:
     def test_retry_job_verifies_ownership(self):
         """Should verify job belongs to requesting user."""
         # Query should filter by user_id
-        job_user_id = "user-123"
-        requesting_user_id = "user-123"
-        assert job_user_id == requesting_user_id
+        mock_supabase = MagicMock()
+        job_response = MagicMock()
+        job_response.data = {"id": "job-1", "user_id": "user-123", "status": "failed"}
+        files_response = MagicMock()
+        files_response.data = [{"id": "file-1", "status": "failed", "retry_count": 0}]
+
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.side_effect = [job_response, MagicMock(data=[])]
+        job_table.update.return_value = job_table
+
+        files_table = MagicMock()
+        files_table.select.return_value = files_table
+        files_table.eq.return_value = files_table
+        files_table.execute.return_value = files_response
+        files_table.update.return_value = files_table
+
+        mock_supabase.table.side_effect = lambda name: job_table if name == "ingestion_jobs" else files_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import retry_job
+
+            asyncio.run(retry_job("job-1", user_id="user-123"))
+
+        job_table.eq.assert_any_call("user_id", "user-123")
     
     @pytest.mark.unit
     def test_retry_job_returns_404_for_nonexistent(self):
@@ -380,7 +567,35 @@ class TestCancelJobEndpoint:
     def test_cancel_job_revokes_celery_task(self):
         """Should revoke the Celery task."""
         # celery.result.revoke() should be called
-        pass
+        mock_supabase = MagicMock()
+        job_response = MagicMock()
+        job_response.data = {"id": "job-1", "user_id": "user-123", "status": "processing", "celery_task_id": "task-1"}
+
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = job_response
+        job_table.update.return_value = job_table
+
+        file_table = MagicMock()
+        file_table.update.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.in_.return_value = file_table
+
+        mock_supabase.table.side_effect = lambda name: job_table if name == "ingestion_jobs" else file_table
+
+        fake_celery = types.SimpleNamespace(control=MagicMock())
+        module = types.SimpleNamespace(celery_app=fake_celery)
+        sys.modules["worker.celery_app"] = module
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import cancel_job
+
+            result = asyncio.run(cancel_job("job-1", user_id="user-123"))
+
+        assert result["status"] == "cancelled"
+        fake_celery.control.revoke.assert_called_with("task-1", terminate=True)
     
     @pytest.mark.unit
     def test_cancel_job_updates_status(self):
@@ -391,7 +606,22 @@ class TestCancelJobEndpoint:
     @pytest.mark.unit
     def test_cancel_job_verifies_ownership(self):
         """Should verify job belongs to requesting user."""
-        pass
+        mock_supabase = MagicMock()
+        job_response = MagicMock()
+        job_response.data = None
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = job_response
+        mock_supabase.table.return_value = job_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import cancel_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(cancel_job("job-1", user_id="user-123"))
+        assert exc.value.status_code == 404
 
 
 class TestGetJobFilesEndpoint:
@@ -416,4 +646,523 @@ class TestGetJobFilesEndpoint:
     @pytest.mark.unit
     def test_get_files_verifies_job_ownership(self):
         """Should verify user owns the job."""
-        pass
+        mock_supabase = MagicMock()
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = MagicMock(data=None)
+        mock_supabase.table.return_value = job_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_job_files
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_job_files("job-1", user_id="user-123"))
+        assert exc.value.status_code == 404
+
+
+class TestRetryFileEndpoint:
+    @pytest.mark.unit
+    def test_retry_file_queues_retry(self):
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.single.return_value = file_table
+        file_table.update.return_value = file_table
+        file_table.execute.side_effect = [
+            MagicMock(
+                data={
+                    "id": "file-1",
+                    "job_id": "job-1",
+                    "status": "failed",
+                    "retry_count": 1,
+                    "can_retry": True,
+                    "ingestion_jobs": {"user_id": "user-123"},
+                }
+            ),
+            MagicMock(data=[]),
+        ]
+
+        job_table = MagicMock()
+        job_table.update.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.in_.return_value = job_table
+        job_table.execute.return_value = MagicMock(data=[])
+
+        supabase = MagicMock()
+        supabase.table.side_effect = lambda name: {
+            "ingestion_file_status": file_table,
+            "ingestion_jobs": job_table,
+        }[name]
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_file
+
+            result = asyncio.run(retry_file("file-1", user_id="user-123"))
+
+        assert result["status"] == "queued"
+
+
+class TestRetryJobEndpoint:
+    @pytest.mark.unit
+    def test_retry_job_resets_failed_files(self):
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.update.return_value = job_table
+        job_table.execute.side_effect = [
+            MagicMock(data={"id": "job-1", "status": "failed"}),
+            MagicMock(data=[]),
+        ]
+
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.execute.return_value = MagicMock(
+            data=[{"id": "file-1", "retry_count": 0}]
+        )
+        file_table.update.return_value = file_table
+
+        supabase = MagicMock()
+        supabase.table.side_effect = lambda name: {
+            "ingestion_jobs": job_table,
+            "ingestion_file_status": file_table,
+        }[name]
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_job
+
+            result = asyncio.run(retry_job("job-1", user_id="user-123"))
+
+        assert result["files_queued"] == 1
+
+
+class TestGetJobFilesDetailed:
+    @pytest.mark.unit
+    def test_get_job_files_returns_data(self):
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = MagicMock(data={"id": "job-1"})
+
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.order.return_value = file_table
+        file_table.execute.return_value = MagicMock(data=[{"id": "file-1"}])
+
+        supabase = MagicMock()
+        supabase.table.side_effect = lambda name: {
+            "ingestion_jobs": job_table,
+            "ingestion_file_status": file_table,
+        }[name]
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import get_job_files
+
+            result = asyncio.run(get_job_files("job-1", user_id="user-123"))
+
+        assert result[0]["id"] == "file-1"
+
+
+class TestJobErrorPaths:
+    @pytest.mark.unit
+    def test_get_active_job_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.in_.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_active_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_active_job(user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_get_job_by_id_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.single.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import get_job_by_id
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_list_recent_jobs_handles_exception(self):
+        mock_supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import list_recent_jobs
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(list_recent_jobs(user_id="user-123", limit=10))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_cancel_job_rejects_completed(self):
+        mock_supabase = MagicMock()
+        job_response = MagicMock()
+        job_response.data = {"id": "job-1", "user_id": "user-123", "status": "completed"}
+
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = job_response
+        mock_supabase.table.return_value = job_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import cancel_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(cancel_job("job-1", user_id="user-123"))
+        assert exc.value.status_code == 400
+
+    @pytest.mark.unit
+    def test_cancel_job_handles_revoke_error(self):
+        mock_supabase = MagicMock()
+        job_response = MagicMock()
+        job_response.data = {
+            "id": "job-1",
+            "user_id": "user-123",
+            "status": "processing",
+            "celery_task_id": "task-1",
+        }
+
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = job_response
+        job_table.update.return_value = job_table
+
+        file_table = MagicMock()
+        file_table.update.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.in_.return_value = file_table
+
+        mock_supabase.table.side_effect = lambda name: job_table if name == "ingestion_jobs" else file_table
+
+        fake_celery = types.SimpleNamespace(control=MagicMock())
+        fake_celery.control.revoke.side_effect = Exception("boom")
+        module = types.SimpleNamespace(celery_app=fake_celery)
+        sys.modules["worker.celery_app"] = module
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import cancel_job
+
+            result = asyncio.run(cancel_job("job-1", user_id="user-123"))
+
+        assert result["status"] == "cancelled"
+
+    @pytest.mark.unit
+    def test_cancel_job_handles_exception(self):
+        mock_supabase = MagicMock()
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.side_effect = Exception("boom")
+        mock_supabase.table.return_value = job_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
+            from api.v1.jobs import cancel_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(cancel_job("job-1", user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_retry_file_not_found(self):
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.single.return_value = file_table
+        file_table.execute.return_value = MagicMock(data=None)
+
+        supabase = MagicMock()
+        supabase.table.return_value = file_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_file
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_file("file-1", user_id="user-123"))
+        assert exc.value.status_code == 404
+
+    @pytest.mark.unit
+    def test_retry_file_user_mismatch(self):
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.single.return_value = file_table
+        file_table.execute.return_value = MagicMock(
+            data={"status": "failed", "ingestion_jobs": {"user_id": "other"}}
+        )
+
+        supabase = MagicMock()
+        supabase.table.return_value = file_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_file
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_file("file-1", user_id="user-123"))
+        assert exc.value.status_code == 404
+
+    @pytest.mark.unit
+    def test_retry_file_invalid_status(self):
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.single.return_value = file_table
+        file_table.execute.return_value = MagicMock(
+            data={
+                "status": "processing",
+                "can_retry": True,
+                "ingestion_jobs": {"user_id": "user-123"},
+            }
+        )
+
+        supabase = MagicMock()
+        supabase.table.return_value = file_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_file
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_file("file-1", user_id="user-123"))
+        assert exc.value.status_code == 400
+
+    @pytest.mark.unit
+    def test_retry_file_cannot_retry(self):
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.single.return_value = file_table
+        file_table.execute.return_value = MagicMock(
+            data={
+                "status": "failed",
+                "can_retry": False,
+                "ingestion_jobs": {"user_id": "user-123"},
+            }
+        )
+
+        supabase = MagicMock()
+        supabase.table.return_value = file_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_file
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_file("file-1", user_id="user-123"))
+        assert exc.value.status_code == 400
+
+    @pytest.mark.unit
+    def test_retry_file_max_attempts_exceeded(self):
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.single.return_value = file_table
+        file_table.execute.return_value = MagicMock(
+            data={
+                "status": "failed",
+                "retry_count": 3,
+                "can_retry": True,
+                "ingestion_jobs": {"user_id": "user-123"},
+            }
+        )
+
+        supabase = MagicMock()
+        supabase.table.return_value = file_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_file
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_file("file-1", user_id="user-123"))
+        assert exc.value.status_code == 400
+
+    @pytest.mark.unit
+    def test_retry_file_handles_exception(self):
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.single.return_value = file_table
+        file_table.execute.side_effect = Exception("boom")
+
+        supabase = MagicMock()
+        supabase.table.return_value = file_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_file
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_file("file-1", user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_get_job_files_handles_exception(self):
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = MagicMock(data={"id": "job-1"})
+
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.order.return_value = file_table
+        file_table.execute.side_effect = Exception("boom")
+
+        supabase = MagicMock()
+        supabase.table.side_effect = lambda name: {
+            "ingestion_jobs": job_table,
+            "ingestion_file_status": file_table,
+        }[name]
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import get_job_files
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(get_job_files("job-1", user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_retry_job_no_failed_files(self):
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.side_effect = [
+            MagicMock(data={"id": "job-1", "status": "failed"}),
+            MagicMock(data=[]),
+        ]
+
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.execute.return_value = MagicMock(data=[])
+
+        supabase = MagicMock()
+        supabase.table.side_effect = lambda name: {
+            "ingestion_jobs": job_table,
+            "ingestion_file_status": file_table,
+        }[name]
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_job("job-1", user_id="user-123"))
+        assert exc.value.status_code == 400
+
+    @pytest.mark.unit
+    def test_retry_job_all_failed_exceeded(self):
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.side_effect = [
+            MagicMock(data={"id": "job-1", "status": "failed"}),
+            MagicMock(data=[]),
+        ]
+
+        file_table = MagicMock()
+        file_table.select.return_value = file_table
+        file_table.eq.return_value = file_table
+        file_table.execute.return_value = MagicMock(
+            data=[{"id": "file-1", "retry_count": 3}]
+        )
+
+        supabase = MagicMock()
+        supabase.table.side_effect = lambda name: {
+            "ingestion_jobs": job_table,
+            "ingestion_file_status": file_table,
+        }[name]
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_job("job-1", user_id="user-123"))
+        assert exc.value.status_code == 400
+
+    @pytest.mark.unit
+    def test_retry_job_handles_exception(self):
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.side_effect = Exception("boom")
+
+        supabase = MagicMock()
+        supabase.table.return_value = job_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_job("job-1", user_id="user-123"))
+        assert exc.value.status_code == 500
+
+    @pytest.mark.unit
+    def test_retry_job_not_found(self):
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = MagicMock(data=None)
+
+        supabase = MagicMock()
+        supabase.table.return_value = job_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_job("job-1", user_id="user-123"))
+        assert exc.value.status_code == 404
+
+    @pytest.mark.unit
+    def test_retry_job_invalid_status(self):
+        job_table = MagicMock()
+        job_table.select.return_value = job_table
+        job_table.eq.return_value = job_table
+        job_table.single.return_value = job_table
+        job_table.execute.return_value = MagicMock(data={"id": "job-1", "status": "processing"})
+
+        supabase = MagicMock()
+        supabase.table.return_value = job_table
+
+        with patch("api.v1.jobs.get_supabase", return_value=supabase):
+            from api.v1.jobs import retry_job
+
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(retry_job("job-1", user_id="user-123"))
+        assert exc.value.status_code == 400

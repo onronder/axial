@@ -15,6 +15,7 @@ from uuid import uuid4, UUID
 
 from pydantic import BaseModel
 from core.quotas import QUOTA_LIMITS, PlanLimits, format_bytes
+from api.v1.usage import _format_bytes
 
 
 # Test UUID - must be valid UUID format for endpoint tests
@@ -425,6 +426,26 @@ class TestFormatBytes:
     def test_format_bytes_zero(self):
         """Zero bytes should display correctly."""
         assert format_bytes(0) == "0.0 B"
+
+    @pytest.mark.unit
+    def test_format_bytes_petabytes(self):
+        """Huge values should stay within supported units."""
+        result = format_bytes(1024 ** 5)
+        assert "TB" in result
+
+
+class TestUsageFormatBytesHelper:
+    @pytest.mark.unit
+    def test_helper_formats_bytes(self):
+        assert _format_bytes(512) == "512 B"
+
+    @pytest.mark.unit
+    def test_helper_formats_kb(self):
+        assert _format_bytes(2048).endswith("KB")
+
+    @pytest.mark.unit
+    def test_helper_formats_pb(self):
+        assert _format_bytes(1024 ** 5).endswith("PB")
 
 
 class TestPlanLimitsConsistency:

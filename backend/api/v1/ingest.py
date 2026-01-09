@@ -231,6 +231,7 @@ async def ingest_document(
     # =========================================================
     if drive_id or notion_page_id:
         # Import unified task
+        from worker.tasks import unified_ingest_task
         
         connector_type = "drive" if drive_id else "notion"
         item_id = drive_id if drive_id else notion_page_id
@@ -304,6 +305,7 @@ async def ingest_document(
         logger.info(f"✅ [Quota] Upload approved for user {user_id}: {file_size_bytes} bytes")
         
         # SECURITY: Validate file content type
+        detected_mime = None
         try:
             header = file_content[:2048]  # Use already-read content
             
@@ -521,6 +523,7 @@ async def ingest_file_reference(
     The storage_path must match what was returned by POST /upload-url.
     """
     supabase = get_supabase()
+    idempotency_key = get_idempotency_key(request)
     
     # 1. Verify file exists in storage
     try:

@@ -11,9 +11,10 @@
  * - formatBytes utility
  */
 
+import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { useUsage, formatBytes } from '@/hooks/useUsage';
+import { UsageProvider, useUsage, formatBytes } from '@/hooks/useUsage';
 
 // Mock the API module
 const mockGetUsageStats = vi.fn();
@@ -25,6 +26,9 @@ vi.mock('@/lib/api', () => ({
 }));
 
 describe('useUsage Hook', () => {
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(UsageProvider, null, children);
+
     beforeEach(() => {
         vi.clearAllMocks();
         // Default successful responses
@@ -45,25 +49,34 @@ describe('useUsage Hook', () => {
     });
 
     describe('Initial State', () => {
-        it('should start with loading state', () => {
-            const { result } = renderHook(() => useUsage());
+        it('should start with loading state', async () => {
+            const { result } = renderHook(() => useUsage(), { wrapper });
             expect(result.current.isLoading).toBe(true);
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
         });
 
-        it('should have null usage initially', () => {
-            const { result } = renderHook(() => useUsage());
+        it('should have null usage initially', async () => {
+            const { result } = renderHook(() => useUsage(), { wrapper });
             expect(result.current.usage).toBeNull();
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
         });
 
-        it('should have no error initially', () => {
-            const { result } = renderHook(() => useUsage());
+        it('should have no error initially', async () => {
+            const { result } = renderHook(() => useUsage(), { wrapper });
             expect(result.current.error).toBeNull();
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
         });
     });
 
     describe('Successful Data Fetch', () => {
         it('should fetch usage stats on mount', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -73,7 +86,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should fetch effective plan on mount', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -83,7 +96,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should populate usage data correctly', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.usage).not.toBeNull();
@@ -95,7 +108,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should set loading to false after fetch', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -107,7 +120,7 @@ describe('useUsage Hook', () => {
         it('should handle usage fetch error gracefully', async () => {
             mockGetUsageStats.mockRejectedValue(new Error('Network error'));
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -120,7 +133,7 @@ describe('useUsage Hook', () => {
         it('should handle non-Error objects in catch', async () => {
             mockGetUsageStats.mockRejectedValue('String error');
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -132,7 +145,7 @@ describe('useUsage Hook', () => {
         it('should handle effective plan fetch error silently', async () => {
             mockGetEffectivePlan.mockRejectedValue(new Error('Plan error'));
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -146,7 +159,7 @@ describe('useUsage Hook', () => {
 
     describe('Derived Values', () => {
         it('should calculate filesUsed correctly', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -156,7 +169,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should calculate filesLimit correctly', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -166,7 +179,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should calculate storageUsed correctly', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -176,7 +189,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should calculate storageLimit correctly', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -186,7 +199,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should extract canWebCrawl feature flag', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -196,7 +209,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should extract teamEnabled feature flag', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -208,7 +221,7 @@ describe('useUsage Hook', () => {
 
     describe('Percentage Calculations', () => {
         it('should calculate filesPercent correctly', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -219,7 +232,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should calculate storagePercent correctly', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -237,7 +250,7 @@ describe('useUsage Hook', () => {
                 features: { web_crawl: false, team_enabled: false },
             });
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -255,7 +268,7 @@ describe('useUsage Hook', () => {
                 features: { web_crawl: false, team_enabled: false },
             });
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -273,7 +286,7 @@ describe('useUsage Hook', () => {
                 inherited: true,
             });
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.effectivePlan).not.toBeNull();
@@ -286,7 +299,7 @@ describe('useUsage Hook', () => {
         it('should fall back to usage plan when effective plan fails', async () => {
             mockGetEffectivePlan.mockRejectedValue(new Error('Failed'));
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -300,7 +313,7 @@ describe('useUsage Hook', () => {
             mockGetUsageStats.mockRejectedValue(new Error('Failed'));
             mockGetEffectivePlan.mockRejectedValue(new Error('Failed'));
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -314,7 +327,7 @@ describe('useUsage Hook', () => {
         it('should use default filesLimit when usage is null', async () => {
             mockGetUsageStats.mockRejectedValue(new Error('Failed'));
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -326,7 +339,7 @@ describe('useUsage Hook', () => {
         it('should use default storageLimit when usage is null', async () => {
             mockGetUsageStats.mockRejectedValue(new Error('Failed'));
 
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -339,7 +352,7 @@ describe('useUsage Hook', () => {
 
     describe('Refresh Functions', () => {
         it('should provide refresh function', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -349,7 +362,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should provide refreshPlan function', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -359,7 +372,7 @@ describe('useUsage Hook', () => {
         });
 
         it('should re-fetch usage when refresh is called', async () => {
-            const { result } = renderHook(() => useUsage());
+            const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);

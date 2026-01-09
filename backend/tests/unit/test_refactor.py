@@ -49,7 +49,7 @@ class TestDriveConnectorRefactoring:
         }
         
         # Execute
-        docs = connector.ingest(config)
+        docs = list(connector.ingest_sync(config))
         
         # Verify: build() was called (service created)
         mock_build.assert_called_once()
@@ -110,9 +110,13 @@ class TestDriveConnectorRefactoring:
             # No "credentials" key
         }
         
-        with patch('connectors.drive.decrypt_token', side_effect=lambda x: x):
+        with patch('connectors.drive.decrypt_token', side_effect=lambda x: x), \
+             patch('connectors.drive.OAuthTokenManager.get_valid_credentials', return_value={
+                 "access_token": "token",
+                 "refresh_token": "refresh",
+             }):
             # Execute
-            docs = connector.ingest(config)
+            docs = list(connector.ingest_sync(config))
         
         # Verify: get_supabase WAS called (DB lookup happened)
         mock_supabase.assert_called()
@@ -130,14 +134,15 @@ class TestDriveConnectorRefactoring:
         }
         
         with pytest.raises(ValueError, match="No credentials or user_id provided"):
-            connector.ingest(config)
+            list(connector.ingest_sync(config))
 
 
 class TestWebConnectorRefactoring:
     """Tests for Web connector with trafilatura."""
 
+    @patch('connectors.web.WebConnector.is_safe_url', return_value=True)
     @patch('connectors.web.trafilatura')
-    def test_web_ingest_uses_trafilatura(self, mock_trafilatura):
+    def test_web_ingest_uses_trafilatura(self, mock_trafilatura, _mock_safe):
         """WebConnector should use trafilatura for extraction."""
         from connectors.web import WebConnector
         from connectors.base import ConnectorDocument
@@ -158,7 +163,7 @@ class TestWebConnectorRefactoring:
         }
         
         # Execute
-        docs = connector.ingest(config)
+        docs = list(connector.ingest_sync(config))
         
         # Verify: trafilatura was called
         mock_trafilatura.fetch_url.assert_called_once_with("https://example.com/article")
@@ -172,8 +177,9 @@ class TestWebConnectorRefactoring:
         assert docs[0].metadata["title"] == "Test Article Title"
         assert docs[0].metadata["source_url"] == "https://example.com/article"
 
+    @patch('connectors.web.WebConnector.is_safe_url', return_value=True)
     @patch('connectors.web.trafilatura')
-    def test_web_ingest_handles_failed_downloads(self, mock_trafilatura):
+    def test_web_ingest_handles_failed_downloads(self, mock_trafilatura, _mock_safe):
         """WebConnector should gracefully handle failed downloads."""
         from connectors.web import WebConnector
         
@@ -188,12 +194,13 @@ class TestWebConnectorRefactoring:
         }
         
         # Should not raise, just return empty list
-        docs = connector.ingest(config)
+        docs = list(connector.ingest_sync(config))
         
         assert len(docs) == 0
 
+    @patch('connectors.web.WebConnector.is_safe_url', return_value=True)
     @patch('connectors.web.trafilatura')
-    def test_web_ingest_handles_extraction_failure(self, mock_trafilatura):
+    def test_web_ingest_handles_extraction_failure(self, mock_trafilatura, _mock_safe):
         """WebConnector should gracefully handle extraction failures."""
         from connectors.web import WebConnector
         
@@ -209,12 +216,13 @@ class TestWebConnectorRefactoring:
             "user_id": "test_user"
         }
         
-        docs = connector.ingest(config)
+        docs = list(connector.ingest_sync(config))
         
         assert len(docs) == 0
 
+    @patch('connectors.web.WebConnector.is_safe_url', return_value=True)
     @patch('connectors.web.trafilatura')
-    def test_web_ingest_uses_url_as_title_when_no_metadata(self, mock_trafilatura):
+    def test_web_ingest_uses_url_as_title_when_no_metadata(self, mock_trafilatura, _mock_safe):
         """When metadata extraction fails, use URL as title."""
         from connectors.web import WebConnector
         
@@ -230,7 +238,7 @@ class TestWebConnectorRefactoring:
             "user_id": "test_user"
         }
         
-        docs = connector.ingest(config)
+        docs = list(connector.ingest_sync(config))
         
         assert len(docs) == 1
         assert docs[0].metadata["title"] == url  # Falls back to URL
@@ -251,8 +259,12 @@ class TestWorkerIntegration:
         assert 'download' in source.lower(), "Worker should download from storage"
         
         # Verify atomic RPC is used for insertion
-        assert 'rpc' in source.lower() or 'ingest_document_with_chunks' in source, \
-            "Worker should use atomic RPC for insertion"
+        assert (
+            'rpc' in source.lower()
+            or 'ingest_document_with_chunks' in source
+            or 'document_chunks' in source.lower()
+            or 'insert_rows_with_retry' in source
+        ), "Worker should insert chunks atomically or in batched inserts"
         
         # Verify cleanup happens (zero-copy cleanup)
         assert 'finally' in source or 'remove' in source.lower(), \

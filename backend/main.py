@@ -28,46 +28,50 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Sentry Error Tracking + Logs (Production)
 # =============================================================================
-if settings.SENTRY_DSN:
-    try:
-        import sentry_sdk
-        import logging as py_logging  # Explicit alias to avoid NameError
-        from sentry_sdk.integrations.fastapi import FastApiIntegration
-        from sentry_sdk.integrations.starlette import StarletteIntegration
-        from sentry_sdk.integrations.logging import LoggingIntegration
-        
-        # Enable Sentry logging integration
-        logging_integration = LoggingIntegration(
-            level=py_logging.INFO,        # Capture INFO and above as breadcrumbs
-            event_level=py_logging.ERROR  # Send ERROR and above as events
-        )
-        
-        sentry_sdk.init(
-            dsn=settings.SENTRY_DSN,
-            # Performance Monitoring
-            traces_sample_rate=0.1,  # 10% of transactions for performance
-            # Profiling
-            profiles_sample_rate=0.1,  # 10% of sampled transactions
-            # Environment
-            environment=os.getenv("ENVIRONMENT", "development"),
-            # Integrations
-            integrations=[
-                FastApiIntegration(),
-                StarletteIntegration(),
-                logging_integration,
-            ],
-            # Release tracking
-            release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "local"),
-            # Enable experimental logs feature (new in 2.35.0+)
-            _experiments={
-                "enable_logs": True,
-            },
-        )
-        logger.info("🔭 Sentry initialized with logging and error tracking")
-    except ImportError:
-        logger.warning("⚠️ sentry-sdk not installed, error tracking disabled")
-    except Exception as e:
-        logger.warning(f"⚠️ Sentry initialization failed: {e}")
+def init_sentry() -> None:
+    if settings.SENTRY_DSN and settings.ENVIRONMENT != "test":
+        try:
+            import sentry_sdk
+            import logging as py_logging  # Explicit alias to avoid NameError
+            from sentry_sdk.integrations.fastapi import FastApiIntegration
+            from sentry_sdk.integrations.starlette import StarletteIntegration
+            from sentry_sdk.integrations.logging import LoggingIntegration
+            
+            # Enable Sentry logging integration
+            logging_integration = LoggingIntegration(
+                level=py_logging.INFO,        # Capture INFO and above as breadcrumbs
+                event_level=py_logging.ERROR  # Send ERROR and above as events
+            )
+            
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                # Performance Monitoring
+                traces_sample_rate=0.1,  # 10% of transactions for performance
+                # Profiling
+                profiles_sample_rate=0.1,  # 10% of sampled transactions
+                # Environment
+                environment=os.getenv("ENVIRONMENT", "development"),
+                # Integrations
+                integrations=[
+                    FastApiIntegration(),
+                    StarletteIntegration(),
+                    logging_integration,
+                ],
+                # Release tracking
+                release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "local"),
+                # Enable experimental logs feature (new in 2.35.0+)
+                _experiments={
+                    "enable_logs": True,
+                },
+            )
+            logger.info("🔭 Sentry initialized with logging and error tracking")
+        except ImportError:
+            logger.warning("⚠️ sentry-sdk not installed, error tracking disabled")
+        except Exception as e:
+            logger.warning(f"⚠️ Sentry initialization failed: {e}")
+
+
+init_sentry()
 
 # Import routers
 from api.v1.ingest import router as ingest_router
@@ -184,16 +188,19 @@ def configure_cors() -> list[str]:
     return origins
 
 
-# Configure and apply CORS
-try:
-    cors_origins = configure_cors()
-except RuntimeError as e:
-    # In development, fall back to permissive mode
-    if os.getenv("ENVIRONMENT") != "production":
-        logger.warning(f"⚠️ CORS configuration error (dev mode, using fallback): {e}")
-        cors_origins = ["*"]
-    else:
+def build_cors_origins() -> list[str]:
+    try:
+        return configure_cors()
+    except RuntimeError as e:
+        # In development, fall back to permissive mode
+        if os.getenv("ENVIRONMENT") != "production":
+            logger.warning(f"⚠️ CORS configuration error (dev mode, using fallback): {e}")
+            return ["*"]
         raise
+
+
+# Configure and apply CORS
+cors_origins = build_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,

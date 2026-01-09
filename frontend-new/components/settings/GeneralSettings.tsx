@@ -300,10 +300,11 @@ export function GeneralSettings() {
                         });
                         // Sign out and redirect
                         await logout();
-                      } catch (error: any) {
+                      } catch (error: unknown) {
+                        const message = error instanceof Error ? error.message : "Failed to delete account. Please try again.";
                         toast({
                           title: "Deletion failed",
-                          description: error.message || "Failed to delete account. Please try again.",
+                          description: message,
                           variant: "destructive",
                         });
                         setIsDeleting(false);

@@ -17,6 +17,14 @@ interface AcceptResult {
     error?: string;
 }
 
+type ApiError = {
+    response?: {
+        data?: {
+            detail?: string;
+        };
+    };
+};
+
 export default function AcceptInvitePage() {
     const router = useRouter();
     const params = useParams();
@@ -58,9 +66,10 @@ export default function AcceptInvitePage() {
                     setErrorMessage(data.error || "Failed to accept invitation");
                     setState("error");
                 }
-            } catch (error: any) {
+            } catch (error: unknown) {
                 console.error("Failed to accept invite:", error);
-                const message = error.response?.data?.detail || "Invalid or expired invite link";
+                const apiError = error as ApiError;
+                const message = apiError.response?.data?.detail || "Invalid or expired invite link";
                 setErrorMessage(message);
                 setState("error");
             }

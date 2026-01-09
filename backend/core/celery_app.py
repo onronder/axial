@@ -13,36 +13,40 @@ from core.config import settings
 # =============================================================================
 # Sentry Error Tracking + Logs for Celery Workers
 # =============================================================================
-if settings.SENTRY_DSN:
-    try:
-        import sentry_sdk
-        from sentry_sdk.integrations.celery import CeleryIntegration
-        from sentry_sdk.integrations.logging import LoggingIntegration
-        import logging
-        
-        logging_integration = LoggingIntegration(
-            level=logging.INFO,
-            event_level=logging.ERROR
-        )
-        
-        sentry_sdk.init(
-            dsn=settings.SENTRY_DSN,
-            traces_sample_rate=0.1,
-            profiles_sample_rate=0.1,
-            environment=os.getenv("ENVIRONMENT", "development"),
-            integrations=[
-                CeleryIntegration(),
-                logging_integration,
-            ],
-            release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "local"),
-            _experiments={
-                "enable_logs": True,
-            },
-        )
-    except ImportError:
-        pass  # sentry-sdk not installed
-    except Exception:
-        pass  # Sentry init failed
+def init_celery_sentry() -> None:
+    if settings.SENTRY_DSN and settings.ENVIRONMENT != "test":
+        try:
+            import sentry_sdk
+            from sentry_sdk.integrations.celery import CeleryIntegration
+            from sentry_sdk.integrations.logging import LoggingIntegration
+            import logging
+            
+            logging_integration = LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR
+            )
+            
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                traces_sample_rate=0.1,
+                profiles_sample_rate=0.1,
+                environment=os.getenv("ENVIRONMENT", "development"),
+                integrations=[
+                    CeleryIntegration(),
+                    logging_integration,
+                ],
+                release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "local"),
+                _experiments={
+                    "enable_logs": True,
+                },
+            )
+        except ImportError:
+            pass  # sentry-sdk not installed
+        except Exception:
+            pass  # Sentry init failed
+
+
+init_celery_sentry()
 
 # Initialize Celery with Redis
 celery_app = Celery(
@@ -82,10 +86,18 @@ celery_app.conf.update(
     
     # Task result expiration (24 hours)
     result_expires=86400,
+
+    # Reduce result backend overhead (we track progress in DB/Redis)
+    task_ignore_result=True,
+    task_store_errors_even_if_ignored=False,
     
     # Retry configuration
     task_default_retry_delay=60,  # 1 minute
     task_max_retries=3,
+
+    # Time limits (soft raises SoftTimeLimitExceeded, hard kills task)
+    task_soft_time_limit=settings.CELERY_TASK_SOFT_TIME_LIMIT,
+    task_time_limit=settings.CELERY_TASK_TIME_LIMIT,
     
     # ============================================================
     # CELERY BEAT - Scheduled Tasks

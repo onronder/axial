@@ -9,7 +9,10 @@ Tests all web crawling functionality:
 - YouTube transcript fetching
 """
 
+import builtins
 import pytest
+import socket
+from types import SimpleNamespace, ModuleType
 from unittest.mock import Mock, patch, MagicMock
 import sys
 import os
@@ -61,6 +64,53 @@ class TestIsYouTubeUrl:
             assert True
 
 
+class TestWebAuthorizeAndList:
+    @pytest.mark.asyncio
+    async def test_authorize_returns_true(self):
+        connector = WebConnector()
+        assert await connector.authorize("user-1") is True
+
+    @pytest.mark.asyncio
+    async def test_list_items_returns_configs(self):
+        connector = WebConnector()
+        supabase = MagicMock()
+        table = MagicMock()
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = MagicMock(
+            data=[
+                {
+                    "id": "crawl-1",
+                    "root_url": "https://example.com",
+                    "status": "completed",
+                    "total_pages_found": 2,
+                    "crawl_type": "single",
+                    "created_at": "2024-01-01T00:00:00Z",
+                }
+            ]
+        )
+        supabase.table.return_value = table
+
+        with patch("core.db.get_supabase", return_value=supabase):
+            items = await connector.list_items("user-1")
+
+        assert items
+        assert items[0].id == "crawl-1"
+
+    @pytest.mark.asyncio
+    async def test_list_items_handles_error(self):
+        connector = WebConnector()
+        supabase = MagicMock()
+        supabase.table.side_effect = Exception("db error")
+
+        with patch("core.db.get_supabase", return_value=supabase):
+            items = await connector.list_items("user-1")
+
+        assert items == []
+
+
 class TestExtractLinks:
     """Test HTML link extraction."""
     
@@ -97,6 +147,19 @@ class TestExtractLinks:
         assert "https://example.com/internal" in links
         assert "https://external.com/page" not in links
         assert "https://another.org/page" not in links
+
+    def test_skips_nofollow_links(self):
+        connector = WebConnector()
+        html = """
+        <html>
+        <body>
+            <a href="https://example.com/a" rel="nofollow">No</a>
+            <a href="https://example.com/b">Yes</a>
+        </body>
+        </html>
+        """
+        links = connector.extract_links(html, "https://example.com")
+        assert "https://example.com/b" in links
     
     def test_handles_relative_links(self):
         """Should convert relative links to absolute URLs."""
@@ -140,6 +203,26 @@ class TestParseSitemap:
         # Just verify the method exists and returns a list
         assert hasattr(connector, 'parse_sitemap')
         assert callable(connector.parse_sitemap)
+
+    def test_parses_sitemap_with_usp(self, monkeypatch):
+        connector = WebConnector()
+
+        class FakePage:
+            def __init__(self, url):
+                self.url = url
+
+        class FakeTree:
+            def all_pages(self):
+                return [FakePage("https://example.com/a"), FakePage("https://example.com/b")]
+
+        tree_module = SimpleNamespace(sitemap_tree_for_homepage=lambda *_args, **_kwargs: FakeTree())
+        monkeypatch.setitem(sys.modules, "usp", SimpleNamespace(tree=tree_module))
+        monkeypatch.setitem(sys.modules, "usp.tree", tree_module)
+
+        urls = connector.parse_sitemap("https://example.com/sitemap.xml")
+
+        assert "https://example.com/a" in urls
+        assert "https://example.com/b" in urls
     
     @patch('connectors.web.requests.get')
     def test_handles_sitemap_index(self, mock_get):
@@ -217,6 +300,178 @@ class TestCheckRobotsTxt:
         result = connector.check_robots_txt("https://example.com/page")
         
         assert result is True
+
+    def test_check_robots_txt_fails_open(self):
+        connector = WebConnector()
+        with patch.object(connector, "_get_robots_parser", side_effect=Exception("boom")):
+            assert connector.check_robots_txt("https://example.com/page") is True
+
+
+class TestWebIngest:
+    def test_ingest_skips_unsafe_url(self):
+        connector = WebConnector()
+        with patch.object(connector, "is_safe_url", return_value=False):
+            docs = list(connector._ingest_implementation({"item_ids": ["http://bad"]}))
+        assert docs == []
+
+    def test_ingest_skips_blocked_by_robots(self):
+        connector = WebConnector()
+        with patch.object(connector, "is_safe_url", return_value=True), \
+             patch.object(connector, "check_robots_txt", return_value=False):
+            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"]}))
+        assert docs == []
+
+    def test_ingest_handles_youtube(self):
+        connector = WebConnector()
+        with patch.object(connector, "is_safe_url", return_value=True), \
+             patch.object(connector, "check_robots_txt", return_value=True), \
+             patch.object(connector, "is_youtube_url", return_value=True), \
+             patch.object(connector, "fetch_youtube_transcript", return_value="Transcript"), \
+             patch.object(connector, "get_youtube_metadata", return_value={"source": "youtube", "title": "Video"}):
+            docs = list(connector._ingest_implementation({"item_ids": ["https://youtu.be/abc"]}))
+        assert len(docs) == 1
+        assert docs[0].page_content == "Transcript"
+
+    def test_ingest_handles_html_text(self):
+        connector = WebConnector()
+        meta = SimpleNamespace(title="Title", author="Author", date="2024-01-01")
+        with patch.object(connector, "is_safe_url", return_value=True), \
+             patch.object(connector, "check_robots_txt", return_value=True), \
+             patch.object(connector, "is_youtube_url", return_value=False), \
+             patch.object(connector, "fetch_html", return_value="<html></html>"), \
+             patch("connectors.web.trafilatura.extract", return_value="Body"), \
+             patch("connectors.web.trafilatura.extract_metadata", return_value=meta):
+            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"]}))
+        assert len(docs) == 1
+        assert docs[0].metadata["title"] == "Title"
+        assert docs[0].metadata["author"] == "Author"
+
+
+class TestUrlNormalizationAndSafety:
+    def test_normalize_url_strips_tracking_params(self):
+        connector = WebConnector()
+        normalized = connector.normalize_url(
+            "https://Example.com/path/?utm_source=google&x=1#section"
+        )
+        assert normalized == "https://example.com/path?x=1"
+
+    def test_normalize_url_blocks_invalid_scheme(self):
+        connector = WebConnector()
+        assert connector.normalize_url("ftp://example.com") is None
+
+    def test_is_safe_url_blocks_credentials(self):
+        connector = WebConnector()
+        assert connector.is_safe_url("https://user:pass@example.com") is False
+
+    def test_is_safe_url_blocks_private_ip(self):
+        connector = WebConnector()
+        assert connector.is_safe_url("http://127.0.0.1/") is False
+
+    def test_is_safe_url_allows_public_ip(self):
+        connector = WebConnector()
+        assert connector.is_safe_url("https://8.8.8.8/") is True
+
+    def test_is_safe_url_blocks_private_host_resolution(self, monkeypatch):
+        connector = WebConnector()
+        connector._is_safe_host.cache_clear()
+
+        monkeypatch.setattr(
+            "connectors.web.socket.getaddrinfo",
+            lambda *_args, **_kwargs: [(None, None, None, None, ("10.0.0.1", 0))],
+        )
+
+        assert connector.is_safe_url("https://internal.example.com") is False
+
+
+class TestRobotsAndDomains:
+    def test_get_crawl_delay_returns_value(self):
+        connector = WebConnector()
+        parser = SimpleNamespace(crawl_delay=lambda *_args, **_kwargs: 2.5)
+
+        with patch.object(connector, "_get_robots_parser", return_value=parser):
+            delay = connector.get_crawl_delay("https://example.com")
+
+        assert delay == 2.5
+
+    def test_get_crawl_delay_handles_error(self):
+        connector = WebConnector()
+        with patch.object(connector, "_get_robots_parser", side_effect=Exception("boom")):
+            assert connector.get_crawl_delay("https://example.com") is None
+
+    def test_is_allowed_domain_handles_subdomains(self):
+        connector = WebConnector()
+        assert connector.is_allowed_domain("docs.example.com", "example.com", allow_subdomains=True)
+        assert connector.is_allowed_domain("docs.example.com", "example.com", allow_subdomains=False) is False
+
+
+class TestSitemapFallback:
+    def test_parse_sitemap_basic_parses_urls(self):
+        connector = WebConnector()
+        response = Mock()
+        response.status_code = 200
+        response.content = b"""<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://example.com/a</loc></url>
+            <url><loc>https://example.com/b</loc></url>
+        </urlset>
+        """
+
+        with patch.object(connector.session, "get", return_value=response):
+            urls = connector._parse_sitemap_basic("https://example.com/sitemap.xml")
+
+        assert "https://example.com/a" in urls
+        assert "https://example.com/b" in urls
+
+    def test_ingest_handles_empty_text(self):
+        connector = WebConnector()
+        with patch.object(connector, "is_safe_url", return_value=True), \
+             patch.object(connector, "check_robots_txt", return_value=True), \
+             patch.object(connector, "is_youtube_url", return_value=False), \
+             patch.object(connector, "fetch_html", return_value="<html></html>"), \
+             patch("connectors.web.trafilatura.extract", return_value=""):
+            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"]}))
+        assert docs == []
+
+    def test_ingest_handles_fetch_failure(self):
+        connector = WebConnector()
+        with patch.object(connector, "is_safe_url", return_value=True), \
+             patch.object(connector, "check_robots_txt", return_value=True), \
+             patch.object(connector, "is_youtube_url", return_value=False), \
+             patch.object(connector, "fetch_html", return_value=None):
+            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"]}))
+        assert docs == []
+
+
+class TestWebNormalization:
+    def test_normalize_url_strips_tracking(self):
+        connector = WebConnector()
+        url = "https://Example.com/path/?utm_source=x&ref=y&x=1"
+        normalized = connector.normalize_url(url)
+        assert normalized.startswith("https://example.com/path")
+        assert "utm_source" not in normalized
+        assert "x=1" in normalized
+
+    def test_is_allowed_domain_checks_subdomain(self):
+        connector = WebConnector()
+        assert connector.is_allowed_domain("sub.example.com", "example.com", allow_subdomains=True) is True
+        assert connector.is_allowed_domain("sub.example.com", "example.com", allow_subdomains=False) is False
+
+    def test_is_safe_url_rejects_private_ip(self):
+        connector = WebConnector()
+        assert connector.is_safe_url("http://127.0.0.1") is False
+
+
+class TestRobotsParser:
+    @patch("connectors.web.requests.get")
+    def test_get_robots_parser_allows_on_error(self, mock_get):
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = ""
+        mock_get.return_value = mock_response
+
+        connector = WebConnector()
+        parser = connector._get_robots_parser("https://example.com/robots.txt")
+        assert parser.can_fetch("*", "https://example.com")
     
     def test_blocks_when_disallowed(self):
         """Should return False when robots.txt blocks crawling."""
@@ -327,3 +582,368 @@ class TestIngest:
         docs = list(connector._ingest_implementation(config))
         
         assert docs == []
+
+
+class TestWebConnectorExtraPaths:
+    def test_parse_sitemap_import_error_fallback(self, monkeypatch):
+        connector = WebConnector()
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "usp.tree":
+                raise ImportError("missing")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        with patch.object(connector, "_parse_sitemap_basic", return_value=["https://example.com/a"]) as fallback:
+            result = connector.parse_sitemap("https://example.com/sitemap.xml")
+
+        fallback.assert_called_once()
+        assert result == ["https://example.com/a"]
+
+    def test_parse_sitemap_exception_returns_empty(self, monkeypatch):
+        connector = WebConnector()
+        usp = ModuleType("usp")
+        tree = ModuleType("usp.tree")
+
+        def boom(_url):
+            raise RuntimeError("boom")
+
+        tree.sitemap_tree_for_homepage = boom
+        usp.tree = tree
+        monkeypatch.setitem(sys.modules, "usp", usp)
+        monkeypatch.setitem(sys.modules, "usp.tree", tree)
+
+        assert connector.parse_sitemap("https://example.com/sitemap.xml") == []
+
+    def test_parse_sitemap_basic_sitemap_index(self):
+        connector = WebConnector()
+
+        class Response:
+            def __init__(self, content):
+                self.content = content.encode("utf-8")
+
+            def raise_for_status(self):
+                return None
+
+        index_xml = """
+        <sitemapindex>
+          <sitemap><loc>https://example.com/sub.xml</loc></sitemap>
+        </sitemapindex>
+        """
+        sub_xml = """
+        <urlset>
+          <url><loc>https://example.com/page</loc></url>
+        </urlset>
+        """
+
+        connector.session.get = MagicMock(side_effect=[Response(index_xml), Response(sub_xml)])
+        urls = connector._parse_sitemap_basic("https://example.com/sitemap.xml")
+        assert "https://example.com/page" in urls
+
+    def test_parse_sitemap_basic_error_returns_empty(self):
+        connector = WebConnector()
+        connector.session.get = MagicMock(side_effect=Exception("boom"))
+        assert connector._parse_sitemap_basic("https://example.com/sitemap.xml") == []
+
+    def test_extract_links_skips_nofollow_and_non_http(self):
+        connector = WebConnector()
+        html = """
+        <a href="https://example.com/ok">OK</a>
+        <a href="/rel">Rel</a>
+        <a href="mailto:test@example.com">Mail</a>
+        <a href="javascript:void(0)">JS</a>
+        <a href="https://other.com" rel="nofollow">NoFollow</a>
+        """
+        links = connector.extract_links(html, "https://example.com/base")
+        assert "https://example.com/ok" in links
+        assert "https://example.com/rel" in links
+        assert all("mailto:" not in link for link in links)
+
+    def test_extract_links_handles_normalize_none(self):
+        connector = WebConnector()
+        html = '<a href="https://example.com/ok">OK</a>'
+        with patch.object(connector, "normalize_url", return_value=None):
+            assert connector.extract_links(html, "https://example.com/base") == []
+
+    def test_extract_links_exception_returns_empty(self, monkeypatch):
+        connector = WebConnector()
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "bs4":
+                raise Exception("boom")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert connector.extract_links("<html></html>", "https://example.com") == []
+
+    def test_extract_links_rel_string(self):
+        connector = WebConnector()
+        html = '<a href="https://example.com/page" rel="nofollow">link</a>'
+        links = connector.extract_links(html, "https://example.com")
+        assert links == []
+
+    @pytest.mark.asyncio
+    async def test_ingest_async_wrapper_returns_iterator(self):
+        connector = WebConnector()
+        iterator = await connector.ingest({"item_ids": [], "respect_robots": True})
+        assert hasattr(iterator, "__aiter__")
+
+    def test_extract_links_rel_string_coerces(self, monkeypatch):
+        connector = WebConnector()
+
+        class FakeTag:
+            def __init__(self):
+                self.attrs = {"href": "https://example.com/page"}
+
+            def get(self, key, default=None):
+                if key == "rel":
+                    return "nofollow"
+                return self.attrs.get(key, default)
+
+            def __getitem__(self, key):
+                return self.attrs[key]
+
+        class FakeSoup:
+            def find_all(self, *_args, **_kwargs):
+                return [FakeTag()]
+
+        monkeypatch.setattr("bs4.BeautifulSoup", lambda *_args, **_kwargs: FakeSoup())
+        links = connector.extract_links("<a></a>", "https://example.com")
+        assert links == []
+
+    def test_ingest_handles_scrape_exception(self, monkeypatch):
+        connector = WebConnector()
+
+        monkeypatch.setattr(connector, "is_safe_url", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr(connector, "is_youtube_url", lambda *_args, **_kwargs: False)
+        monkeypatch.setattr(
+            connector,
+            "fetch_html",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("boom")),
+        )
+        docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": False}))
+        assert docs == []
+
+    def test_get_crawl_delay_none(self):
+        connector = WebConnector()
+
+        class Parser:
+            def crawl_delay(self, _agent):
+                return None
+
+        with patch.object(connector, "_get_robots_parser", return_value=Parser()):
+            assert connector.get_crawl_delay("https://example.com") is None
+
+    def test_extract_youtube_video_id(self):
+        connector = WebConnector()
+        assert connector.extract_youtube_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+
+    def test_fetch_youtube_transcript_no_video_id(self):
+        connector = WebConnector()
+        with patch.object(connector, "extract_youtube_video_id", return_value=None):
+            assert connector.fetch_youtube_transcript("https://youtu.be/invalid") is None
+
+    def test_fetch_youtube_transcript_fallback(self, monkeypatch):
+        connector = WebConnector()
+        yt_module = ModuleType("youtube_transcript_api")
+        yt_errors = ModuleType("youtube_transcript_api._errors")
+
+        class Transcript:
+            def fetch(self):
+                return [{"text": "hello"}, {"text": "world"}]
+
+        class TranscriptList:
+            def find_manually_created_transcript(self, _langs):
+                raise Exception("no manual")
+
+            def find_generated_transcript(self, _langs):
+                raise Exception("no generated")
+
+            def __iter__(self):
+                yield Transcript()
+
+        class YouTubeTranscriptApi:
+            @staticmethod
+            def list_transcripts(_video_id):
+                return TranscriptList()
+
+        yt_module.YouTubeTranscriptApi = YouTubeTranscriptApi
+        yt_errors.TranscriptsDisabled = Exception
+        yt_errors.NoTranscriptFound = Exception
+        yt_errors.VideoUnavailable = Exception
+        monkeypatch.setitem(sys.modules, "youtube_transcript_api", yt_module)
+        monkeypatch.setitem(sys.modules, "youtube_transcript_api._errors", yt_errors)
+
+        with patch.object(connector, "extract_youtube_video_id", return_value="abc123"):
+            text = connector.fetch_youtube_transcript("https://youtu.be/abc123")
+        assert text == "hello world"
+
+    def test_fetch_youtube_transcript_import_error(self, monkeypatch):
+        connector = WebConnector()
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "youtube_transcript_api":
+                raise ImportError("missing")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert connector.fetch_youtube_transcript("https://youtu.be/abc123") is None
+
+    def test_fetch_youtube_transcript_error(self, monkeypatch):
+        connector = WebConnector()
+        yt_module = ModuleType("youtube_transcript_api")
+        yt_errors = ModuleType("youtube_transcript_api._errors")
+
+        class YouTubeTranscriptApi:
+            @staticmethod
+            def list_transcripts(_video_id):
+                raise Exception("boom")
+
+        yt_module.YouTubeTranscriptApi = YouTubeTranscriptApi
+        yt_errors.TranscriptsDisabled = Exception
+        yt_errors.NoTranscriptFound = Exception
+        yt_errors.VideoUnavailable = Exception
+        monkeypatch.setitem(sys.modules, "youtube_transcript_api", yt_module)
+        monkeypatch.setitem(sys.modules, "youtube_transcript_api._errors", yt_errors)
+
+        with patch.object(connector, "extract_youtube_video_id", return_value="abc123"):
+            assert connector.fetch_youtube_transcript("https://youtu.be/abc123") is None
+
+    def test_fetch_youtube_transcript_no_transcript_available(self, monkeypatch):
+        yt_module = ModuleType("youtube_transcript_api")
+        yt_errors = ModuleType("youtube_transcript_api._errors")
+
+        class TranscriptList:
+            def find_manually_created_transcript(self, _langs):
+                return None
+
+        class YouTubeTranscriptApi:
+            @staticmethod
+            def list_transcripts(_video_id):
+                return TranscriptList()
+
+        yt_module.YouTubeTranscriptApi = YouTubeTranscriptApi
+        yt_errors.TranscriptsDisabled = Exception
+        yt_errors.NoTranscriptFound = Exception
+        yt_errors.VideoUnavailable = Exception
+        monkeypatch.setitem(sys.modules, "youtube_transcript_api", yt_module)
+        monkeypatch.setitem(sys.modules, "youtube_transcript_api._errors", yt_errors)
+
+        connector = WebConnector()
+        with patch.object(connector, "extract_youtube_video_id", return_value="abc123"):
+            assert connector.fetch_youtube_transcript("https://youtu.be/abc123") is None
+
+    def test_get_youtube_metadata(self):
+        connector = WebConnector()
+        meta = connector.get_youtube_metadata("https://youtu.be/abc123")
+        assert meta["source"] == "youtube"
+        assert meta["source_url"].endswith("abc123")
+
+    def test_ingest_skips_unsafe_url(self):
+        connector = WebConnector()
+        with patch.object(connector, "is_safe_url", return_value=False):
+            docs = list(connector._ingest_implementation({"item_ids": ["http://bad"], "respect_robots": False}))
+        assert docs == []
+
+    def test_ingest_blocks_robots(self):
+        connector = WebConnector()
+        with patch.object(connector, "check_robots_txt", return_value=False):
+            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": True}))
+        assert docs == []
+
+    @patch("connectors.web.trafilatura")
+    def test_ingest_empty_text(self, mock_trafilatura):
+        connector = WebConnector()
+        mock_trafilatura.fetch_url.return_value = "<html></html>"
+        mock_trafilatura.extract.return_value = "   "
+        mock_trafilatura.extract_metadata.return_value = None
+        docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": False}))
+        assert docs == []
+
+    def test_ingest_exception_logged(self):
+        connector = WebConnector()
+        with patch.object(connector, "fetch_html", side_effect=Exception("boom")):
+            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": False}))
+        assert docs == []
+
+    @patch("connectors.web.trafilatura")
+    def test_ingest_handles_trafilatura_error(self, mock_trafilatura):
+        connector = WebConnector()
+        mock_trafilatura.fetch_url.return_value = "<html></html>"
+        mock_trafilatura.extract.side_effect = Exception("boom")
+        docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": False}))
+        assert docs == []
+
+    @patch("connectors.web.trafilatura")
+    def test_fetch_html_returns_none(self, mock_trafilatura):
+        connector = WebConnector()
+        mock_trafilatura.fetch_url.return_value = None
+        assert connector.fetch_html("https://example.com") is None
+
+    @patch("connectors.web.trafilatura")
+    def test_fetch_html_handles_exception(self, mock_trafilatura):
+        connector = WebConnector()
+        mock_trafilatura.fetch_url.side_effect = Exception("boom")
+        assert connector.fetch_html("https://example.com") is None
+
+    def test_is_safe_url_rejects_scheme_and_auth(self):
+        connector = WebConnector()
+        assert connector.is_safe_url("ftp://example.com") is False
+        assert connector.is_safe_url("http://user:pass@example.com") is False
+        assert connector.is_safe_url("http://") is False
+
+    def test_is_safe_url_handles_exception(self):
+        connector = WebConnector()
+        with patch("connectors.web.urlparse", side_effect=Exception("boom")):
+            assert connector.is_safe_url("https://example.com") is False
+
+    def test_is_safe_host_resolution_paths(self):
+        connector = WebConnector()
+        with patch("connectors.web.socket.getaddrinfo", side_effect=socket.gaierror()):
+            assert connector._is_safe_host("invalid-host") is False
+
+        with patch("connectors.web.socket.getaddrinfo", return_value=[("", "", "", "", ("8.8.8.8", 0))]):
+            assert connector._is_safe_host("public-host") is True
+
+        with patch("connectors.web.socket.getaddrinfo", return_value=[("", "", "", "", ("invalid", 0))]):
+            assert connector._is_safe_host("bad-ip") is False
+
+    def test_normalize_url_variants(self):
+        connector = WebConnector()
+        assert connector.normalize_url("") is None
+        assert connector.normalize_url("ftp://example.com") is None
+        assert connector.normalize_url("http://") is None
+
+        normalized = connector.normalize_url("https://example.com:443/path/?utm_source=1")
+        assert normalized.startswith("https://example.com/path")
+        assert ":443" not in normalized
+
+    def test_normalize_url_handles_exception(self):
+        connector = WebConnector()
+        with patch("connectors.web.urlparse", side_effect=Exception("boom")):
+            assert connector.normalize_url("https://example.com") is None
+
+    def test_normalize_hostname_strips_www(self):
+        connector = WebConnector()
+        assert connector._normalize_hostname("www.Example.com.") == "example.com"
+
+    def test_get_robots_parser_handles_errors(self):
+        connector = WebConnector()
+
+        class Response:
+            def __init__(self, status_code):
+                self.status_code = status_code
+                self.text = ""
+
+        with patch("connectors.web.requests.get", return_value=Response(404)):
+            parser = connector._get_robots_parser("https://example.com/robots.txt")
+            assert parser.can_fetch("*", "https://example.com")
+            assert parser.crawl_delay("*") is None
+
+        with patch("connectors.web.requests.get", side_effect=Exception("boom")):
+            parser = connector._get_robots_parser("https://example.com/robots.txt")
+            assert parser.can_fetch("*", "https://example.com")

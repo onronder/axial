@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 export interface SearchResult {
     id: string;
     content: string;
-    metadata: Record<string, any>;
+    metadata: Record<string, unknown>;
     similarity: number;
     source_type: string;
     document_id: string;
@@ -37,7 +37,7 @@ export const useSearch = () => {
     const search = useCallback(async (
         query: string,
         topK: number = 5,
-        filters?: Record<string, any>
+        filters?: Record<string, unknown>
     ): Promise<SearchResult[]> => {
         if (!query.trim()) {
             setResults([]);
@@ -59,9 +59,10 @@ export const useSearch = () => {
             const searchResults = Array.isArray(data) ? data : (data.results || []);
             setResults(searchResults);
             return searchResults;
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Search failed:', err);
-            const errorMessage = err.response?.data?.detail || err.message || 'Search failed';
+            const message = err instanceof Error ? err.message : 'Search failed';
+            const errorMessage = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || message;
             setError(errorMessage);
             setResults([]);
             return [];

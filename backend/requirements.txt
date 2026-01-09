@@ -62,6 +62,7 @@ lxml
 
 # --- SERVER MONITORING ---
 psutil>=5.9.0
+prometheus-client==0.20.0
 
 # --- ADVANCED DOCUMENT PARSING (OCR) ---
 llama-parse>=0.5.0

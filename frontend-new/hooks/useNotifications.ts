@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { authFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import type { RealtimeChannel, RealtimePostgresInsertPayload } from "@supabase/supabase-js";
 
 export interface Notification {
     id: string;
@@ -49,6 +50,18 @@ const POLL_INTERVAL = 30000; // 30 seconds fallback
 
 // Supabase client will be initialized on-demand using shared singleton
 
+type NotificationPayload = {
+    id: string;
+    title: string;
+    message?: string;
+    type: Notification["type"];
+    is_read: boolean;
+    metadata?: Record<string, unknown>;
+    action_url?: string;
+    extra_data?: string | Record<string, unknown>;
+    created_at?: string;
+};
+
 export function useNotifications() {
     const { toast } = useToast();
     const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -58,11 +71,11 @@ export function useNotifications() {
     const [error, setError] = useState<string | null>(null);
     const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
 
-    const subscriptionRef = useRef<any>(null);
+    const subscriptionRef = useRef<RealtimeChannel | null>(null);
     const userIdRef = useRef<string | null>(null);
 
     // Parse metadata and extract action_url
-    const parseNotification = (n: any): Notification => {
+    const parseNotification = (n: NotificationPayload): Notification => {
         let metadata = n.metadata;
         let action_url = n.action_url;
 
@@ -104,7 +117,7 @@ export function useNotifications() {
     }, [toast]);
 
     // Add new notification from realtime
-    const handleRealtimeInsert = useCallback((payload: any) => {
+    const handleRealtimeInsert = useCallback((payload: RealtimePostgresInsertPayload<NotificationPayload>) => {
         const newNotification = parseNotification(payload.new);
 
         console.log("🔔 [Realtime] New notification:", newNotification.title);

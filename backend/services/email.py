@@ -246,6 +246,137 @@ class EmailService:
             return False
 
 
+    def send_retry_scheduled_email(
+        self,
+        to_email: str,
+        name: str,
+        task_name: str,
+        next_retry_at: Optional[str] = None,
+    ) -> bool:
+        """
+        Send notification when a failed task is scheduled for retry.
+        """
+        if not self.enabled:
+            logger.debug("📧 Email not sent: service not enabled")
+            return False
+
+        try:
+            html_content = self._render_template(
+                "dlq_retry_scheduled.html",
+                name=name,
+                task_name=task_name,
+                next_retry_at=next_retry_at,
+                app_url=self.app_url,
+            )
+
+            if not html_content:
+                retry_text = f"Next retry: {next_retry_at}" if next_retry_at else "Retry scheduled"
+                html_content = f"""
+                <p>Hello {name},</p>
+                <p>We hit an issue while processing: <strong>{task_name}</strong>.</p>
+                <p>{retry_text}</p>
+                <p><a href="{self.app_url}/settings?tab=failed-tasks">View Failed Tasks</a></p>
+                """
+
+            params = {
+                "from": f"Axio Hub <{self.from_email}>",
+                "to": [to_email],
+                "subject": "⏳ Retry Scheduled for Your Task",
+                "html": html_content,
+            }
+
+            response = resend.Emails.send(params)
+            logger.info(f"📧 Sent retry scheduled email to {to_email}, id={response.get('id', 'unknown')}")
+            return True
+        except Exception as e:
+            logger.error(f"📧 Failed to send retry scheduled email to {to_email}: {e}")
+            return False
+
+    def send_retry_succeeded_email(
+        self,
+        to_email: str,
+        name: str,
+        task_name: str,
+    ) -> bool:
+        """
+        Send notification when a retry succeeds.
+        """
+        if not self.enabled:
+            logger.debug("📧 Email not sent: service not enabled")
+            return False
+
+        try:
+            html_content = self._render_template(
+                "dlq_retry_succeeded.html",
+                name=name,
+                task_name=task_name,
+                app_url=self.app_url,
+            )
+
+            if not html_content:
+                html_content = f"""
+                <p>Hello {name},</p>
+                <p>Your task <strong>{task_name}</strong> has been successfully retried.</p>
+                <p><a href="{self.app_url}/dashboard">Go to Dashboard</a></p>
+                """
+
+            params = {
+                "from": f"Axio Hub <{self.from_email}>",
+                "to": [to_email],
+                "subject": "✅ Retry Succeeded",
+                "html": html_content,
+            }
+
+            response = resend.Emails.send(params)
+            logger.info(f"📧 Sent retry succeeded email to {to_email}, id={response.get('id', 'unknown')}")
+            return True
+        except Exception as e:
+            logger.error(f"📧 Failed to send retry succeeded email to {to_email}: {e}")
+            return False
+
+    def send_permanently_failed_email(
+        self,
+        to_email: str,
+        name: str,
+        task_name: str,
+    ) -> bool:
+        """
+        Send notification when a task permanently fails after retries.
+        """
+        if not self.enabled:
+            logger.debug("📧 Email not sent: service not enabled")
+            return False
+
+        try:
+            html_content = self._render_template(
+                "dlq_permanently_failed.html",
+                name=name,
+                task_name=task_name,
+                app_url=self.app_url,
+            )
+
+            if not html_content:
+                html_content = f"""
+                <p>Hello {name},</p>
+                <p>We were unable to complete: <strong>{task_name}</strong>.</p>
+                <p>Please review the failed task details and retry.</p>
+                <p><a href="{self.app_url}/settings?tab=failed-tasks">View Failed Tasks</a></p>
+                """
+
+            params = {
+                "from": f"Axio Hub <{self.from_email}>",
+                "to": [to_email],
+                "subject": "❗ Task Failed After Retries",
+                "html": html_content,
+            }
+
+            response = resend.Emails.send(params)
+            logger.info(f"📧 Sent permanently failed email to {to_email}, id={response.get('id', 'unknown')}")
+            return True
+        except Exception as e:
+            logger.error(f"📧 Failed to send permanently failed email to {to_email}: {e}")
+            return False
+
     async def send_team_invite(
         self,
         to_email: str,

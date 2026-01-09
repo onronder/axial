@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, Mock, AsyncMock
+from unittest.mock import patch, Mock, AsyncMock, MagicMock
 from api.v1.billing import list_plans
 from core.config import settings
 
@@ -56,9 +56,10 @@ async def test_list_plans_success(mock_settings):
     with patch("httpx.AsyncClient", return_value=mock_client):
         plans = await list_plans()
 
-    assert len(plans) == 2
+    assert len(plans) == 3
     assert plans[0].type == "starter"
     assert plans[1].type == "pro"
+    assert plans[2].type == "enterprise"
     assert plans[0].price_amount == 1000
     assert plans[1].price_amount == 2000
 
@@ -194,11 +195,35 @@ class TestCreateCheckoutEndpoint:
     @pytest.mark.asyncio
     async def test_checkout_creates_polar_session(self):
         """Should create checkout session with Polar."""
-        pass
+        from types import SimpleNamespace
+        from api.v1.billing import create_checkout_session, CheckoutRequest
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"url": "https://checkout.example.com"}
+        mock_response.raise_for_status.return_value = None
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.post.return_value = mock_response
+
+        with patch("api.v1.billing.settings") as mock_settings, \
+             patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            mock_settings.POLAR_ACCESS_TOKEN = "token"
+            mock_settings.POLAR_PRODUCT_ID_STARTER_MONTHLY = "starter_id"
+            mock_settings.POLAR_PRODUCT_ID_PRO_MONTHLY = "pro_id"
+            mock_settings.POLAR_PRODUCT_ID_ENTERPRISE = "enterprise_id"
+            mock_settings.APP_URL = "https://app.example.com"
+
+            result = await create_checkout_session(
+                CheckoutRequest(plan="starter"),
+                current_user_id="user-1",
+            )
+
+        assert result["url"] == "https://checkout.example.com"
     
     @pytest.mark.asyncio
     async def test_checkout_returns_checkout_url(self):
         """Should return URL to redirect user for payment."""
         response = {"checkout_url": "https://polar.sh/checkout/xxx"}
         assert "checkout_url" in response
-

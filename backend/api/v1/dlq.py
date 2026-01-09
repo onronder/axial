@@ -8,7 +8,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from api.v1.dependencies import get_current_user, require_admin
 from core.db import get_supabase
@@ -41,8 +41,7 @@ class FailedTaskResponse(BaseModel):
     updated_at: datetime
     resolved_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DLQStatsResponse(BaseModel):
@@ -53,8 +52,8 @@ class DLQStatsResponse(BaseModel):
     permanently_failed: int = Field(..., description="Tasks that failed all retries")
     resolved: int = Field(..., description="Tasks that succeeded after retry")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "total_failed": 42,
                 "pending_retry": 5,
@@ -63,6 +62,7 @@ class DLQStatsResponse(BaseModel):
                 "resolved": 25
             }
         }
+    )
 
 
 class ManualRetryRequest(BaseModel):

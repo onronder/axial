@@ -18,7 +18,7 @@ import { URLCrawlerInput } from "./URLCrawlerInput";
 import { FileUploadZone } from "./FileUploadZone";
 import { ComingSoonIntegrations } from "./ComingSoonIntegrations";
 import { useDataSources } from "@/hooks/useDataSources";
-import type { MergedDataSource } from "@/types";
+import type { DataSourceCategory, MergedDataSource } from "@/types";
 
 // Category labels for display
 const CATEGORY_LABELS: Record<string, string> = {
@@ -30,6 +30,18 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 type FilterStatus = "all" | "connected" | "not-connected";
+
+const DATA_SOURCE_CATEGORIES: DataSourceCategory[] = [
+  "cloud",
+  "files",
+  "web",
+  "database",
+  "productivity",
+  "apps",
+];
+
+const isDataSourceCategory = (value: string | null | undefined): value is DataSourceCategory =>
+  !!value && DATA_SOURCE_CATEGORIES.includes(value as DataSourceCategory);
 
 export function DataSourcesGrid() {
   const {
@@ -44,7 +56,7 @@ export function DataSourcesGrid() {
   } = useDataSources();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
+  const [statusFilter] = useState<FilterStatus>("all");
   const [browsing, setBrowsing] = useState<MergedDataSource | null>(null);
 
   const connectedCount = connectedSources.length;
@@ -76,7 +88,7 @@ export function DataSourcesGrid() {
   if (browsing) {
     return (
       <FileBrowser
-        source={{
+          source={{
           id: browsing.id,
           name: browsing.name,
           type: browsing.type,
@@ -84,7 +96,7 @@ export function DataSourcesGrid() {
           lastSync: browsing.lastSyncAt || "-",
           icon: browsing.iconPath || browsing.type,
           description: browsing.description,
-          category: browsing.category as any,
+          category: isDataSourceCategory(browsing.category) ? browsing.category : "files",
         }}
         onBack={() => setBrowsing(null)}
       />
@@ -182,7 +194,7 @@ export function DataSourcesGrid() {
                       lastSync: source.lastSyncAt || "-",
                       icon: source.iconPath || source.type,
                       description: source.description,
-                      category: source.category as any,
+                      category: isDataSourceCategory(source.category) ? source.category : "web",
                     }}
                   />
                 ) : (

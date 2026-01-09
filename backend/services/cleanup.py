@@ -23,8 +23,14 @@ class AccountCleanupService:
     Removes user data from all systems in the correct order.
     """
     
-    def __init__(self):
-        self.supabase = get_supabase()
+    def __init__(self, supabase=None):
+        self._supabase = supabase
+
+    @property
+    def supabase(self):
+        if self._supabase is None:
+            self._supabase = get_supabase()
+        return self._supabase
     
     async def execute_account_deletion(self, user_id: str) -> dict:
         """
@@ -153,13 +159,23 @@ class AccountCleanupService:
         anything about documents that belonged to this user.
         """
         try:
-            # Delete from document_chunks table (which stores embeddings)
-            response = self.supabase.table("document_chunks")\
-                .delete()\
+            doc_ids_res = self.supabase.table("documents")\
+                .select("id")\
                 .eq("user_id", user_id)\
                 .execute()
-            
-            deleted_count = len(response.data) if response.data else 0
+
+            doc_ids = [row["id"] for row in (doc_ids_res.data or []) if row.get("id")]
+            deleted_count = 0
+
+            if doc_ids:
+                batch_size = 500
+                for i in range(0, len(doc_ids), batch_size):
+                    batch = doc_ids[i:i + batch_size]
+                    response = self.supabase.table("document_chunks")\
+                        .delete()\
+                        .in_("document_id", batch)\
+                        .execute()
+                    deleted_count += len(response.data) if response.data else 0
             
             return {
                 "deleted": deleted_count,

@@ -224,8 +224,10 @@ async def delete_document(
             .eq("user_id", user_id)\
             .single()\
             .execute()
-        
-        doc_title = doc_response.data.get("title", "Unknown") if doc_response.data else "Unknown"
+        if not doc_response.data:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        doc_title = doc_response.data.get("title", "Unknown")
         
         # Delete using cleanup service (Atomic: Vector -> Storage -> DB)
         await cleanup_service.delete_single_document(doc_id, user_id)

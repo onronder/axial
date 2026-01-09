@@ -7,7 +7,7 @@ import { FileStatus, getStatusLabel } from "@/hooks/useFileStatus";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { ChunkProgress } from "./ChunkProgress";
 import { ProcessingStages } from "./ProcessingStages";
 import { ErrorDetails } from "./ErrorDetails";
@@ -56,7 +56,7 @@ export function IngestionProgressModal({
         // Initialize keyboard shortcuts
         const shortcuts = new KeyboardShortcuts();
         shortcuts.register('escape', onClose);
-        shortcuts.register('ctrl+e', () => setIsExpanded(!isExpanded));
+        shortcuts.register('ctrl+e', () => setIsExpanded((prev) => !prev));
         shortcuts.start();
         keyboardShortcuts.current = shortcuts;
 
@@ -196,6 +196,9 @@ interface FileProgressCardProps {
     jobId: string;
 }
 
+type ProcessingStage = "uploading" | "parsing" | "chunking" | "embedding" | "indexing";
+type StageStatus = "pending" | "in_progress" | "complete" | "failed";
+
 function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const statusLabel = getStatusLabel(file.status);
@@ -217,8 +220,8 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     );
 
     // Determine processing stages based on status
-    const getProcessingStages = () => {
-        const stages: any = {
+    const getProcessingStages = (): Record<ProcessingStage, StageStatus> => {
+        const stages: Record<ProcessingStage, StageStatus> = {
             uploading: 'pending',
             parsing: 'pending',
             chunking: 'pending',
@@ -264,7 +267,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
         return stages;
     };
 
-    const getCurrentStage = (): 'uploading' | 'parsing' | 'chunking' | 'embedding' | 'indexing' => {
+    const getCurrentStage = (): ProcessingStage => {
         if (file.status === 'uploading') return 'uploading';
         if (file.status === 'parsing' || file.status === 'processing') return 'parsing';
         if (file.status === 'embedding') return 'embedding';

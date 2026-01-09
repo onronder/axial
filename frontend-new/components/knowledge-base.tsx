@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon"
-import { cn } from "@/lib/utils"
 
 interface Document {
     id: string
@@ -31,9 +30,10 @@ export function KnowledgeBase() {
         try {
             const response = await authFetch.get('/documents')
             setDocuments(response.data)
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err)
-            setError(err.message || "Failed to load documents")
+            const message = err instanceof Error ? err.message : "Failed to load documents"
+            setError(message)
         } finally {
             setLoading(false)
         }
@@ -46,8 +46,9 @@ export function KnowledgeBase() {
             await authFetch.delete(`/documents/${id}`)
             // Optimistic update or refetch
             setDocuments(prev => prev.filter(d => d.id !== id))
-        } catch (err: any) {
-            alert(err.message || "Failed to delete document")
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to delete document"
+            alert(message)
         }
     }
 

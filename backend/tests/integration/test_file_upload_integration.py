@@ -4,6 +4,7 @@ Integration tests for file upload flow.
 Tests the complete flow from connector → pipeline → database.
 """
 
+import os
 import pytest
 import asyncio
 from uuid import uuid4
@@ -11,6 +12,10 @@ from uuid import uuid4
 from connectors.file_upload import FileUploadConnector
 from services.ingestion_pipeline import IngestionPipeline
 from core.db import get_supabase
+
+
+if os.getenv("RUN_INTEGRATION_TESTS") != "1":
+    pytest.skip("Set RUN_INTEGRATION_TESTS=1 to run Supabase-backed integration tests.", allow_module_level=True)
 
 
 @pytest.mark.integration

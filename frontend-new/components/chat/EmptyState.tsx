@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUp, Globe, Database, Bot, MessageSquare } from "lucide-react";
+import { FileUp, Globe, Database, MessageSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";

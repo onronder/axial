@@ -33,6 +33,13 @@ vi.mock('@/hooks/useProfile', () => ({
     }),
 }));
 
+vi.mock('@/hooks/useUsage', () => ({
+    useUsage: () => ({
+        plan: 'pro',
+        isLoading: false,
+    }),
+}));
+
 vi.mock('@/hooks/useTheme', () => ({
     useTheme: () => ({
         theme: 'system',
@@ -139,7 +146,7 @@ describe('DashboardSidebar Component', () => {
 
         it('should render user plan badge', () => {
             render(<DashboardSidebar />);
-            expect(screen.getByText('pro')).toBeInTheDocument();
+            expect(screen.getByText('Pro')).toBeInTheDocument();
         });
     });
 });

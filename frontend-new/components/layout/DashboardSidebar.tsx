@@ -6,7 +6,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { useTheme } from "@/hooks/useTheme";
-import { useChatHistory } from "@/hooks/useChatHistory";
 import { Settings, LogOut, User, Moon, Sun, ChevronUp, MessageSquarePlus } from "lucide-react";
 import { ChatHistoryList } from "@/components/layout/ChatHistoryList";
 import { NotificationCenter } from "@/components/layout/NotificationCenter";
@@ -35,7 +34,7 @@ export function DashboardSidebar() {
     const { user, logout } = useAuth();
     const { profile } = useProfile();
     const { plan: effectivePlan } = useUsage();
-    const { theme, setTheme, resolvedTheme } = useTheme();
+    const { setTheme, resolvedTheme } = useTheme();
 
     const displayName = profile?.first_name && profile?.last_name
         ? `${profile.first_name} ${profile.last_name}`

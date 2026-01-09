@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AxioLogo } from "@/components/branding/AxioLogo";
-import { CloudUpload, Globe, CheckCircle, ArrowRight, Sparkles } from "lucide-react";
+import { CloudUpload, Globe, CheckCircle, ArrowRight } from "lucide-react";
 import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon";
 import { useIngestModal } from "@/hooks/useIngestModal";
 import { cn } from "@/lib/utils";

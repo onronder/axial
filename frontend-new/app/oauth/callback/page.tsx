@@ -9,6 +9,15 @@ import { Button } from "@/components/ui/button";
 
 type Provider = "google" | "notion";
 
+type ApiError = {
+    response?: {
+        data?: {
+            detail?: string;
+        };
+    };
+    message?: string;
+};
+
 function OAuthCallbackContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -60,11 +69,12 @@ function OAuthCallbackContent() {
                 setTimeout(() => {
                     router.push("/dashboard/settings/data-sources");
                 }, 2000);
-            } catch (err: any) {
-                console.error("🔐 [OAuth Callback] ❌ Token exchange failed:", err.response?.data || err.message);
+            } catch (err: unknown) {
+                const apiError = err as ApiError;
+                console.error("🔐 [OAuth Callback] ❌ Token exchange failed:", apiError.response?.data || apiError.message);
                 setStatus("error");
                 const providerName = detectedProvider === "notion" ? "Notion" : "Google Drive";
-                setError(err.response?.data?.detail || `Failed to connect ${providerName}`);
+                setError(apiError.response?.data?.detail || `Failed to connect ${providerName}`);
             }
         };
 

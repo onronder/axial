@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, Zap, Sparkles, Building2 } from "lucide-react";
+import { Check, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useUsage } from "@/hooks/useUsage";
@@ -9,12 +9,6 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
 import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
-
-const PLAN_ICONS: Record<string, any> = {
-    starter: Zap,
-    pro: Sparkles,
-    enterprise: Building2
-};
 
 export function PaywallGuard({ children }: { children: React.ReactNode }) {
     const { plan: currentPlan, isLoading: isUsageLoading } = useUsage();
@@ -59,7 +53,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
             } else {
                 throw new Error(response.data?.error || "No checkout URL");
             }
-        } catch (error) {
+        } catch {
             toast({
                 title: "Error",
                 description: "Failed to start checkout. Please try again.",
@@ -88,7 +82,6 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
             {/* Pricing Cards */}
             <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto items-stretch">
                 {apiPlans.map((plan) => {
-                    const Icon = PLAN_ICONS[plan.type] || Zap;
                     const isCurrentPlan = currentPlan === plan.type;
                     const isPro = plan.type === 'pro';
 

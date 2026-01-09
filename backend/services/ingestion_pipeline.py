@@ -40,6 +40,10 @@ def _sanitize_text(value: str) -> str:
     return value
 
 
+async def get_embeddings(texts, token_counts=None):
+    return await generate_embeddings_batch(texts, token_counts=token_counts)
+
+
 class IngestionPipeline:
     """
     Unified ingestion pipeline for ALL data sources.
@@ -58,7 +62,7 @@ class IngestionPipeline:
     ):
         self.user_id = user_id
         self.job_id = job_id
-        self.supabase = supabase_client
+        self.supabase = supabase_client or get_supabase()
         self.progress_callback = progress_callback
         
         # Metrics
@@ -71,7 +75,7 @@ class IngestionPipeline:
     async def process_stream(
         self,
         document_stream: AsyncIterator[SourceDocument],
-        source_type: str
+        source_type: str = "file_upload"
     ) -> Dict[str, Any]:
         """
         Process a stream of documents through the full pipeline.
@@ -349,14 +353,16 @@ class IngestionPipeline:
             )
         
         # Check quota
-        quota = await check_can_upload(
-            UUID(self.user_id), 
+        quota = await self._check_quota(doc)
+        if not quota["allowed"]:
+            raise QuotaExceededError(quota["reason"])
+
+    async def _check_quota(self, doc: SourceDocument) -> Dict[str, Any]:
+        return await check_can_upload(
+            UUID(self.user_id),
             doc.size_bytes,
             file_count=1
         )
-        
-        if not quota["allowed"]:
-            raise QuotaExceededError(quota["reason"])
     
     def _write_to_temp(self, doc: SourceDocument) -> str:
         """Write document content to temporary file."""
@@ -385,7 +391,7 @@ class IngestionPipeline:
         
         # Generate embeddings with timeout
         embeddings = await with_timeout(
-            generate_embeddings_batch(chunk_texts, token_counts=token_counts),
+            get_embeddings(chunk_texts, token_counts=token_counts),
             Timeouts.EMBEDDING_BATCH * len(chunk_texts) / 100,  # Scale timeout by batch count
             f"Generating {len(chunk_texts)} embeddings"
         )

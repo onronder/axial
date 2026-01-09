@@ -46,9 +46,6 @@ export default async function LegalPage({ params }: LegalPageProps) {
         notFound();
     }
 
-    // Determine title based on slug for metadata (simple mapping)
-    const title = slug === "terms" ? "Terms of Service" : "Privacy Policy";
-
     return (
         <div className="min-h-screen bg-background">
             {/* Header */}

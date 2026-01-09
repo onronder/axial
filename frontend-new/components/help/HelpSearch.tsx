@@ -10,7 +10,6 @@ import { useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
 
 interface ArticleMeta {
     slug: string;

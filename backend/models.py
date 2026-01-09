@@ -4,10 +4,10 @@ Backend Models
 Defines Pydantic and SQLModel schemas for the application.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlmodel import SQLModel, Field
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from enum import Enum
 
@@ -30,7 +30,7 @@ class ConnectorDefinition(SQLModel, table=True):
     icon_path: Optional[str] = None
     category: Optional[str] = None  # 'Cloud Storage', 'Knowledge Base', 'Web'
     is_active: bool = Field(default=True)
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class UserIntegration(SQLModel, table=True):
@@ -47,8 +47,8 @@ class UserIntegration(SQLModel, table=True):
     refresh_token: Optional[str] = None
     expires_at: Optional[datetime] = None
     last_sync_at: Optional[datetime] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # =============================================================================
@@ -74,8 +74,7 @@ class ConnectorDefinitionResponse(BaseModel):
     category: Optional[str] = None
     is_active: bool = True
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserIntegrationResponse(BaseModel):
@@ -89,8 +88,7 @@ class UserIntegrationResponse(BaseModel):
     connected: bool = True
     last_sync_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IntegrationStatusResponse(BaseModel):
@@ -147,8 +145,8 @@ class IngestionJob(SQLModel, table=True):
     processed_files: int = Field(default=0)
     status: str = Field(default="pending")  # pending, processing, completed, failed, cancelled
     error_message: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class IngestionJobResponse(BaseModel):
@@ -162,8 +160,7 @@ class IngestionJobResponse(BaseModel):
     error_message: Optional[str] = None
     created_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # =============================================================================
@@ -193,7 +190,7 @@ class Notification(SQLModel, table=True):
     is_read: bool = Field(default=False)
     # Note: renamed from 'metadata' to avoid shadowing SQLModel.metadata attribute
     extra_data: Optional[str] = Field(default=None)  # JSON string for metadata
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class NotificationResponse(BaseModel):
@@ -206,8 +203,7 @@ class NotificationResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NotificationListResponse(BaseModel):
@@ -285,8 +281,8 @@ class WebCrawlConfig(SQLModel, table=True):
     error_message: Optional[str] = None
     
     # Timestamps
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     
     # Task Reference
@@ -310,5 +306,4 @@ class WebCrawlConfigResponse(BaseModel):
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

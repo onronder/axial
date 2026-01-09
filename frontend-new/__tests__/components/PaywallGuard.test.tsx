@@ -16,6 +16,16 @@ vi.mock('@/hooks/useAuth', () => ({
     useAuth: () => mockUseAuth(),
 }));
 
+vi.mock('@/hooks/useProfile', () => ({
+    useProfile: () => ({
+        profile: { first_name: 'Test', last_name: 'User' },
+        isLoading: false,
+        error: null,
+        updateProfile: vi.fn(),
+        refresh: vi.fn(),
+    }),
+}));
+
 // Mock usePlans hook
 vi.mock('@/hooks/usePlans', () => ({
     usePlans: () => ({
@@ -30,7 +40,10 @@ vi.mock('@/hooks/usePlans', () => ({
                 interval: 'month',
                 polar_product_id: 'starter-id',
                 description: 'Starter plan',
-                features: []
+                features: [],
+                button_text: 'Get Started',
+                button_variant: 'outline',
+                popular: false
             },
             {
                 id: 'pro',
@@ -42,7 +55,10 @@ vi.mock('@/hooks/usePlans', () => ({
                 interval: 'month',
                 polar_product_id: 'pro-id',
                 description: 'Pro plan',
-                features: []
+                features: [],
+                button_text: 'Start Free Trial',
+                button_variant: 'default',
+                popular: true
             },
             {
                 id: 'enterprise',
@@ -54,10 +70,13 @@ vi.mock('@/hooks/usePlans', () => ({
                 interval: 'month',
                 polar_product_id: 'enterprise-id',
                 description: 'Enterprise plan',
-                features: []
+                features: [],
+                button_text: 'Contact Sales',
+                button_variant: 'outline',
+                popular: false
             }
         ],
-        loading: false,
+        isLoading: false,
         error: null
     }),
 }));
@@ -162,8 +181,8 @@ describe('PaywallGuard Component', () => {
         expect(screen.queryByText('Dashboard Content')).not.toBeInTheDocument();
 
         // Paywall shown
-        expect(screen.getByText('Unlock Full Power')).toBeInTheDocument();
-        expect(screen.getAllByText('Upgrade to Pro').length).toBeGreaterThan(0); // from buttons
+        expect(screen.getByRole('heading', { name: /Simple pricing/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Start Free Trial/i })).toBeInTheDocument();
     });
 
     it('should render PAYWALL when subscription is inactive (even if plan says pro)', () => {
@@ -181,7 +200,7 @@ describe('PaywallGuard Component', () => {
         );
 
         expect(screen.queryByText('Dashboard Content')).not.toBeInTheDocument();
-        expect(screen.getByText('Unlock Full Power')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /Simple pricing/i })).toBeInTheDocument();
     });
 
     it('should handle checkout click correctly', async () => {
@@ -209,7 +228,7 @@ describe('PaywallGuard Component', () => {
         // Click Pro plan button (assuming it's the second card or we find by likely text)
         // Click Pro plan button (assuming it's the second card or we find by likely text)
         // Plans: Starter ($9), Pro ($29), Enterprise ($99)
-        const proButton = screen.getAllByRole('button', { name: /Upgrade to Pro/i })[0];
+        const proButton = screen.getByRole('button', { name: /Start Free Trial/i });
         fireEvent.click(proButton);
 
         // Verify redirect URL contains user metadata

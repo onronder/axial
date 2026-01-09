@@ -6,15 +6,23 @@ These tasks run on a schedule to maintain system health.
 
 import logging
 from datetime import datetime, timedelta, timezone
+import psutil
 from core.celery_app import celery_app
 from core.db import get_supabase
 from core.resilience import check_memory_usage
-from core.metrics import memory_usage_percent, memory_available_mb, memory_warnings, memory_critical
+from core.metrics import (
+    MEMORY_USAGE,
+    MEMORY_AVAILABLE_MB,
+    MEMORY_WARNINGS,
+    MEMORY_CRITICAL,
+    PROCESS_CPU_PERCENT,
+    OPEN_FILES,
+)
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="cleanup_old_jobs")
+@celery_app.task(name="cleanup_old_jobs", ignore_result=True)
 def cleanup_old_jobs():
     """
     Clean up old completed ingestion jobs (older than 30 days).
@@ -42,7 +50,7 @@ def cleanup_old_jobs():
         return {"error": str(e)}
 
 
-@celery_app.task(name="update_memory_metrics")
+@celery_app.task(name="update_memory_metrics", ignore_result=True)
 def update_memory_metrics():
     """
     Update Prometheus memory metrics.
@@ -53,14 +61,18 @@ def update_memory_metrics():
         status = check_memory_usage()
         
         # Update Prometheus gauges
-        memory_usage_percent.set(status['percent'])
-        memory_available_mb.set(status['available_mb'])
+        MEMORY_USAGE.set(status['percent'])
+        MEMORY_AVAILABLE_MB.set(status['available_mb'])
+
+        process = psutil.Process()
+        PROCESS_CPU_PERCENT.set(process.cpu_percent(interval=None))
+        OPEN_FILES.set(len(process.open_files()))
         
         # Increment counters if needed
         if status['warning']:
-            memory_warnings.inc()
+            MEMORY_WARNINGS.inc()
         if status['critical']:
-            memory_critical.inc()
+            MEMORY_CRITICAL.inc()
         
         return status
         
@@ -70,7 +82,7 @@ def update_memory_metrics():
 
 
 # Register DLQ retry task
-@celery_app.task(name="worker.dlq_worker.retry_failed_tasks")
+@celery_app.task(name="worker.dlq_worker.retry_failed_tasks", ignore_result=True)
 def retry_failed_tasks_task():
     """
     Wrapper task for DLQ retry function.
@@ -85,7 +97,7 @@ def retry_failed_tasks_task():
 # DATA HYGIENE CLEANUP TASKS
 # ============================================================
 
-@celery_app.task(name="cleanup_old_file_status")
+@celery_app.task(name="cleanup_old_file_status", ignore_result=True)
 def cleanup_old_file_status():
     """
     Clean up old ingestion file status entries (older than 30 days).
@@ -114,7 +126,7 @@ def cleanup_old_file_status():
         return {"error": str(e)}
 
 
-@celery_app.task(name="cleanup_old_audit_logs")
+@celery_app.task(name="cleanup_old_audit_logs", ignore_result=True)
 def cleanup_old_audit_logs():
     """
     Clean up old audit log entries (older than 90 days).
@@ -144,7 +156,7 @@ def cleanup_old_audit_logs():
 # RECONCILIATION TASKS
 # ============================================================
 
-@celery_app.task(name="worker.periodic_tasks.reconcile_ingestion_jobs")
+@celery_app.task(name="worker.periodic_tasks.reconcile_ingestion_jobs", ignore_result=True)
 def reconcile_ingestion_jobs():
     """
     Reconcile ingestion jobs when Redis counters are missing or delayed.

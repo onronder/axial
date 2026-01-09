@@ -34,34 +34,20 @@ def mock_get_connector():
 
 
 @pytest.fixture
-def mock_ingestion_pipeline():
-    """Mock IngestionPipeline."""
-    with patch('worker.tasks.IngestionPipeline') as mock:
-        pipeline_instance = Mock()
-        pipeline_instance.process_stream = AsyncMock(return_value={
-            "status": "completed",
-            "total": 1,
-            "processed": 1,
-            "failed": 0,
-            "chunks": 5
-        })
-        mock.return_value = pipeline_instance
-        yield mock
-
-
-@pytest.fixture
 def mock_supabase():
     """Mock Supabase client."""
     with patch('worker.tasks.get_supabase') as mock:
         client = Mock()
         client.table.return_value.update.return_value.eq.return_value.execute.return_value = Mock()
+        client.table.return_value.insert.return_value.execute.return_value = Mock(
+            data=[{"id": "file-status-id"}]
+        )
         mock.return_value = client
         yield mock
 
 
 def test_unified_ingest_task_file_upload(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test unified_ingest_task with file upload connector."""
@@ -73,7 +59,7 @@ def test_unified_ingest_task_file_upload(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch():
+    async def mock_fetch(item_ids, credentials=None, **kwargs):
         yield SourceDocument(
             content=b"PDF content",
             metadata={},
@@ -86,25 +72,28 @@ def test_unified_ingest_task_file_upload(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Execute
-    result = unified_ingest_task(
-        user_id=user_id,
-        job_id=job_id,
-        connector_type="file_upload",
-        item_ids=[storage_path],
-        credentials=None
-    )
+    with patch("worker.tasks.process_file_task") as mock_task, \
+         patch("celery.group") as mock_group:
+        mock_task.s.return_value = "sig"
+        mock_group.return_value.apply_async.return_value = Mock(id="group-1")
+
+        # Execute
+        result = unified_ingest_task(
+            user_id=user_id,
+            job_id=job_id,
+            connector_type="file_upload",
+            item_ids=[storage_path],
+            credentials=None
+        )
     
     # Verify
-    assert result["status"] == "completed"
-    assert result["processed"] == 1
+    assert result["status"] == "dispatched"
     mock_get_connector.assert_called_once_with("file_upload")
-    mock_ingestion_pipeline.assert_called_once()
+    mock_task.s.assert_called_once()
 
 
 def test_unified_ingest_task_google_drive(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test unified_ingest_task with Google Drive connector."""
@@ -130,23 +119,27 @@ def test_unified_ingest_task_google_drive(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Execute
-    result = unified_ingest_task(
-        user_id=user_id,
-        job_id=job_id,
-        connector_type="google_drive",
-        item_ids=file_ids,
-        credentials=credentials
-    )
+    with patch("worker.tasks.process_file_task") as mock_task, \
+         patch("celery.group") as mock_group:
+        mock_task.s.return_value = "sig"
+        mock_group.return_value.apply_async.return_value = Mock(id="group-2")
+
+        # Execute
+        result = unified_ingest_task(
+            user_id=user_id,
+            job_id=job_id,
+            connector_type="google_drive",
+            item_ids=file_ids,
+            credentials=credentials
+        )
     
     # Verify
-    assert result["status"] == "completed"
+    assert result["status"] == "dispatched"
     mock_get_connector.assert_called_once_with("google_drive")
 
 
 def test_unified_ingest_task_notion(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test unified_ingest_task with Notion connector."""
@@ -172,23 +165,27 @@ def test_unified_ingest_task_notion(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Execute
-    result = unified_ingest_task(
-        user_id=user_id,
-        job_id=job_id,
-        connector_type="notion",
-        item_ids=page_ids,
-        credentials=credentials
-    )
+    with patch("worker.tasks.process_file_task") as mock_task, \
+         patch("celery.group") as mock_group:
+        mock_task.s.return_value = "sig"
+        mock_group.return_value.apply_async.return_value = Mock(id="group-3")
+
+        # Execute
+        result = unified_ingest_task(
+            user_id=user_id,
+            job_id=job_id,
+            connector_type="notion",
+            item_ids=page_ids,
+            credentials=credentials
+        )
     
     # Verify
-    assert result["status"] == "completed"
+    assert result["status"] == "dispatched"
     mock_get_connector.assert_called_once_with("notion")
 
 
 def test_unified_ingest_task_web(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test unified_ingest_task with web crawler."""
@@ -212,17 +209,22 @@ def test_unified_ingest_task_web(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Execute
-    result = unified_ingest_task(
-        user_id=user_id,
-        job_id=job_id,
-        connector_type="web",
-        item_ids=[url],
-        credentials=None
-    )
+    with patch("worker.tasks.process_file_task") as mock_task, \
+         patch("celery.group") as mock_group:
+        mock_task.s.return_value = "sig"
+        mock_group.return_value.apply_async.return_value = Mock(id="group-4")
+
+        # Execute
+        result = unified_ingest_task(
+            user_id=user_id,
+            job_id=job_id,
+            connector_type="web",
+            item_ids=[url],
+            credentials=None
+        )
     
     # Verify
-    assert result["status"] == "completed"
+    assert result["status"] == "dispatched"
     mock_get_connector.assert_called_once_with("web")
 
 
@@ -246,7 +248,6 @@ def test_unified_ingest_task_invalid_connector(
 
 def test_unified_ingest_task_connector_failure(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test error handling when connector fails."""
@@ -272,7 +273,6 @@ def test_unified_ingest_task_connector_failure(
 
 def test_unified_ingest_task_pipeline_failure(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test error handling when pipeline fails."""
@@ -292,24 +292,21 @@ def test_unified_ingest_task_pipeline_failure(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Mock pipeline to fail
-    pipeline_instance = mock_ingestion_pipeline.return_value
-    pipeline_instance.process_stream = AsyncMock(side_effect=Exception("Pipeline error"))
-    
-    # Execute - should handle error
-    with pytest.raises(Exception, match="Pipeline error"):
-        unified_ingest_task(
-            user_id=str(uuid4()),
-            job_id=str(uuid4()),
-            connector_type="file_upload",
-            item_ids=["test.pdf"],
-            credentials=None
-        )
+    # Simulate dispatch failure
+    with patch("worker.tasks.process_file_task") as mock_task:
+        mock_task.s.side_effect = Exception("Pipeline error")
+        with pytest.raises(Exception, match="Pipeline error"):
+            unified_ingest_task(
+                user_id=str(uuid4()),
+                job_id=str(uuid4()),
+                connector_type="file_upload",
+                item_ids=["test.pdf"],
+                credentials=None
+            )
 
 
 def test_unified_ingest_task_quota_exceeded(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test handling of quota exceeded errors."""
@@ -329,26 +326,20 @@ def test_unified_ingest_task_quota_exceeded(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Mock pipeline to raise quota error
-    pipeline_instance = mock_ingestion_pipeline.return_value
-    pipeline_instance.process_stream = AsyncMock(
-        side_effect=QuotaExceededError("Storage quota exceeded")
-    )
-    
-    # Execute - should handle quota error
-    with pytest.raises(QuotaExceededError):
-        unified_ingest_task(
-            user_id=str(uuid4()),
-            job_id=str(uuid4()),
-            connector_type="file_upload",
-            item_ids=["test.pdf"],
-            credentials=None
-        )
+    with patch("worker.tasks.process_file_task") as mock_task:
+        mock_task.s.side_effect = QuotaExceededError("Storage quota exceeded")
+        with pytest.raises(QuotaExceededError):
+            unified_ingest_task(
+                user_id=str(uuid4()),
+                job_id=str(uuid4()),
+                connector_type="file_upload",
+                item_ids=["test.pdf"],
+                credentials=None
+            )
 
 
 def test_unified_ingest_task_job_status_updates(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test that job status is updated correctly."""
@@ -368,15 +359,20 @@ def test_unified_ingest_task_job_status_updates(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Execute
-    job_id = str(uuid4())
-    unified_ingest_task(
-        user_id=str(uuid4()),
-        job_id=job_id,
-        connector_type="file_upload",
-        item_ids=["test.pdf"],
-        credentials=None
-    )
+    with patch("worker.tasks.process_file_task") as mock_task, \
+         patch("celery.group") as mock_group:
+        mock_task.s.return_value = "sig"
+        mock_group.return_value.apply_async.return_value = Mock(id="group-5")
+
+        # Execute
+        job_id = str(uuid4())
+        unified_ingest_task(
+            user_id=str(uuid4()),
+            job_id=job_id,
+            connector_type="file_upload",
+            item_ids=["test.pdf"],
+            credentials=None
+        )
     
     # Verify job status was updated
     assert mock_supabase.return_value.table.called
@@ -385,7 +381,6 @@ def test_unified_ingest_task_job_status_updates(
 
 def test_unified_ingest_task_empty_item_ids(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test handling of empty item_ids list."""
@@ -398,16 +393,6 @@ def test_unified_ingest_task_empty_item_ids(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Mock pipeline to return empty result
-    pipeline_instance = mock_ingestion_pipeline.return_value
-    pipeline_instance.process_stream = AsyncMock(return_value={
-        "status": "completed",
-        "total": 0,
-        "processed": 0,
-        "failed": 0,
-        "chunks": 0
-    })
-    
     # Execute
     result = unified_ingest_task(
         user_id=str(uuid4()),
@@ -418,8 +403,8 @@ def test_unified_ingest_task_empty_item_ids(
     )
     
     # Verify
-    assert result["total"] == 0
-    assert result["processed"] == 0
+    assert result["status"] == "completed"
+    assert result["message"] == "No documents"
 
 
 @patch('worker.tasks.unified_ingest_task.retry')
@@ -457,7 +442,6 @@ def test_unified_ingest_task_retry_on_connection_error(
 
 def test_unified_ingest_task_multiple_files(
     mock_get_connector,
-    mock_ingestion_pipeline,
     mock_supabase
 ):
     """Test processing multiple files in one task."""
@@ -478,26 +462,20 @@ def test_unified_ingest_task_multiple_files(
     connector.fetch_documents = mock_fetch
     mock_get_connector.return_value = connector
     
-    # Mock pipeline to process all files
-    pipeline_instance = mock_ingestion_pipeline.return_value
-    pipeline_instance.process_stream = AsyncMock(return_value={
-        "status": "completed",
-        "total": 3,
-        "processed": 3,
-        "failed": 0,
-        "chunks": 15
-    })
-    
-    # Execute
-    result = unified_ingest_task(
-        user_id=str(uuid4()),
-        job_id=str(uuid4()),
-        connector_type="file_upload",
-        item_ids=["file1", "file2", "file3"],
-        credentials=None
-    )
+    with patch("worker.tasks.process_file_task") as mock_task, \
+         patch("celery.group") as mock_group:
+        mock_task.s.return_value = "sig"
+        mock_group.return_value.apply_async.return_value = Mock(id="group-6")
+        
+        # Execute
+        result = unified_ingest_task(
+            user_id=str(uuid4()),
+            job_id=str(uuid4()),
+            connector_type="file_upload",
+            item_ids=["file1", "file2", "file3"],
+            credentials=None
+        )
     
     # Verify
-    assert result["total"] == 3
-    assert result["processed"] == 3
-    assert result["chunks"] == 15
+    assert result["status"] == "dispatched"
+    assert result["total_files"] == 3

@@ -65,8 +65,10 @@ class PerformanceMonitor {
         }
 
         // Send to analytics if available
-        if (typeof window !== 'undefined' && (window as any).gtag) {
-            (window as any).gtag('event', 'timing_complete', {
+        if (typeof window !== 'undefined') {
+            const gtag = (window as Window & { gtag?: (...args: unknown[]) => void }).gtag;
+            if (!gtag) return;
+            gtag('event', 'timing_complete', {
                 name,
                 value: Math.round(duration),
                 event_category: 'Performance',
