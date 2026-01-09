@@ -5,6 +5,7 @@ Production connector with automatic OAuth token refresh.
 """
 
 import logging
+import inspect
 from typing import AsyncIterator, Dict, Any, Optional
 
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
@@ -65,19 +66,36 @@ class NotionConnectorEnhanced(EnhancedConnector):
         logger.info(f"[Notion] Fetching {len(item_ids)} items for user {user_id}")
         
         # Fetch documents using legacy connector (with token refresh)
-        async for doc in await self.legacy.ingest(config):
-            # Convert ConnectorDocument to SourceDocument
+        legacy_stream = self.legacy.ingest(config)
+        if inspect.isawaitable(legacy_stream):
+            legacy_stream = await legacy_stream
+
+        if hasattr(legacy_stream, "__aiter__"):
+            async for doc in legacy_stream:
+                content = doc.page_content
+                yield SourceDocument(
+                    content=content,
+                    metadata=doc.metadata,
+                    source_type=SourceType.NOTION,
+                    source_id=doc.metadata.get("page_id", "unknown"),
+                    filename=doc.metadata.get("title", "untitled"),
+                    mime_type="text/markdown",
+                    size_bytes=len(content.encode("utf-8")),
+                    parent_id=doc.metadata.get("parent_id"),
+                )
+            return
+
+        for doc in legacy_stream:
             content = doc.page_content
-            
             yield SourceDocument(
                 content=content,
                 metadata=doc.metadata,
                 source_type=SourceType.NOTION,
                 source_id=doc.metadata.get("page_id", "unknown"),
                 filename=doc.metadata.get("title", "untitled"),
-                mime_type="text/markdown",  # Notion exports as markdown
-                size_bytes=len(content.encode('utf-8')),
-                parent_id=doc.metadata.get("parent_id")
+                mime_type="text/markdown",
+                size_bytes=len(content.encode("utf-8")),
+                parent_id=doc.metadata.get("parent_id"),
             )
     
     async def authorize(self, user_id: str) -> bool:
@@ -90,7 +108,10 @@ class NotionConnectorEnhanced(EnhancedConnector):
     
     async def ingest(self, config: Dict[str, Any]) -> AsyncIterator[ConnectorDocument]:
         """Legacy method - maintains backward compatibility."""
-        return self.legacy.ingest(config)
+        stream = self.legacy.ingest(config)
+        if inspect.isawaitable(stream):
+            return await stream
+        return stream
 
     async def sync(self, user_id: str, integration_id: str) -> dict:
         """Delegate sync to legacy connector for backward compatibility."""

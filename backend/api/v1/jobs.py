@@ -83,7 +83,7 @@ async def get_job_by_id(
     try:
         try:
             response = supabase.table("ingestion_jobs")\
-                .select("*")\
+                .select("id, provider, total_files, processed_files, status, error_message, created_at")\
                 .eq("id", job_id)\
                 .eq("user_id", user_id)\
                 .single()\
@@ -193,7 +193,7 @@ async def cancel_job(
     try:
         # Verify ownership
         response = supabase.table("ingestion_jobs")\
-            .select("*")\
+            .select("id, status, celery_task_id")\
             .eq("id", job_id)\
             .eq("user_id", user_id)\
             .single()\
@@ -414,7 +414,7 @@ async def retry_job(
     try:
         # Verify ownership and get job details
         response = supabase.table("ingestion_jobs")\
-            .select("*")\
+            .select("id, status")\
             .eq("id", job_id)\
             .eq("user_id", user_id)\
             .single()\

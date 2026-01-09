@@ -5,6 +5,7 @@ This wraps the existing WebConnector and adapts it to the new EnhancedConnector 
 """
 
 import logging
+import inspect
 from typing import AsyncIterator, Dict, Any, Optional
 
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
@@ -58,14 +59,31 @@ class WebConnectorEnhanced(EnhancedConnector):
         logger.info(f"[Web] Fetching {len(item_ids)} URLs for user {user_id}")
         
         # Fetch documents using legacy connector
-        async for doc in self.legacy.ingest(config):
-            # Convert ConnectorDocument to SourceDocument
+        legacy_stream = self.legacy.ingest(config)
+        if inspect.isawaitable(legacy_stream):
+            legacy_stream = await legacy_stream
+
+        if hasattr(legacy_stream, "__aiter__"):
+            async for doc in legacy_stream:
+                content = doc.page_content
+                source_url = doc.metadata.get("source_url", item_ids[0] if item_ids else "unknown")
+
+                title = doc.metadata.get("title", source_url.split("/")[-1] or "webpage")
+                yield SourceDocument(
+                    content=content,
+                    metadata=doc.metadata,
+                    source_type=SourceType.WEB,
+                    source_id=source_url,
+                    filename=f"{title}.html",
+                    mime_type="text/html",
+                    size_bytes=len(content.encode("utf-8")),
+                )
+            return
+
+        for doc in legacy_stream:
             content = doc.page_content
             source_url = doc.metadata.get("source_url", item_ids[0] if item_ids else "unknown")
-            
-            # Extract title from metadata or URL
             title = doc.metadata.get("title", source_url.split("/")[-1] or "webpage")
-            
             yield SourceDocument(
                 content=content,
                 metadata=doc.metadata,
@@ -73,7 +91,7 @@ class WebConnectorEnhanced(EnhancedConnector):
                 source_id=source_url,
                 filename=f"{title}.html",
                 mime_type="text/html",
-                size_bytes=len(content.encode('utf-8'))
+                size_bytes=len(content.encode("utf-8")),
             )
     
     async def authorize(self, user_id: str) -> bool:
@@ -86,7 +104,10 @@ class WebConnectorEnhanced(EnhancedConnector):
     
     async def ingest(self, config: Dict[str, Any]) -> AsyncIterator[ConnectorDocument]:
         """Legacy method - maintains backward compatibility."""
-        return self.legacy.ingest(config)
+        stream = self.legacy.ingest(config)
+        if inspect.isawaitable(stream):
+            return await stream
+        return stream
     
     def validate_credentials(self, credentials: Dict[str, Any]) -> bool:
         """No credentials needed for web crawling."""

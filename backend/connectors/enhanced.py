@@ -6,6 +6,7 @@ for the unified ingestion pipeline while maintaining backward compatibility.
 """
 
 from typing import AsyncIterator, Dict, Any, Optional
+import inspect
 from dataclasses import dataclass
 from enum import Enum
 from connectors.base import BaseConnector as LegacyBaseConnector, ConnectorDocument
@@ -133,7 +134,10 @@ class EnhancedConnector(LegacyBaseConnector):
             "provider": self.connector_type.value if hasattr(self, 'connector_type') else "unknown"
         }
         
-        async for doc in self.ingest(config):
+        stream = self.ingest(config)
+        if inspect.isawaitable(stream):
+            stream = await stream
+        async for doc in stream:
             # Convert ConnectorDocument to SourceDocument
             yield SourceDocument(
                 content=doc.page_content,

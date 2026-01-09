@@ -5,6 +5,7 @@ Production connector with automatic OAuth token refresh.
 """
 
 import logging
+import inspect
 from typing import AsyncIterator, Dict, Any, Optional
 
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
@@ -71,6 +72,9 @@ class GoogleDriveConnector(EnhancedConnector):
         
         # Fetch documents using legacy connector (with token refresh)
         legacy_stream = self.legacy.ingest(config)
+        if inspect.isawaitable(legacy_stream):
+            legacy_stream = await legacy_stream
+
         if hasattr(legacy_stream, "__aiter__"):
             async for doc in legacy_stream:
                 content = doc.page_content
@@ -87,9 +91,7 @@ class GoogleDriveConnector(EnhancedConnector):
             return
 
         for doc in legacy_stream:
-            # Convert ConnectorDocument to SourceDocument
             content = doc.page_content
-            
             yield SourceDocument(
                 content=content,
                 metadata=doc.metadata,
@@ -97,8 +99,8 @@ class GoogleDriveConnector(EnhancedConnector):
                 source_id=doc.metadata.get("file_id", "unknown"),
                 filename=doc.metadata.get("title", "untitled"),
                 mime_type=doc.metadata.get("mime_type", "text/plain"),
-                size_bytes=len(content.encode('utf-8')),
-                parent_id=doc.metadata.get("parent_id")
+                size_bytes=len(content.encode("utf-8")),
+                parent_id=doc.metadata.get("parent_id"),
             )
     
     async def authorize(self, user_id: str) -> bool:
@@ -111,7 +113,10 @@ class GoogleDriveConnector(EnhancedConnector):
     
     async def ingest(self, config: Dict[str, Any]) -> AsyncIterator[ConnectorDocument]:
         """Legacy method - maintains backward compatibility."""
-        return self.legacy.ingest(config)
+        stream = self.legacy.ingest(config)
+        if inspect.isawaitable(stream):
+            return await stream
+        return stream
 
     async def sync(self, user_id: str, integration_id: str) -> dict:
         """Delegate sync to legacy connector for backward compatibility."""
