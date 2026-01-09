@@ -296,7 +296,7 @@ class TestDocumentCleanup:
             data={
                 "id": "doc-1",
                 "user_id": "user-1",
-                "source_type": "file",
+                "source_type": "file_upload",
                 "metadata": {"storage_path": "user-1/file.pdf"},
                 "source_url": "",
             }
@@ -330,7 +330,7 @@ class TestDocumentCleanup:
             data={
                 "id": "doc-1",
                 "user_id": "user-1",
-                "source_type": "file",
+                "source_type": "file_upload",
                 "metadata": {},
                 "source_url": "user-1/path/file.pdf",
             }
@@ -365,7 +365,7 @@ class TestDocumentCleanup:
             data={
                 "id": "doc-2",
                 "user_id": "user-1",
-                "source_type": "file",
+                "source_type": "file_upload",
                 "metadata": {"storage_path": "user-1/folder/file.pdf"},
                 "source_url": "",
             }

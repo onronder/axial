@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon"
+import { normalizeSourceType } from "@/lib/sourceType"
 
 interface Document {
     id: string
     title: string
-    source_type: 'file' | 'web' | 'drive'
+    source_type: string
     source_url?: string
     created_at: string
 }
@@ -57,9 +58,10 @@ export function KnowledgeBase() {
     }, [])
 
     const getIcon = (type: string) => {
-        switch (type) {
+        const normalizedType = normalizeSourceType(type) || type;
+        switch (normalizedType) {
             case 'web': return <LinkIcon className="h-4 w-4 text-blue-500" />
-            case 'drive': return <DataSourceIcon sourceId="google-drive" size="sm" />
+            case 'google_drive': return <DataSourceIcon sourceId="google-drive" size="sm" />
             default: return <FileText className="h-4 w-4 text-slate-500" />
         }
     }

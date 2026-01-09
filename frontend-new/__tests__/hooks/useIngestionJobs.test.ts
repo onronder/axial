@@ -353,7 +353,7 @@ describe('IngestionJob Interface', () => {
     });
 
     it('has required provider field', () => {
-        const providers = ['file', 'web', 'drive', 'notion'];
+        const providers = ['file_upload', 'web', 'google_drive', 'notion'];
         providers.forEach(p => expect(providers).toContain(p));
     });
 

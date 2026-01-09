@@ -35,7 +35,7 @@ describe('useDocuments Hook Structures', () => {
                 filename: 'doc.pdf',
                 status: 'completed',
                 chunk_count: 10,
-                source_type: 'upload',
+                source_type: 'file_upload',
             };
             expect(doc.chunk_count).toBe(10);
         });

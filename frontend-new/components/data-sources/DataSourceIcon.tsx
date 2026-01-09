@@ -158,6 +158,7 @@ const customIconMap: Record<string, React.FC<{ className?: string }>> = {
 const fallbackConfig: Record<string, { icon: typeof Upload; color: string }> = {
   "sftp": { icon: Server, color: "text-gray-500" },
   "file-upload": { icon: Upload, color: "text-primary" },
+  "file_upload": { icon: Upload, color: "text-primary" },
 };
 
 export function DataSourceIcon({ sourceId, className, size = "md" }: DataSourceIconProps) {

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from core.security import get_current_user
 from core.db import get_supabase
 from core.rate_limit import limiter
+from core.ingestion_utils import normalize_provider
 from services.audit import log_document_delete
 from api.v1.dependencies import validate_team_access
 from services.cleanup import cleanup_service
@@ -144,6 +145,7 @@ async def list_documents(
         # Enrich completed documents with status
         docs = []
         for d in db_res.data:
+            d["source_type"] = normalize_provider(d.get("source_type")) or d.get("source_type")
             d['status'] = d.get('status', 'indexed')
             d['indexing_status'] = 'completed'
             # Fallback for size if not top-level
@@ -170,12 +172,24 @@ async def list_documents(
                     .limit(limit)\
                     .execute()
                 
+                failed_files = failed_res.data or []
+                provider_map = {}
+                job_ids = {str(f.get("job_id")) for f in failed_files if f.get("job_id")}
+                if job_ids:
+                    jobs_res = supabase.table("ingestion_jobs")\
+                        .select("id, provider")\
+                        .in_("id", list(job_ids))\
+                        .execute()
+                    for job in jobs_res.data or []:
+                        provider_map[str(job["id"])] = normalize_provider(job.get("provider")) or job.get("provider")
+
                 # Convert failed files to DocumentDTO format
-                for f in (failed_res.data or []):
+                for f in failed_files:
+                    provider = provider_map.get(str(f.get("job_id"))) or "file_upload"
                     docs.append({
                         "id": f["id"],
                         "title": f["filename"],
-                        "source_type": "upload",  # Default, could extract from job
+                        "source_type": provider,
                         "source_url": None,
                         "created_at": f["created_at"],
                         "status": "failed",
@@ -316,6 +330,7 @@ async def update_document(
             raise HTTPException(status_code=500, detail="Update failed")
         
         updated_doc = result.data[0]
+        updated_doc["source_type"] = normalize_provider(updated_doc.get("source_type")) or updated_doc.get("source_type")
         
         # Audit log
         audit_logger.log(

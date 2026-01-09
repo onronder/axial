@@ -10,6 +10,7 @@ import {
     Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 
 /**
  * Source metadata for RAG citations
@@ -87,14 +88,15 @@ export function SourceCard({ source, className }: SourceCardProps) {
     const [imageError, setImageError] = useState(false);
 
     // Use new RAG fields with fallbacks to legacy fields
-    const sourceType = source.type?.toLowerCase() || source.source_type || source.source || "file";
+    const rawSourceType = source.type || source.source_type || source.source || "file_upload";
+    const normalizedSourceType = normalizeSourceType(rawSourceType) || rawSourceType;
     const title = source.label || source.title || "Untitled Source";
     const url = source.url || source.source_url;
     const citationIndex = source.index;
     const pageInfo = source.page ? `Page ${source.page}` : source.section || null;
 
     // YouTube source
-    if (sourceType === "youtube" || (url && url.includes("youtube"))) {
+    if (normalizedSourceType === "youtube" || (url && url.includes("youtube"))) {
         const videoId = source.video_id || (url ? extractYouTubeVideoId(url) : null);
         const thumbnailUrl = videoId
             ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`
@@ -146,7 +148,7 @@ export function SourceCard({ source, className }: SourceCardProps) {
     }
 
     // Web source
-    if (sourceType === "web" && url) {
+    if (normalizedSourceType === "web" && url) {
         const faviconUrl = getFaviconUrl(url);
         let domain = "";
         try {
@@ -191,7 +193,7 @@ export function SourceCard({ source, className }: SourceCardProps) {
     }
 
     // Notion source
-    if (sourceType === "notion") {
+    if (normalizedSourceType === "notion") {
         return (
             <div className={cn(
                 "flex items-center gap-3 rounded-lg border border-border bg-card p-3",
@@ -227,7 +229,7 @@ export function SourceCard({ source, className }: SourceCardProps) {
             <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">{title}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                    <span className="capitalize">{sourceType}</span>
+                    <span>{formatSourceTypeLabel(normalizedSourceType)}</span>
                     {pageInfo && <span className="ml-1">• {pageInfo}</span>}
                 </p>
             </div>

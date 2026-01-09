@@ -142,7 +142,25 @@ def _run_web_crawl(base_url: str, headers: Dict[str, str], url: str, crawl_type:
         "respect_robots": True,
         "allow_subdomains": False,
     }
-    response = _post_json(f"{base_url}/api/v1/integrations/web/crawl", headers, payload)
+    try:
+        response = _post_json(f"{base_url}/api/v1/integrations/web/crawl", headers, payload)
+    except requests.HTTPError as exc:
+        status_code = getattr(exc.response, "status_code", None)
+        error_text = getattr(exc.response, "text", None)
+        return {
+            "url": url,
+            "crawl_type": crawl_type,
+            "status": "error",
+            "error": f"HTTP {status_code}" if status_code else "HTTP error",
+            "detail": error_text,
+        }
+    except Exception as exc:
+        return {
+            "url": url,
+            "crawl_type": crawl_type,
+            "status": "error",
+            "error": str(exc),
+        }
     return {
         "url": url,
         "crawl_type": crawl_type,
@@ -184,25 +202,32 @@ def main() -> int:
     headers = {"Authorization": f"Bearer {token}"}
 
     results = {"datasets": [], "web_crawls": [], "started_at": datetime.now(timezone.utc).isoformat()}
-
-    for name, folder_id in datasets.items():
-        results["datasets"].append(_run_drive_job(base_url, headers, f"Dataset_{name}", folder_id))
-
-    # Web crawl: use first URL as sitemap if provided, others as recursive
-    for url in web_urls:
-        crawl_type = "sitemap" if url.endswith(".xml") else "recursive"
-        results["web_crawls"].append(_run_web_crawl(base_url, headers, url, crawl_type))
-
-    results["finished_at"] = datetime.now(timezone.utc).isoformat()
-
     out_dir = os.getenv("BENCH_RESULTS_DIR", "TEST_RESULTS")
     os.makedirs(out_dir, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_path = os.path.join(out_dir, f"benchmark_{stamp}.json")
-    with open(out_path, "w", encoding="utf-8") as handle:
-        json.dump(results, handle, indent=2)
 
-    print(f"Benchmark results saved to {out_path}")
+    try:
+        for name, folder_id in datasets.items():
+            try:
+                results["datasets"].append(_run_drive_job(base_url, headers, f"Dataset_{name}", folder_id))
+            except Exception as exc:
+                results["datasets"].append({
+                    "dataset": f"Dataset_{name}",
+                    "status": "error",
+                    "error": str(exc),
+                })
+
+        # Web crawl: use sitemap when URL ends in .xml, otherwise recursive
+        for url in web_urls:
+            crawl_type = "sitemap" if url.endswith(".xml") else "recursive"
+            results["web_crawls"].append(_run_web_crawl(base_url, headers, url, crawl_type))
+    finally:
+        results["finished_at"] = datetime.now(timezone.utc).isoformat()
+        with open(out_path, "w", encoding="utf-8") as handle:
+            json.dump(results, handle, indent=2)
+        print(f"Benchmark results saved to {out_path}")
+
     return 0
 
 

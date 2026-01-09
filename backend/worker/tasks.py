@@ -19,6 +19,7 @@ from core.db_utils import insert_rows_with_retry, delete_rows_with_retry
 from core.config import settings
 from core.security import decrypt_token
 from core.hashing import compute_content_hash
+from core.ingestion_utils import normalize_provider, normalize_source_type
 from core.job_counters import (
     init_ingest_job_counters,
     record_ingest_outcome,
@@ -344,6 +345,7 @@ def ingest_document_batched(
         Document ID (UUID string)
     """
     DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))  # Configurable batch size to prevent timeouts
+    source_type = normalize_source_type(source_type) or source_type
     
     # Step 1: Create parent document record FIRST
     # NOTE: Using actual column names from migrations:
@@ -1049,6 +1051,13 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
         logger.error(f"❌ [DLQ] Failed to log task failure to DLQ: {e}")
 
 
+def _collect_documents_sync(connector, item_ids, credentials, user_id):
+    fetch_sync = getattr(connector, "fetch_documents_sync", None)
+    if not fetch_sync:
+        raise RuntimeError("Connector does not support synchronous fetch (fetch_documents_sync)")
+
+    return list(fetch_sync(item_ids, credentials, user_id=user_id))
+
 
 
 @celery_app.task(
@@ -1067,8 +1076,9 @@ def unified_ingest_task(
     user_id: str,
     job_id: str,
     connector_type: str,
-    item_ids: list,
-    credentials: Dict[str, Any] = None
+    item_ids: Optional[List[str]] = None,
+    credentials: Dict[str, Any] = None,
+    item_id: Optional[str] = None,
 ):
     """
     UNIFIED ingestion task for ALL data sources.
@@ -1086,11 +1096,20 @@ def unified_ingest_task(
         item_ids: List of items to ingest (paths, IDs, URLs)
         credentials: Optional auth credentials
     """
-    import asyncio
     import base64
     from celery import group
     
     task_id = self.request.id
+    raw_connector_type = connector_type
+    connector_type = normalize_provider(connector_type)
+    if not connector_type:
+        raise ValueError("connector_type is required")
+
+    if item_ids is None:
+        item_ids = [item_id] if item_id else []
+    elif not isinstance(item_ids, list):
+        item_ids = [item_ids]
+
     logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}")
     
     supabase = get_supabase()
@@ -1106,6 +1125,14 @@ def unified_ingest_task(
         
         # Update job status
         update_job_status(supabase, job_id, "processing")
+
+        if raw_connector_type and raw_connector_type != connector_type:
+            try:
+                supabase.table("ingestion_jobs").update({
+                    "provider": connector_type
+                }).eq("id", job_id).execute()
+            except Exception as e:
+                logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Failed to normalize provider: {e}")
         
         # Create notification
         create_notification(
@@ -1122,14 +1149,8 @@ def unified_ingest_task(
         # STEP 1: Fetch all documents from connector
         logger.info(f"[UnifiedIngest:{task_id}] Fetching documents from {connector_type}...")
         
-        async def collect_documents():
-            documents = []
-            async for doc in connector.fetch_documents(item_ids, credentials, user_id=user_id):
-                documents.append(doc)
-            return documents
-        
         with connector_fetch_limit(connector_type):
-            documents = asyncio.run(collect_documents())
+            documents = _collect_documents_sync(connector, item_ids, credentials, user_id)
         total_files = len(documents)
         
         logger.info(f"[UnifiedIngest:{task_id}] Collected {total_files} documents for parallel processing")
@@ -1162,7 +1183,7 @@ def unified_ingest_task(
                 "job_id": job_id,
                 "user_id": user_id,
                 "filename": doc.filename,
-                "file_size_bytes": doc.size_bytes,  # FIXED: was "file_size"
+                "file_size_bytes": doc.size_bytes or 0,  # FIXED: was "file_size"
                 "status": "pending",
                 "progress": 0,
                 "status_message": "Queued for processing..."  # FIXED: was "message"
@@ -1194,16 +1215,23 @@ def unified_ingest_task(
             else:
                 raise ValueError(f"Unsupported document content type: {type(content)}")
             
-            storage_path = None
-            if doc.metadata:
-                storage_path = doc.metadata.get("storage_path")
+            doc_metadata = doc.metadata or {}
+            storage_path = doc_metadata.get("storage_path")
+            source_url = doc_metadata.get("source_url") or doc_metadata.get("url")
+            doc_source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
+            size_bytes = doc.size_bytes or doc_metadata.get("file_size") or doc_metadata.get("size") or 0
 
             file_data = {
                 "filename": doc.filename,
                 "content_b64": content_b64,
-                "size_bytes": doc.size_bytes,
+                "size_bytes": size_bytes,
                 "mime_type": doc.mime_type,
-                "storage_path": storage_path
+                "storage_path": storage_path,
+                "source_id": doc.source_id,
+                "parent_id": doc.parent_id,
+                "source_url": source_url,
+                "source_type": doc_source_type,
+                "metadata": doc_metadata,
             }
             
             # Create task signature
@@ -1313,6 +1341,14 @@ def process_file_task(
     logger.info(f"[ProcessFile:{task_id}] Starting: {filename} (job: {job_id})")
     
     supabase = get_supabase()
+    source_type = normalize_source_type(file_data.get("source_type") or connector_type) or (connector_type or "unknown")
+    metadata = file_data.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    source_url = file_data.get("source_url") or metadata.get("source_url") or metadata.get("url")
+    source_id = file_data.get("source_id") or metadata.get("source_id") or metadata.get("file_id")
+    parent_id = file_data.get("parent_id") or metadata.get("parent_id")
+    mime_type = file_data.get("mime_type") or metadata.get("mime_type")
     local_path = None
     start_time = time.time()
     
@@ -1339,7 +1375,7 @@ def process_file_task(
 
         if len(content) > settings.MAX_FILE_SIZE:
             if parser_rejections:
-                parser_rejections.labels("file_too_large", connector_type or "unknown").inc()
+                parser_rejections.labels("file_too_large", source_type or "unknown").inc()
             update_file_status(supabase, file_status_id, job_id, status="failed",
                 progress=0,
                 message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
@@ -1367,19 +1403,19 @@ def process_file_task(
             message="Extracting content (may take 30-90s for PDFs)..."
         )
         
-        parse_timeout = get_parse_timeout_seconds(filename, file_data.get("mime_type"))
+        parse_timeout = get_parse_timeout_seconds(filename, mime_type)
         parse_start = time.time()
         result = DocumentProcessorFactory.process(
             file_path=local_path,
             filename=filename,
-            mime_type=file_data.get("mime_type")
+            mime_type=mime_type
         )
         parse_elapsed = time.time() - parse_start
         if parse_timeout and parse_elapsed > parse_timeout:
             if timeout_total:
                 timeout_total.labels("parse").inc()
             if parser_rejections:
-                parser_rejections.labels("parse_timeout", connector_type or "unknown").inc()
+                parser_rejections.labels("parse_timeout", source_type or "unknown").inc()
             update_file_status(supabase, file_status_id, job_id, status="failed",
                 progress=0,
                 message=f"Parsing exceeded {parse_timeout}s (took {int(parse_elapsed)}s)",
@@ -1400,7 +1436,7 @@ def process_file_task(
             if reason == "binary_content":
                 message = "Unsupported binary file"
             if parser_rejections:
-                parser_rejections.labels("unsupported", connector_type or "unknown").inc()
+                parser_rejections.labels("unsupported", source_type or "unknown").inc()
             update_file_status(supabase, file_status_id, job_id, status="skipped",
                 progress=100,
                 message=message,
@@ -1422,7 +1458,7 @@ def process_file_task(
             if result.file_type == "pdf":
                 skip_message = "No text extracted (OCR required)"
             if parser_rejections:
-                parser_rejections.labels("empty", connector_type or "unknown").inc()
+                parser_rejections.labels("empty", source_type or "unknown").inc()
             update_file_status(supabase, file_status_id, job_id, status="skipped",
                 progress=100,
                 message=skip_message,
@@ -1467,12 +1503,17 @@ def process_file_task(
         doc_payload = {
             "user_id": user_id,
             "title": filename,
-            "source_type": connector_type,
-            "file_size_bytes": file_data.get("size_bytes", len(content)),
+            "source_type": source_type,
+            "source_url": source_url,
+            "file_size_bytes": file_data.get("size_bytes") or metadata.get("file_size") or metadata.get("size") or len(content),
             "content_hash": content_hash,
             "metadata": {
+                **metadata,
                 "job_id": job_id,
-                "mime_type": file_data.get("mime_type", "application/octet-stream"),
+                "mime_type": mime_type or "application/octet-stream",
+                "source_id": source_id,
+                "source_url": source_url,
+                "parent_id": parent_id,
             },
         }
 
@@ -1602,7 +1643,7 @@ def process_file_task(
         }
         
     finally:
-        if connector_type == "file_upload":
+        if source_type == "file_upload":
             storage_path = file_data.get("storage_path")
             if storage_path:
                 try:
@@ -1635,50 +1676,23 @@ def ingest_connector_task(
 
     Prefer unified_ingest_task in production.
     """
-    import asyncio
-    import inspect
     import tempfile
     import os
 
     supabase = get_supabase()
+    connector_type = normalize_provider(connector_type) or connector_type
     connector = get_connector(connector_type)
-    config = {
-        "user_id": user_id,
-        "item_ids": [item_id],
-        "credentials": credentials,
-        "provider": connector_type,
-    }
-
-    stream = connector.ingest(config)
-
-    async def _consume(value):
-        if asyncio.iscoroutine(value) or inspect.isawaitable(value) or hasattr(value, "__await__"):
-            value = await value
-        if hasattr(value, "__aiter__"):
-            docs = []
-            async for doc in value:
-                docs.append(doc)
-            return docs
-        if hasattr(value, "__await__"):
-            value = await value
-            if hasattr(value, "__aiter__"):
-                docs = []
-                async for doc in value:
-                    docs.append(doc)
-                return docs
-        if value is None:
-            return []
-        return list(value)
-
-    documents = asyncio.run(_consume(stream))
+    documents = _collect_documents_sync(connector, [item_id], credentials, user_id)
 
     processed = 0
     for doc in documents:
         temp_path = None
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            filename = getattr(doc, "filename", None) or (doc.metadata or {}).get("title", "untitled")
+            suffix = os.path.splitext(filename)[1] or ".txt"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 temp_path = tmp.name
-                content = doc.page_content or ""
+                content = doc.content or ""
                 if isinstance(content, bytes):
                     tmp.write(content)
                 else:
@@ -1686,7 +1700,7 @@ def ingest_connector_task(
 
             result = DocumentProcessorFactory.process(
                 file_path=temp_path,
-                filename=doc.metadata.get("title", "untitled")
+                filename=filename
             )
             chunk_texts = [chunk.content for chunk in result.chunks]
             if chunk_texts:

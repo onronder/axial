@@ -286,7 +286,7 @@ class TestChatHelpers:
             {
                 "content": "Doc content",
                 "metadata": {"filename": "file.txt"},
-                "source_type": "file",
+                "source_type": "file_upload",
                 "title": "Doc",
             },
             {
@@ -675,7 +675,7 @@ class TestChatEndpointPaths:
                 return Mock(execute=Mock(return_value=Mock(data=[{
                     "content": "Doc",
                     "title": "Doc",
-                    "source_type": "file",
+                    "source_type": "file_upload",
                     "similarity": 0.9,
                     "metadata": {},
                 }])))

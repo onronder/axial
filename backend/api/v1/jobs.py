@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from core.security import get_current_user
 from core.db import get_supabase
+from core.ingestion_utils import normalize_provider
 from models import IngestionJobResponse
 import logging
 
@@ -54,7 +55,7 @@ async def get_active_job(
         
         return IngestionJobResponse(
             id=job["id"],
-            provider=job["provider"],
+            provider=normalize_provider(job.get("provider")) or job.get("provider"),
             total_files=total,
             processed_files=processed,
             status=job["status"],
@@ -107,7 +108,7 @@ async def get_job_by_id(
         
         return IngestionJobResponse(
             id=job["id"],
-            provider=job["provider"],
+            provider=normalize_provider(job.get("provider")) or job.get("provider"),
             total_files=total,
             processed_files=processed,
             status=job["status"],

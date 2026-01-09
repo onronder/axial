@@ -6,6 +6,7 @@ This wraps the existing WebConnector and adapts it to the new EnhancedConnector 
 
 import logging
 import inspect
+import asyncio
 from typing import AsyncIterator, Dict, Any, Optional
 
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
@@ -79,6 +80,47 @@ class WebConnectorEnhanced(EnhancedConnector):
                     size_bytes=len(content.encode("utf-8")),
                 )
             return
+
+        for doc in legacy_stream:
+            content = doc.page_content
+            source_url = doc.metadata.get("source_url", item_ids[0] if item_ids else "unknown")
+            title = doc.metadata.get("title", source_url.split("/")[-1] or "webpage")
+            yield SourceDocument(
+                content=content,
+                metadata=doc.metadata,
+                source_type=SourceType.WEB,
+                source_id=source_url,
+                filename=f"{title}.html",
+                mime_type="text/html",
+                size_bytes=len(content.encode("utf-8")),
+            )
+
+    def fetch_documents_sync(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ):
+        """
+        Synchronous fetch for worker pipelines (no asyncio/event loop required).
+        """
+        user_id = kwargs.get("user_id")
+        respect_robots = kwargs.get("respect_robots", True)
+        config = {
+            "user_id": user_id,
+            "item_ids": item_ids,
+            "credentials": credentials,
+            "provider": "web",
+            "respect_robots": respect_robots,
+        }
+
+        legacy_stream = None
+        if hasattr(self.legacy, "ingest_sync"):
+            legacy_stream = self.legacy.ingest_sync(config)
+        else:
+            legacy_stream = self.legacy.ingest(config)
+            if inspect.isawaitable(legacy_stream):
+                legacy_stream = asyncio.run(legacy_stream)
 
         for doc in legacy_stream:
             content = doc.page_content

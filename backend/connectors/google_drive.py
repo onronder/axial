@@ -6,6 +6,7 @@ Production connector with automatic OAuth token refresh.
 
 import logging
 import inspect
+import asyncio
 from typing import AsyncIterator, Dict, Any, Optional
 
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
@@ -89,6 +90,44 @@ class GoogleDriveConnector(EnhancedConnector):
                     parent_id=doc.metadata.get("parent_id"),
                 )
             return
+
+        for doc in legacy_stream:
+            content = doc.page_content
+            yield SourceDocument(
+                content=content,
+                metadata=doc.metadata,
+                source_type=SourceType.GOOGLE_DRIVE,
+                source_id=doc.metadata.get("file_id", "unknown"),
+                filename=doc.metadata.get("title", "untitled"),
+                mime_type=doc.metadata.get("mime_type", "text/plain"),
+                size_bytes=len(content.encode("utf-8")),
+                parent_id=doc.metadata.get("parent_id"),
+            )
+
+    def fetch_documents_sync(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ):
+        """
+        Synchronous fetch for worker pipelines (no asyncio/event loop required).
+        """
+        user_id = kwargs.get("user_id")
+        config = {
+            "user_id": user_id,
+            "item_ids": item_ids,
+            "credentials": credentials,
+            "provider": "google_drive",
+        }
+
+        legacy_stream = None
+        if hasattr(self.legacy, "ingest_sync"):
+            legacy_stream = self.legacy.ingest_sync(config)
+        else:
+            legacy_stream = self.legacy.ingest(config)
+            if inspect.isawaitable(legacy_stream):
+                legacy_stream = asyncio.run(legacy_stream)
 
         for doc in legacy_stream:
             content = doc.page_content

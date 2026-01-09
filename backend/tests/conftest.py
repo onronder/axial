@@ -108,7 +108,7 @@ def sample_document():
         "id": "doc-1",
         "user_id": "test-user-123",
         "title": "Test Document",
-        "source_type": "file",
+        "source_type": "file_upload",
         "source_url": None,
         "created_at": "2024-01-01T00:00:00Z",
         "status": "indexed",

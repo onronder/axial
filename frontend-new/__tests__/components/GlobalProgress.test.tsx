@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { formatSourceTypeLabel, normalizeSourceType } from '@/lib/sourceType';
 
 // Mock Supabase channel
 const mockChannel = {
@@ -192,9 +193,9 @@ describe('GlobalProgress Component (Realtime)', () => {
 
         it('shows provider icon', () => {
             const providerIcons = {
-                file: 'Upload',
+                file_upload: 'Upload',
                 web: 'Globe',
-                drive: 'FileText',
+                google_drive: 'FileText',
                 notion: 'Database',
             };
             expect(Object.keys(providerIcons).length).toBe(4);
@@ -337,31 +338,16 @@ describe('Progress Calculation Utils', () => {
 
 describe('Provider Label Mapping', () => {
     const getProviderLabel = (provider: string): string => {
-        const providers: Record<string, string> = {
-            google_drive: "Google Drive",
-            drive: "Google Drive",
-            notion: "Notion",
-            file: "File Upload",
-            file_upload: "File Upload",
-            web: "Web Crawl",
-        };
-        return providers[provider] || provider;
+        const normalized = normalizeSourceType(provider) || provider;
+        return formatSourceTypeLabel(normalized);
     };
 
     it('maps google_drive to Google Drive', () => {
         expect(getProviderLabel('google_drive')).toBe('Google Drive');
     });
 
-    it('maps drive to Google Drive', () => {
-        expect(getProviderLabel('drive')).toBe('Google Drive');
-    });
-
     it('maps notion to Notion', () => {
         expect(getProviderLabel('notion')).toBe('Notion');
-    });
-
-    it('maps file to File Upload', () => {
-        expect(getProviderLabel('file')).toBe('File Upload');
     });
 
     it('maps web to Web Crawl', () => {

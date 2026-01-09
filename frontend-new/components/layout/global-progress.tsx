@@ -26,6 +26,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useFileStatus } from "@/hooks/useFileStatus";
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
+import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 
 interface IngestionJob {
     id: string;
@@ -46,18 +47,10 @@ interface IngestionJob {
 const COMPLETION_DISPLAY_TIME = 5000;
 
 const providerIcons: Record<string, typeof FileText> = {
-    file: Upload,
+    file_upload: Upload,
     web: Globe,
-    drive: FileText,
+    google_drive: FileText,
     notion: Database,
-};
-
-const providerLabels: Record<string, string> = {
-    file: "File Upload",
-    web: "Web Crawl",
-    drive: "Google Drive",
-    google_drive: "Google Drive",
-    notion: "Notion",
 };
 
 export function GlobalProgress() {
@@ -119,10 +112,11 @@ export function GlobalProgress() {
                         // Show completion toast
                         if (newJob.status === "completed" && oldJob?.status !== "completed") {
                             const completionMessage = newJob.message || newJob.status_message;
+                            const provider = normalizeSourceType(newJob.provider) || newJob.provider;
                             toast({
                                 title: "Ingestion Complete! 🎉",
                                 description: completionMessage ||
-                                    `Successfully processed ${newJob.processed_files} files from ${providerLabels[newJob.provider] || newJob.provider}.`,
+                                    `Successfully processed ${newJob.processed_files} files from ${formatSourceTypeLabel(provider)}.`,
                             });
 
                             // Auto-dismiss after delay
@@ -142,9 +136,10 @@ export function GlobalProgress() {
                         }
 
                         if (newJob.status === "cancelled" && oldJob?.status !== "cancelled") {
+                            const provider = normalizeSourceType(newJob.provider) || newJob.provider;
                             toast({
                                 title: "Ingestion Cancelled",
-                                description: `${providerLabels[newJob.provider] || newJob.provider} ingestion was cancelled.`,
+                                description: `${formatSourceTypeLabel(provider)} ingestion was cancelled.`,
                                 variant: "default",
                             });
 
@@ -242,8 +237,9 @@ function JobCard({
     onDismiss: () => void;
     onOpenDetails: () => void;
 }) {
-    const Icon = providerIcons[job.provider] || FileText;
-    const label = providerLabels[job.provider] || job.provider;
+    const normalizedProvider = normalizeSourceType(job.provider) || job.provider;
+    const Icon = providerIcons[normalizedProvider] || FileText;
+    const label = formatSourceTypeLabel(normalizedProvider);
 
     // Use backend progress if available, fallback to file-based calculation
     const progress = job.progress ?? (

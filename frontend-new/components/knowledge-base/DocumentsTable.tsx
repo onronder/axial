@@ -58,15 +58,15 @@ import { useDocuments } from "@/hooks/useDocuments";
 import { useProfile } from "@/hooks/useProfile";
 import { StorageMeter } from "@/components/documents/StorageMeter";
 import { cn } from "@/lib/utils";
+import { normalizeSourceType } from "@/lib/sourceType";
 
 const sourceIcons: Record<string, typeof FileText> = {
-  drive: FileText,
+  google_drive: FileText,
   web: Globe,
-  upload: Upload,
+  file_upload: Upload,
   notion: Database,
   slack: MessageSquare,
   youtube: PlayCircle,
-  file: FileText,
 };
 
 const statusStyles: Record<string, { label: string; className: string; dotClass: string }> = {
@@ -245,7 +245,8 @@ export function DocumentsTable() {
                 </TableRow>
               ) : (
                 paginatedDocuments.map((doc) => {
-                  const SourceIcon = sourceIcons[doc.sourceType] || FileText;
+                  const sourceType = normalizeSourceType(doc.sourceType) || doc.sourceType;
+                  const SourceIcon = sourceIcons[sourceType] || FileText;
                   const displayStatus = doc.indexingStatus || "completed";
                   const status = statusStyles[displayStatus] || statusStyles.completed;
 
@@ -314,7 +315,7 @@ export function DocumentsTable() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            {doc.sourceType === 'upload' && (
+                            {sourceType === 'file_upload' && (
                               <DropdownMenuItem>
                                 <Download className="mr-2 h-4 w-4" /> Download
                               </DropdownMenuItem>

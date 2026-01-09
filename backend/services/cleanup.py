@@ -11,6 +11,7 @@ from uuid import UUID
 
 from core.config import settings
 from core.db import get_supabase
+from core.ingestion_utils import normalize_source_type
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ class AccountCleanupService:
             storage_path = None
             
             # Try to find storage path in metadata or source_url
-            if doc_data.get("source_type") == "file":
+            if normalize_source_type(doc_data.get("source_type")) == "file_upload":
                 # Check metadata first
                 meta = doc_data.get("metadata") or {}
                 storage_path = meta.get("storage_path")

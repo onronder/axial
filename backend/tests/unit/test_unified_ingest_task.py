@@ -59,7 +59,7 @@ def test_unified_ingest_task_file_upload(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(item_ids, credentials=None, **kwargs):
+    def mock_fetch_sync(item_ids, credentials=None, **kwargs):
         yield SourceDocument(
             content=b"PDF content",
             metadata={},
@@ -69,7 +69,7 @@ def test_unified_ingest_task_file_upload(
             mime_type="application/pdf",
             size_bytes=100
         )
-    connector.fetch_documents = mock_fetch
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     with patch("worker.tasks.process_file_task") as mock_task, \
@@ -105,7 +105,7 @@ def test_unified_ingest_task_google_drive(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(item_ids, creds, **kwargs):
+    def mock_fetch_sync(item_ids, creds, **kwargs):
         for file_id in item_ids:
             yield SourceDocument(
                 content=f"Content of {file_id}",
@@ -116,7 +116,7 @@ def test_unified_ingest_task_google_drive(
                 mime_type="text/plain",
                 size_bytes=50
             )
-    connector.fetch_documents = mock_fetch
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     with patch("worker.tasks.process_file_task") as mock_task, \
@@ -151,7 +151,7 @@ def test_unified_ingest_task_notion(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(item_ids, creds, **kwargs):
+    def mock_fetch_sync(item_ids, creds, **kwargs):
         for page_id in item_ids:
             yield SourceDocument(
                 content=f"Notion page content {page_id}",
@@ -162,7 +162,7 @@ def test_unified_ingest_task_notion(
                 mime_type="text/markdown",
                 size_bytes=200
             )
-    connector.fetch_documents = mock_fetch
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     with patch("worker.tasks.process_file_task") as mock_task, \
@@ -196,7 +196,7 @@ def test_unified_ingest_task_web(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(item_ids, creds, **kwargs):
+    def mock_fetch_sync(item_ids, creds, **kwargs):
         yield SourceDocument(
             content="<html>Web page content</html>",
             metadata={"url": url},
@@ -206,7 +206,7 @@ def test_unified_ingest_task_web(
             mime_type="text/html",
             size_bytes=500
         )
-    connector.fetch_documents = mock_fetch
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     with patch("worker.tasks.process_file_task") as mock_task, \
@@ -254,10 +254,9 @@ def test_unified_ingest_task_connector_failure(
     
     # Mock connector that raises exception
     connector = Mock()
-    async def failing_fetch(*args, **kwargs):
+    def failing_fetch_sync(*args, **kwargs):
         raise Exception("Connector failed to fetch documents")
-        yield  # Never reached
-    connector.fetch_documents = failing_fetch
+    connector.fetch_documents_sync = failing_fetch_sync
     mock_get_connector.return_value = connector
     
     # Execute - should handle error gracefully
@@ -279,7 +278,7 @@ def test_unified_ingest_task_pipeline_failure(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(*args, **kwargs):
+    def mock_fetch_sync(*args, **kwargs):
         yield SourceDocument(
             content=b"content",
             metadata={},
@@ -289,7 +288,7 @@ def test_unified_ingest_task_pipeline_failure(
             mime_type="application/pdf",
             size_bytes=100
         )
-    connector.fetch_documents = mock_fetch
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     # Simulate dispatch failure
@@ -313,7 +312,7 @@ def test_unified_ingest_task_quota_exceeded(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(*args, **kwargs):
+    def mock_fetch_sync(*args, **kwargs):
         yield SourceDocument(
             content=b"content",
             metadata={},
@@ -323,7 +322,7 @@ def test_unified_ingest_task_quota_exceeded(
             mime_type="application/pdf",
             size_bytes=100
         )
-    connector.fetch_documents = mock_fetch
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     with patch("worker.tasks.process_file_task") as mock_task:
@@ -346,7 +345,7 @@ def test_unified_ingest_task_job_status_updates(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(*args, **kwargs):
+    def mock_fetch_sync(*args, **kwargs):
         yield SourceDocument(
             content=b"content",
             metadata={},
@@ -356,7 +355,7 @@ def test_unified_ingest_task_job_status_updates(
             mime_type="application/pdf",
             size_bytes=100
         )
-    connector.fetch_documents = mock_fetch
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     with patch("worker.tasks.process_file_task") as mock_task, \
@@ -387,10 +386,9 @@ def test_unified_ingest_task_empty_item_ids(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(*args, **kwargs):
-        return
-        yield  # Never reached
-    connector.fetch_documents = mock_fetch
+    def mock_fetch_sync(*args, **kwargs):
+        return []
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     # Execute
@@ -417,10 +415,9 @@ def test_unified_ingest_task_retry_on_connection_error(
     
     # Mock connector to raise connection error
     connector = Mock()
-    async def failing_fetch(*args, **kwargs):
+    def failing_fetch_sync(*args, **kwargs):
         raise ConnectionError("Network error")
-        yield
-    connector.fetch_documents = failing_fetch
+    connector.fetch_documents_sync = failing_fetch_sync
     mock_get_connector.return_value = connector
     
     # Configure retry
@@ -448,7 +445,7 @@ def test_unified_ingest_task_multiple_files(
     
     # Mock connector
     connector = Mock()
-    async def mock_fetch(item_ids, *args, **kwargs):
+    def mock_fetch_sync(item_ids, *args, **kwargs):
         for item_id in item_ids:
             yield SourceDocument(
                 content=f"Content {item_id}".encode(),
@@ -459,7 +456,7 @@ def test_unified_ingest_task_multiple_files(
                 mime_type="application/pdf",
                 size_bytes=100
             )
-    connector.fetch_documents = mock_fetch
+    connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
     
     with patch("worker.tasks.process_file_task") as mock_task, \

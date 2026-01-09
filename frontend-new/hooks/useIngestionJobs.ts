@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { RealtimeChannel } from "@supabase/supabase-js";
+import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 
 export interface IngestionJob {
     id: string;
@@ -70,11 +71,12 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
             const { eventType, new: newJob, old: oldJob } = payload;
 
             if (eventType === "INSERT") {
+                const provider = normalizeSourceType(newJob.provider) || newJob.provider;
                 setJobs((prev) => [newJob, ...prev].slice(0, 20));
 
                 toast({
                     title: "Ingestion Started",
-                    description: `Processing ${newJob.provider} files...`,
+                    description: `Processing ${formatSourceTypeLabel(provider)} files...`,
                 });
             }
 

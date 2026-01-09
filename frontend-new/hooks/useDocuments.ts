@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Document } from "@/types";
+import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 import { useToast } from "@/hooks/use-toast";
 
 /**
@@ -25,11 +26,12 @@ interface BackendDocument {
  * Map backend document response to frontend Document interface.
  */
 function mapDocument(d: BackendDocument): Document {
+    const normalizedSource = normalizeSourceType(d.source_type) || "file_upload";
     return {
         id: d.id,
         name: d.title || d.name || "Untitled",
-        source: d.source_type || "file",
-        sourceType: (d.source_type as Document['sourceType']) || "upload",
+        source: formatSourceTypeLabel(normalizedSource),
+        sourceType: normalizedSource as Document['sourceType'],
         sourceUrl: d.source_url || undefined,
         status: (d.status as Document['status']) || "indexed",
         indexingStatus: (d.indexing_status as Document['indexingStatus']) || "completed",

@@ -89,20 +89,14 @@ class TestIngestConnectorTask:
     @patch('worker.tasks.generate_embeddings_batch_sync')
     @patch('worker.tasks.DocumentProcessorFactory')
     def test_executes_drive_ingestion(self, mock_factory, mock_embeddings, mock_supabase, mock_get_connector):
-        """Should execute drive ingestion using asyncio."""
+        """Should execute drive ingestion using sync fetch."""
         from worker.tasks import ingest_connector_task
-        from connectors.base import ConnectorDocument
         
         # Mock connector with AsyncMock for ingest
         mock_connector = Mock()
-        
-        # Create an async iterator mock
-        async def async_gen():
-            yield ConnectorDocument(page_content="test", metadata={"title": "test"})
-            
-        # ingest is async and returns the async generator
-        # It must be an AsyncMock to be awaitable
-        mock_connector.ingest = AsyncMock(return_value=async_gen())
+        mock_connector.fetch_documents_sync = Mock(return_value=[
+            Mock(content="test", metadata={"title": "test"}, filename="test.txt")
+        ])
         
         mock_get_connector.return_value = mock_connector
         
@@ -129,8 +123,8 @@ class TestIngestConnectorTask:
             item_id="file-123"
         )
         
-        # Verify ingest was called
-        mock_connector.ingest.assert_called_once()
+        # Verify fetch was called
+        mock_connector.fetch_documents_sync.assert_called_once()
         mock_factory.process.assert_called()  # Drive uses generic process
         mock_embeddings.assert_called()
     
@@ -203,7 +197,7 @@ class TestAtomicRPCInsertion:
         mock_supabase.rpc("ingest_document_with_chunks", {
             "p_user_id": "user-123",
             "p_doc_title": "Test Document",
-            "p_source_type": "file",
+            "p_source_type": "file_upload",
             "p_source_url": None,
             "p_metadata": "{}",
             "p_chunks": '[{"content": "chunk", "embedding": [0.1], "chunk_index": 0}]'

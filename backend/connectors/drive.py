@@ -643,7 +643,7 @@ class DriveConnector(BaseConnector):
                     parent_doc_data = {
                         "user_id": user_id,
                         "title": file_meta['name'],
-                        "source_type": "drive",  # Matches the enum value
+                        "source_type": "google_drive",
                         "source_url": file_meta.get('webViewLink', ''),
                         "file_size_bytes": file_meta.get("size") or len(content_bytes),
                         "content_hash": content_hash,

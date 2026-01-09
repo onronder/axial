@@ -117,7 +117,15 @@ export interface MergedDataSource {
 // DOCUMENT TYPES
 // =============================================================================
 
-export type DocumentSourceType = 'drive' | 'web' | 'upload' | 'notion' | 'slack' | 'local';
+export type DocumentSourceType =
+  | 'file_upload'
+  | 'google_drive'
+  | 'web'
+  | 'notion'
+  | 'slack'
+  | 'local'
+  | 'drive'
+  | 'upload';
 export type DocumentStatus = 'indexed' | 'processing' | 'error';
 
 export interface Document {
@@ -301,5 +309,4 @@ export interface SubscriptionDetail {
     current_period_end?: string;
     cancel_at_period_end: boolean;
 }
-
 

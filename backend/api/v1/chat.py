@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
+from core.ingestion_utils import normalize_source_type
 from services.audit import log_chat_delete, audit_logger
 from services.llm_factory import LLMFactory
 from services.guardrails import guardrail_service
@@ -346,27 +347,28 @@ def format_context_with_citations(docs: List[Dict]) -> tuple:
         content = doc.get('content', '')
         metadata = doc.get('metadata', {}) or {}  # Ensure dict even if None
         source_type = doc.get('source_type', metadata.get('source', 'unknown'))
+        normalized_source_type = normalize_source_type(source_type) or source_type
         
         # IMPORTANT: hybrid_search returns 'title' at top-level, NOT inside metadata
         # Check top-level first, then fall back to metadata
         doc_title = doc.get('title') or metadata.get('title')
         
         # Build source label based on type
-        if source_type == "web":
+        if normalized_source_type == "web":
             source_label = metadata.get("url") or metadata.get("source_url") or doc_title or "Web Page"
             source_type_display = "Web"
-        elif source_type == "file":
+        elif normalized_source_type in {"file_upload", "file"}:
             source_label = doc_title or metadata.get("filename") or "Uploaded File"
             source_type_display = "File"
-        elif source_type == "drive" or source_type == "google_drive":
+        elif normalized_source_type in {"google_drive", "drive"}:
             source_label = doc_title or "Google Drive File"
             source_type_display = "Drive"
-        elif source_type == "notion":
+        elif normalized_source_type == "notion":
             source_label = doc_title or "Notion Page"
             source_type_display = "Notion"
         else:
             source_label = doc_title or metadata.get("filename") or "Document"
-            source_type_display = source_type.title() if source_type else "Doc"
+            source_type_display = normalized_source_type.title() if normalized_source_type else "Doc"
         
         # Get additional context (page, section, etc.)
         page_info = ""

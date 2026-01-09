@@ -746,9 +746,9 @@ class TestNotificationsAndEmail:
 class TestIngestConnectorTask:
     @pytest.mark.unit
     def test_ingest_connector_task_processes_documents(self):
-        doc = SimpleNamespace(page_content="hello", metadata={"title": "Doc"})
+        doc = SimpleNamespace(content="hello", metadata={"title": "Doc"}, filename="Doc.txt")
         connector = MagicMock()
-        connector.ingest.return_value = [doc]
+        connector.fetch_documents_sync.return_value = [doc]
 
         parse_result = _make_parse_result(
             file_type="txt",
@@ -768,12 +768,12 @@ class TestIngestConnectorTask:
         assert result["processed"] == 1
 
     @pytest.mark.unit
-    def test_ingest_connector_task_consumes_async_iterable(self):
-        async def async_docs():
-            yield SimpleNamespace(page_content="hello", metadata={"title": "Doc"})
+    def test_ingest_connector_task_consumes_iterable(self):
+        def docs():
+            yield SimpleNamespace(content="hello", metadata={"title": "Doc"}, filename="Doc.txt")
 
         connector = MagicMock()
-        connector.ingest.return_value = async_docs()
+        connector.fetch_documents_sync.return_value = list(docs())
 
         parse_result = _make_parse_result(
             file_type="txt",

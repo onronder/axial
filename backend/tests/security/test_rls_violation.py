@@ -65,7 +65,7 @@ def test_authenticated_user_cannot_insert_documents_directly():
     fake_document = {
         "user_id": user_id,  # Trying to insert for themselves
         "title": "HACKED DOCUMENT",
-        "source_type": "file",
+        "source_type": "file_upload",
         "metadata": {"origin": "security_test"},
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }

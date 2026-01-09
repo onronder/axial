@@ -5,7 +5,7 @@ This extends the existing BaseConnector with a new standardized interface
 for the unified ingestion pipeline while maintaining backward compatibility.
 """
 
-from typing import AsyncIterator, Dict, Any, Optional
+from typing import AsyncIterator, Dict, Any, Optional, Iterator
 import inspect
 from dataclasses import dataclass
 from enum import Enum
@@ -147,6 +147,36 @@ class EnhancedConnector(LegacyBaseConnector):
                 filename=doc.metadata.get("title", "untitled"),
                 mime_type=doc.metadata.get("mime_type", "text/plain"),
                 size_bytes=len(doc.page_content.encode('utf-8'))
+            )
+
+    def fetch_documents_sync(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Iterator[SourceDocument]:
+        """
+        Synchronous fetch for worker pipelines.
+        """
+        ingest_sync = getattr(self, "ingest_sync", None)
+        if not ingest_sync:
+            raise NotImplementedError("fetch_documents_sync not implemented for this connector")
+
+        config = {
+            "user_id": kwargs.get("user_id"),
+            "item_ids": item_ids,
+            "credentials": credentials,
+            "provider": self.connector_type.value if hasattr(self, 'connector_type') else "unknown",
+        }
+        for doc in ingest_sync(config):
+            yield SourceDocument(
+                content=doc.page_content,
+                metadata=doc.metadata,
+                source_type=SourceType(config["provider"]),
+                source_id=doc.metadata.get("source_id", "unknown"),
+                filename=doc.metadata.get("title", "untitled"),
+                mime_type=doc.metadata.get("mime_type", "text/plain"),
+                size_bytes=len(doc.page_content.encode("utf-8")),
             )
     
     @property

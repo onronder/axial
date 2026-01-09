@@ -92,20 +92,20 @@ describe('SourceCard Component', () => {
 
     describe('File Source Rendering', () => {
         it('shows file icon', () => {
-            const sourceType = 'file';
-            expect(sourceType).toBe('file');
+            const sourceType = 'file_upload';
+            expect(sourceType).toBe('file_upload');
         });
 
         it('displays filename', () => {
-            const source = { title: 'document.pdf', source_type: 'file' };
+            const source = { title: 'document.pdf', source_type: 'file_upload' };
             expect(source.title).toBe('document.pdf');
         });
     });
 
     describe('Drive Source Rendering', () => {
         it('shows drive icon', () => {
-            const sourceType = 'drive';
-            expect(sourceType).toBe('drive');
+            const sourceType = 'google_drive';
+            expect(sourceType).toBe('google_drive');
         });
     });
 
@@ -160,7 +160,7 @@ describe('SourceCardGrid Component', () => {
         it('accepts sources array', () => {
             const sources = [
                 { title: 'Source 1', source_type: 'web' },
-                { title: 'Source 2', source_type: 'file' },
+                { title: 'Source 2', source_type: 'file_upload' },
             ];
             expect(Array.isArray(sources)).toBe(true);
         });
@@ -174,7 +174,7 @@ describe('SourceCardGrid Component', () => {
 
 describe('SourceMetadata Interface', () => {
     it('has required source_type field', () => {
-        const types = ['youtube', 'web', 'notion', 'file', 'drive'];
+        const types = ['youtube', 'web', 'notion', 'file_upload', 'google_drive'];
         types.forEach(t => expect(types).toContain(t));
     });
 

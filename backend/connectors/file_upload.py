@@ -27,57 +27,58 @@ class FileUploadConnector(EnhancedConnector):
     def connector_type(self) -> SourceType:
         return SourceType.FILE_UPLOAD
     
-    async def fetch_documents(
-        self, 
-        item_ids: list[str],  # storage_paths
+    def fetch_documents_sync(
+        self,
+        item_ids: list[str],
         credentials: Optional[Dict[str, Any]] = None,
         **kwargs
-    ) -> AsyncIterator[SourceDocument]:
+    ):
         """
-        Fetch files from Supabase Storage.
-        
-        Args:
-            item_ids: List of storage paths in ephemeral-staging bucket
-            credentials: Not used for file uploads
-            **kwargs: Additional options
+        Synchronous fetch for worker pipelines (no asyncio/event loop required).
         """
         supabase = get_supabase()
-        
+
         for storage_path in item_ids:
             try:
                 logger.info(f"[FileUpload] Fetching: {storage_path}")
-                
-                # Download from storage
+
                 file_data = supabase.storage.from_(STAGING_BUCKET).download(storage_path)
-                
                 if not file_data:
                     raise ItemNotFoundError(f"File not found: {storage_path}")
-                
-                # Extract metadata from path
-                # Path format: uploads/{user_id}/{uuid}/{filename}
+
                 filename = storage_path.split("/")[-1]
-                
-                # Detect MIME type from filename extension
                 mime_type = self._detect_mime_type(filename)
-                
+
                 yield SourceDocument(
                     content=file_data,
                     metadata={
                         "storage_path": storage_path,
-                        "upload_method": "direct"
+                        "upload_method": "direct",
                     },
                     source_type=SourceType.FILE_UPLOAD,
                     source_id=storage_path,
                     filename=filename,
                     mime_type=mime_type,
-                    size_bytes=len(file_data)
+                    size_bytes=len(file_data),
                 )
-                
+
                 logger.info(f"[FileUpload] Fetched {filename} ({len(file_data)} bytes)")
-                
+
             except Exception as e:
                 logger.error(f"[FileUpload] Failed to fetch {storage_path}: {e}")
                 raise
+
+    async def fetch_documents(
+        self,
+        item_ids: list[str],  # storage_paths
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> AsyncIterator[SourceDocument]:
+        """
+        Async wrapper for fetch. Delegates to sync implementation.
+        """
+        for doc in self.fetch_documents_sync(item_ids, credentials, **kwargs):
+            yield doc
     
     def _detect_mime_type(self, filename: str) -> str:
         """Detect MIME type from filename extension."""

@@ -389,7 +389,7 @@ class TestDocumentUpdateEndpoint:
             "id": "doc-123",
             "title": "Original Title",
             "user_id": "user-123",
-            "source_type": "upload",
+            "source_type": "file_upload",
             "created_at": "2024-01-01T00:00:00Z",
             "metadata": {}
         }
@@ -400,7 +400,7 @@ class TestDocumentUpdateEndpoint:
             "id": "doc-123",
             "title": "Updated Title",
             "user_id": "user-123",
-            "source_type": "upload",
+            "source_type": "file_upload",
             "created_at": "2024-01-01T00:00:00Z",
             "metadata": {"description": "New description"}
         }]

@@ -468,30 +468,9 @@ def test_process_file_task_handles_string_content(monkeypatch):
         )
 
 
-def test_ingest_connector_task_handles_awaitable_stream(monkeypatch):
-    class FinalAwaitable:
-        def __init__(self, docs):
-            self.docs = docs
-
-        def __await__(self):
-            async def _inner():
-                async def _aiter():
-                    for doc in self.docs:
-                        yield doc
-                return _aiter()
-            return _inner().__await__()
-
-    class DoubleAwaitable:
-        def __init__(self, docs):
-            self.docs = docs
-
-        def __await__(self):
-            async def _inner():
-                return FinalAwaitable(self.docs)
-            return _inner().__await__()
-
-    doc = SimpleNamespace(page_content=b"hi", metadata={"title": "Doc"})
-    connector = SimpleNamespace(ingest=lambda _config: DoubleAwaitable([doc]))
+def test_ingest_connector_task_handles_iterable(monkeypatch):
+    doc = SimpleNamespace(content=b"hi", metadata={"title": "Doc"}, filename="Doc.txt")
+    connector = SimpleNamespace(fetch_documents_sync=lambda *_args, **_kwargs: [doc])
 
     supabase = MagicMock()
     monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
@@ -506,7 +485,7 @@ def test_ingest_connector_task_handles_awaitable_stream(monkeypatch):
 
 
 def test_ingest_connector_task_handles_none(monkeypatch):
-    connector = SimpleNamespace(ingest=lambda _config: None)
+    connector = SimpleNamespace(fetch_documents_sync=lambda *_args, **_kwargs: [])
     supabase = MagicMock()
     monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
     monkeypatch.setattr(tasks, "get_connector", lambda *_args, **_kwargs: connector)

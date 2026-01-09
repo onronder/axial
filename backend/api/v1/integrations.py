@@ -13,6 +13,7 @@ from core.rate_limit import limiter
 from services.usage import check_feature_access
 from services.web_crawl import queue_web_crawl
 from connectors.web import WebConnector
+from core.ingestion_utils import normalize_provider, normalize_source_type
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
@@ -446,6 +447,7 @@ async def get_provider_status(
 ):
     """Check if a specific provider is connected for the user."""
     supabase = get_supabase()
+    provider = normalize_provider(provider)
     
     try:
         # Lookup connector definition by type
@@ -475,6 +477,7 @@ async def disconnect_provider(
     Attempts to revoke the OAuth token with the provider before deleting records.
     """
     supabase = get_supabase()
+    provider = normalize_provider(provider)
     
     try:
         # Lookup connector definition by type
@@ -522,6 +525,7 @@ async def disconnect_provider(
         # Map provider to source_type values used in documents table (legacy + current)
         SOURCE_TYPE_LEGACY_MAP = {
             "google_drive": ["drive"],
+            "file_upload": ["file", "upload"],
         }
         source_types = [provider] + SOURCE_TYPE_LEGACY_MAP.get(provider, [])
         
@@ -612,6 +616,7 @@ async def list_provider_items(
 ):
     """List items from a connected provider (folders, files, etc.)."""
     try:
+        provider = normalize_provider(provider)
         connector = get_connector(provider)
         items = await connector.list_items(user_id, parent_id)
         return items
@@ -685,6 +690,7 @@ async def ingest_provider_items(
     for progress tracking.
     """
     try:
+        provider = normalize_provider(provider)
         if provider == "web":
             if len(request.item_ids) != 1:
                 raise HTTPException(

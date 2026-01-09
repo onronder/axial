@@ -22,6 +22,7 @@ from core.quotas import QUOTA_LIMITS, check_quota
 from services.usage import check_can_upload, check_feature_access
 from services.web_crawl import queue_web_crawl
 from connectors.web import WebConnector
+from core.ingestion_utils import normalize_provider
 from services.team_service import team_service
 from api.v1.dependencies import validate_team_access
 from slowapi import Limiter
@@ -81,9 +82,10 @@ def get_idempotency_key(request: Request) -> Optional[str]:
 def find_existing_ingestion_job(supabase, user_id: str, provider: str, idempotency_key: str) -> Optional[dict]:
     if not idempotency_key:
         return None
+    normalized_provider = normalize_provider(provider) or provider
     existing = supabase.table("ingestion_jobs").select("id,status").eq(
         "user_id", user_id
-    ).eq("provider", provider).eq("idempotency_key", idempotency_key).order(
+    ).eq("provider", normalized_provider).eq("idempotency_key", idempotency_key).order(
         "created_at", desc=True
     ).limit(1).execute()
     existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
@@ -233,8 +235,9 @@ async def ingest_document(
         # Import unified task
         from worker.tasks import unified_ingest_task
         
-        connector_type = "drive" if drive_id else "notion"
+        connector_type = normalize_provider("google_drive" if drive_id else "notion")
         item_id = drive_id if drive_id else notion_page_id
+        item_ids = [item_id]
         
         if idempotency_key:
             existing_job = find_existing_ingestion_job(supabase, user_id, connector_type, idempotency_key)
@@ -266,7 +269,7 @@ async def ingest_document(
                 user_id=user_id,
                 job_id=job_id,
                 connector_type=connector_type,
-                item_id=item_id,
+                item_ids=item_ids,
                 credentials={"access_token": notion_token} if notion_token else None
             )
         except Exception as e:
@@ -359,9 +362,10 @@ async def ingest_document(
                 return IngestResponse(status=existing_job.get("status", "queued"), doc_id=existing_job["id"])
 
         # Create ingestion job for tracking
+        provider = normalize_provider("file_upload")
         job_data = {
             "user_id": user_id,
-            "provider": "file",
+            "provider": provider,
             "total_files": 1,
             "processed_files": 0,
             "status": "pending",
@@ -386,7 +390,7 @@ async def ingest_document(
             task = unified_ingest_task.delay(
                 user_id=user_id,
                 job_id=job_id,
-                connector_type="file_upload",
+                connector_type=provider,
                 item_ids=[storage_path],  # Pass as list
                 credentials=None
             )
@@ -556,14 +560,15 @@ async def ingest_file_reference(
         raise HTTPException(status_code=403, detail=quota_check["reason"])
     
     if idempotency_key:
-        existing_job = find_existing_ingestion_job(supabase, user_id, "file", idempotency_key)
+        existing_job = find_existing_ingestion_job(supabase, user_id, "file_upload", idempotency_key)
         if existing_job:
             return IngestResponse(status=existing_job.get("status", "queued"), doc_id=existing_job["id"])
 
     # 3. Create ingestion job
+    provider = normalize_provider("file_upload")
     job_data = {
         "user_id": user_id,
-        "provider": "file",
+        "provider": provider,
         "total_files": 1,
         "processed_files": 0,
         "status": "pending",
@@ -585,7 +590,7 @@ async def ingest_file_reference(
         task = unified_ingest_task.delay(
             user_id=user_id,
             job_id=job_id,
-            connector_type="file_upload",
+            connector_type=provider,
             item_ids=[body.storage_path],  # List of storage paths
             credentials=None  # No credentials needed for file upload
         )

@@ -66,7 +66,7 @@ def test_rls_blocks_cross_tenant_document_reads():
             {
                 "user_id": user_a_id,
                 "title": "RLS cross-tenant test",
-                "source_type": "file",
+                "source_type": "file_upload",
                 "metadata": {"origin": "security_test"},
             }
         ).execute()

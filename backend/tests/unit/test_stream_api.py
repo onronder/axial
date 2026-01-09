@@ -37,7 +37,7 @@ async def test_stream_generator_streams_tokens():
         if name == "hybrid_search":
             return Mock(execute=Mock(return_value=Mock(data=[{
                 "content": "Doc",
-                "source_type": "file",
+                "source_type": "file_upload",
                 "metadata": {"title": "Doc"},
             }])))
         raise AssertionError(name)
@@ -96,7 +96,7 @@ async def test_stream_generator_fallbacks_to_match_documents():
         if name == "match_documents":
             return Mock(execute=Mock(return_value=Mock(data=[{
                 "content": "Doc",
-                "source_type": "file",
+                "source_type": "file_upload",
                 "metadata": {"title": "Doc"},
             }])))
         raise AssertionError(name)
@@ -128,7 +128,7 @@ async def test_stream_generator_handles_llm_error():
     supabase = MagicMock()
     supabase.rpc.return_value.execute.return_value = Mock(data=[{
         "content": "Doc",
-        "source_type": "file",
+        "source_type": "file_upload",
         "metadata": {"title": "Doc"},
     }])
 
@@ -155,7 +155,7 @@ async def test_stream_generator_times_out_on_wait():
     supabase = MagicMock()
     supabase.rpc.return_value.execute.return_value = Mock(data=[{
         "content": "Doc",
-        "source_type": "file",
+        "source_type": "file_upload",
         "metadata": {"title": "Doc"},
     }])
 

@@ -24,6 +24,7 @@ from services.embeddings import generate_embeddings_batch
 from core.db import get_supabase
 from datetime import datetime, timezone
 from core.hashing import compute_content_hash
+from core.ingestion_utils import normalize_source_type
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ class IngestionPipeline:
         import asyncio
         from asyncio import Semaphore
         
+        source_type = normalize_source_type(source_type) or source_type
         logger.info(f"[Pipeline:{self.job_id}] Starting ingestion from {source_type}")
         
         # STEP 1: Initialize job
@@ -402,7 +404,8 @@ class IngestionPipeline:
         """Store document and chunks using batched inserts (idempotent)."""
         from worker.tasks import ingest_document_batched
 
-        source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
+        raw_source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
+        source_type = normalize_source_type(raw_source_type) or raw_source_type
 
         doc_metadata = {
             **(doc.metadata or {}),
