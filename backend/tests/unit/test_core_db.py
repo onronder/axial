@@ -88,3 +88,19 @@ def test_check_connection_returns_true(monkeypatch):
     client.table.return_value.select.return_value.limit.return_value.execute.return_value = MagicMock()
     monkeypatch.setattr(db, "get_supabase", MagicMock(return_value=client))
     assert asyncio.run(db.check_connection()) is True
+
+
+def test_check_connection_retries_then_succeeds(monkeypatch):
+    client = MagicMock()
+    execute = client.table.return_value.select.return_value.limit.return_value.execute
+    execute.side_effect = [RuntimeError("fail1"), MagicMock()]
+    monkeypatch.setattr(db, "get_supabase", MagicMock(return_value=client))
+
+    async def run_with_patch():
+        # prevent real sleep during test
+        async def fake_sleep(_):
+            return None
+        monkeypatch.setattr(db.asyncio, "sleep", fake_sleep)
+        return await db.check_connection()
+
+    assert asyncio.run(run_with_patch()) is True

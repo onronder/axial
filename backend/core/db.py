@@ -5,6 +5,7 @@ Provides Supabase client with connection pooling and optimization.
 """
 
 import logging
+import asyncio
 from supabase import create_client, Client, ClientOptions
 from core.config import settings
 
@@ -102,16 +103,29 @@ async def check_connection() -> bool:
     Raises:
         Exception: If connection fails
     """
-    try:
-        client = get_supabase()
-        # Perform minimal query - select 1 row, no data return needed
-        # Using count='exact', head=True to minimize data transfer
-        # We query the 'documents' table as it's a core table
-        client.table("documents").select("id", count="exact").limit(1).execute()
-        return True
-    except Exception as e:
-        logger.error(f"❌ Database connection check failed: {e}")
-        raise
+    client = get_supabase()
+    retries = 3
+    base_delay = 1.0
+    last_exc: Exception | None = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            client.table("documents").select("id", count="exact").limit(1).execute()
+            return True
+        except Exception as e:
+            last_exc = e
+            if attempt == retries:
+                logger.error(f"❌ Database connection check failed after {attempt}/{retries} attempts: {e}")
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            logger.warning(
+                "⚠️ Database connection check failed (attempt %s/%s): %s; retrying in %.1fs",
+                attempt,
+                retries,
+                e,
+                delay,
+            )
+            await asyncio.sleep(delay)
 
 # Export for convenience
 __all__ = ['get_supabase', 'close_supabase', 'check_connection']
