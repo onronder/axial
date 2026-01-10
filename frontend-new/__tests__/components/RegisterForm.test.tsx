@@ -150,7 +150,8 @@ describe('RegisterForm Component', () => {
     it('should show loading indicator while submitting', async () => {
         let resolveRegister: (() => void) | null = null;
         const pending = new Promise<void>((resolve) => {
-            resolveRegister = resolve;
+            // wrap the resolver so the optional call below is a plain zero-arg function
+            resolveRegister = () => resolve();
         });
         mockRegister.mockReturnValue(pending);
 
@@ -169,7 +170,9 @@ describe('RegisterForm Component', () => {
 
         expect(document.querySelector('.animate-spin')).toBeInTheDocument();
 
-        resolveRegister?.();
+        // Resolver is set inside the pending promise above; assert and invoke directly to satisfy TS
+        expect(resolveRegister).not.toBeNull();
+        resolveRegister!();
         await waitFor(() => {
             expect(mockRegister).toHaveBeenCalled();
         });

@@ -7,7 +7,8 @@ import {
 } from '@/lib/utils';
 
 describe('utils', () => {
-    const originalWindow = global.window;
+    const globalAny = global as any;
+    const originalWindow = globalAny.window as Window | undefined;
     const originalGoogleRedirect = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI;
     const originalNotionRedirect = process.env.NEXT_PUBLIC_NOTION_REDIRECT_URI;
     const originalGoogleClient = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -21,7 +22,7 @@ describe('utils', () => {
     });
 
     afterEach(() => {
-        global.window = originalWindow;
+        globalAny.window = originalWindow;
         process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI = originalGoogleRedirect;
         process.env.NEXT_PUBLIC_NOTION_REDIRECT_URI = originalNotionRedirect;
         process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID = originalGoogleClient;
@@ -29,7 +30,7 @@ describe('utils', () => {
     });
 
     it('returns undefined when window is not available', () => {
-        global.window = undefined as unknown as Window;
+        globalAny.window = undefined;
 
         expect(getGoogleRedirectUri()).toBeUndefined();
         expect(getNotionRedirectUri()).toBeUndefined();
