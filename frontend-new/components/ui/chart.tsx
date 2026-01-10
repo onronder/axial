@@ -102,6 +102,8 @@ type TooltipContentProps = React.ComponentProps<typeof RechartsPrimitive.Tooltip
     hideLabel?: boolean;
     hideIndicator?: boolean;
     indicator?: "line" | "dot" | "dashed";
+    label?: string | number;
+    labelFormatter?: (label: string | number | undefined, payload?: TooltipPayload[]) => React.ReactNode;
     nameKey?: string;
     labelKey?: string;
     payload?: TooltipPayload[];
