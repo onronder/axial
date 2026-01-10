@@ -102,8 +102,8 @@ type TooltipContentProps = React.ComponentProps<typeof RechartsPrimitive.Tooltip
     hideLabel?: boolean;
     hideIndicator?: boolean;
     indicator?: "line" | "dot" | "dashed";
-    label?: string | number;
-    labelFormatter?: (label: string | number | undefined, payload?: TooltipPayload[]) => React.ReactNode;
+    label?: string | number | null;
+    labelFormatter?: (label: string | number | null | undefined, payload?: TooltipPayload[]) => React.ReactNode;
     nameKey?: string;
     labelKey?: string;
     payload?: TooltipPayload[];
@@ -129,7 +129,11 @@ const ChartTooltipContent = React.forwardRef<
           : itemConfig?.label;
 
       if (labelFormatter) {
-        return <div className={cn("font-medium", labelClassName)}>{labelFormatter(value, payload)}</div>;
+        return (
+          <div className={cn("font-medium", labelClassName)}>
+            {labelFormatter(value ?? null, payload)}
+          </div>
+        );
       }
 
       if (!value) {
