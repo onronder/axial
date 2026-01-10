@@ -128,10 +128,17 @@ const ChartTooltipContent = React.forwardRef<
           ? config[label as keyof typeof config]?.label || label
           : itemConfig?.label;
 
+      const labelValue =
+        typeof value === "string" || typeof value === "number"
+          ? value
+          : typeof label === "string" || typeof label === "number"
+            ? label
+            : null;
+
       if (labelFormatter) {
         return (
           <div className={cn("font-medium", labelClassName)}>
-            {labelFormatter(value ?? null, payload)}
+            {labelFormatter(labelValue, payload as unknown as Payload<ValueType, NameType>[])}
           </div>
         );
       }
