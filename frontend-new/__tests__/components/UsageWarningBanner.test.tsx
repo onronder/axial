@@ -62,6 +62,19 @@ describe('UsageWarningBanner Component', () => {
         expect(screen.getByText('Upgrade Plan')).toBeInTheDocument();
     });
 
+    it('should label storage usage when storage exceeds files', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesPercent: 50,
+            storagePercent: 92,
+        });
+
+        render(<UsageWarningBanner />);
+
+        expect(screen.getByText(/your storage/i)).toBeInTheDocument();
+    });
+
     it('should NOT render for enterprise plan even if usage > 90%', () => {
         mockUseUsage.mockReturnValue({
             isLoading: false,

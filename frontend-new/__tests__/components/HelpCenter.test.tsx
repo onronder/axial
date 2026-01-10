@@ -16,6 +16,31 @@ vi.mock('next/navigation', () => ({
     usePathname: () => mockUsePathname(),
 }));
 
+vi.mock('next/link', () => ({
+    default: ({
+        children,
+        href,
+        onClick,
+        className,
+    }: {
+        children: React.ReactNode;
+        href: string;
+        onClick?: (e: React.MouseEvent) => void;
+        className?: string;
+    }) => (
+        <a
+            href={href}
+            className={className}
+            onClick={(e) => {
+                e.preventDefault();
+                onClick?.(e);
+            }}
+        >
+            {children}
+        </a>
+    ),
+}));
+
 // Import components after mocks
 import { HelpSidebar } from '@/components/help/HelpSidebar';
 import { ArticleViewer } from '@/components/help/ArticleViewer';
@@ -191,5 +216,18 @@ describe('HelpSearch', () => {
         await new Promise(r => setTimeout(r, 100));
 
         expect(screen.getByText('Using Chat')).toBeInTheDocument();
+    });
+
+    it('should clear query when clicking a result', async () => {
+        render(<HelpSearch articles={mockArticles} />);
+
+        const input = screen.getByPlaceholderText('Search help articles...');
+        await userEvent.type(input, 'Getting');
+
+        await new Promise(r => setTimeout(r, 100));
+
+        await userEvent.click(screen.getByText('Getting Started'));
+
+        expect(input).toHaveValue('');
     });
 });

@@ -357,10 +357,10 @@ def format_context_with_citations(docs: List[Dict]) -> tuple:
         if normalized_source_type == "web":
             source_label = metadata.get("url") or metadata.get("source_url") or doc_title or "Web Page"
             source_type_display = "Web"
-        elif normalized_source_type in {"file_upload", "file"}:
+        elif normalized_source_type == "file_upload":
             source_label = doc_title or metadata.get("filename") or "Uploaded File"
             source_type_display = "File"
-        elif normalized_source_type in {"google_drive", "drive"}:
+        elif normalized_source_type == "google_drive":
             source_label = doc_title or "Google Drive File"
             source_type_display = "Drive"
         elif normalized_source_type == "notion":

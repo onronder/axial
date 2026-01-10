@@ -1,13 +1,15 @@
 from unittest.mock import MagicMock
 
+import httpx
+import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from core.tracing import RequestTracingMiddleware, get_request_logger
 
 
-def test_request_tracing_adds_headers():
+@pytest.mark.asyncio
+async def test_request_tracing_adds_headers():
     app = FastAPI()
     app.add_middleware(RequestTracingMiddleware)
 
@@ -15,15 +17,17 @@ def test_request_tracing_adds_headers():
     async def ok():
         return {"status": "ok"}
 
-    client = TestClient(app)
-    response = client.get("/ok")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/ok")
 
     assert response.status_code == 200
     assert "X-Request-ID" in response.headers
     assert "X-Response-Time" in response.headers
 
 
-def test_request_tracing_logs_user_hint_with_bearer():
+@pytest.mark.asyncio
+async def test_request_tracing_logs_user_hint_with_bearer():
     app = FastAPI()
     app.add_middleware(RequestTracingMiddleware)
 
@@ -31,13 +35,15 @@ def test_request_tracing_logs_user_hint_with_bearer():
     async def ok():
         return {"status": "ok"}
 
-    client = TestClient(app)
-    response = client.get("/ok", headers={"Authorization": "Bearer abcdef123456"})
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/ok", headers={"Authorization": "Bearer abcdef123456"})
 
     assert response.status_code == 200
 
 
-def test_request_tracing_handles_exceptions():
+@pytest.mark.asyncio
+async def test_request_tracing_handles_exceptions():
     app = FastAPI()
     app.add_middleware(RequestTracingMiddleware)
 
@@ -45,8 +51,9 @@ def test_request_tracing_handles_exceptions():
     async def boom():
         raise RuntimeError("boom")
 
-    client = TestClient(app, raise_server_exceptions=False)
-    response = client.get("/boom")
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/boom")
 
     assert response.status_code == 500
 

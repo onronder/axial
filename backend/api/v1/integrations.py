@@ -13,7 +13,7 @@ from core.rate_limit import limiter
 from services.usage import check_feature_access
 from services.web_crawl import queue_web_crawl
 from connectors.web import WebConnector
-from core.ingestion_utils import normalize_provider, normalize_source_type
+from core.ingestion_utils import require_canonical_provider
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
@@ -23,6 +23,13 @@ import httpx
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _require_provider(provider: str) -> str:
+    try:
+        return require_canonical_provider(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # =============================================================================
@@ -447,7 +454,7 @@ async def get_provider_status(
 ):
     """Check if a specific provider is connected for the user."""
     supabase = get_supabase()
-    provider = normalize_provider(provider)
+    provider = _require_provider(provider)
     
     try:
         # Lookup connector definition by type
@@ -477,7 +484,7 @@ async def disconnect_provider(
     Attempts to revoke the OAuth token with the provider before deleting records.
     """
     supabase = get_supabase()
-    provider = normalize_provider(provider)
+    provider = _require_provider(provider)
     
     try:
         # Lookup connector definition by type
@@ -522,12 +529,8 @@ async def disconnect_provider(
         # =================================================================
         # 2. DEEP CLEAN: Delete all associated data before removing integration
         # =================================================================
-        # Map provider to source_type values used in documents table (legacy + current)
-        SOURCE_TYPE_LEGACY_MAP = {
-            "google_drive": ["drive"],
-            "file_upload": ["file", "upload"],
-        }
-        source_types = [provider] + SOURCE_TYPE_LEGACY_MAP.get(provider, [])
+        # Map provider to source_type values used in documents table
+        source_types = [provider]
         
         logger.info(f"🧹 [Disconnect] Deep cleaning data for {provider} (source_type={source_types})...")
         
@@ -616,7 +619,7 @@ async def list_provider_items(
 ):
     """List items from a connected provider (folders, files, etc.)."""
     try:
-        provider = normalize_provider(provider)
+        provider = _require_provider(provider)
         connector = get_connector(provider)
         items = await connector.list_items(user_id, parent_id)
         return items
@@ -653,15 +656,19 @@ async def crawl_web(
         if crawl_type == "single":
             max_pages = 1
 
-        result = queue_web_crawl(
-            user_id=user_id,
-            root_url=normalized_url,
-            crawl_type=crawl_type,
-            max_depth=max_depth,
-            respect_robots=body.respect_robots,
-            max_pages=max_pages,
-            allow_subdomains=body.allow_subdomains,
-        )
+        try:
+            result = queue_web_crawl(
+                user_id=user_id,
+                root_url=normalized_url,
+                crawl_type=crawl_type,
+                max_depth=max_depth,
+                respect_robots=body.respect_robots,
+                max_pages=max_pages,
+                allow_subdomains=body.allow_subdomains,
+            )
+        except Exception as crawl_exc:
+            logger.error("❌ [Crawl] Queue failed for %s: %s", normalized_url, crawl_exc)
+            raise HTTPException(status_code=500, detail="Failed to queue web crawl.")
 
         return {
             "status": "queued",
@@ -672,8 +679,71 @@ async def crawl_web(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [Crawl] Failed to queue web crawl: {e}")
+        logger.error(f"❌ [Crawl] Failed to queue web crawl (unexpected): {e}")
         raise HTTPException(status_code=500, detail="Failed to queue web crawl.")
+
+
+@router.delete("/integrations/web/crawl/{config_id}")
+async def delete_crawl_config(
+    config_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Delete a web crawl configuration.
+    
+    This will:
+    - Cancel any running crawl task
+    - Delete the configuration record
+    - Optionally cascade delete associated documents (via FK/trigger)
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Verify ownership
+        config_response = supabase.table("web_crawl_configs")\
+            .select("id, celery_task_id, status")\
+            .eq("id", config_id)\
+            .eq("user_id", user_id)\
+            .single()\
+            .execute()
+        
+        if not config_response.data:
+            raise HTTPException(status_code=404, detail="Crawl configuration not found")
+        
+        config = config_response.data
+        
+        # Cancel running task if exists
+        if config.get("celery_task_id") and config.get("status") in ["pending", "processing"]:
+            try:
+                from celery.result import AsyncResult
+                from core.celery_app import celery_app
+                
+                result = AsyncResult(config["celery_task_id"], app=celery_app)
+                result.revoke(terminate=True)
+                logger.info(f"🛑 [Crawl] Cancelled task {config['celery_task_id']}")
+            except Exception as e:
+                logger.warning(f"⚠️ [Crawl] Failed to cancel task: {e}")
+        
+        # Delete the configuration
+        supabase.table("web_crawl_configs")\
+            .delete()\
+            .eq("id", config_id)\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        logger.info(f"🗑️ [Crawl] Deleted crawl config {config_id}")
+        
+        return {
+            "status": "success",
+            "message": "Crawl configuration deleted",
+            "config_id": config_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete crawl config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete crawl configuration")
 
 
 @router.post("/integrations/{provider}/ingest", status_code=202)
@@ -690,7 +760,7 @@ async def ingest_provider_items(
     for progress tracking.
     """
     try:
-        provider = normalize_provider(provider)
+        provider = _require_provider(provider)
         if provider == "web":
             if len(request.item_ids) != 1:
                 raise HTTPException(
@@ -813,7 +883,7 @@ async def ingest_provider_items(
 
 async def run_background_sync(job_id: str, provider: str, user_id: str, integration_id: str):
     """
-    Background wrapper to run connector.sync() and update job status.
+    Background wrapper to run a full provider sync through unified ingestion.
     """
     supabase = get_supabase()
     
@@ -831,26 +901,43 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
         except Exception:
             logger.error(f"❌ [SyncJob] Connector factory failed for {provider}")
             raise
-        
-        # 3. Run Sync (Async)
-        # Note: Notion connector might not implement sync yet, handle gracefully
-        if not hasattr(connector, 'sync'):
-            logger.warning(f"⚠️ [SyncJob] Sync not implemented for {provider}")
-            raise NotImplementedError(f"Sync not implemented for {provider}")
-            
-        result = await connector.sync(user_id, integration_id)
-        
-        # 4. Update status to completed
-        status = result.get("status", "completed")
-        processed = result.get("files_processed", 0)
-        
+
+        # 3. Resolve root items to sync
+        root_items = await connector.list_items(user_id, parent_id=None)
+        item_ids = [item.id for item in (root_items or [])]
+
+        if not item_ids:
+            supabase.table("ingestion_jobs").update({
+                "status": "completed",
+                "processed_files": 0,
+                "message": "No items to sync",
+                "status_message": "No items to sync",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }).eq("id", job_id).execute()
+            logger.info(f"✅ [SyncJob] Completed {job_id}: no items to sync")
+            return
+
         supabase.table("ingestion_jobs").update({
-            "status": "completed" if status == "success" else "failed",
-            "processed_files": processed,
+            "total_files": len(item_ids),
+            "message": f"Queued sync for {len(item_ids)} items",
+            "status_message": f"Queued sync for {len(item_ids)} items",
             "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", job_id).execute()
-        
-        logger.info(f"✅ [SyncJob] Completed {job_id}: {processed} files")
+
+        credentials = None
+        if provider in {"google_drive", "notion"}:
+            credentials = {"integration_id": integration_id}
+
+        from worker.tasks import unified_ingest_task
+        task = unified_ingest_task.delay(
+            user_id=user_id,
+            job_id=str(job_id),
+            connector_type=provider,
+            item_ids=item_ids,
+            credentials=credentials,
+        )
+
+        logger.info(f"✅ [SyncJob] Queued unified ingest {task.id} for job {job_id}")
         
     except Exception as e:
         logger.error(f"❌ [SyncJob] Failed {job_id}: {e}")

@@ -33,7 +33,7 @@ export interface SourceMetadata {
     section?: string;       // Header path for markdown
 
     // Legacy fields (for backwards compatibility)
-    source?: string;        // 'web' | 'youtube' | 'drive' | 'notion' | 'file'
+    source?: string;        // 'web' | 'youtube' | 'google_drive' | 'notion' | 'file_upload'
     source_type?: string;   // Alternative field name
     title?: string;
     source_url?: string;
@@ -210,7 +210,7 @@ export function SourceCard({ source, className }: SourceCardProps) {
         );
     }
 
-    // Default (file, drive, etc.)
+    // Default document source
     return (
         <div className={cn(
             "flex items-center gap-3 rounded-lg border border-border bg-card p-3 relative",

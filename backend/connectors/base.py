@@ -13,40 +13,15 @@ STANDARD CONNECTOR BEHAVIOR:
    - Items should have type="folder" if they can contain children
    - Items should have type="file" if they are leaf content
 
-2. INGESTION (ingest):
-   - If an item_id is a FOLDER: Recursively fetch ALL nested files
-   - If an item_id is a FILE: Process that single file
-   - Max recursion depth: 10 levels (to prevent infinite loops)
-   - Track processed IDs to avoid circular references
-   - Return ConnectorDocument objects with extracted text content
-
-3. SELECTION (Frontend):
+2. SELECTION (Frontend):
    - Users CAN select BOTH folders and files
    - Selecting a folder = ingest everything inside it
    - This is the expected behavior for ALL connectors
-
-Example folder ingestion pattern:
-    if is_folder(item_id):
-        files = get_all_files_recursive(item_id)
-        for file in files:
-            documents.append(process_file(file))
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, AsyncIterator
+from typing import List, Optional
 from pydantic import BaseModel
-
-
-class ConnectorDocument(BaseModel):
-    """
-    Represents a processed document ready for embedding.
-    
-    Attributes:
-        page_content: The extracted text content of the document
-        metadata: Source information (title, source_url, file_id, etc.)
-    """
-    page_content: str
-    metadata: Dict[str, Any]
 
 
 class ConnectorItem(BaseModel):
@@ -78,7 +53,7 @@ class BaseConnector(ABC):
     All connectors must implement:
     - authorize(): Check if user has valid credentials
     - list_items(): Browse files/folders for the file browser UI
-    - ingest(): Extract content for embedding (supports recursive folder ingestion)
+    - list_items(): Browse files/folders for the file browser UI
     """
     
     @abstractmethod
@@ -110,29 +85,5 @@ class BaseConnector(ABC):
             
         Returns:
             List of ConnectorItem objects representing files and folders
-        """
-        pass
-
-    @abstractmethod
-    async def ingest(self, config: Dict[str, Any]) -> "AsyncIterator[ConnectorDocument]":
-        """
-        Worker-side ingestion (Async Wrapper).
-        
-        IMPORTANT BEHAVIOR:
-        - Must be implemented as an async wrapper returning an iterator (stream)
-        - use iterate_in_threadpool to stream results from blocking implementation
-        - If an item_id is a FOLDER: Recursively yield nested files (max depth: 10)
-        - If an item_id is a FILE: Yield that single file
-        - Track processed IDs to prevent infinite loops from circular references
-        
-        Args:
-            config: Dict containing:
-                - 'user_id': The user's ID for multi-tenancy
-                - 'item_ids': List of file/folder IDs to ingest
-                - 'credentials': Decrypted OAuth credentials
-                - 'provider': Provider type string
-                
-        Returns:
-            AsyncIterator yielding ConnectorDocument objects
         """
         pass

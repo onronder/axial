@@ -21,30 +21,20 @@ const mockSetTheme = vi.fn();
 const mockLogout = vi.fn();
 const mockToast = vi.fn();
 const mockApiDelete = vi.fn();
+const mockUseProfile = vi.fn();
+const mockUseTheme = vi.fn();
+const mockUseAuth = vi.fn();
 
 vi.mock('@/hooks/useProfile', () => ({
-    useProfile: vi.fn(() => ({
-        profile: {
-            first_name: 'John',
-            last_name: 'Doe',
-        },
-        isLoading: false,
-        updateProfile: mockUpdateProfile,
-    })),
+    useProfile: () => mockUseProfile(),
 }));
 
 vi.mock('@/hooks/useTheme', () => ({
-    useTheme: vi.fn(() => ({
-        theme: 'system',
-        setTheme: mockSetTheme,
-    })),
+    useTheme: () => mockUseTheme(),
 }));
 
 vi.mock('@/hooks/useAuth', () => ({
-    useAuth: vi.fn(() => ({
-        user: { email: 'john@example.com' },
-        logout: mockLogout,
-    })),
+    useAuth: () => mockUseAuth(),
 }));
 
 vi.mock('@/hooks/use-toast', () => ({
@@ -68,9 +58,37 @@ describe('GeneralSettings - Danger Zone', () => {
         vi.clearAllMocks();
         (api.delete as Mock).mockResolvedValue({});
         mockLogout.mockResolvedValue(undefined);
+        mockUseProfile.mockReturnValue({
+            profile: {
+                first_name: 'John',
+                last_name: 'Doe',
+            },
+            isLoading: false,
+            updateProfile: mockUpdateProfile,
+        });
+        mockUseTheme.mockReturnValue({
+            theme: 'system',
+            setTheme: mockSetTheme,
+        });
+        mockUseAuth.mockReturnValue({
+            user: { email: 'john@example.com' },
+            logout: mockLogout,
+        });
     });
 
     describe('Rendering', () => {
+        it('should show loading state when profile is loading', () => {
+            mockUseProfile.mockReturnValue({
+                profile: null,
+                isLoading: true,
+                updateProfile: mockUpdateProfile,
+            });
+
+            render(<GeneralSettings />);
+
+            expect(screen.getByText('Loading your settings...')).toBeInTheDocument();
+        });
+
         it('should render Danger Zone section', () => {
             render(<GeneralSettings />);
             expect(screen.getByText('Danger Zone')).toBeInTheDocument();
@@ -93,6 +111,71 @@ describe('GeneralSettings - Danger Zone', () => {
             render(<GeneralSettings />);
             const button = screen.getByRole('button', { name: /Delete Account/i });
             expect(button).toBeInTheDocument();
+        });
+    });
+
+    describe('Profile Settings', () => {
+        it('should allow saving profile changes', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.clear(screen.getByLabelText('First Name'));
+            await userEvent.type(screen.getByLabelText('First Name'), 'Jane');
+            await userEvent.clear(screen.getByLabelText('Last Name'));
+            await userEvent.type(screen.getByLabelText('Last Name'), 'Smith');
+
+            await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+            expect(mockUpdateProfile).toHaveBeenCalledWith({
+                first_name: 'Jane',
+                last_name: 'Smith',
+            });
+        });
+
+        it('should show saving state while profile update is pending', async () => {
+            mockUpdateProfile.mockImplementation(() => new Promise(() => { }));
+
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+            expect(screen.getByText('Saving...')).toBeInTheDocument();
+        });
+
+        it('should handle empty profile names', () => {
+            mockUseProfile.mockReturnValue({
+                profile: {
+                    first_name: '',
+                    last_name: '',
+                },
+                isLoading: false,
+                updateProfile: mockUpdateProfile,
+            });
+
+            render(<GeneralSettings />);
+
+            expect(screen.getByLabelText('First Name')).toHaveValue('');
+            expect(screen.getByLabelText('Last Name')).toHaveValue('');
+        });
+
+        it('should render empty email when user is missing', () => {
+            mockUseAuth.mockReturnValue({
+                user: null,
+                logout: mockLogout,
+            });
+
+            render(<GeneralSettings />);
+
+            expect(screen.getByLabelText('Email')).toHaveValue('');
+        });
+    });
+
+    describe('Theme Selection', () => {
+        it('should update theme when selecting Dark mode', async () => {
+            const user = userEvent.setup();
+            render(<GeneralSettings />);
+
+            await user.click(screen.getByText('Dark'));
+            expect(mockSetTheme).toHaveBeenCalledWith('dark');
         });
     });
 
@@ -263,6 +346,26 @@ describe('GeneralSettings - Danger Zone', () => {
                 expect(mockToast).toHaveBeenCalledWith(
                     expect.objectContaining({
                         title: 'Deletion failed',
+                        variant: 'destructive',
+                    })
+                );
+            });
+        });
+
+        it('should show fallback error message on non-Error deletion failure', async () => {
+            (api.delete as Mock).mockRejectedValue('bad');
+
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Delete Account/i }));
+            await userEvent.type(screen.getByPlaceholderText(/Type DELETE here/i), 'DELETE');
+            await userEvent.click(screen.getByRole('button', { name: /Permanently Delete/i }));
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Deletion failed',
+                        description: 'Failed to delete account. Please try again.',
                         variant: 'destructive',
                     })
                 );

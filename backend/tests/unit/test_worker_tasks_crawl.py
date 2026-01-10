@@ -251,7 +251,7 @@ class TestProcessPageTask:
         connector = MagicMock()
         connector.is_safe_url.return_value = True
         connector.get_crawl_delay.return_value = None
-        connector.ingest_sync.return_value = []
+        connector.fetch_documents_sync.return_value = []
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("connectors.web.WebConnector", return_value=connector), \
@@ -274,11 +274,11 @@ class TestProcessPageTask:
         supabase = MagicMock()
         supabase.rpc.return_value.execute.return_value = MagicMock(data=[])
 
-        doc = SimpleNamespace(page_content="hello world", metadata={"title": "Home", "source_url": "https://example.com"})
+        doc = SimpleNamespace(content="hello world", metadata={"title": "Home", "source_url": "https://example.com"})
         connector = MagicMock()
         connector.is_safe_url.return_value = True
         connector.get_crawl_delay.return_value = None
-        connector.ingest_sync.return_value = [doc]
+        connector.fetch_documents_sync.return_value = [doc]
 
         chunk = SimpleNamespace(content="chunk", token_count=2, chunk_index=0, metadata={})
         parse_result = SimpleNamespace(chunks=[chunk], total_tokens=2)
@@ -300,6 +300,39 @@ class TestProcessPageTask:
 
         assert result["status"] == "success"
         record_outcome.assert_called_once()
+
+    @pytest.mark.unit
+    def test_process_page_task_decodes_bytes_content(self):
+        task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
+        supabase = MagicMock()
+        supabase.rpc.return_value.execute.return_value = MagicMock(data=[])
+
+        doc = SimpleNamespace(content=b"hello world", metadata={"title": "Home", "source_url": "https://example.com"})
+        connector = MagicMock()
+        connector.is_safe_url.return_value = True
+        connector.get_crawl_delay.return_value = None
+        connector.fetch_documents_sync.return_value = [doc]
+
+        chunk = SimpleNamespace(content="chunk", token_count=2, chunk_index=0, metadata={})
+        parse_result = SimpleNamespace(chunks=[chunk], total_tokens=2)
+
+        with patch("worker.tasks.get_supabase", return_value=supabase), \
+             patch("connectors.web.WebConnector", return_value=connector), \
+             patch("worker.tasks.check_rate_limit", return_value=True), \
+             patch("services.parsers.DocumentProcessorFactory.process_web_content", return_value=parse_result) as process_web, \
+             patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
+             patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
+             patch("worker.tasks._record_crawl_outcome_and_maybe_finalize"):
+            result = tasks.process_page_task._orig_run.__func__(
+                task,
+                "user-1",
+                "https://example.com",
+                crawl_id="crawl-1",
+                respect_robots=True,
+            )
+
+        assert result["status"] == "success"
+        assert process_web.call_args[0][0] == "hello world"
 
 
 class TestFinalizeCrawlTask:

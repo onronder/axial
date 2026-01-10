@@ -14,7 +14,11 @@ _TEST_ENV_VARS = {
     "ENVIRONMENT": "test",
     "SENTRY_DSN": "",
     "SUPABASE_URL": "http://localhost:54321",
-    "SUPABASE_SECRET_KEY": "test-secret",
+    "SUPABASE_SECRET_KEY": (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJpc3MiOiJ0ZXN0Iiwicm9sZSI6ImFub24ifQ."
+        "dGVzdC1zaWduYXR1cmU"
+    ),
     "SUPABASE_JWT_SECRET": "test-jwt-secret-key-that-is-long-enough-for-hs256",
     "OPENAI_API_KEY": "test-openai-key",
     "ALLOWED_ORIGINS": "http://localhost:3000",
@@ -29,13 +33,10 @@ for key, value in _TEST_ENV_VARS.items():
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 from fastapi.testclient import TestClient
 import asyncio
 from uuid import uuid4
-
-from services.ingestion_pipeline import IngestionPipeline
-from connectors.enhanced import SourceDocument, SourceType
 
 
 # =============================================================================
@@ -160,105 +161,6 @@ def mock_environment(monkeypatch):
     """Set up test environment variables."""
     for key, value in _TEST_ENV_VARS.items():
         monkeypatch.setenv(key, value)
-
-
-# =============================================================================
-# Ingestion Pipeline Fixtures
-# =============================================================================
-
-@pytest.fixture
-def ingestion_pipeline():
-    pipeline = IngestionPipeline(
-        user_id=str(uuid4()),
-        job_id=str(uuid4()),
-        supabase_client=Mock()
-    )
-    pipeline._update_job_status = Mock()
-    pipeline._update_job_total = Mock()
-    pipeline._create_notification = Mock()
-    pipeline._create_file_status = Mock(return_value="file-status-id")
-    pipeline._update_file_status = Mock()
-    pipeline._update_chunk_progress = Mock()
-    pipeline._store_document = AsyncMock(return_value="doc-id")
-    return pipeline
-
-
-@pytest.fixture
-def sample_source_document():
-    return SourceDocument(
-        content=b"sample content",
-        metadata={},
-        source_type=SourceType.FILE_UPLOAD,
-        source_id="file-1",
-        filename="sample.pdf",
-        mime_type="application/pdf",
-        size_bytes=100
-    )
-
-
-@pytest.fixture
-def sample_text_document():
-    return SourceDocument(
-        content=b"sample text",
-        metadata={},
-        source_type=SourceType.FILE_UPLOAD,
-        source_id="file-2",
-        filename="sample.txt",
-        mime_type="text/plain",
-        size_bytes=50
-    )
-
-
-@pytest.fixture
-def benchmark_documents():
-    docs = []
-    for i in range(10):
-        docs.append(SourceDocument(
-            content=f"content-{i}".encode(),
-            metadata={"index": i},
-            source_type=SourceType.FILE_UPLOAD,
-            source_id=f"bench-{i}",
-            filename=f"bench_{i}.txt",
-            mime_type="text/plain",
-            size_bytes=50
-        ))
-    return docs
-
-
-@pytest.fixture
-def mock_document_processor():
-    mock_result = Mock()
-    mock_result.file_type = "txt"
-    mock_result.metadata = {}
-    mock_result.chunks = [
-        Mock(content="chunk-1", token_count=5, metadata={}),
-        Mock(content="chunk-2", token_count=5, metadata={}),
-        Mock(content="chunk-3", token_count=5, metadata={}),
-    ]
-    with patch("services.ingestion_pipeline.DocumentProcessorFactory") as mock_factory:
-        mock_factory.process.return_value = mock_result
-        yield mock_factory
-
-
-@pytest.fixture
-def mock_embeddings():
-    async def _fake_embeddings(texts, token_counts=None):
-        return [[0.1] * 1536 for _ in texts]
-
-    with patch("services.ingestion_pipeline.get_embeddings", new=AsyncMock(side_effect=_fake_embeddings)):
-        yield
-
-
-@pytest.fixture
-def mock_quota_check():
-    with patch.object(IngestionPipeline, "_check_quota", new=AsyncMock(return_value={"allowed": True, "reason": ""})):
-        yield
-
-
-@pytest.fixture
-def mock_quota_exceeded():
-    with patch.object(IngestionPipeline, "_check_quota", new=AsyncMock(return_value={"allowed": False, "reason": "quota"})):
-        yield
 
 
 @pytest.fixture

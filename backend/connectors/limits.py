@@ -26,13 +26,13 @@ def _normalize_connector_type(connector_type: str) -> str:
 
 def _get_limit(connector_type: str) -> int:
     normalized = _normalize_connector_type(connector_type)
-    if normalized in {"google_drive", "drive"}:
+    if normalized == "google_drive":
         return settings.CONNECTOR_CONCURRENCY_GOOGLE_DRIVE
     if normalized == "notion":
         return settings.CONNECTOR_CONCURRENCY_NOTION
     if normalized == "web":
         return settings.CONNECTOR_CONCURRENCY_WEB
-    if normalized in {"file_upload", "file"}:
+    if normalized == "file_upload":
         return 0
     return settings.CONNECTOR_CONCURRENCY_DEFAULT
 

@@ -221,9 +221,23 @@ class TestDocumentListEndpoint:
         failed_table.is_.return_value = failed_table
         failed_table.order.return_value = failed_table
         failed_table.limit.return_value = failed_table
-        failed_table.execute.return_value = MagicMock(data=[{"id": "fail-1", "filename": "bad.txt", "created_at": "now"}])
+        failed_table.execute.return_value = MagicMock(
+            data=[{"id": "fail-1", "filename": "bad.txt", "created_at": "now", "job_id": "job-1"}]
+        )
 
-        mock_supabase.table.side_effect = lambda name: docs_table if name == "documents" else failed_table
+        jobs_table = MagicMock()
+        jobs_table.select.return_value = jobs_table
+        jobs_table.in_.return_value = jobs_table
+        jobs_table.execute.return_value = MagicMock(data=[{"id": "job-1", "provider": "google_drive"}])
+
+        def table_selector(name):
+            if name == "documents":
+                return docs_table
+            if name == "ingestion_jobs":
+                return jobs_table
+            return failed_table
+
+        mock_supabase.table.side_effect = table_selector
 
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase):
             from api.v1.documents import list_documents

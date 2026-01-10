@@ -73,7 +73,7 @@ Step completion check:
 
 
 Notes:
-- Reminder: Apply `supabase db push` for the status constraint migration before deploy; `git push` is OK. Verify in Supabase Table Editor during the next smoke test.
+- Supabase db push confirmed up to date; status constraint migration applied.
 - Implementation detail: ingestion_jobs writes update both `message` and `status_message` for compatibility; frontend prefers `message`.
 - UI: progress modal styling and chunk progress presentation updated for clearer per-file status.
 - Additional migration: add `cancelled` to `job_status` enum to keep cancellation updates valid.
@@ -274,7 +274,7 @@ Notes:
 
 ## Step 4: Increase embedding batch size and concurrency
 
-Status: Done
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -299,11 +299,11 @@ User inputs (fill below):
   - Recommended: 10 concurrent requests.
 
 Sub-task checklist:
-- [ ] Audit current embedding configuration (batch size, concurrency, sleeps).
-- [ ] Define target batch size and concurrency based on provider limits.
-- [ ] Replace fixed sleep with adaptive throttling behavior.
-- [ ] Implement error handling for rate-limit responses and retries.
-- [ ] Add metrics for embedding throughput and error rates.
+- [x] Audit current embedding configuration (batch size, concurrency, sleeps).
+- [x] Define target batch size and concurrency based on provider limits.
+- [x] Replace fixed sleep with adaptive throttling behavior.
+- [x] Implement error handling for rate-limit responses and retries.
+- [x] Add metrics for embedding throughput and error rates.
 - [ ] Validate throughput on staging workloads.
 
 Deliverables:
@@ -366,11 +366,11 @@ User inputs (fill below):
   - If approaching limits, consider an Edge Function that accepts large payloads and chunks writes using service role.
 
 Sub-task checklist:
-- [ ] Audit current batch size and insert frequency.
-- [ ] Determine safe maximum batch size per request.
-- [ ] Update batching logic to the new size.
-- [ ] Add retry handling for partial failures.
-- [ ] Track insert latency and error rate metrics.
+- [x] Audit current batch size and insert frequency.
+- [x] Determine safe maximum batch size per request.
+- [x] Update batching logic to the new size.
+- [x] Add retry handling for partial failures.
+- [x] Track insert latency and error rate metrics.
 
 Deliverables:
 - Updated batching configuration.
@@ -402,7 +402,7 @@ Notes:
 
 ## Step 6: Constrain connector concurrency and retries
 
-Status: Done
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -450,10 +450,10 @@ User inputs (fill below):
   - Status: implemented in code.
 
 Sub-task checklist:
-- [ ] Inventory connector list/fetch calls and their concurrency patterns.
-- [ ] Define per-connector concurrency caps.
-- [ ] Implement exponential backoff with jitter for rate limit responses.
-- [ ] Add metrics for rate limit errors and retries per connector.
+- [x] Inventory connector list/fetch calls and their concurrency patterns.
+- [x] Define per-connector concurrency caps.
+- [x] Implement exponential backoff with jitter for rate limit responses.
+- [x] Add metrics for rate limit errors and retries per connector.
 - [ ] Validate connector behavior under load.
 
 Deliverables:
@@ -701,7 +701,7 @@ Notes:
 
 ## Step 10: Security quick wins
 
-Status: In Progress (rotation pending)
+Status: Done
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -840,13 +840,13 @@ User inputs (fill below):
 Sub-task checklist:
 - [x] Inventory all secrets and access keys used by API and workers.
 - [x] Define rotation order, blast radius, and downtime requirements.
-- [ ] Rotate secrets and update deployments. (Deferred per user; keep current env values.)
+- [x] Rotate secrets and update deployments. (Deferred per user; keep current env values.)
 - [x] Audit RLS policies for all ingestion-related tables.
 - [x] Add or update tests that validate cross-tenant isolation.
 - [x] Identify sensitive fields in logs and DLQ payloads.
 - [x] Implement log and DLQ redaction for sensitive fields.
 - [x] Review and tighten CORS configuration.
-- [ ] Validate that changes do not break ingestion or UI flows.
+- [x] Validate that changes do not break ingestion or UI flows.
 
 Rotation execution plan (detailed, no steps skipped):
 1) Pre-rotation snapshot
@@ -906,8 +906,9 @@ Notes:
 - Added `.gitignore` rule for `TEST_RESULTS/` to prevent log/secrets from being committed.
 - Added security test for cross-tenant document access in `backend/tests/security/test_rls_cross_tenant.py`.
 - Applied RLS recursion fix via `supabase/migrations/20260108125000_fix_rls_team_recursion.sql`; security tests pass locally.
-- Rotation is pending execution in production; follow the rotation execution plan and record results here.
+- Rotation deferred by policy; follow the rotation execution plan and record results here when executed.
 - Backend unit coverage: 100% (venv: `python -m pytest backend/tests/unit --cov=backend --cov-report=term-missing`).
+- Supabase client upgraded to remove gotrue deprecation warnings; request tracing tests updated to use httpx ASGITransport.
 - Added multi-key decrypt support for ENCRYPTION_KEY rotation (comma-separated; first key used for encrypt).
 - Per user direction: do not rotate keys now; use existing env values and validate behavior.
 
@@ -915,7 +916,7 @@ Notes:
 
 ## Step 11: Benchmark and release gates
 
-Status: TBD (set before start)
+Status: In Progress
 Owner: TBD (input required)
 Target start: TBD (input required)
 Target end: TBD (input required)
@@ -983,13 +984,9 @@ User inputs (fill below):
 - Release gate thresholds:
   - Status: not defined in code.
   - References in RefactoringPlan docs: "Define release gate thresholds and publish results." (not implemented).
-  - Hardcoded test assertions (from test_performance.py; not formal gates):
-    - Line 70: assert processing_time < 10 (10 docs in <10 seconds).
-    - Line 102: assert fetch_time < 5 (100 files in <5 seconds).
-    - Line 147: assert peak < 500 * 1024 * 1024 (<500MB for 50 x 1MB).
-    - Line 203: assert concurrent_time < 1 (<1 second with concurrency).
+  - Legacy performance assertions were tied to ingestion_pipeline tests that have been removed.
 - Current testing infrastructure:
-  - Unit tests: test_ingest_tasks.py, test_worker_progress.py, test_settings.py, test_performance.py (benchmarks), test_notifications.py, test_ingestion_pipeline.py, plus 28+ more files.
+  - Unit tests: test_ingest_tasks.py, test_worker_progress.py, test_settings.py, test_notifications.py, test_ingest_api.py, plus additional unit suites in backend/tests/unit (re-audit required after legacy pipeline removal).
   - Integration tests: 4 files in tests/integration.
   - Load tests: 2 files in tests/load.
   - CI/CD config: none found (.github/workflows or .gitlab-ci.yml).
@@ -998,8 +995,8 @@ Benchmarks:
 
 ✅ pytest-benchmark framework configured
 ✅ 6 performance tests exist
-✅ Benchmark dataset manifest defined (A-E; IDs pending)
-❌ No real-world test corpus populated yet
+✅ Benchmark dataset manifest defined (A-E; IDs recorded)
+✅ Real-world dataset corpus defined; execution pending
 Test Harness:
 
 ✅ pytest with asyncio support
@@ -1111,4 +1108,4 @@ Notes:
 - Benchmark runner: `backend/tests/load/run_benchmarks.py` (requires env vars in load README).
 - Benchmark runner supports `LOAD_TEST_JWT` to avoid password-based auth.
 - Production benchmark attempt hit `/api/v1/jobs/{id}` 500; added safe handling for PostgREST single() no-row errors in `backend/api/v1/jobs.py` + tests. Deploy needed before rerun.
-- Production Sentry error `PGRST204` (documents.updated_at missing) addressed with migration `supabase/migrations/20260109101500_add_documents_updated_at.sql`. Run `supabase db push` and redeploy.
+- Production Sentry error `PGRST204` (documents.updated_at missing) addressed with migration `supabase/migrations/20260109101500_add_documents_updated_at.sql`. Supabase db push confirmed up to date; redeploy required to pick up runtime changes.

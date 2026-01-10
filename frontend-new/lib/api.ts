@@ -265,14 +265,14 @@ export interface IngestReferenceResponse {
 
 /**
  * Get a presigned URL for direct-to-storage file upload
- * POST /api/v1/ingest/upload-url
+ * POST /api/v1/uploads/upload-url
  */
 export const getUploadUrl = async (
     filename: string,
     fileType: string,
     fileSize: number
 ): Promise<UploadUrlResponse> => {
-    const response = await api.post<UploadUrlResponse>('/ingest/upload-url', {
+    const response = await api.post<UploadUrlResponse>('/uploads/upload-url', {
         filename,
         file_type: fileType,
         file_size: fileSize,
@@ -282,7 +282,7 @@ export const getUploadUrl = async (
 
 /**
  * Trigger ingestion for an already-uploaded file
- * POST /api/v1/ingest/file/reference
+ * POST /api/v1/uploads/file/reference
  */
 export const ingestFileReference = async (
     storagePath: string,
@@ -290,7 +290,7 @@ export const ingestFileReference = async (
     fileSize: number,
     metadata: Record<string, unknown> = {}
 ): Promise<IngestReferenceResponse> => {
-    const response = await api.post<IngestReferenceResponse>('/ingest/file/reference', {
+    const response = await api.post<IngestReferenceResponse>('/uploads/file/reference', {
         storage_path: storagePath,
         filename,
         file_size: fileSize,

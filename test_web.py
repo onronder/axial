@@ -1,6 +1,5 @@
 import jwt
 import requests
-import json
 
 BASE_URL = "http://localhost:8000"
 
@@ -12,19 +11,18 @@ def test_web_ingest(user_id, url):
     token = generate_token(user_id)
     headers = {"Authorization": f"Bearer {token}"}
     
-    # Send URL as Form data
-    data = {
-        'url': url,
-        'metadata': json.dumps({"client_id": "web_test"})
-    }
-    
     print(f"Crawling URL {url} for user {user_id}...")
     try:
-        # Note: No 'files' argument here
-        response = requests.post(f"{BASE_URL}/api/v1/ingest", headers=headers, data=data)
+        payload = {"item_ids": [url]}
+        response = requests.post(
+            f"{BASE_URL}/api/v1/integrations/web/ingest",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
         print(f"Status: {response.status_code}")
         print(f"Response: {response.text}")
-        return response.status_code == 200
+        return response.status_code in (200, 202)
     except Exception as e:
         print(f"Web Ingest failed: {e}")
         return False

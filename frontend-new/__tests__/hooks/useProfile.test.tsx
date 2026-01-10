@@ -79,6 +79,33 @@ describe('useProfile', () => {
             expect(result.current.error).toBe('Network error');
             expect(result.current.profile).toBeNull();
         });
+
+        it('should use fallback error message for unknown errors', async () => {
+            mockApiGet.mockRejectedValue({});
+
+            const { result } = renderHook(() => useProfile(), { wrapper });
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            expect(result.current.error).toBe('Failed to fetch profile');
+        });
+
+        it('should use API detail message when provided', async () => {
+            mockApiGet.mockRejectedValue({
+                response: { status: 403, data: { detail: 'Access denied' } },
+                message: 'Forbidden',
+            });
+
+            const { result } = renderHook(() => useProfile(), { wrapper });
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            expect(result.current.error).toBe('Access denied');
+        });
     });
 
     describe('updateProfile', () => {

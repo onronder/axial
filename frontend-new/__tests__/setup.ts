@@ -110,3 +110,23 @@ Object.defineProperty(window, 'scrollTo', {
     writable: true,
     value: vi.fn(),
 });
+
+Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
+    writable: true,
+    value: vi.fn(),
+});
+
+Object.defineProperty(HTMLElement.prototype, 'releasePointerCapture', {
+    writable: true,
+    value: vi.fn(),
+});
+
+Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', {
+    writable: true,
+    value: vi.fn().mockReturnValue(false),
+});
+
+Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    writable: true,
+    value: vi.fn(),
+});

@@ -19,7 +19,8 @@ import socket
 from functools import lru_cache
 from typing import List, Dict, Any, Optional, Set, Iterator, AsyncIterator
 from urllib.parse import urlparse, urljoin, urlunparse, parse_qsl, urlencode
-from .base import BaseConnector, ConnectorDocument, ConnectorItem
+from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
+from .base import ConnectorItem
 import trafilatura
 import requests
 
@@ -33,13 +34,17 @@ YOUTUBE_PATTERNS = [
 ]
 
 
-class WebConnector(BaseConnector):
+class WebConnector(EnhancedConnector):
     """
     Advanced Web Connector with sitemap, recursion, and YouTube support.
     
     Implements the discovery and extraction capabilities.
     The recursive crawling loop is handled by the Celery worker.
     """
+
+    @property
+    def connector_type(self) -> SourceType:
+        return SourceType.WEB
     
     # User-Agent for polite crawling
     USER_AGENT = "AxioBot/1.0 (+https://axiohub.io/bot)"
@@ -362,53 +367,52 @@ class WebConnector(BaseConnector):
     # =========================================================================
     # INGESTION
     # =========================================================================
-    
 
-    async def ingest(self, config: Dict[str, Any]) -> "AsyncIterator[ConnectorDocument]":
-        """Async wrapper for ingestion (Streaming)."""
-        from starlette.concurrency import iterate_in_threadpool
-        return iterate_in_threadpool(self._ingest_implementation(config))
+    async def fetch_documents(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> AsyncIterator[SourceDocument]:
+        """Async wrapper for sync fetch."""
+        for doc in self.fetch_documents_sync(item_ids, credentials, **kwargs):
+            yield doc
 
-    def ingest_sync(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
-        """Synchronous ingestion generator (used by worker tasks)."""
-        return self._ingest_implementation(config)
+    def fetch_documents_sync(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Iterator[SourceDocument]:
+        urls = item_ids or []
+        respect_robots = kwargs.get("respect_robots", True)
 
-    def _ingest_implementation(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
-        """
-        Ingests web pages or YouTube videos (Generator).
-        
-        Config keys:
-            - 'item_ids': List of URLs to ingest
-            - 'respect_robots': bool (default True)
-        
-        Yields:
-            ConnectorDocument objects
-        """
-        urls = config.get("item_ids", [])
-        respect_robots = config.get("respect_robots", True)
-        
         for url in urls:
             try:
                 if not self.is_safe_url(url):
                     logger.warning(f"⚠️ [Web] Unsafe URL blocked: {url}")
                     continue
 
-                # Check robots.txt if enabled
                 if respect_robots and not self.check_robots_txt(url, self.USER_AGENT):
                     logger.info(f"🚫 [Web] Blocked by robots.txt: {url}")
                     continue
-                
-                # Handle YouTube URLs
+
                 if self.is_youtube_url(url):
                     transcript = self.fetch_youtube_transcript(url)
                     if transcript:
-                        yield ConnectorDocument(
-                            page_content=transcript,
-                            metadata=self.get_youtube_metadata(url)
+                        metadata = self.get_youtube_metadata(url)
+                        video_id = metadata.get("video_id", "youtube")
+                        yield SourceDocument(
+                            content=transcript,
+                            metadata=metadata,
+                            source_type=SourceType.WEB,
+                            source_id=url,
+                            filename=f"{video_id}.txt",
+                            mime_type="text/plain",
+                            size_bytes=len(transcript.encode("utf-8")),
                         )
                     continue
-                
-                # Standard web page
+
                 html = self.fetch_html(url)
                 if html:
                     text = trafilatura.extract(
@@ -416,32 +420,37 @@ class WebConnector(BaseConnector):
                         include_comments=False,
                         include_tables=True,
                         include_links=False,
-                        output_format="txt"
+                        output_format="txt",
                     )
                     metadata = trafilatura.extract_metadata(html)
-                    
+
                     if text and text.strip():
                         title = metadata.title if metadata and metadata.title else url
-                        yield ConnectorDocument(
-                            page_content=text,
+                        yield SourceDocument(
+                            content=text,
                             metadata={
                                 "source": "web",
                                 "title": title,
                                 "source_url": url,
                                 "author": metadata.author if metadata else None,
                                 "date": str(metadata.date) if metadata and metadata.date else None,
-                            }
+                            },
+                            source_type=SourceType.WEB,
+                            source_id=url,
+                            filename=f"{title}.txt",
+                            mime_type="text/plain",
+                            size_bytes=len(text.encode("utf-8")),
                         )
                         logger.info(f"✅ [Web] Scraped: {url}")
                     else:
                         logger.warning(f"⚠️ [Web] No text extracted from: {url}")
                 else:
                     logger.warning(f"⚠️ [Web] Failed to download: {url}")
-                    
+
             except Exception as e:
                 logger.error(f"❌ [Web] Failed to scrape {url}: {e}")
-        
-        logger.info(f"📥 [WebConnector] Ingestion stream ended")
+
+        logger.info("📥 [WebConnector] Fetch stream ended")
     
     def fetch_html(self, url: str, max_bytes: int = None) -> Optional[str]:
         """

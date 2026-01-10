@@ -117,59 +117,6 @@ class TestUnifiedIngestTask:
         mock_supabase.table.assert_called_with("notifications")
 
 
-class TestIngestionPipeline:
-    """Integration tests for the ingestion pipeline."""
-
-    @pytest.fixture
-    def mock_embeddings(self):
-        """Mock the embeddings service."""
-        with patch("services.embeddings.generate_embeddings_batch_sync") as mock:
-            mock.return_value = [[0.1] * 1536]  # Mock embedding vector
-            yield mock
-
-    @pytest.fixture  
-    def mock_parser(self):
-        """Mock document parser."""
-        with patch("services.parsers.DocumentProcessorFactory.process") as mock:
-            mock.return_value = MagicMock(
-                chunks=[MagicMock(content="test chunk", metadata={})],
-                total_tokens=100,
-                file_type="text",
-                metadata={},
-            )
-            yield mock
-
-    def test_pipeline_processes_document(self, mock_embeddings, mock_parser):
-        """Verify complete document processing flow."""
-        # This test verifies the pipeline can:
-        # 1. Parse a document into chunks
-        # 2. Generate embeddings for chunks
-        # 3. Store in database
-        
-        from services.parsers import DocumentProcessorFactory
-        
-        result = DocumentProcessorFactory.process(content=b"PDF content", filename="test.pdf")
-        
-        assert result is not None
-        assert len(result.chunks) > 0
-
-    def test_quota_validation(self):
-        """Verify quota is checked before processing."""
-        from services.usage import check_can_upload
-        
-        with patch("services.usage.get_supabase") as mock_db:
-            # Mock user over limit
-            mock_db.return_value.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-                {"files_used": 100}
-            ]
-            mock_db.return_value.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
-                "plan": "free"
-            }
-            
-            # Quota check should handle limit
-            # Implementation would verify quota before processing
-
-
 class TestBatchProcessing:
     """Tests for batch document processing."""
 
@@ -187,16 +134,6 @@ class TestBatchProcessing:
         # Should handle large batch without timeout
         # Implementation verifies batching logic
         assert len(chunks) == 200
-
-    def test_concurrent_processing_limit(self):
-        """Verify concurrent document processing is limited."""
-        # The pipeline uses semaphore to limit concurrency
-        # This prevents overwhelming external APIs
-        
-        from services.ingestion_pipeline import IngestionPipeline
-        
-        # Verify MAX_CONCURRENT_DOCUMENTS constant exists
-        # Implementation would verify semaphore behavior
 
 
 class TestErrorHandling:

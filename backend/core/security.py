@@ -72,10 +72,6 @@ def decrypt_token(token: str) -> str:
     """
     Decrypt a token using Fernet symmetric encryption.
     
-    CRITICAL: Has fallback for legacy plain-text tokens.
-    If decryption fails, returns the original token as-is.
-    This ensures backward compatibility with existing unencrypted data.
-    
     Args:
         token: Encrypted or plain text token
         
@@ -99,13 +95,10 @@ def decrypt_token(token: str) -> str:
                 return decrypted
             except InvalidToken:
                 continue
-        # Token is not encrypted (legacy plain-text data)
-        logger.debug("[Security] Token appears to be plain text (legacy), using as-is")
-        return token
+        raise ValueError("Token is not encrypted or uses an unknown key")
     except Exception as e:
-        # Any other error, return original to avoid breaking existing users
-        logger.warning(f"[Security] Decryption failed, using original token: {e}")
-        return token
+        logger.warning(f"[Security] Decryption failed: {e}")
+        raise
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):

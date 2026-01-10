@@ -1,15 +1,15 @@
 """
 Enhanced Connector Interface for Unified Ingestion Pipeline.
 
-This extends the existing BaseConnector with a new standardized interface
-for the unified ingestion pipeline while maintaining backward compatibility.
+Standardized interface for connectors to deliver raw source content
+for unified ingestion (parse → chunk → embed → store).
 """
 
 from typing import AsyncIterator, Dict, Any, Optional, Iterator
-import inspect
 from dataclasses import dataclass
 from enum import Enum
-from connectors.base import BaseConnector as LegacyBaseConnector, ConnectorDocument
+from abc import abstractmethod
+from connectors.base import BaseConnector
 
 
 class SourceType(str, Enum):
@@ -54,15 +54,6 @@ class SourceDocument:
     parent_id: Optional[str] = None
     """Optional parent document ID (for hierarchical sources)"""
     
-    def to_connector_document(self) -> ConnectorDocument:
-        """Convert to legacy ConnectorDocument format."""
-        content_str = self.content if isinstance(self.content, str) else self.content.decode('utf-8', errors='ignore')
-        return ConnectorDocument(
-            page_content=content_str,
-            metadata=self.metadata
-        )
-
-
 class ConnectorError(Exception):
     """Base exception for connector errors."""
     pass
@@ -88,18 +79,12 @@ class FileTooLargeError(ConnectorError):
     pass
 
 
-class EnhancedConnector(LegacyBaseConnector):
+class EnhancedConnector(BaseConnector):
     """
     Enhanced connector interface for the unified ingestion pipeline.
-    
-    New connectors should implement fetch_documents() instead of ingest().
-    The pipeline will handle all processing (parsing, chunking, embedding, storage).
-    
-    Backward Compatibility:
-    - Still supports legacy ingest() method
-    - Can be used with existing connectors
     """
     
+    @abstractmethod
     async def fetch_documents(
         self, 
         item_ids: list[str], 
@@ -126,29 +111,9 @@ class EnhancedConnector(LegacyBaseConnector):
             ItemNotFoundError: Item doesn't exist
             ConnectorError: Other fetch failures
         """
-        # Default implementation: convert from legacy ingest()
-        config = {
-            "user_id": kwargs.get("user_id"),
-            "item_ids": item_ids,
-            "credentials": credentials,
-            "provider": self.connector_type.value if hasattr(self, 'connector_type') else "unknown"
-        }
-        
-        stream = self.ingest(config)
-        if inspect.isawaitable(stream):
-            stream = await stream
-        async for doc in stream:
-            # Convert ConnectorDocument to SourceDocument
-            yield SourceDocument(
-                content=doc.page_content,
-                metadata=doc.metadata,
-                source_type=SourceType(config["provider"]),
-                source_id=doc.metadata.get("source_id", "unknown"),
-                filename=doc.metadata.get("title", "untitled"),
-                mime_type=doc.metadata.get("mime_type", "text/plain"),
-                size_bytes=len(doc.page_content.encode('utf-8'))
-            )
+        raise NotImplementedError("fetch_documents must be implemented by connector subclasses")
 
+    @abstractmethod
     def fetch_documents_sync(
         self,
         item_ids: list[str],
@@ -158,26 +123,7 @@ class EnhancedConnector(LegacyBaseConnector):
         """
         Synchronous fetch for worker pipelines.
         """
-        ingest_sync = getattr(self, "ingest_sync", None)
-        if not ingest_sync:
-            raise NotImplementedError("fetch_documents_sync not implemented for this connector")
-
-        config = {
-            "user_id": kwargs.get("user_id"),
-            "item_ids": item_ids,
-            "credentials": credentials,
-            "provider": self.connector_type.value if hasattr(self, 'connector_type') else "unknown",
-        }
-        for doc in ingest_sync(config):
-            yield SourceDocument(
-                content=doc.page_content,
-                metadata=doc.metadata,
-                source_type=SourceType(config["provider"]),
-                source_id=doc.metadata.get("source_id", "unknown"),
-                filename=doc.metadata.get("title", "untitled"),
-                mime_type=doc.metadata.get("mime_type", "text/plain"),
-                size_bytes=len(doc.page_content.encode("utf-8")),
-            )
+        raise NotImplementedError("fetch_documents_sync must be implemented by connector subclasses")
     
     @property
     def connector_type(self) -> SourceType:

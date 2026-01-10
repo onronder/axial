@@ -7,36 +7,33 @@ File parsing is delegated to the centralized DocumentParser service.
 """
 
 import logging
-import base64
 from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
-from datetime import datetime, timezone
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from starlette.concurrency import run_in_threadpool
-from .base import BaseConnector, ConnectorDocument, ConnectorItem
+from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
+from .base import ConnectorItem
 from core.db import get_supabase
 from core.config import settings
-from core.db_utils import delete_rows_with_retry, insert_rows_with_retry
-from services.parsers import DocumentParser
-from core.security import decrypt_token
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 from core.resilience import with_google_retry
-from core.hashing import compute_content_hash
 
 logger = logging.getLogger(__name__)
 
 
-class DriveConnector(BaseConnector):
+class DriveConnector(EnhancedConnector):
     """
-    Google Drive connector with full sync capabilities.
+    Google Drive connector for unified ingestion.
     
     Supports:
     - OAuth token refresh
     - File listing with folder expansion
-    - Background sync with chunking and embedding
-    - Multiple file formats via DocumentParser service
+    - Multiple file formats via DocumentProcessorFactory
     """
+
+    @property
+    def connector_type(self) -> SourceType:
+        return SourceType.GOOGLE_DRIVE
 
     @with_google_retry(max_attempts=3)
     def _drive_get(self, service, **kwargs):
@@ -148,24 +145,12 @@ class DriveConnector(BaseConnector):
                 logger.error(f"❌ [Drive] Error listing folder {parent_id}: {e}")
                 break
     
-    # Text splitter for chunking documents
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-        separators=["\n\n", "\n", ". ", " ", ""]
-    )
-    
     # =========================================================================
-    # EXPORT FORMAT: Map Google Native types to text formats for RAG
+    # EXPORT FORMAT: Map Google Native types to text formats for ingestion
     # =========================================================================
-    # IMPORTANT: We export to TEXT formats, not binary (DOCX/PDF), because:
-    # 1. The connector decodes content to UTF-8 text for ConnectorDocument
-    # 2. Binary formats (DOCX, PDF) get corrupted by UTF-8 decode
-    # 3. For RAG, we need the text content anyway
-    # 
-    # Google Docs -> Plain text (clean, no formatting)
-    # Google Sheets -> CSV (row/column structure preserved)
-    # Google Slides -> Plain text (extracted text from slides)
+    # Google Docs -> Plain text
+    # Google Sheets -> CSV
+    # Google Slides -> Plain text
     EXPORT_MIME_TYPES = {
         "application/vnd.google-apps.document": {
             "export_mime": "text/plain",
@@ -181,33 +166,6 @@ class DriveConnector(BaseConnector):
         },
     }
     
-    # Supported MIME types for ingestion
-    SUPPORTED_MIME_TYPES = {
-        # Google native types -> exported as text
-        'application/vnd.google-apps.document': 'gdoc',
-        'application/vnd.google-apps.spreadsheet': 'gsheet',
-        'application/vnd.google-apps.presentation': 'gslides',
-        # Text formats -> directly compatible (UTF-8 safe)
-        'text/plain': 'text',
-        'text/markdown': 'text',
-        'text/csv': 'text',
-        'text/html': 'text',
-        'application/json': 'text',
-        'application/xml': 'text',
-        'text/xml': 'text',
-        # Binary formats -> need base64 encoding
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-        'application/msword': 'docx',
-        'application/pdf': 'pdf',
-    }
-    
-    # Binary MIME types that cannot be decoded as UTF-8
-    # These must be base64 encoded when passed through ConnectorDocument
-    BINARY_MIME_TYPES = {
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/msword',
-        'application/pdf',
-    }
     
     async def authorize(self, user_id: str) -> bool:
         """Async wrapper for authorization check."""
@@ -319,480 +277,111 @@ class DriveConnector(BaseConnector):
 
 
 
-    async def ingest(self, config: Dict[str, Any]) -> "AsyncIterator[ConnectorDocument]":
-        """
-        Async wrapper for ingestion (Streaming).
-        """
-        from starlette.concurrency import iterate_in_threadpool
-        return iterate_in_threadpool(self._ingest_implementation(config))
+    async def fetch_documents(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> AsyncIterator[SourceDocument]:
+        """Async wrapper for sync fetch."""
+        for doc in self.fetch_documents_sync(item_ids, credentials, **kwargs):
+            yield doc
 
-    def ingest_sync(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
-        """Synchronous ingestion generator (used by worker tasks/tests)."""
-        return self._ingest_implementation(config)
+    def fetch_documents_sync(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Iterator[SourceDocument]:
+        user_id = kwargs.get("user_id")
+        if not item_ids:
+            return iter(())
 
-    def _ingest_implementation(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
-        """
-        Synchronous ingestion implementation (Generator).
-        """
-        try:
-            yield from self._ingest_logic(config)
-        except Exception as e:
-            logger.error(f"❌ [Drive] Ingest failed: {e}")
-            raise e
+        logger.info(f"📥 [DriveConnector] Fetching {len(item_ids)} item(s)")
 
-    def _ingest_logic(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
-        # Original ingest logic goes here to keep try/except clean
-        user_id = config.get("user_id")
-        item_ids = config.get("item_ids", [])
-        credentials_data = config.get("credentials")
-        
-        logger.info(f"📥 [DriveConnector] Starting ingestion for {len(item_ids)} items")
-
-        # 1. Hybrid Credential Resolution with Token Refresh
-        if credentials_data and credentials_data.get('integration_id'):
-            # Worker case: Fetch integration and refresh token if needed
+        # Resolve credentials (integration_id preferred; user_id fallback for API usage)
+        if credentials and credentials.get("integration_id"):
             supabase = get_supabase()
             int_res = supabase.table("user_integrations").select("*").eq(
-                "id", credentials_data['integration_id']
+                "id", credentials["integration_id"]
             ).single().execute()
-            
             if not int_res.data:
-                raise ValueError(f"Integration {credentials_data['integration_id']} not found")
-            
-            # Use token manager for automatic refresh
-            creds_data = OAuthTokenManager.get_valid_credentials(
-                int_res.data,
-                'google_drive'
-            )
-            
+                raise AuthenticationError(f"Integration {credentials['integration_id']} not found")
+
+            creds_data = OAuthTokenManager.get_valid_credentials(int_res.data, "google_drive")
             creds = Credentials(
-                token=creds_data['access_token'],
-                refresh_token=creds_data['refresh_token'],
+                token=creds_data["access_token"],
+                refresh_token=creds_data["refresh_token"],
                 token_uri="https://oauth2.googleapis.com/token",
                 client_id=settings.GOOGLE_CLIENT_ID,
                 client_secret=settings.GOOGLE_CLIENT_SECRET,
-                scopes=['https://www.googleapis.com/auth/drive.readonly']
-            )
-        elif credentials_data:
-            # Legacy: Use passed decrypted credentials (fallback)
-            creds = Credentials(
-                token=credentials_data.get('token') or credentials_data.get('access_token'),
-                refresh_token=credentials_data.get('refresh_token'),
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=settings.GOOGLE_CLIENT_ID,
-                client_secret=settings.GOOGLE_CLIENT_SECRET,
-                scopes=['https://www.googleapis.com/auth/drive.readonly']
+                scopes=["https://www.googleapis.com/auth/drive.readonly"],
             )
         elif user_id:
-            # API case: Fallback to DB lookup (already has refresh)
             creds = self._get_credentials(user_id)
         else:
-            raise ValueError("No credentials or user_id provided for Drive ingestion")
+            raise AuthenticationError("No credentials or user_id provided for Drive fetch")
 
-        # 2. Build Service & Process
-        service = build('drive', 'v3', credentials=creds)
-        # No documents list - we yield!
+        service = build("drive", "v3", credentials=creds)
 
         for item_id in item_ids:
             try:
-                # Fetch metadata
                 file_meta = self._drive_get(
                     service,
                     fileId=item_id,
                     fields="id, name, mimeType, webViewLink, size",
                 )
-                
-                # Handle folders recursively
-                if file_meta['mimeType'] == 'application/vnd.google-apps.folder':
-                    # Convert generator to list so we can count and iterate
-                    folder_files = list(self._get_all_files_recursive(service, item_id))
-                    logger.info(f"📁 [DriveConnector] Found {len(folder_files)} files in folder: {file_meta['name']}")
-                    
-                    for f in folder_files:
-                        try:
-                            content_bytes, export_mime, filename = self._download_file_content(service, f)
-                            if content_bytes:
-                                file_size = len(content_bytes)
-                                
-                                # Check if binary or text
-                                if export_mime in self.BINARY_MIME_TYPES:
-                                    # Binary: Encode as base64 string
-                                    text_content = base64.b64encode(content_bytes).decode('ascii')
-                                else:
-                                    # Text: Decode UTF-8
-                                    try:
-                                        text_content = content_bytes.decode('utf-8')
-                                    except UnicodeDecodeError:
-                                        text_content = content_bytes.decode('utf-8', errors='replace')
-                                    
-                                    # Remove null bytes that break PostgreSQL
-                                    text_content = text_content.replace('\x00', '')
-                                
-                                yield ConnectorDocument(
-                                    page_content=text_content,
-                                    metadata={
-                                        "source": "google_drive",
-                                        "title": filename,
-                                        "source_url": f.get('webViewLink'),
-                                        "file_id": f.get('id'),
-                                        "mime_type": export_mime,
-                                        "file_size": file_size,
-                                        "size": file_size,
-                                    }
-                                )
-                        except Exception as e:
-                             logger.error(f"❌ [Drive] Failed to process file in folder {f.get('name')}: {e}")
-                             continue
 
+                if file_meta["mimeType"] == "application/vnd.google-apps.folder":
+                    folder_files = list(self._get_all_files_recursive(service, item_id))
+                    logger.info(
+                        "📁 [DriveConnector] Found %s file(s) in folder %s",
+                        len(folder_files),
+                        file_meta["name"],
+                    )
+                    for f in folder_files:
+                        doc = self._build_source_document(service, f, parent_id=item_id)
+                        if doc:
+                            yield doc
                 else:
-                    # Download Content
-                    content_bytes, export_mime, filename = self._download_file_content(service, file_meta)
-                    
-                    if content_bytes:
-                        file_size = len(content_bytes)
-                        
-                        # Check if binary or text
-                        if export_mime in self.BINARY_MIME_TYPES:
-                            # Binary: Encode as base64 string
-                            text_content = base64.b64encode(content_bytes).decode('ascii')
-                        else:
-                            # Text: Decode UTF-8
-                            try:
-                                text_content = content_bytes.decode('utf-8')
-                            except UnicodeDecodeError:
-                                text_content = content_bytes.decode('utf-8', errors='replace')
-                            
-                            # Remove null bytes that break PostgreSQL
-                            text_content = text_content.replace('\x00', '')
-                        
-                        yield ConnectorDocument(
-                            page_content=text_content,
-                            metadata={
-                                "source": "google_drive",
-                                "title": filename,
-                                "source_url": file_meta.get('webViewLink'),
-                                "file_id": file_meta.get('id'),
-                                "mime_type": export_mime,
-                                "file_size": file_size,
-                                "size": file_size,
-                            }
-                        )
-                        logger.info(f"✅ [Drive] Processed: {filename} (as {export_mime}, {file_size} bytes)")
+                    doc = self._build_source_document(service, file_meta, parent_id=None)
+                    if doc:
+                        yield doc
             except Exception as e:
                 logger.error(f"❌ [Drive] Failed to process {item_id}: {e}")
                 continue
 
-        logger.info(f"📥 [DriveConnector] Ingestion stream ended")
+        logger.info("📥 [DriveConnector] Fetch stream ended")
 
-    async def sync(self, user_id: str, integration_id: str) -> dict:
-        """Async wrapper for sync."""
-        return await run_in_threadpool(self._sync_implementation, user_id, integration_id)
+    def _build_source_document(
+        self,
+        service,
+        file_meta: Dict[str, Any],
+        parent_id: Optional[str]
+    ) -> Optional[SourceDocument]:
+        content_bytes, export_mime, filename = self._download_file_content(service, file_meta)
+        if not content_bytes:
+            return None
 
-    def _sync_implementation(self, user_id: str, integration_id: str) -> dict:
-        """
-        Synchronous full sync operation.
-        """
-        logger.info(f"🔄 [DriveSync] Starting sync for user {user_id}, integration {integration_id}")
-        
-        try:
-            supabase = get_supabase()
-            
-            # 1. Fetch the integration record
-            int_res = supabase.table("user_integrations").select("*").eq("id", integration_id).single().execute()
-            if not int_res.data:
-                raise ValueError(f"Integration {integration_id} not found")
-            
-            integration = int_res.data
-            
-            # 2. Initialize Google Drive service
-            creds = self._get_credentials_by_integration(integration)
-            service = build('drive', 'v3', credentials=creds)
-            
-            # 3. List files - include DOCX and PDF in query
-            supported_mimes = [
-                "mimeType='application/vnd.google-apps.document'",
-                "mimeType contains 'text/'",
-                "mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'",
-                "mimeType='application/pdf'"
-            ]
-            query = f"({' or '.join(supported_mimes)}) and trashed=false"
-            
-            results = self._drive_list(
-                service,
-                q=query,
-                fields="files(id, name, mimeType, webViewLink)",
-                pageSize=20,  # Increased limit to get more files
-            )
-            
-            files = results.get('files', [])
-            logger.info(f"🔄 [DriveSync] Found {len(files)} files to process")
-            
-            # Import required services
-            from services.embeddings import generate_embeddings_batch_sync
-            from worker.tasks import create_file_status, update_file_status
-            
-            # Create ingestion job for progress tracking
-            job_id = None
-            if files:
-                job_result = supabase.table("ingestion_jobs").insert({
-                    "user_id": user_id,
-                    "provider": "drive",
-                    "total_files": len(files),
-                    "processed_files": 0,
-                    "status": "processing",
-                    "message": f"Syncing {len(files)} files from Google Drive",
-                    "status_message": f"Syncing {len(files)} files from Google Drive"
-                }).execute()
-                if job_result.data:
-                    job_id = job_result.data[0]["id"]
-                    logger.info(f"🔄 [DriveSync] Created job {job_id} for tracking")
-            
-            total_chunks = 0
-            processed_files = 0
-            errors = []
-            
-            # 4. Process each file
-            for file_meta in files:
-                filename = file_meta['name']
-                file_status_id = None
-                
-                # Create file status record for tracking
-                if job_id:
-                    file_status_id = create_file_status(supabase, job_id, user_id, filename, 0)
-                
-                try:
-                    logger.info(f"🔄 [DriveSync] Processing: {filename} ({file_meta['mimeType']})")
-                    
-                    # Status: Uploading/Downloading
-                    if file_status_id:
-                        update_file_status(supabase, file_status_id, 
-                            status="uploading", progress=10, message="Downloading from Drive...")
-                    
-                    # Download content (uses DocumentParser internally)
-                    # FIX: Unpack tuple (content_bytes, mime_type, filename)
-                    content_tuple = self._download_file_content(service, file_meta)
-                    if not content_tuple or not content_tuple[0]:
-                        logger.warning(f"⚠️ [DriveSync] No content from: {filename}")
-                        if file_status_id:
-                            update_file_status(supabase, file_status_id,
-                                status="skipped", progress=100, message="No content (empty)")
-                        continue
-                        
-                    content_bytes, _, _ = content_tuple
+        file_size = len(content_bytes)
+        source_url = file_meta.get("webViewLink")
+        file_id = file_meta.get("id")
 
-                    if len(content_bytes) > settings.MAX_FILE_SIZE:
-                        logger.warning(f"⚠️ [DriveSync] File too large: {filename}")
-                        if file_status_id:
-                            update_file_status(
-                                supabase,
-                                file_status_id,
-                                status="failed",
-                                progress=0,
-                                message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
-                                error="File too large",
-                            )
-                        continue
-
-                    content_hash = compute_content_hash(content_bytes)
-                    
-                    # Status: Processing
-                    if file_status_id:
-                        update_file_status(supabase, file_status_id,
-                            status="parsing", progress=25, message="Extracting content...")
-                    
-                    # FIX: Decode bytes to string
-                    try:
-                        content = content_bytes.decode('utf-8')
-                    except UnicodeDecodeError:
-                        content = content_bytes.decode('utf-8', errors='replace')
-                    
-                    # CRITICAL: Remove null bytes that break PostgreSQL text fields
-                    # Error: '22P05' - '\u0000 cannot be converted to text'
-                    content = content.replace('\x00', '')
-                        
-                    if not content or not content.strip():
-                        logger.warning(f"⚠️ [DriveSync] No content from: {filename}")
-                        if file_status_id:
-                            update_file_status(supabase, file_status_id,
-                                status="skipped", progress=100, message="No content (empty)")
-                        continue
-                    
-                    # Chunk the content
-                    chunks = self.text_splitter.split_text(content)
-                    if not chunks:
-                        logger.warning(f"⚠️ [DriveSync] No chunks from: {filename}")
-                        if file_status_id:
-                            update_file_status(supabase, file_status_id,
-                                status="skipped", progress=100, message="No chunks extracted")
-                        continue
-                    
-                    logger.info(f"🔄 [DriveSync] File '{filename}': {len(chunks)} chunks")
-                    
-                    # Status: Embedding
-                    if file_status_id:
-                        update_file_status(supabase, file_status_id,
-                            status="embedding", progress=50, message=f"Generating embeddings for {len(chunks)} chunks...",
-                            chunks_total=len(chunks))
-                    
-                    # Generate embeddings in batch
-                    embeddings = generate_embeddings_batch_sync(chunks)
-                    
-                    # =====================================================
-                    # STEP A: Insert Parent Document into `documents` table
-                    # =====================================================
-                    parent_doc_data = {
-                        "user_id": user_id,
-                        "title": file_meta['name'],
-                        "source_type": "google_drive",
-                        "source_url": file_meta.get('webViewLink', ''),
-                        "file_size_bytes": file_meta.get("size") or len(content_bytes),
-                        "content_hash": content_hash,
-                        "metadata": {
-                            "file_id": file_meta['id'],
-                            "mime_type": file_meta.get('mimeType', 'unknown')
-                        },
-                        "created_at": datetime.now(timezone.utc).isoformat()
-                    }
-
-                    existing_doc_id = None
-                    if content_hash:
-                        existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
-                            "title", file_meta['name']
-                        ).eq("content_hash", content_hash).limit(1).execute()
-                        if existing.data:
-                            existing_doc_id = existing.data[0]["id"]
-
-                    if existing_doc_id:
-                        delete_rows_with_retry(
-                            supabase,
-                            "document_chunks",
-                            "document_id",
-                            existing_doc_id,
-                            context=f"drive_sync replace doc_id={existing_doc_id}",
-                        )
-                        update_data = {**parent_doc_data, "updated_at": datetime.now(timezone.utc).isoformat()}
-                        update_data.pop("created_at", None)
-                        supabase.table("documents").update(update_data).eq("id", existing_doc_id).execute()
-                        parent_doc_id = existing_doc_id
-                        logger.info(f"♻️ [DriveSync] Reusing parent document: {parent_doc_id}")
-                    else:
-                        doc_res = supabase.table("documents").insert(parent_doc_data).execute()
-                        if not doc_res.data:
-                            logger.error(f"❌ [DriveSync] Failed to create parent document for {file_meta['name']}")
-                            errors.append(f"DB insert failed: {file_meta['name']}")
-                            continue
-                        parent_doc_id = doc_res.data[0]['id']
-                        logger.info(f"✅ [DriveSync] Created parent document: {parent_doc_id}")
-                    
-                    # =====================================================
-                    # STEP B: Insert Chunks into `document_chunks` table
-                    # BATCHED: Configurable chunk batch size to prevent DB timeouts
-                    # =====================================================
-                    DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))
-                    chunk_records = []
-                    for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
-                        if embedding is None:
-                            logger.warning(f"⚠️ [DriveSync] Skipping empty chunk {i} for {file_meta['name']}")
-                            continue
-                            
-                        chunk_records.append({
-                            "document_id": parent_doc_id,  # FK to documents
-                            "content": chunk_text,
-                            "embedding": embedding,
-                            "chunk_index": i
-                            # Note: NO user_id or metadata here - they live on parent document
-                        })
-                    
-                    # Insert chunks in batches to prevent statement timeout
-                    if chunk_records:
-                        inserted_count = 0
-                        for batch_start in range(0, len(chunk_records), DB_BATCH_SIZE):
-                            batch = chunk_records[batch_start:batch_start + DB_BATCH_SIZE]
-                            try:
-                                chunk_res, _ = insert_rows_with_retry(
-                                    supabase,
-                                    "document_chunks",
-                                    batch,
-                                    context=f"drive_sync file={filename} batch={batch_start // DB_BATCH_SIZE + 1}",
-                                )
-                                if chunk_res.data:
-                                    inserted_count += len(batch)
-                                    logger.debug(
-                                        f"📦 [DriveSync] Inserted batch {batch_start//DB_BATCH_SIZE + 1}: {len(batch)} chunks"
-                                    )
-                            except Exception as batch_err:
-                                logger.error(f"❌ [DriveSync] Batch insert failed for {filename}: {batch_err}")
-                                continue
-                        
-                        if inserted_count > 0:
-                            total_chunks += inserted_count
-                            processed_files += 1
-                            
-                            # Status: Completed
-                            if file_status_id:
-                                update_file_status(supabase, file_status_id,
-                                    status="completed", progress=100, message="Complete",
-                                    chunks_processed=inserted_count, document_id=str(parent_doc_id))
-                            
-                            # Update job progress
-                            if job_id:
-                                supabase.table("ingestion_jobs").update({
-                                    "processed_files": processed_files,
-                                    "message": f"Processed {processed_files}/{len(files)} files",
-                                    "status_message": f"Processed {processed_files}/{len(files)} files"
-                                }).eq("id", job_id).execute()
-                            
-                            logger.info(f"✅ [DriveSync] Inserted {inserted_count} chunks for {filename}")
-                        else:
-                            if file_status_id:
-                                update_file_status(supabase, file_status_id,
-                                    status="failed", progress=0, error="No chunks inserted")
-                            logger.error(f"❌ [DriveSync] Failed to insert any chunks for {filename}")
-                            errors.append(f"Chunk insert failed: {filename}")
-                        
-                except Exception as e:
-                    logger.error(f"❌ [DriveSync] Error processing {filename}: {e}")
-                    if file_status_id:
-                        update_file_status(supabase, file_status_id,
-                            status="failed", progress=0, error=str(e))
-                    errors.append(f"{filename}: {str(e)}")
-                    # Don't fail the whole sync for one file
-                    continue
-            
-            # 5. Update job to completed
-            if job_id:
-                final_status = "completed" if processed_files > 0 else "failed"
-                supabase.table("ingestion_jobs").update({
-                    "status": final_status,
-                    "processed_files": processed_files,
-                    "progress": 100,
-                    "message": f"Synced {processed_files} files, {total_chunks} chunks",
-                    "status_message": f"Synced {processed_files} files, {total_chunks} chunks"
-                }).eq("id", job_id).execute()
-            
-            # 6. Update last_sync_at
-            supabase.table("user_integrations").update({
-                "last_sync_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }).eq("id", integration_id).execute()
-            
-            logger.info(f"🔄 [DriveSync] ✅ Sync complete: {processed_files} files, {total_chunks} chunks")
-            if errors:
-                logger.warning(f"🔄 [DriveSync] ⚠️ {len(errors)} errors: {errors}")
-            
-            return {
-                "status": "success",
-                "files_processed": processed_files,
-                "chunks_created": total_chunks,
-                "errors": errors,
-                "job_id": job_id
-            }
-        except Exception as e:
-            logger.error(f"❌ [DriveSync] Sync failed globally: {e}")
-            # Mark job as failed if exists
-            if 'job_id' in locals() and job_id:
-                supabase.table("ingestion_jobs").update({
-                    "status": "failed",
-                    "error_message": str(e)
-                }).eq("id", job_id).execute()
-            raise e
+        return SourceDocument(
+            content=content_bytes,
+            metadata={
+                "source": "google_drive",
+                "title": filename,
+                "source_url": source_url,
+                "file_id": file_id,
+                "mime_type": export_mime,
+                "file_size": file_size,
+                "size": file_size,
+            },
+            source_type=SourceType.GOOGLE_DRIVE,
+            source_id=file_id or "unknown",
+            filename=filename,
+            mime_type=export_mime or "application/octet-stream",
+            size_bytes=file_size,
+            parent_id=parent_id,
+        )

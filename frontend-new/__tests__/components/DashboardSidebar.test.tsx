@@ -10,42 +10,56 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+const mockPush = vi.fn();
+const mockLogout = vi.fn();
+const mockSetTheme = vi.fn();
+const mockUsePathname = vi.fn();
+const mockUseUsage = vi.fn();
+const mockUseProfile = vi.fn();
+const mockUseAuth = vi.fn();
+const mockUseTheme = vi.fn();
 
 // Mock all dependencies
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
-        push: vi.fn(),
+        push: mockPush,
     }),
-    usePathname: () => '/dashboard',
+    usePathname: () => mockUsePathname(),
+}));
+
+vi.mock('next/link', () => ({
+    __esModule: true,
+    default: ({ href, onClick, children, ...props }: any) => (
+        <a
+            href={href}
+            onClick={(event) => {
+                event.preventDefault();
+                onClick?.(event);
+            }}
+            {...props}
+        >
+            {children}
+        </a>
+    ),
 }));
 
 vi.mock('@/hooks/useAuth', () => ({
-    useAuth: () => ({
-        user: { email: 'test@example.com', plan: 'pro', name: 'Test User' },
-        logout: vi.fn(),
-    }),
+    useAuth: () => mockUseAuth(),
 }));
 
 vi.mock('@/hooks/useProfile', () => ({
-    useProfile: () => ({
-        profile: { first_name: 'Test', last_name: 'User' },
-    }),
+    useProfile: () => mockUseProfile(),
 }));
 
 vi.mock('@/hooks/useUsage', () => ({
-    useUsage: () => ({
-        plan: 'pro',
-        isLoading: false,
-    }),
+    useUsage: () => mockUseUsage(),
 }));
 
 vi.mock('@/hooks/useTheme', () => ({
-    useTheme: () => ({
-        theme: 'system',
-        setTheme: vi.fn(),
-        resolvedTheme: 'dark',
-    }),
+    useTheme: () => mockUseTheme(),
 }));
 
 vi.mock('@/hooks/useChatHistory', () => ({
@@ -77,6 +91,23 @@ import { DashboardSidebar } from '@/components/layout/DashboardSidebar';
 describe('DashboardSidebar Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockUsePathname.mockReturnValue('/dashboard');
+        mockUseAuth.mockReturnValue({
+            user: { email: 'test@example.com', plan: 'pro', name: 'Test User' },
+            logout: mockLogout,
+        });
+        mockUseProfile.mockReturnValue({
+            profile: { first_name: 'Test', last_name: 'User' },
+        });
+        mockUseUsage.mockReturnValue({
+            plan: 'pro',
+            isLoading: false,
+        });
+        mockUseTheme.mockReturnValue({
+            theme: 'system',
+            setTheme: mockSetTheme,
+            resolvedTheme: 'dark',
+        });
     });
 
     describe('Branding', () => {
@@ -101,6 +132,15 @@ describe('DashboardSidebar Component', () => {
             render(<DashboardSidebar />);
             const button = screen.getByText('New Chat').closest('button');
             expect(button?.className).toContain('bg-gradient');
+        });
+
+        it('should navigate to new chat on click', async () => {
+            const user = userEvent.setup();
+            render(<DashboardSidebar />);
+
+            await user.click(screen.getByText('New Chat'));
+
+            expect(mockPush).toHaveBeenCalledWith('/dashboard/chat/new');
         });
     });
 
@@ -129,6 +169,15 @@ describe('DashboardSidebar Component', () => {
             const link = screen.getByText('Settings').closest('a');
             expect(link?.getAttribute('href')).toBe('/dashboard/settings');
         });
+
+        it('should mark settings as active when on settings page', () => {
+            mockUsePathname.mockReturnValue('/dashboard/settings/general');
+
+            render(<DashboardSidebar />);
+
+            const link = screen.getByText('Settings').closest('a');
+            expect(link?.className).toContain('bg-sidebar-accent');
+        });
     });
 
     describe('Notifications', () => {
@@ -144,9 +193,131 @@ describe('DashboardSidebar Component', () => {
             expect(screen.getByText('Test User')).toBeInTheDocument();
         });
 
+        it('should fall back to first name when last name is missing', () => {
+            mockUseProfile.mockReturnValue({
+                profile: { first_name: 'Solo', last_name: '' },
+            });
+
+            render(<DashboardSidebar />);
+
+            expect(screen.getByText('Solo')).toBeInTheDocument();
+        });
+
+        it('should fall back to email prefix when profile is missing', () => {
+            mockUseProfile.mockReturnValue({ profile: null });
+            mockUseAuth.mockReturnValue({
+                user: { email: 'fallback@example.com', name: null },
+                logout: mockLogout,
+            });
+
+            render(<DashboardSidebar />);
+
+            expect(screen.getByText('fallback')).toBeInTheDocument();
+        });
+
+        it('should fall back to default User label when no profile or user data', () => {
+            mockUseProfile.mockReturnValue({ profile: null });
+            mockUseAuth.mockReturnValue({
+                user: null,
+                logout: mockLogout,
+            });
+
+            render(<DashboardSidebar />);
+
+            expect(screen.getByText('User')).toBeInTheDocument();
+        });
+
         it('should render user plan badge', () => {
             render(<DashboardSidebar />);
             expect(screen.getByText('Pro')).toBeInTheDocument();
+        });
+
+        it('should not open the user menu when clicking the plan badge', async () => {
+            const user = userEvent.setup();
+            render(<DashboardSidebar />);
+
+            const badgeLink = screen.getByText('Pro').closest('a');
+            expect(badgeLink).toBeInTheDocument();
+
+            if (badgeLink) {
+                await user.click(badgeLink);
+            }
+
+            expect(mockPush).not.toHaveBeenCalled();
+        });
+
+        it('should show loading placeholder for missing plan', () => {
+            mockUseUsage.mockReturnValue({
+                plan: null,
+                isLoading: false,
+            });
+
+            render(<DashboardSidebar />);
+
+            expect(screen.getByText('···')).toBeInTheDocument();
+        });
+
+        it('should toggle theme from dropdown menu', async () => {
+            const user = userEvent.setup();
+            render(<DashboardSidebar />);
+
+            const triggerButton = screen.getByText('Test User').closest('button');
+            expect(triggerButton).toBeInTheDocument();
+
+            if (triggerButton) {
+                await user.click(triggerButton);
+            }
+
+            await user.click(screen.getByText('Light Mode'));
+
+            expect(mockSetTheme).toHaveBeenCalledWith('light');
+        });
+
+        it('should toggle theme to dark when current theme is light', async () => {
+            mockUseTheme.mockReturnValue({
+                theme: 'system',
+                setTheme: mockSetTheme,
+                resolvedTheme: 'light',
+            });
+
+            const user = userEvent.setup();
+            render(<DashboardSidebar />);
+
+            const triggerButton = screen.getByText('Test User').closest('button');
+            if (triggerButton) {
+                await user.click(triggerButton);
+            }
+
+            await user.click(screen.getByText('Dark Mode'));
+
+            expect(mockSetTheme).toHaveBeenCalledWith('dark');
+        });
+
+        it('should navigate to profile settings from the dropdown menu', async () => {
+            const user = userEvent.setup();
+            render(<DashboardSidebar />);
+
+            const triggerButton = screen.getByText('Test User').closest('button');
+            if (triggerButton) {
+                await user.click(triggerButton);
+            }
+
+            await user.click(screen.getByText('Profile'));
+
+            expect(mockPush).toHaveBeenCalledWith('/dashboard/settings/general');
+        });
+
+        it('should call logout from dropdown menu', async () => {
+            const user = userEvent.setup();
+            render(<DashboardSidebar />);
+
+            const triggerButton = screen.getByText('Test User').closest('button');
+            if (triggerButton) {
+                await user.click(triggerButton);
+            }
+
+            await user.click(screen.getByText('Logout'));
+            expect(mockLogout).toHaveBeenCalled();
         });
     });
 });

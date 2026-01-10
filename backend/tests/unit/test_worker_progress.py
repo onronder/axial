@@ -3,7 +3,7 @@ Test Suite for Worker Task Progress Tracking
 
 Tests for:
 - update_job_status helper function
-- ingest_file_task job progress updates
+- process_file_task job progress updates
 - Status transitions: pending -> processing -> completed/failed
 """
 
@@ -117,7 +117,7 @@ class TestUpdateJobStatus:
 
 
 class TestIngestFileTaskProgress:
-    """Tests for progress tracking in ingest_file_task."""
+    """Tests for progress tracking in process_file_task."""
     
     @pytest.mark.unit
     def test_sets_status_to_processing_at_start(self):

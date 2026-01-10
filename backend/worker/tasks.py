@@ -6,6 +6,7 @@ These run in a separate worker process to avoid blocking the FastAPI server.
 """
 
 import logging
+import inspect
 import json
 import base64
 import os
@@ -17,7 +18,6 @@ from core.celery_app import celery_app
 from core.db import get_supabase
 from core.db_utils import insert_rows_with_retry, delete_rows_with_retry
 from core.config import settings
-from core.security import decrypt_token
 from core.hashing import compute_content_hash
 from core.ingestion_utils import normalize_provider, normalize_source_type
 from core.job_counters import (
@@ -1056,7 +1056,14 @@ def _collect_documents_sync(connector, item_ids, credentials, user_id):
     if not fetch_sync:
         raise RuntimeError("Connector does not support synchronous fetch (fetch_documents_sync)")
 
-    return list(fetch_sync(item_ids, credentials, user_id=user_id))
+    if inspect.iscoroutinefunction(fetch_sync):
+        raise RuntimeError("fetch_documents_sync must be synchronous for worker pipelines")
+
+    documents_iter = fetch_sync(item_ids, credentials, user_id=user_id)
+    if inspect.isawaitable(documents_iter) or inspect.isasyncgen(documents_iter):
+        raise RuntimeError("fetch_documents_sync returned async results; use a sync connector implementation")
+
+    return list(documents_iter)
 
 
 
@@ -1660,66 +1667,6 @@ def process_file_task(
                 pass
 
 
-# ============================================================
-# LEGACY COMPATIBILITY TASKS (DEPRECATED)
-# ============================================================
-
-def ingest_connector_task(
-    user_id: str,
-    job_id: str,
-    connector_type: str,
-    item_id: str,
-    credentials: Optional[Dict[str, Any]] = None,
-):
-    """
-    Legacy connector ingestion shim for tests and backward compatibility.
-
-    Prefer unified_ingest_task in production.
-    """
-    import tempfile
-    import os
-
-    supabase = get_supabase()
-    connector_type = normalize_provider(connector_type) or connector_type
-    connector = get_connector(connector_type)
-    documents = _collect_documents_sync(connector, [item_id], credentials, user_id)
-
-    processed = 0
-    for doc in documents:
-        temp_path = None
-        try:
-            filename = getattr(doc, "filename", None) or (doc.metadata or {}).get("title", "untitled")
-            suffix = os.path.splitext(filename)[1] or ".txt"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                temp_path = tmp.name
-                content = doc.content or ""
-                if isinstance(content, bytes):
-                    tmp.write(content)
-                else:
-                    tmp.write(str(content).encode("utf-8"))
-
-            result = DocumentProcessorFactory.process(
-                file_path=temp_path,
-                filename=filename
-            )
-            chunk_texts = [chunk.content for chunk in result.chunks]
-            if chunk_texts:
-                generate_embeddings_batch_sync(chunk_texts)
-            processed += 1
-        finally:
-            if temp_path and os.path.exists(temp_path):
-                try:
-                    os.unlink(temp_path)
-                except Exception:
-                    pass
-
-    return {"status": "completed", "processed": processed}
-
-
-# Backwards compatible alias for legacy tests
-ingest_file_task = process_file_task
-
-
 @celery_app.task(
     bind=True,
     name="finalize_job_task",
@@ -2158,10 +2105,11 @@ def process_page_task(
             time.sleep(min(crawl_delay, 10.0) + random.uniform(0.1, 0.3))
         
         # Fetch and parse page
-        docs = list(connector.ingest_sync({
-            "item_ids": [url],
-            "respect_robots": respect_robots
-        }))
+        docs = list(connector.fetch_documents_sync(
+            [url],
+            credentials=None,
+            respect_robots=respect_robots,
+        ))
         
         if not docs:
             logger.warning(f"⚠️ [Page:{task_id}] No content from: {url}")
@@ -2180,10 +2128,17 @@ def process_page_task(
             return {"status": "skipped", "url": url}
         
         doc = docs[0]
-        page_content = doc.page_content
+        page_content = doc.content
+        if isinstance(page_content, bytes):
+            page_content = page_content.decode("utf-8", errors="replace")
         page_metadata = doc.metadata or {}
         page_title = page_metadata.get("title", "Web Page")
-        source_url = page_metadata.get("source_url", url)
+        source_url = (
+            page_metadata.get("source_url")
+            or page_metadata.get("url")
+            or getattr(doc, "source_id", None)
+            or url
+        )
         
         # Process using MarkdownProcessor (treats web content as markdown)
         result = DocumentProcessorFactory.process_web_content(page_content, source_url)

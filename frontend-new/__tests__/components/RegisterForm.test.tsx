@@ -92,4 +92,86 @@ describe('RegisterForm Component', () => {
 
         expect(mockPush).toHaveBeenCalledWith('/dashboard');
     });
+
+    it('should show error message from Error instance on failure', async () => {
+        mockRegister.mockRejectedValue(new Error('Registration blocked'));
+
+        const user = userEvent.setup();
+        render(<RegisterForm />);
+
+        await user.type(screen.getByLabelText(/First Name/i), 'Jane');
+        await user.type(screen.getByLabelText(/Last Name/i), 'Smith');
+        await user.type(screen.getByLabelText(/Email/i), 'jane@example.com');
+        await user.type(screen.getByLabelText(/Password/i), 'password123');
+
+        const checkbox = screen.getByRole('checkbox');
+        await user.click(checkbox);
+
+        await user.click(screen.getByRole('button', { name: /Create Account/i }));
+
+        await waitFor(() => {
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Registration failed',
+                    description: 'Registration blocked',
+                    variant: 'destructive',
+                })
+            );
+        });
+    });
+
+    it('should show fallback error toast when registration fails with non-Error', async () => {
+        mockRegister.mockRejectedValue('oops');
+
+        const user = userEvent.setup();
+        render(<RegisterForm />);
+
+        await user.type(screen.getByLabelText(/First Name/i), 'John');
+        await user.type(screen.getByLabelText(/Last Name/i), 'Doe');
+        await user.type(screen.getByLabelText(/Email/i), 'john@example.com');
+        await user.type(screen.getByLabelText(/Password/i), 'password123');
+
+        const checkbox = screen.getByRole('checkbox');
+        await user.click(checkbox);
+
+        await user.click(screen.getByRole('button', { name: /Create Account/i }));
+
+        await waitFor(() => {
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Registration failed',
+                    description: 'Please try again later.',
+                    variant: 'destructive',
+                })
+            );
+        });
+    });
+
+    it('should show loading indicator while submitting', async () => {
+        let resolveRegister: (() => void) | null = null;
+        const pending = new Promise<void>((resolve) => {
+            resolveRegister = resolve;
+        });
+        mockRegister.mockReturnValue(pending);
+
+        const user = userEvent.setup();
+        render(<RegisterForm />);
+
+        await user.type(screen.getByLabelText(/First Name/i), 'John');
+        await user.type(screen.getByLabelText(/Last Name/i), 'Doe');
+        await user.type(screen.getByLabelText(/Email/i), 'john@example.com');
+        await user.type(screen.getByLabelText(/Password/i), 'password123');
+
+        const checkbox = screen.getByRole('checkbox');
+        await user.click(checkbox);
+
+        await user.click(screen.getByRole('button', { name: /Create Account/i }));
+
+        expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+
+        resolveRegister?.();
+        await waitFor(() => {
+            expect(mockRegister).toHaveBeenCalled();
+        });
+    });
 });

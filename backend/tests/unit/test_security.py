@@ -147,7 +147,8 @@ class TestTokenEncryption:
         monkeypatch.setattr(security, "cipher_suites", None)
 
         legacy_token = "ya29.legacy-oauth-token"
-        assert decrypt_token(legacy_token) == legacy_token
+        with pytest.raises(ValueError):
+            decrypt_token(legacy_token)
 
     def test_encrypt_handles_special_characters(self, monkeypatch):
         import core.security as security
@@ -168,7 +169,8 @@ class TestTokenEncryption:
         monkeypatch.setattr(security, "cipher_suites", None)
 
         token = "enc:payload"
-        assert decrypt_token(token) == token
+        with pytest.raises(RuntimeError):
+            decrypt_token(token)
 
     def test_decrypt_tries_multiple_keys(self, monkeypatch):
         import core.security as security

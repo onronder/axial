@@ -26,8 +26,18 @@ vi.mock('@/lib/api', () => ({
 }));
 
 describe('useUsage Hook', () => {
-    const wrapper = ({ children }: { children: React.ReactNode }) =>
-        React.createElement(UsageProvider, null, children);
+const wrapper = ({ children }: { children: React.ReactNode }) =>
+    React.createElement(UsageProvider, null, children);
+
+const createDeferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
+};
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -111,9 +121,101 @@ describe('useUsage Hook', () => {
             const { result } = renderHook(() => useUsage(), { wrapper });
 
             await waitFor(() => {
+            expect(result.current.isLoading).toBe(false);
+        });
+    });
+
+    describe('Fetch Coordination', () => {
+        it('should avoid duplicate fetch while a fetch is in progress', async () => {
+            const usageDeferred = createDeferred<any>();
+            const planDeferred = createDeferred<any>();
+
+            mockGetUsageStats.mockReturnValue(usageDeferred.promise);
+            mockGetEffectivePlan.mockReturnValue(planDeferred.promise);
+
+            const { result } = renderHook(() => useUsage(), { wrapper });
+
+            await waitFor(() => {
+                expect(mockGetUsageStats).toHaveBeenCalledTimes(1);
+            });
+
+            await act(async () => {
+                await result.current.refresh();
+            });
+
+            expect(mockGetUsageStats).toHaveBeenCalledTimes(1);
+
+            usageDeferred.resolve({
+                plan: 'pro',
+                files: { used: 25, limit: 100 },
+                storage: { used_bytes: 52428800, limit_bytes: 1073741824 },
+                features: { web_crawl: true, team_enabled: false },
+            });
+            planDeferred.resolve({ plan: 'pro', inherited: false });
+
+            await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
             });
         });
+
+        it('should not refetch on rerender once fetched', async () => {
+            const { result, rerender } = renderHook(() => useUsage(), { wrapper });
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            const callsAfterFirstRender = mockGetUsageStats.mock.calls.length;
+            rerender();
+
+            expect(mockGetUsageStats.mock.calls.length).toBe(callsAfterFirstRender);
+        });
+
+        it('should guard against duplicate fetch in StrictMode', async () => {
+            const strictWrapper = ({ children }: { children: React.ReactNode }) =>
+                React.createElement(
+                    React.StrictMode,
+                    null,
+                    React.createElement(UsageProvider, null, children)
+                );
+
+            renderHook(() => useUsage(), { wrapper: strictWrapper });
+
+            await waitFor(() => {
+                expect(mockGetUsageStats).toHaveBeenCalledTimes(1);
+            });
+        });
+
+        it('should short-circuit repeated effect runs when fetchAll changes', async () => {
+            vi.resetModules();
+            vi.doMock('react', async () => {
+                const actual = await vi.importActual<typeof import('react')>('react');
+                return {
+                    ...actual,
+                    useEffect: (effect: any, deps?: any[]) => {
+                        actual.useEffect(effect, deps);
+                        actual.useEffect(effect, deps);
+                    },
+                };
+            });
+
+            const { UsageProvider: IsolatedUsageProvider, useUsage: isolatedUseUsage } =
+                await import('@/hooks/useUsage');
+
+            const isolatedWrapper = ({ children }: { children: React.ReactNode }) =>
+                React.createElement(IsolatedUsageProvider, null, children);
+
+            const { result } = renderHook(() => isolatedUseUsage(), { wrapper: isolatedWrapper });
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            expect(mockGetUsageStats).toHaveBeenCalledTimes(1);
+
+            vi.unmock('react');
+        });
+    });
     });
 
     describe('Error Handling', () => {
@@ -386,6 +488,22 @@ describe('useUsage Hook', () => {
 
             expect(mockGetUsageStats).toHaveBeenCalledTimes(2);
         });
+
+        it('should skip fetch when cache is fresh', async () => {
+            const { result } = renderHook(() => useUsage(), { wrapper });
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            expect(mockGetUsageStats).toHaveBeenCalledTimes(1);
+
+            await act(async () => {
+                await result.current.refresh(false);
+            });
+
+            expect(mockGetUsageStats).toHaveBeenCalledTimes(1);
+        });
     });
 });
 
@@ -420,5 +538,13 @@ describe('formatBytes Utility', () => {
     it('should round to one decimal place', () => {
         expect(formatBytes(1536)).toBe('1.5 KB');
         expect(formatBytes(1843)).toBe('1.8 KB');
+    });
+});
+
+describe('useUsage outside provider', () => {
+    it('should throw when used outside UsageProvider', () => {
+        expect(() => {
+            renderHook(() => useUsage());
+        }).toThrow('useUsage must be used within a UsageProvider');
     });
 });

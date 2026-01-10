@@ -11,6 +11,7 @@ import { WebInput, validateUrl } from "@/components/ingest/WebInput"
 import { useDataSources } from "@/hooks/useDataSources"
 import { useToast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
+import { authFetch, getUploadUrl, uploadToStorage, ingestFileReference } from "@/lib/api"
 
 type TabType = 'file' | 'url' | 'website' | 'notion'
 
@@ -77,31 +78,23 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
         }, 300)
 
         try {
-            const { createClient } = await import("@/lib/supabase/client")
-            const supabase = createClient()
-            const { data: { session } } = await supabase.auth.getSession()
-            const token = session?.access_token
-
-            if (!token) throw new Error("Not authenticated")
-
-            let endpoint = ''
-            let fetchOptions: RequestInit | null = null
-
             if (activeTab === 'file') {
                 if (!file) {
                     setLoading(false)
                     clearInterval(interval)
                     return
                 }
-                const formData = new FormData()
-                formData.append("file", file)
-                formData.append("metadata", JSON.stringify({ client_id: "frontend_user" }))
-                endpoint = '/api/py/ingest'
-                fetchOptions = {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: formData
+                const uploadUrl = await getUploadUrl(file.name, file.type || "application/octet-stream", file.size)
+                const uploaded = await uploadToStorage(uploadUrl.upload_url, file)
+                if (!uploaded) {
+                    throw new Error("Failed to upload file to storage")
                 }
+                await ingestFileReference(
+                    uploadUrl.storage_path,
+                    file.name,
+                    file.size,
+                    { client_id: "frontend_user" }
+                )
 
             } else if (activeTab === 'url' || activeTab === 'website') {
                 const targetUrl = activeTab === 'website' ? websiteUrl : url
@@ -116,54 +109,20 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                     throw new Error("Please enter a valid URL starting with http:// or https://")
                 }
                 const crawlType = activeTab === 'website' ? 'sitemap' : 'single'
-                endpoint = '/api/py/integrations/web/crawl'
-                fetchOptions = {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        url: targetUrl,
-                        crawl_type: crawlType,
-                        max_depth: 1,
-                        respect_robots: true,
-                        allow_subdomains: false
-                    })
-                }
+                await authFetch.post('/integrations/web/crawl', {
+                    url: targetUrl,
+                    crawl_type: crawlType,
+                    max_depth: 1,
+                    respect_robots: true,
+                    allow_subdomains: false
+                })
             }
-
-            if (!fetchOptions || !endpoint) {
-                // Should not happen
-                setLoading(false)
-                clearInterval(interval)
-                return
-            }
-
-            const res = await fetch(endpoint, fetchOptions)
 
             clearInterval(interval)
             setProgress(100)
 
             // Robust error handling: Check content type
-            const contentType = res.headers.get("content-type")
-            if (!res.ok) {
-                if (contentType && contentType.includes("application/json")) {
-                    const err = await res.json()
-                    throw new Error(err.detail || "Ingestion failed")
-                } else {
-                    const text = await res.text()
-                    console.error("Non-JSON API Error:", text)
-                    if (res.status === 503) {
-                        throw new Error("Service unavailable. The document queue is currently down.")
-                    } else if (res.status === 500) {
-                        throw new Error("Internal server error. Please try again later.")
-                    } else if (res.status === 413) {
-                        throw new Error("File too large.")
-                    }
-                    throw new Error(`Server error (${res.status})`)
-                }
-            }
+            // Axios-based calls throw on non-2xx; fetch path removed for web crawl.
 
             toast({
                 title: "Ingestion Queued",

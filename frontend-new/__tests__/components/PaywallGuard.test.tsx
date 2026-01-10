@@ -4,6 +4,8 @@ import { PaywallGuard } from '@/components/PaywallGuard';
 
 // Mock useUsage hook
 const mockUseUsage = vi.fn();
+const mockUsePlans = vi.fn();
+const mockToast = vi.fn();
 
 vi.mock('@/hooks/useUsage', () => ({
     useUsage: () => mockUseUsage(),
@@ -28,57 +30,11 @@ vi.mock('@/hooks/useProfile', () => ({
 
 // Mock usePlans hook
 vi.mock('@/hooks/usePlans', () => ({
-    usePlans: () => ({
-        plans: [
-            {
-                id: 'starter',
-                type: 'starter',
-                name: 'Starter',
-                price: 900,
-                price_amount: 900,
-                price_currency: 'USD',
-                interval: 'month',
-                polar_product_id: 'starter-id',
-                description: 'Starter plan',
-                features: [],
-                button_text: 'Get Started',
-                button_variant: 'outline',
-                popular: false
-            },
-            {
-                id: 'pro',
-                type: 'pro',
-                name: 'Pro',
-                price: 2900,
-                price_amount: 2900,
-                price_currency: 'USD',
-                interval: 'month',
-                polar_product_id: 'pro-id',
-                description: 'Pro plan',
-                features: [],
-                button_text: 'Start Free Trial',
-                button_variant: 'default',
-                popular: true
-            },
-            {
-                id: 'enterprise',
-                type: 'enterprise',
-                name: 'Enterprise',
-                price: 9900,
-                price_amount: 9900,
-                price_currency: 'USD',
-                interval: 'month',
-                polar_product_id: 'enterprise-id',
-                description: 'Enterprise plan',
-                features: [],
-                button_text: 'Contact Sales',
-                button_variant: 'outline',
-                popular: false
-            }
-        ],
-        isLoading: false,
-        error: null
-    }),
+    usePlans: () => mockUsePlans(),
+}));
+
+vi.mock('@/components/ui/use-toast', () => ({
+    useToast: () => ({ toast: mockToast }),
 }));
 
 // Mock Next.js navigation (if needed for internal routing or links)
@@ -97,9 +53,10 @@ vi.mock('@/lib/api', () => ({
     }
 }));
 
-// Mock AxioLogo to avoid complex SVG rendering issues
-vi.mock('@/components/branding/AxioLogo', () => ({
-    AxioLogo: () => <div data-testid="axio-logo">Axio Logo</div>,
+vi.mock('@/components/billing/EnterpriseContactModal', () => ({
+    EnterpriseContactModal: ({ open }: { open: boolean }) => (
+        open ? <div data-testid="enterprise-modal">Enterprise Modal</div> : null
+    ),
 }));
 
 describe('PaywallGuard Component', () => {
@@ -109,6 +66,58 @@ describe('PaywallGuard Component', () => {
         // Default auth
         mockUseAuth.mockReturnValue({
             user: { id: 'test-user', email: 'test@example.com' },
+        });
+
+        mockUsePlans.mockReturnValue({
+            plans: [
+                {
+                    id: 'starter',
+                    type: 'starter',
+                    name: 'Starter',
+                    price: 900,
+                    price_amount: 900,
+                    price_currency: 'USD',
+                    interval: 'month',
+                    polar_product_id: 'starter-id',
+                    description: 'Starter plan',
+                    features: ['Basic RAG search'],
+                    button_text: 'Get Started',
+                    button_variant: 'outline',
+                    popular: false
+                },
+                {
+                    id: 'pro',
+                    type: 'pro',
+                    name: 'Pro',
+                    price: 2900,
+                    price_amount: 2900,
+                    price_currency: 'USD',
+                    interval: 'month',
+                    polar_product_id: 'pro-id',
+                    description: 'Pro plan',
+                    features: ['Unlimited queries'],
+                    button_text: 'Start Free Trial',
+                    button_variant: 'default',
+                    popular: true
+                },
+                {
+                    id: 'enterprise',
+                    type: 'enterprise',
+                    name: 'Enterprise',
+                    price: 0,
+                    price_amount: 0,
+                    price_currency: 'USD',
+                    interval: '',
+                    polar_product_id: 'enterprise-id',
+                    description: 'Enterprise plan',
+                    features: ['Dedicated support'],
+                    button_text: 'Contact Sales',
+                    button_variant: 'outline',
+                    popular: false
+                }
+            ],
+            isLoading: false,
+            error: null
         });
     });
 
@@ -128,6 +137,23 @@ describe('PaywallGuard Component', () => {
         // Should verify loader exists
         expect(container.querySelector('.animate-spin')).toBeInTheDocument();
         // Should NOT show content
+        expect(screen.queryByText('Dashboard Content')).not.toBeInTheDocument();
+    });
+
+    it('should render loader when plan is null', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: null,
+            usage: { subscription_status: 'active' },
+        });
+
+        const { container } = render(
+            <PaywallGuard>
+                <div>Dashboard Content</div>
+            </PaywallGuard>
+        );
+
+        expect(container.querySelector('.animate-spin')).toBeInTheDocument();
         expect(screen.queryByText('Dashboard Content')).not.toBeInTheDocument();
     });
 
@@ -183,6 +209,8 @@ describe('PaywallGuard Component', () => {
         // Paywall shown
         expect(screen.getByRole('heading', { name: /Simple pricing/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Start Free Trial/i })).toBeInTheDocument();
+        expect(screen.getByText('Contact Us')).toBeInTheDocument();
+        expect(screen.getByText('Unlimited queries')).toBeInTheDocument();
     });
 
     it('should render PAYWALL when subscription is inactive (even if plan says pro)', () => {
@@ -201,6 +229,92 @@ describe('PaywallGuard Component', () => {
 
         expect(screen.queryByText('Dashboard Content')).not.toBeInTheDocument();
         expect(screen.getByRole('heading', { name: /Simple pricing/i })).toBeInTheDocument();
+    });
+
+    it('should render $0 pricing and mark current plan for free tier', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'free',
+            usage: { subscription_status: 'inactive' },
+        });
+
+        mockUsePlans.mockReturnValue({
+            plans: [
+                {
+                    id: 'free',
+                    type: 'free',
+                    name: 'Free',
+                    price: 0,
+                    price_amount: 0,
+                    price_currency: 'USD',
+                    interval: 'month',
+                    polar_product_id: 'free-id',
+                    description: 'Free plan',
+                    features: [],
+                    button_text: 'Start Free',
+                    button_variant: 'outline',
+                    popular: false
+                },
+            ],
+            isLoading: false,
+            error: null
+        });
+
+        render(
+            <PaywallGuard>
+                <div>Dashboard Content</div>
+            </PaywallGuard>
+        );
+
+        expect(screen.getByText('$0')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Current Plan/i })).toBeInTheDocument();
+    });
+
+    it('should open enterprise modal when clicking enterprise plan', async () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'none',
+            usage: { subscription_status: 'inactive' },
+        });
+
+        render(
+            <PaywallGuard>
+                <div>Dashboard Content</div>
+            </PaywallGuard>
+        );
+
+        const enterpriseButton = screen.getByRole('button', { name: /Contact Sales/i });
+        fireEvent.click(enterpriseButton);
+
+        expect(screen.getByTestId('enterprise-modal')).toBeInTheDocument();
+    });
+
+    it('should show toast on checkout failure', async () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'none',
+            usage: { subscription_status: 'inactive' },
+        });
+
+        mockPost.mockResolvedValue({ data: {} });
+
+        render(
+            <PaywallGuard>
+                <div>Dashboard Content</div>
+            </PaywallGuard>
+        );
+
+        const proButton = screen.getByRole('button', { name: /Start Free Trial/i });
+        fireEvent.click(proButton);
+
+        await waitFor(() => {
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Error',
+                    variant: 'destructive',
+                })
+            );
+        });
     });
 
     it('should handle checkout click correctly', async () => {

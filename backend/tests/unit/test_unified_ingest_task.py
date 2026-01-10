@@ -101,7 +101,7 @@ def test_unified_ingest_task_google_drive(
     user_id = str(uuid4())
     job_id = str(uuid4())
     file_ids = ["drive-file-1", "drive-file-2"]
-    credentials = {"access_token": "token123"}
+    credentials = {"integration_id": "int-1"}
     
     # Mock connector
     connector = Mock()
@@ -147,7 +147,7 @@ def test_unified_ingest_task_notion(
     user_id = str(uuid4())
     job_id = str(uuid4())
     page_ids = ["notion-page-1", "notion-page-2"]
-    credentials = {"access_token": "notion_token"}
+    credentials = {"integration_id": "int-1"}
     
     # Mock connector
     connector = Mock()
@@ -403,6 +403,90 @@ def test_unified_ingest_task_empty_item_ids(
     # Verify
     assert result["status"] == "completed"
     assert result["message"] == "No documents"
+
+
+def test_unified_ingest_task_requires_connector_type():
+    with pytest.raises(ValueError):
+        unified_ingest_task(
+            user_id=str(uuid4()),
+            job_id=str(uuid4()),
+            connector_type=None,
+            item_ids=[],
+            credentials=None,
+        )
+
+
+def test_unified_ingest_task_wraps_item_id_when_item_ids_none():
+    captured = {}
+
+    def fake_collect(_connector, item_ids, _credentials, _user_id):
+        captured["item_ids"] = item_ids
+        return []
+
+    with patch("worker.tasks.get_supabase", return_value=Mock()), \
+         patch("worker.tasks.get_connector", return_value=Mock()), \
+         patch("worker.tasks._collect_documents_sync", side_effect=fake_collect), \
+         patch("worker.tasks.store_celery_task_id"), \
+         patch("worker.tasks.check_job_cancelled", return_value=False), \
+         patch("worker.tasks.update_job_status"), \
+         patch("worker.tasks.create_notification"):
+        unified_ingest_task(
+            user_id=str(uuid4()),
+            job_id=str(uuid4()),
+            connector_type="file_upload",
+            item_ids=None,
+            item_id="item-1",
+            credentials=None,
+        )
+
+    assert captured["item_ids"] == ["item-1"]
+
+
+def test_unified_ingest_task_wraps_item_ids_when_not_list():
+    captured = {}
+
+    def fake_collect(_connector, item_ids, _credentials, _user_id):
+        captured["item_ids"] = item_ids
+        return []
+
+    with patch("worker.tasks.get_supabase", return_value=Mock()), \
+         patch("worker.tasks.get_connector", return_value=Mock()), \
+         patch("worker.tasks._collect_documents_sync", side_effect=fake_collect), \
+         patch("worker.tasks.store_celery_task_id"), \
+         patch("worker.tasks.check_job_cancelled", return_value=False), \
+         patch("worker.tasks.update_job_status"), \
+         patch("worker.tasks.create_notification"):
+        unified_ingest_task(
+            user_id=str(uuid4()),
+            job_id=str(uuid4()),
+            connector_type="file_upload",
+            item_ids="item-1",
+            credentials=None,
+        )
+
+    assert captured["item_ids"] == ["item-1"]
+
+
+def test_unified_ingest_task_logs_provider_normalization_failure():
+    supabase = Mock()
+    supabase.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception("boom")
+
+    with patch("worker.tasks.get_supabase", return_value=supabase), \
+         patch("worker.tasks.get_connector", return_value=Mock()), \
+         patch("worker.tasks._collect_documents_sync", return_value=[]), \
+         patch("worker.tasks.store_celery_task_id"), \
+         patch("worker.tasks.check_job_cancelled", return_value=False), \
+         patch("worker.tasks.update_job_status"), \
+         patch("worker.tasks.create_notification"):
+        result = unified_ingest_task(
+            user_id=str(uuid4()),
+            job_id=str(uuid4()),
+            connector_type="Google-Drive",
+            item_ids=[],
+            credentials=None,
+        )
+
+    assert result["status"] == "completed"
 
 
 @patch('worker.tasks.unified_ingest_task.retry')

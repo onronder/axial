@@ -13,6 +13,7 @@ from api.v1.integrations import (
     ExchangeRequest,
     IngestRequest,
     WebCrawlRequest,
+    _require_provider,
     crawl_web,
     disconnect_provider,
     exchange_google_token,
@@ -75,6 +76,13 @@ class FakeAsyncClient:
 
 
 class TestGoogleDriveConnector:
+    @pytest.mark.asyncio
+    async def test_list_provider_items_rejects_deprecated_provider(self):
+        with pytest.raises(HTTPException) as exc:
+            _require_provider("drive")
+        assert exc.value.status_code == 400
+        assert "Deprecated provider value" in exc.value.detail
+
     @pytest.mark.asyncio
     async def test_list_drive_items_returns_files_and_folders(self):
         items = [
@@ -344,6 +352,65 @@ class TestAsyncIngestion:
                 )
 
         assert response["message"].endswith("2 items")
+
+    @pytest.mark.asyncio
+    async def test_ingest_unknown_provider_definition_raises(self):
+        supabase = build_supabase(
+            {
+                "connector_definitions": build_table(None),
+            }
+        )
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await ingest_provider_items(
+                    "google_drive",
+                    IngestRequest(item_ids=["file-1"]),
+                    user_id="user-1",
+                )
+
+        assert exc.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_ingest_non_oauth_requires_credentials(self):
+        supabase = build_supabase(
+            {
+                "connector_definitions": build_table({"id": "def-1"}),
+                "user_integrations": build_table(None),
+            }
+        )
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await ingest_provider_items(
+                    "file_upload",
+                    IngestRequest(item_ids=["file-1"]),
+                    user_id="user-1",
+                )
+
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_ingest_non_oauth_uses_credentials(self):
+        supabase = build_supabase(
+            {
+                "connector_definitions": build_table({"id": "def-1"}),
+                "user_integrations": build_table({"id": "int-1", "credentials": {"bucket": "staging"}}),
+                "ingestion_jobs": build_table([{"id": "job-1"}]),
+            }
+        )
+        task = MagicMock()
+        task.delay.return_value = SimpleNamespace(id="task-1")
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase):
+            with patch("worker.tasks.unified_ingest_task", task):
+                response = await ingest_provider_items(
+                    "file_upload",
+                    IngestRequest(item_ids=["file-1"]),
+                    user_id="user-1",
+                )
+
+        assert response["status"] == "accepted"
 
 
 class TestOAuthIntegration:
@@ -721,6 +788,15 @@ class TestDisconnectProvider:
                 await disconnect_provider("unknown", user_id="user-1")
 
     @pytest.mark.asyncio
+    async def test_disconnect_provider_missing_definition_raises(self):
+        supabase = build_supabase({"connector_definitions": build_table(None)})
+        with patch("api.v1.integrations.get_supabase", return_value=supabase):
+            with pytest.raises(HTTPException) as exc:
+                await disconnect_provider("google_drive", user_id="user-1")
+
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
     async def test_disconnect_provider_cleans_records(self):
         supabase = build_supabase(
             {
@@ -888,18 +964,22 @@ class TestRunBackgroundSync:
     @pytest.mark.asyncio
     async def test_run_background_sync_success(self):
         supabase = build_supabase({"ingestion_jobs": build_table([])})
-        connector = SimpleNamespace(sync=AsyncMock(return_value={"status": "success", "files_processed": 2}))
+        connector = SimpleNamespace(list_items=AsyncMock(return_value=[SimpleNamespace(id="root-1")]))
+        task = MagicMock()
+        task.delay.return_value = SimpleNamespace(id="task-1")
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
-             patch("connectors.get_connector", return_value=connector):
+             patch("connectors.get_connector", return_value=connector), \
+             patch("worker.tasks.unified_ingest_task", task):
             await run_background_sync("job-1", "google_drive", "user-1", "int-1")
 
+        task.delay.assert_called_once()
         assert supabase.table.called
 
     @pytest.mark.asyncio
-    async def test_run_background_sync_missing_sync_marks_failed(self):
+    async def test_run_background_sync_no_items_completes(self):
         supabase = build_supabase({"ingestion_jobs": build_table([])})
-        connector = SimpleNamespace()
+        connector = SimpleNamespace(list_items=AsyncMock(return_value=[]))
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("connectors.get_connector", return_value=connector):
@@ -973,14 +1053,14 @@ class TestIngestProviderItemsErrors:
 
     @pytest.mark.asyncio
     async def test_ingest_provider_unknown(self):
-        supabase = build_supabase({"connector_definitions": build_table(None)})
-        with patch("api.v1.integrations.get_supabase", return_value=supabase):
-            with pytest.raises(HTTPException):
-                await ingest_provider_items(
-                    "dropbox",
-                    IngestRequest(item_ids=["file-1"]),
-                    user_id="user-1",
-                )
+        with pytest.raises(HTTPException) as exc:
+            await ingest_provider_items(
+                "dropbox",
+                IngestRequest(item_ids=["file-1"]),
+                user_id="user-1",
+            )
+        assert exc.value.status_code == 400
+        assert "Unsupported provider value" in exc.value.detail
 
     @pytest.mark.asyncio
     async def test_ingest_provider_missing_oauth(self):
@@ -1002,12 +1082,20 @@ class TestIngestProviderItemsErrors:
 class TestDisconnectProvider:
     @pytest.mark.asyncio
     async def test_disconnect_provider_unknown(self):
+        with pytest.raises(HTTPException) as exc:
+            await disconnect_provider("unknown", user_id="user-1")
+        assert exc.value.status_code == 400
+        assert "Unsupported provider value" in exc.value.detail
+
+    @pytest.mark.asyncio
+    async def test_disconnect_provider_missing_definition_raises(self):
         supabase = build_supabase({"connector_definitions": build_table(None)})
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("unknown", user_id="user-1")
-            assert exc.value.status_code == 404
+                await disconnect_provider("google_drive", user_id="user-1")
+
+        assert exc.value.status_code == 404
 
     @pytest.mark.asyncio
     async def test_disconnect_provider_cleans_data(self):
@@ -1494,44 +1582,16 @@ class TestIntegrationsAdditional:
         assert exc.value.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_ingest_provider_missing_credentials_for_other(self):
-        supabase = MagicMock()
-        def_table = build_table({"id": "def-1"})
-        int_table = build_table([])
-        supabase.table.side_effect = lambda name: def_table if name == "connector_definitions" else int_table
-
-        with patch("api.v1.integrations.get_supabase", return_value=supabase):
-            with pytest.raises(HTTPException) as exc:
-                await ingest_provider_items(
-                    "slack",
-                    IngestRequest(item_ids=["file-1"]),
-                    user_id="user-1",
-                )
-
-        assert exc.value.status_code == 401
-
-    @pytest.mark.asyncio
-    async def test_ingest_provider_other_credentials_success(self):
-        supabase = build_supabase(
-            {
-                "connector_definitions": build_table({"id": "def-1"}),
-                "user_integrations": build_table({"id": "int-1", "credentials": {"token": "abc"}}),
-                "ingestion_jobs": build_table([{"id": "job-1"}]),
-            }
-        )
-        task = MagicMock()
-        task.delay.return_value = SimpleNamespace(id="task-1")
-
-        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
-             patch("worker.tasks.unified_ingest_task", task):
-            result = await ingest_provider_items(
+    async def test_ingest_provider_unsupported_connector(self):
+        with pytest.raises(HTTPException) as exc:
+            await ingest_provider_items(
                 "slack",
                 IngestRequest(item_ids=["file-1"]),
                 user_id="user-1",
             )
 
-        assert result["status"] == "accepted"
-        assert result["job_id"] == "job-1"
+        assert exc.value.status_code == 400
+        assert "Unsupported provider value" in exc.value.detail
 
     @pytest.mark.asyncio
     async def test_ingest_provider_job_creation_failure(self):
@@ -1593,7 +1653,7 @@ class TestIntegrationsAdditional:
         supabase.table().update().eq().execute.return_value = MagicMock(data=[{"id": "job-1"}])
 
         connector = MagicMock()
-        connector.sync = AsyncMock(side_effect=Exception("invalid_grant"))
+        connector.list_items = AsyncMock(side_effect=Exception("invalid_grant"))
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("connectors.get_connector", return_value=connector):

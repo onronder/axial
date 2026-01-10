@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { StorageMeter } from '@/components/documents/StorageMeter';
+import { StorageMeter, StorageMeterCompact } from '@/components/documents/StorageMeter';
 
 // Mock useUsage hook
 const mockUseUsage = vi.fn();
@@ -41,6 +41,19 @@ describe('StorageMeter Component', () => {
         expect(screen.queryByText('Storage Status')).not.toBeInTheDocument();
     });
 
+    it('should render loading skeleton in horizontal variant', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: true,
+            plan: 'free',
+            filesUsed: 0,
+            storageUsed: 0,
+        });
+
+        const { container } = render(<StorageMeter variant="horizontal" />);
+
+        expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
+    });
+
     it('should show "Unlimited Storage" for Enterprise plan', () => {
         mockUseUsage.mockReturnValue({
             isLoading: false,
@@ -58,6 +71,23 @@ describe('StorageMeter Component', () => {
         // Should show file count in grid
         expect(screen.getByText('Files')).toBeInTheDocument();
         expect(screen.getByText('1,000')).toBeInTheDocument();
+    });
+
+    it('should render horizontal enterprise variant', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'enterprise',
+            filesUsed: 42,
+            storageUsed: 2048,
+            filesPercent: 10,
+            storagePercent: 10,
+        });
+
+        render(<StorageMeter variant="horizontal" />);
+
+        expect(screen.getByText('Unlimited Storage Active')).toBeInTheDocument();
+        expect(screen.getByText('Files:')).toBeInTheDocument();
+        expect(screen.getByText('Used:')).toBeInTheDocument();
     });
 
     it('should render normal usage correctly', () => {
@@ -139,5 +169,166 @@ describe('StorageMeter Component', () => {
         render(<StorageMeter showUpgradePrompt={false} />);
 
         expect(screen.queryByText('Upgrade Plan')).not.toBeInTheDocument();
+    });
+
+    it('should show manage plan in horizontal variant when healthy', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesUsed: 2,
+            filesLimit: 20,
+            filesPercent: 10,
+            storageUsed: 100,
+            storageLimit: 2000,
+            storagePercent: 5,
+        });
+
+        render(<StorageMeter variant="horizontal" />);
+
+        expect(screen.getByText('Manage Plan')).toBeInTheDocument();
+        expect(screen.getByText('Healthy usage')).toBeInTheDocument();
+    });
+
+    it('should show upgrade prompt in horizontal variant when warning', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesUsed: 18,
+            filesLimit: 20,
+            filesPercent: 90,
+            storageUsed: 1000,
+            storageLimit: 2000,
+            storagePercent: 50,
+        });
+
+        render(<StorageMeter variant="horizontal" />);
+
+        expect(screen.getByText('Upgrade Plan')).toBeInTheDocument();
+        expect(screen.getByText('Unlock more storage')).toBeInTheDocument();
+    });
+
+    it('should show warning state in horizontal variant when approaching limits', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesUsed: 16,
+            filesLimit: 20,
+            filesPercent: 80,
+            storageUsed: 1200,
+            storageLimit: 2000,
+            storagePercent: 60,
+        });
+
+        render(<StorageMeter variant="horizontal" />);
+
+        expect(screen.getByText('Approaching limits')).toBeInTheDocument();
+        expect(screen.getByText('Get ahead of your limits')).toBeInTheDocument();
+        expect(screen.getByText('80%').className).toContain('text-amber-600');
+    });
+
+    it('should show red storage bar when storage percent is critical in horizontal variant', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesUsed: 2,
+            filesLimit: 20,
+            filesPercent: 10,
+            storageUsed: 1900,
+            storageLimit: 2000,
+            storagePercent: 95,
+        });
+
+        const { container } = render(<StorageMeter variant="horizontal" />);
+        expect(container.querySelector('div.h-2 > div.bg-red-500')).toBeInTheDocument();
+    });
+
+    it('should show red file bar when file percent is critical in horizontal variant', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesUsed: 19,
+            filesLimit: 20,
+            filesPercent: 95,
+            storageUsed: 100,
+            storageLimit: 2000,
+            storagePercent: 5,
+        });
+
+        const { container } = render(<StorageMeter variant="horizontal" />);
+        expect(container.querySelectorAll('div.h-2 > div.bg-red-500').length).toBeGreaterThan(0);
+    });
+
+    it('should show red storage bar in vertical variant when storage percent is critical', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesUsed: 2,
+            filesLimit: 20,
+            filesPercent: 10,
+            storageUsed: 1900,
+            storageLimit: 2000,
+            storagePercent: 95,
+        });
+
+        const { container } = render(<StorageMeter />);
+        expect(container.querySelector('div.h-1\\.5 > div.bg-red-500')).toBeInTheDocument();
+    });
+});
+
+describe('StorageMeterCompact', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('should render compact meter when not loading', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesPercent: 40,
+            storagePercent: 20,
+        });
+
+        render(<StorageMeterCompact />);
+
+        expect(screen.getByText('40%')).toBeInTheDocument();
+    });
+
+    it('should show warning color in compact meter', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesPercent: 80,
+            storagePercent: 20,
+        });
+
+        render(<StorageMeterCompact />);
+
+        expect(screen.getByText('80%').className).toContain('text-amber-500');
+    });
+
+    it('should show critical color in compact meter', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            filesPercent: 95,
+            storagePercent: 20,
+        });
+
+        render(<StorageMeterCompact />);
+
+        expect(screen.getByText('95%').className).toContain('text-red-500');
+    });
+
+    it('should return null for enterprise plan', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'enterprise',
+            filesPercent: 0,
+            storagePercent: 0,
+        });
+
+        const { container } = render(<StorageMeterCompact />);
+
+        expect(container.firstChild).toBeNull();
     });
 });

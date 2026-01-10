@@ -217,15 +217,12 @@ class TestWorkerEmailIntegration:
             with patch('worker.tasks.send_email_notification') as mock_send_email:
                 with patch('worker.tasks.update_job_status'):
                     with patch('worker.tasks.create_notification'):
-                        with patch('worker.tasks.decrypt_token') as mock_decrypt:
-                            mock_decrypt.return_value = "mock-token"
-                            
-                            mock_supabase = Mock()
-                            mock_get_supabase.return_value = mock_supabase
-                            
-                            # This would normally be tested via integration tests
-                            # For unit tests, we verify the function exists and is callable
-                            assert callable(mock_send_email)
+                        mock_supabase = Mock()
+                        mock_get_supabase.return_value = mock_supabase
+
+                        # This would normally be tested via integration tests
+                        # For unit tests, we verify the function exists and is callable
+                        assert callable(mock_send_email)
     
     def test_job_status_updates_even_if_email_fails(self):
         """Job status should update to COMPLETED even if email sending fails."""

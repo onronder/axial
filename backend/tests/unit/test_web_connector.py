@@ -19,6 +19,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from connectors.enhanced import SourceDocument, SourceType
 from connectors.web import WebConnector
 
 
@@ -109,6 +110,11 @@ class TestWebAuthorizeAndList:
             items = await connector.list_items("user-1")
 
         assert items == []
+
+
+def test_connector_type_web():
+    connector = WebConnector()
+    assert connector.connector_type == SourceType.WEB
 
 
 class TestExtractLinks:
@@ -311,14 +317,14 @@ class TestWebIngest:
     def test_ingest_skips_unsafe_url(self):
         connector = WebConnector()
         with patch.object(connector, "is_safe_url", return_value=False):
-            docs = list(connector._ingest_implementation({"item_ids": ["http://bad"]}))
+            docs = list(connector.fetch_documents_sync(["http://bad"]))
         assert docs == []
 
     def test_ingest_skips_blocked_by_robots(self):
         connector = WebConnector()
         with patch.object(connector, "is_safe_url", return_value=True), \
              patch.object(connector, "check_robots_txt", return_value=False):
-            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"]}))
+            docs = list(connector.fetch_documents_sync(["https://example.com"]))
         assert docs == []
 
     def test_ingest_handles_youtube(self):
@@ -327,10 +333,10 @@ class TestWebIngest:
              patch.object(connector, "check_robots_txt", return_value=True), \
              patch.object(connector, "is_youtube_url", return_value=True), \
              patch.object(connector, "fetch_youtube_transcript", return_value="Transcript"), \
-             patch.object(connector, "get_youtube_metadata", return_value={"source": "youtube", "title": "Video"}):
-            docs = list(connector._ingest_implementation({"item_ids": ["https://youtu.be/abc"]}))
+             patch.object(connector, "get_youtube_metadata", return_value={"source": "youtube", "video_id": "vid"}):
+            docs = list(connector.fetch_documents_sync(["https://youtu.be/abc"]))
         assert len(docs) == 1
-        assert docs[0].page_content == "Transcript"
+        assert docs[0].content == "Transcript"
 
     def test_ingest_handles_html_text(self):
         connector = WebConnector()
@@ -341,7 +347,7 @@ class TestWebIngest:
              patch.object(connector, "fetch_html", return_value="<html></html>"), \
              patch("connectors.web.trafilatura.extract", return_value="Body"), \
              patch("connectors.web.trafilatura.extract_metadata", return_value=meta):
-            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"]}))
+            docs = list(connector.fetch_documents_sync(["https://example.com"]))
         assert len(docs) == 1
         assert docs[0].metadata["title"] == "Title"
         assert docs[0].metadata["author"] == "Author"
@@ -429,7 +435,7 @@ class TestSitemapFallback:
              patch.object(connector, "is_youtube_url", return_value=False), \
              patch.object(connector, "fetch_html", return_value="<html></html>"), \
              patch("connectors.web.trafilatura.extract", return_value=""):
-            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"]}))
+            docs = list(connector.fetch_documents_sync(["https://example.com"]))
         assert docs == []
 
     def test_ingest_handles_fetch_failure(self):
@@ -438,7 +444,7 @@ class TestSitemapFallback:
              patch.object(connector, "check_robots_txt", return_value=True), \
              patch.object(connector, "is_youtube_url", return_value=False), \
              patch.object(connector, "fetch_html", return_value=None):
-            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"]}))
+            docs = list(connector.fetch_documents_sync(["https://example.com"]))
         assert docs == []
 
 
@@ -544,12 +550,10 @@ class TestIngest:
         )
         
         connector = WebConnector()
-        config = {
-            "item_ids": ["https://example.com/page"],
-            "respect_robots": False
-        }
-        # Consume generator
-        docs = list(connector._ingest_implementation(config))
+        docs = list(connector.fetch_documents_sync(
+            ["https://example.com/page"],
+            respect_robots=False,
+        ))
         
         assert len(docs) >= 0  # May be 0 or more depending on implementation
     
@@ -561,12 +565,10 @@ class TestIngest:
         mock_fetch.return_value = "This is the video transcript text"
         
         connector = WebConnector()
-        config = {
-            "item_ids": ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
-            "respect_robots": False
-        }
-        # Consume generator
-        docs = list(connector._ingest_implementation(config))
+        docs = list(connector.fetch_documents_sync(
+            ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+            respect_robots=False,
+        ))
         
         # Should have called fetch_youtube_transcript
         assert mock_fetch.called or len(docs) >= 0
@@ -574,12 +576,7 @@ class TestIngest:
     def test_ingest_empty_item_ids(self):
         """Should handle empty item_ids gracefully."""
         connector = WebConnector()
-        config = {
-            "item_ids": [],
-            "respect_robots": False
-        }
-        # Consume generator
-        docs = list(connector._ingest_implementation(config))
+        docs = list(connector.fetch_documents_sync([], respect_robots=False))
         
         assert docs == []
 
@@ -686,10 +683,32 @@ class TestWebConnectorExtraPaths:
         assert links == []
 
     @pytest.mark.asyncio
-    async def test_ingest_async_wrapper_returns_iterator(self):
+    async def test_fetch_documents_async_returns_iterable(self):
         connector = WebConnector()
-        iterator = await connector.ingest({"item_ids": [], "respect_robots": True})
-        assert hasattr(iterator, "__aiter__")
+        docs = []
+        async for doc in connector.fetch_documents([]):
+            docs.append(doc)
+        assert docs == []
+
+    @pytest.mark.asyncio
+    async def test_fetch_documents_async_yields_docs(self):
+        connector = WebConnector()
+        doc = SourceDocument(
+            content="hello",
+            metadata={"title": "Doc"},
+            source_type=SourceType.WEB,
+            source_id="url-1",
+            filename="Doc.html",
+            mime_type="text/html",
+            size_bytes=5,
+        )
+
+        with patch.object(connector, "fetch_documents_sync", return_value=[doc]):
+            docs = []
+            async for item in connector.fetch_documents(["https://example.com"]):
+                docs.append(item)
+
+        assert docs == [doc]
 
     def test_extract_links_rel_string_coerces(self, monkeypatch):
         connector = WebConnector()
@@ -724,7 +743,7 @@ class TestWebConnectorExtraPaths:
             "fetch_html",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("boom")),
         )
-        docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": False}))
+        docs = list(connector.fetch_documents_sync(["https://example.com"], respect_robots=False))
         assert docs == []
 
     def test_get_crawl_delay_none(self):
@@ -846,13 +865,13 @@ class TestWebConnectorExtraPaths:
     def test_ingest_skips_unsafe_url(self):
         connector = WebConnector()
         with patch.object(connector, "is_safe_url", return_value=False):
-            docs = list(connector._ingest_implementation({"item_ids": ["http://bad"], "respect_robots": False}))
+            docs = list(connector.fetch_documents_sync(["http://bad"], respect_robots=False))
         assert docs == []
 
     def test_ingest_blocks_robots(self):
         connector = WebConnector()
         with patch.object(connector, "check_robots_txt", return_value=False):
-            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": True}))
+            docs = list(connector.fetch_documents_sync(["https://example.com"], respect_robots=True))
         assert docs == []
 
     @patch("connectors.web.trafilatura")
@@ -861,13 +880,13 @@ class TestWebConnectorExtraPaths:
         mock_trafilatura.fetch_url.return_value = "<html></html>"
         mock_trafilatura.extract.return_value = "   "
         mock_trafilatura.extract_metadata.return_value = None
-        docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": False}))
+        docs = list(connector.fetch_documents_sync(["https://example.com"], respect_robots=False))
         assert docs == []
 
     def test_ingest_exception_logged(self):
         connector = WebConnector()
         with patch.object(connector, "fetch_html", side_effect=Exception("boom")):
-            docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": False}))
+            docs = list(connector.fetch_documents_sync(["https://example.com"], respect_robots=False))
         assert docs == []
 
     @patch("connectors.web.trafilatura")
@@ -875,7 +894,7 @@ class TestWebConnectorExtraPaths:
         connector = WebConnector()
         mock_trafilatura.fetch_url.return_value = "<html></html>"
         mock_trafilatura.extract.side_effect = Exception("boom")
-        docs = list(connector._ingest_implementation({"item_ids": ["https://example.com"], "respect_robots": False}))
+        docs = list(connector.fetch_documents_sync(["https://example.com"], respect_robots=False))
         assert docs == []
 
     @patch("connectors.web.trafilatura")

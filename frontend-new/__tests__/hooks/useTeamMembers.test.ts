@@ -101,6 +101,18 @@ describe('useTeamMembers', () => {
 
             expect(result.current.error).toBe('Network error');
         });
+
+        it('should handle non-error fetch failure', async () => {
+            mockApiGet.mockRejectedValue('bad');
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            expect(result.current.error).toBe('Failed to fetch team');
+        });
     });
 
     describe('inviteMember', () => {
@@ -158,6 +170,26 @@ describe('useTeamMembers', () => {
                 })
             );
         });
+
+        it('should fall back to default message when invite error lacks detail', async () => {
+            mockApiPost.mockRejectedValue({});
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.inviteMember('missing@test.com');
+            });
+
+            expect(success!).toBe(false);
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    description: 'Failed to send invitation',
+                })
+            );
+        });
     });
 
     describe('updateMemberRole', () => {
@@ -198,6 +230,24 @@ describe('useTeamMembers', () => {
                 expect.objectContaining({ variant: 'destructive' })
             );
         });
+
+        it('should handle non-error role update failure', async () => {
+            mockApiPatch.mockRejectedValue('bad');
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.updateMemberRole('2', 'admin');
+            });
+
+            expect(success!).toBe(false);
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({ variant: 'destructive' })
+            );
+        });
     });
 
     describe('updateMemberStatus', () => {
@@ -216,6 +266,39 @@ describe('useTeamMembers', () => {
 
             expect(success!).toBe(true);
             expect(mockApiPatch).toHaveBeenCalledWith('/team/members/2', { status: 'active' });
+        });
+
+        it('should handle status update error', async () => {
+            mockApiPatch.mockRejectedValue(new Error('Failed'));
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.updateMemberStatus('2', 'active');
+            });
+
+            expect(success!).toBe(false);
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({ variant: 'destructive' })
+            );
+        });
+
+        it('should handle non-error status update failure', async () => {
+            mockApiPatch.mockRejectedValue('bad');
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.updateMemberStatus('2', 'active');
+            });
+
+            expect(success!).toBe(false);
         });
     });
 
@@ -254,6 +337,21 @@ describe('useTeamMembers', () => {
 
             expect(success!).toBe(false);
         });
+
+        it('should handle non-error remove failure', async () => {
+            mockApiDelete.mockRejectedValue('bad');
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.removeMember('1');
+            });
+
+            expect(success!).toBe(false);
+        });
     });
 
     describe('resendInvite', () => {
@@ -275,6 +373,39 @@ describe('useTeamMembers', () => {
                 expect.objectContaining({ title: 'Invitation resent' })
             );
         });
+
+        it('should handle resend invite error', async () => {
+            mockApiPost.mockRejectedValue(new Error('Failed'));
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.resendInvite('2', 'viewer@test.com');
+            });
+
+            expect(success!).toBe(false);
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({ variant: 'destructive' })
+            );
+        });
+
+        it('should handle non-error resend invite failure', async () => {
+            mockApiPost.mockRejectedValue('bad');
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.resendInvite('2', 'viewer@test.com');
+            });
+
+            expect(success!).toBe(false);
+        });
     });
 
     describe('refresh', () => {
@@ -290,6 +421,39 @@ describe('useTeamMembers', () => {
             expect(mockApiGet).toHaveBeenLastCalledWith('/team/members', {
                 params: { role: 'admin', status: 'active' },
             });
+        });
+
+        it('should include search filter when provided', async () => {
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            await act(async () => {
+                await result.current.refresh({ search: 'admin' });
+            });
+
+            expect(mockApiGet).toHaveBeenLastCalledWith('/team/members', {
+                params: { search: 'admin' },
+            });
+        });
+
+        it('should handle stats fetch errors with non-error values', async () => {
+            mockApiGet.mockImplementation((url: string) => {
+                if (url.includes('stats')) {
+                    return Promise.reject('bad');
+                }
+                return Promise.resolve({ data: mockMembers });
+            });
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            await act(async () => {
+                await result.current.refreshStats();
+            });
+
+            expect(mockApiGet).toHaveBeenCalledWith('/team/stats');
         });
     });
 });

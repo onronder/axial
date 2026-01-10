@@ -93,12 +93,9 @@ def test_unified_ingest_task_dispatches_group_for_docs(monkeypatch):
         def __init__(self, docs):
             self.docs = docs
 
-        def fetch_documents(self, item_ids, credentials, user_id=None):
-            async def gen():
-                for doc in self.docs:
-                    yield doc
-
-            return gen()
+        def fetch_documents_sync(self, item_ids, credentials, user_id=None):
+            for doc in self.docs:
+                yield doc
 
     docs = [
         SimpleNamespace(
@@ -107,6 +104,9 @@ def test_unified_ingest_task_dispatches_group_for_docs(monkeypatch):
             size_bytes=5,
             mime_type="text/plain",
             metadata={},
+            source_type="file_upload",
+            source_id="src-a",
+            parent_id=None,
         ),
         SimpleNamespace(
             filename="b.bin",
@@ -114,6 +114,9 @@ def test_unified_ingest_task_dispatches_group_for_docs(monkeypatch):
             size_bytes=3,
             mime_type="application/octet-stream",
             metadata={},
+            source_type="file_upload",
+            source_id="src-b",
+            parent_id=None,
         ),
     ]
 
@@ -174,17 +177,17 @@ def test_unified_ingest_task_handles_invalid_content(monkeypatch):
     task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
 
     class DummyConnector:
-        def fetch_documents(self, item_ids, credentials, user_id=None):
-            async def gen():
-                yield SimpleNamespace(
-                    filename="bad.bin",
-                    content=["not", "bytes"],
-                    size_bytes=2,
-                    mime_type="application/octet-stream",
-                    metadata={},
-                )
-
-            return gen()
+        def fetch_documents_sync(self, item_ids, credentials, user_id=None):
+            yield SimpleNamespace(
+                filename="bad.bin",
+                content=["not", "bytes"],
+                size_bytes=2,
+                mime_type="application/octet-stream",
+                metadata={},
+                source_type="file_upload",
+                source_id="src-bad",
+                parent_id=None,
+            )
 
     supabase = MagicMock()
 
@@ -283,7 +286,8 @@ def test_process_file_task_reuses_existing_document(monkeypatch):
          patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
          patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
          patch("worker.tasks.delete_rows_with_retry") as delete_rows, \
-         patch("worker.tasks.insert_rows_with_retry") as insert_rows:
+         patch("worker.tasks.insert_rows_with_retry") as insert_rows, \
+         patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_file_task._orig_run.__func__(
             task,
             "user-1",
@@ -296,6 +300,7 @@ def test_process_file_task_reuses_existing_document(monkeypatch):
     assert result["status"] == "success"
     delete_rows.assert_called_once()
     insert_rows.assert_called_once()
+    record_outcome.assert_called()
 
 
 def test_process_file_task_insert_failure(monkeypatch):
@@ -316,7 +321,8 @@ def test_process_file_task_insert_failure(monkeypatch):
     with patch("worker.tasks.get_supabase", return_value=supabase), \
          patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
          patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-         patch("worker.tasks.update_file_status") as update_file_status:
+         patch("worker.tasks.update_file_status") as update_file_status, \
+         patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_file_task._orig_run.__func__(
             task,
             "user-1",
@@ -330,6 +336,7 @@ def test_process_file_task_insert_failure(monkeypatch):
     assert any(
         call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
     )
+    record_outcome.assert_called()
 
 def test_process_file_task_chunk_insert_error():
     task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
@@ -356,7 +363,8 @@ def test_process_file_task_chunk_insert_error():
          patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
          patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
          patch("worker.tasks.insert_rows_with_retry", side_effect=Exception("db fail")), \
-         patch("worker.tasks.update_file_status") as update_file_status:
+         patch("worker.tasks.update_file_status") as update_file_status, \
+         patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_file_task._orig_run.__func__(
             task,
             "user-1",
@@ -368,6 +376,7 @@ def test_process_file_task_chunk_insert_error():
 
     assert result["status"] == "failed"
     assert update_file_status.called
+    record_outcome.assert_called()
 
 
 def test_crawl_discovery_task_sitemap_dispatches(monkeypatch):

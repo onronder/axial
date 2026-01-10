@@ -1,35 +1,41 @@
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { IngestModal } from '@/components/ingest-modal'
 
-// Mock fetch
-global.fetch = vi.fn()
-
-// Mock useDataSources hook
-const mockConnect = vi.fn();
-const mockIsConnected = vi.fn();
+const { mockAuthPost, mockConnect, mockIsConnected, mockLoading, mockGetUploadUrl, mockUploadToStorage, mockIngestFileReference, mockToast } = vi.hoisted(() => ({
+    mockAuthPost: vi.fn(),
+    mockConnect: vi.fn(),
+    mockIsConnected: vi.fn(),
+    mockLoading: vi.fn(),
+    mockGetUploadUrl: vi.fn(),
+    mockUploadToStorage: vi.fn(),
+    mockIngestFileReference: vi.fn(),
+    mockToast: vi.fn(),
+}));
 
 vi.mock('@/hooks/useDataSources', () => ({
     useDataSources: () => ({
         connect: mockConnect,
         disconnect: vi.fn(),
         isConnected: mockIsConnected,
-        loading: false,
+        loading: mockLoading(),
         integrations: []
     })
 }));
 
-// Mock Supabase client
-vi.mock('@/lib/supabase/client', () => ({
-    createClient: () => ({
-        auth: {
-            getSession: () => Promise.resolve({
-                data: { session: { access_token: 'test-token' } }
-            })
-        }
-    })
+vi.mock('@/hooks/use-toast', () => ({
+    useToast: () => ({
+        toast: mockToast,
+    }),
+}));
+
+vi.mock('@/lib/api', () => ({
+    authFetch: { post: mockAuthPost },
+    getUploadUrl: mockGetUploadUrl,
+    uploadToStorage: mockUploadToStorage,
+    ingestFileReference: mockIngestFileReference,
 }))
 
 describe('IngestModal', () => {
@@ -37,10 +43,15 @@ describe('IngestModal', () => {
 
     beforeEach(() => {
         vi.clearAllMocks()
-            ; (global.fetch as Mock).mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve({ status: 'queued', doc_id: 'test-123' })
-            })
+        mockAuthPost.mockResolvedValue({ data: { status: 'queued' } })
+        mockIsConnected.mockReturnValue(false)
+        mockLoading.mockReturnValue(false)
+        mockGetUploadUrl.mockResolvedValue({
+            upload_url: 'https://storage.test/upload',
+            storage_path: 'uploads/test.pdf'
+        });
+        mockUploadToStorage.mockResolvedValue(true);
+        mockIngestFileReference.mockResolvedValue({ data: { status: 'queued' } });
     })
 
 
@@ -92,23 +103,36 @@ describe('IngestModal', () => {
             await userEvent.click(submitButton)
 
             await waitFor(() => {
-                expect(global.fetch).toHaveBeenCalledWith(
-                    '/api/py/integrations/web/crawl',
+                expect(mockAuthPost).toHaveBeenCalledWith(
+                    '/integrations/web/crawl',
                     expect.objectContaining({
-                        method: 'POST',
-                        headers: {
-                            'Authorization': 'Bearer test-token',
-                            'Content-Type': 'application/json'
-                        }
+                        url: 'https://example.com/test-page',
+                        crawl_type: 'sitemap',
+                        max_depth: 1,
+                        respect_robots: true,
+                        allow_subdomains: false
                     })
-                )
+                );
             })
 
-            // Check payload contains url
-            const fetchCall = (global.fetch as Mock).mock.calls[0]
-            const payload = JSON.parse(fetchCall[1].body as string)
+            // Ensure payload includes URL and crawl type
+            const postCall = mockAuthPost.mock.calls[0]
+            const payload = postCall[1]
             expect(payload.url).toBe('https://example.com/test-page')
             expect(payload.crawl_type).toBe('sitemap')
+        })
+
+        it('should return early when URL is empty', async () => {
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            const websiteTab = screen.getByText('Website')
+            await userEvent.click(websiteTab)
+
+            await userEvent.click(screen.getByText('Ingest'))
+
+            await waitFor(() => {
+                expect(mockAuthPost).not.toHaveBeenCalled()
+            })
         })
 
         it('should show error for invalid URL', async () => {
@@ -123,7 +147,193 @@ describe('IngestModal', () => {
             // Check for validation message
             expect(screen.getByText(/Please enter a valid URL/)).toBeInTheDocument()
         })
+
+        it('should show error toast on invalid URL submit', async () => {
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            const websiteTab = screen.getByText('Website')
+            await userEvent.click(websiteTab)
+
+            const urlInput = screen.getByPlaceholderText('https://example.com/article')
+            await userEvent.type(urlInput, 'not-a-valid-url')
+
+            const form = document.querySelector('form')
+            expect(form).toBeTruthy()
+            if (form) {
+                fireEvent.submit(form)
+            }
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Ingestion Failed',
+                        description: expect.stringContaining('Please enter a valid URL'),
+                        variant: 'destructive',
+                    })
+                )
+            })
+        })
+
+        it('should advance progress while loading', async () => {
+            const intervalSpy = vi.spyOn(global, 'setInterval');
+            mockAuthPost.mockImplementation(() => new Promise(() => { }));
+
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />);
+
+            const websiteTab = screen.getByText('Website');
+            await userEvent.click(websiteTab);
+
+            const urlInput = screen.getByPlaceholderText('https://example.com/article');
+            await userEvent.type(urlInput, 'https://example.com/test-page');
+
+            const form = document.querySelector('form');
+            if (form) {
+                await waitFor(() => {
+                    fireEvent.submit(form);
+                });
+            }
+
+            const intervalCallback = intervalSpy.mock.calls[0]?.[0] as (() => void) | undefined;
+            if (intervalCallback) {
+                await waitFor(() => {
+                    intervalCallback();
+                });
+            }
+
+            expect(intervalSpy).toHaveBeenCalled();
+            intervalSpy.mockRestore();
+        })
+
+        it('should show fallback error on non-Error failures', async () => {
+            mockAuthPost.mockRejectedValue('bad')
+
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            const websiteTab = screen.getByText('Website')
+            await userEvent.click(websiteTab)
+
+            const urlInput = screen.getByPlaceholderText('https://example.com/article')
+            await userEvent.type(urlInput, 'https://example.com/fail')
+
+            await userEvent.click(screen.getByText('Ingest'))
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Ingestion Failed',
+                        description: 'Something went wrong. Please try again.',
+                        variant: 'destructive',
+                    })
+                )
+            })
+        })
     })
+
+    describe('File Submission', () => {
+        it('should return early when submitting without a file', async () => {
+            const user = userEvent.setup({ delay: null });
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            await user.click(screen.getByText('Ingest'));
+
+            await waitFor(() => {
+                expect(mockGetUploadUrl).not.toHaveBeenCalled();
+                expect(mockIngestFileReference).not.toHaveBeenCalled();
+            });
+        });
+
+        it('should use default content type when file type is missing', async () => {
+            const user = userEvent.setup({ delay: null });
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+            const file = new File(['test content'], 'test.bin');
+            await user.upload(fileInput, file);
+
+            await user.click(screen.getByText('Ingest'));
+
+            await waitFor(() => {
+                expect(mockGetUploadUrl).toHaveBeenCalledWith('test.bin', 'application/octet-stream', file.size);
+            });
+        });
+
+        it('should submit file upload successfully', async () => {
+            const user = userEvent.setup({ delay: null });
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+            expect(fileInput).toBeInTheDocument();
+
+            const file = new File(['test content'], 'test.pdf', { type: 'application/pdf' });
+            await user.upload(fileInput, file);
+
+            const submitButton = screen.getByText('Ingest');
+            await user.click(submitButton);
+
+            await waitFor(() => {
+                expect(mockGetUploadUrl).toHaveBeenCalledWith('test.pdf', 'application/pdf', file.size);
+            });
+
+            expect(mockUploadToStorage).toHaveBeenCalledWith('https://storage.test/upload', file);
+            expect(mockIngestFileReference).toHaveBeenCalledWith(
+                'uploads/test.pdf',
+                'test.pdf',
+                file.size,
+                { client_id: 'frontend_user' }
+            );
+
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Ingestion Queued',
+                    variant: 'default',
+                })
+            );
+        });
+
+        it('should show error toast when upload fails', async () => {
+            mockUploadToStorage.mockResolvedValue(false);
+
+            const user = userEvent.setup({ delay: null });
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+            const file = new File(['test content'], 'test.pdf', { type: 'application/pdf' });
+            await user.upload(fileInput, file);
+
+            await user.click(screen.getByText('Ingest'));
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Ingestion Failed',
+                        variant: 'destructive',
+                    })
+                );
+            });
+        });
+    });
+
+    describe('Legacy URL Submission', () => {
+        it('should submit legacy URL with single crawl type', async () => {
+            const user = userEvent.setup({ delay: null });
+            render(<IngestModal isOpen={true} onClose={mockOnClose} initialTab="url" />)
+
+            const urlInput = screen.getByPlaceholderText('https://example.com');
+            await user.type(urlInput, 'https://example.com/single');
+
+            await user.click(screen.getByText('Ingest'));
+
+            await waitFor(() => {
+                expect(mockAuthPost).toHaveBeenCalledWith(
+                    '/integrations/web/crawl',
+                    expect.objectContaining({
+                        url: 'https://example.com/single',
+                        crawl_type: 'single',
+                    })
+                );
+            });
+        });
+    });
 
     describe('Notion Submission', () => {
         it('should trigger connect when clicking Connect Notion', async () => {
@@ -138,6 +348,17 @@ describe('IngestModal', () => {
             expect(mockConnect).toHaveBeenCalledWith('notion')
         })
 
+        it('should show loading indicator when datasource is loading', async () => {
+            mockLoading.mockReturnValue(true)
+
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            const notionTab = screen.getByText('Notion')
+            await userEvent.click(notionTab)
+
+            expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+        })
+
         it('should show connected state when connected', async () => {
             mockIsConnected.mockReturnValue(true) // Mock connected state
 
@@ -149,6 +370,21 @@ describe('IngestModal', () => {
             expect(screen.getByText('Notion Connected')).toBeInTheDocument()
             expect(screen.getByText('Manage in Notion')).toBeInTheDocument()
         })
+
+        it('should open notion integrations link when clicking Manage in Notion', async () => {
+            mockIsConnected.mockReturnValue(true)
+            const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+            render(<IngestModal isOpen={true} onClose={mockOnClose} />)
+
+            const notionTab = screen.getByText('Notion')
+            await userEvent.click(notionTab)
+
+            await userEvent.click(screen.getByText('Manage in Notion'))
+
+            expect(openSpy).toHaveBeenCalledWith('https://notion.so/my-integrations', '_blank');
+            openSpy.mockRestore();
+        });
     })
 
     describe('Modal Behavior', () => {

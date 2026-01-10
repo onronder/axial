@@ -7,12 +7,9 @@ Updated to support Universal Connector Architecture (Sync Ingest).
 
 import logging
 from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
-from datetime import datetime, timezone
-from .base import BaseConnector, ConnectorDocument, ConnectorItem
+from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
+from .base import ConnectorItem
 from core.db import get_supabase
-from core.config import settings
-from core.db_utils import delete_rows_with_retry, insert_rows_with_retry
-from core.hashing import compute_content_hash
 from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync
 import requests
 from starlette.concurrency import run_in_threadpool
@@ -21,11 +18,15 @@ from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 logger = logging.getLogger(__name__)
 
 
-class NotionConnector(BaseConnector):
+class NotionConnector(EnhancedConnector):
     """
     Connector for Notion integration.
-    Updated to support Universal Connector Architecture (Sync Ingest).
+    Uses the unified ingestion interface for raw content delivery.
     """
+
+    @property
+    def connector_type(self) -> SourceType:
+        return SourceType.NOTION
     
     NOTION_API_VERSION = "2022-06-28"
     BASE_URL = "https://api.notion.com/v1"
@@ -277,383 +278,121 @@ class NotionConnector(BaseConnector):
         return "\n".join(text_parts)
 
 
-    async def ingest(self, config: Dict[str, Any]) -> "AsyncIterator[ConnectorDocument]":
-        """Async wrapper for ingestion (Streaming)."""
-        from starlette.concurrency import iterate_in_threadpool
-        return iterate_in_threadpool(self._ingest_implementation(config))
+    async def fetch_documents(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> AsyncIterator[SourceDocument]:
+        """Async wrapper for sync fetch."""
+        for doc in self.fetch_documents_sync(item_ids, credentials, **kwargs):
+            yield doc
 
-    def ingest_sync(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
-        """Synchronous ingestion generator (used by worker tasks)."""
-        return self._ingest_implementation(config)
+    def fetch_documents_sync(
+        self,
+        item_ids: list[str],
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Iterator[SourceDocument]:
+        user_id = kwargs.get("user_id")
+        if not item_ids:
+            return iter(())
 
-    def _ingest_implementation(self, config: Dict[str, Any]) -> "Iterator[ConnectorDocument]":
-        """
-        Synchronous ingestion for Worker (Generator).
-        """
-        user_id = config.get("user_id")
-        item_ids = config.get("item_ids", [])
-        credentials_data = config.get("credentials")
-        
-        # 1. Hybrid Credential Resolution with Token Refresh
-        if credentials_data and credentials_data.get('integration_id'):
-            # Worker case: Fetch integration and refresh token if needed
+        # Resolve credentials (integration_id preferred; user_id fallback for API usage)
+        if credentials and credentials.get("integration_id"):
             supabase = get_supabase()
             int_res = supabase.table("user_integrations").select("*").eq(
-                "id", credentials_data['integration_id']
+                "id", credentials["integration_id"]
             ).single().execute()
-            
             if not int_res.data:
-                raise ValueError(f"Integration {credentials_data['integration_id']} not found")
-            
-            # Use token manager for automatic refresh
-            creds_data = OAuthTokenManager.get_valid_credentials(
-                int_res.data,
-                'notion'
-            )
-            access_token = creds_data['access_token']
-        elif credentials_data and credentials_data.get("access_token"):
-            # Legacy: Use passed token (fallback)
-            access_token = credentials_data["access_token"]
+                raise AuthenticationError(f"Integration {credentials['integration_id']} not found")
+
+            creds_data = OAuthTokenManager.get_valid_credentials(int_res.data, "notion")
+            access_token = creds_data["access_token"]
         elif user_id:
-            # API case: Fallback to DB lookup (already has refresh)
             access_token = self._get_access_token(user_id)
         else:
-            raise ValueError("No credentials or user_id provided for Notion ingestion")
+            raise AuthenticationError("No credentials or user_id provided for Notion fetch")
 
-        processed_ids = set()  # Prevent infinite loops from circular references
-        
-        def ingest_page_recursive(page_id: str, depth: int = 0) -> "Iterator[ConnectorDocument]":
-            """Recursively ingest a page and its children."""
-            if page_id in processed_ids or depth > 10:  # Max depth to prevent runaway recursion
+        processed_ids = set()
+
+        def ingest_page_recursive(page_id: str, depth: int = 0) -> Iterator[SourceDocument]:
+            if page_id in processed_ids or depth > 10:
                 return
             processed_ids.add(page_id)
-            
+
             try:
-                # Get Page Title
                 page = self._make_request("GET", f"pages/{page_id}", access_token)
                 title = "Untitled"
-                # Extract title logic
                 props = page.get("properties", {})
                 for prop in props.values():
                     if prop.get("type") == "title" and prop.get("title"):
                         title = prop["title"][0].get("plain_text", "Untitled")
                         break
 
-                # Get Blocks (Content) - Paginated fetch
                 all_blocks = []
                 child_page_ids = []
                 cursor = None
-                
+
                 while True:
                     endpoint = f"blocks/{page_id}/children"
                     if cursor:
                         endpoint += f"?start_cursor={cursor}"
-                    
+
                     blocks_res = self._make_request("GET", endpoint, access_token)
-                    
                     for block in blocks_res.get("results", []):
                         all_blocks.append(block)
-                        # Collect child page IDs for recursive processing
                         if block.get("type") == "child_page":
                             child_page_ids.append(block["id"])
                         elif block.get("type") == "child_database":
-                            # For databases, fetch all pages inside
                             try:
-                                db_pages = self._make_request("POST", f"databases/{block['id']}/query", access_token, {"page_size": 100})
+                                db_pages = self._make_request(
+                                    "POST",
+                                    f"databases/{block['id']}/query",
+                                    access_token,
+                                    {"page_size": 100},
+                                )
                                 for db_page in db_pages.get("results", []):
                                     child_page_ids.append(db_page["id"])
                             except Exception as e:
-                                logger.warning(f"⚠️ [Notion] Failed to query database {block['id']}: {e}")
-                    
+                                logger.warning(
+                                    "⚠️ [Notion] Failed to query database %s: %s",
+                                    block["id"],
+                                    e,
+                                )
+
                     if not blocks_res.get("has_more"):
                         break
                     cursor = blocks_res.get("next_cursor")
-                
+
                 content = self._extract_text_from_blocks(all_blocks)
-                
                 if content.strip():
-                    doc = ConnectorDocument(
-                        page_content=content,
+                    parent_id = (page.get("parent") or {}).get("page_id")
+                    filename = f"{title}.md"
+                    yield SourceDocument(
+                        content=content,
                         metadata={
                             "source": "notion",
                             "title": title,
                             "page_id": page_id,
                             "source_url": page.get("url"),
-                        }
+                        },
+                        source_type=SourceType.NOTION,
+                        source_id=page_id,
+                        filename=filename,
+                        mime_type="text/markdown",
+                        size_bytes=len(content.encode("utf-8")),
+                        parent_id=parent_id,
                     )
-                    logger.info(f"✅ [Notion] Ingested: {title}")
-                    yield doc
-                
-                # Recursively process child pages
+                    logger.info(f"✅ [Notion] Fetched: {title}")
+
                 for child_id in child_page_ids:
                     yield from ingest_page_recursive(child_id, depth + 1)
-                    
+
             except Exception as e:
-                logger.error(f"❌ [Notion] Failed to ingest {page_id}: {e}")
-        
-        # Process all requested pages
+                logger.error(f"❌ [Notion] Failed to fetch {page_id}: {e}")
+
         for page_id in item_ids:
             yield from ingest_page_recursive(page_id)
-                
-        logger.info(f"📥 [Notion] Completed ingestion stream for {len(item_ids)} initial items")
 
-    async def sync(self, user_id: str, integration_id: str) -> dict:
-        """Async wrapper for sync."""
-        return await run_in_threadpool(self._sync_implementation, user_id, integration_id)
-
-    def _sync_implementation(self, user_id: str, integration_id: str) -> dict:
-        """
-        Full sync operation: fetch ALL pages/databases and ingest them.
-        """
-        logger.info(f"🔄 [NotionSync] Starting sync for user {user_id}")
-        
-        try:
-            # 1. Fetch all accessible pages (using empty parent_id = recursive search)
-            # Use the synchronous implementation!
-            root_items = self._list_items_implementation(user_id, parent_id="root")
-            root_ids = [item.id for item in root_items]
-            
-            if not root_ids:
-                logger.info("🔄 [NotionSync] No root pages found to sync")
-                return {"status": "success", "files_processed": 0, "chunks_created": 0}
-            
-            logger.info(f"🔄 [NotionSync] Found {len(root_ids)} root items to sync")
-            
-            # 2. Ingest synchronously
-            config = {
-                "user_id": user_id,
-                "item_ids": root_ids
-            }
-            
-            documents = self._ingest_implementation(config)
-            
-            if not documents:
-                 return {"status": "success", "files_processed": 0, "chunks_created": 0}
-
-            # 3. Chunk and Embed (using centralized service)
-            from core.db import get_supabase
-            from services.embeddings import generate_embeddings_batch_sync
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
-            from worker.tasks import create_file_status, update_file_status
-            
-            supabase = get_supabase()
-            
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200,
-                separators=["\n\n", "\n", ". ", " ", ""]
-            )
-            
-            # Create ingestion job for progress tracking
-            job_id = None
-            if documents:
-                job_result = supabase.table("ingestion_jobs").insert({
-                    "user_id": user_id,
-                    "provider": "notion",
-                    "total_files": len(documents),
-                    "processed_files": 0,
-                    "status": "processing",
-                    "message": f"Syncing {len(documents)} pages from Notion",
-                    "status_message": f"Syncing {len(documents)} pages from Notion"
-                }).execute()
-                if job_result.data:
-                    job_id = job_result.data[0]["id"]
-                    logger.info(f"🔄 [NotionSync] Created job {job_id} for tracking")
-            
-            total_chunks = 0
-            processed_docs = 0
-            errors = []
-            
-            for doc in documents:
-                doc_title = doc.metadata.get("title", "Untitled")
-                file_status_id = None
-                
-                # Create file status record for tracking
-                if job_id:
-                    file_status_id = create_file_status(supabase, job_id, user_id, doc_title, 
-                        len(doc.page_content.encode('utf-8')))
-                
-                try:
-                    # Status: Processing
-                    if file_status_id:
-                        update_file_status(supabase, file_status_id,
-                            status="parsing", progress=20, message="Extracting content...")
-                    
-                    # Insert Parent Document
-                    content_bytes = doc.page_content.encode("utf-8", errors="ignore")
-                    if len(content_bytes) > settings.MAX_FILE_SIZE:
-                        if file_status_id:
-                            update_file_status(
-                                supabase,
-                                file_status_id,
-                                status="failed",
-                                progress=0,
-                                message=f"File exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)}MB limit",
-                                error="File too large",
-                            )
-                        continue
-                    content_hash = compute_content_hash(content_bytes)
-                    parent_doc_data = {
-                        "user_id": user_id,
-                        "title": doc_title,
-                        "source_type": "notion",
-                        "source_url": doc.metadata.get("source_url"),
-                        "file_size_bytes": len(content_bytes),
-                        "content_hash": content_hash,
-                        "metadata": {
-                            "page_id": doc.metadata.get("page_id"),
-                            "source": "notion"
-                        },
-                        "created_at": datetime.now(timezone.utc).isoformat()
-                    }
-
-                    existing_doc_id = None
-                    if content_hash:
-                        existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
-                            "title", doc_title
-                        ).eq("content_hash", content_hash).limit(1).execute()
-                        if existing.data:
-                            existing_doc_id = existing.data[0]["id"]
-
-                    if existing_doc_id:
-                        delete_rows_with_retry(
-                            supabase,
-                            "document_chunks",
-                            "document_id",
-                            existing_doc_id,
-                            context=f"notion_sync replace doc_id={existing_doc_id}",
-                        )
-                        update_data = {**parent_doc_data, "updated_at": datetime.now(timezone.utc).isoformat()}
-                        update_data.pop("created_at", None)
-                        supabase.table("documents").update(update_data).eq("id", existing_doc_id).execute()
-                        parent_doc_id = existing_doc_id
-                    else:
-                        doc_res = supabase.table("documents").insert(parent_doc_data).execute()
-                        if not doc_res.data:
-                            if file_status_id:
-                                update_file_status(supabase, file_status_id,
-                                    status="failed", progress=0, error="Failed to create document")
-                            continue
-                        parent_doc_id = doc_res.data[0]['id']
-                    
-                    # Chunk
-                    chunks = text_splitter.split_text(doc.page_content)
-                    if not chunks:
-                        if file_status_id:
-                            update_file_status(supabase, file_status_id,
-                                status="skipped", progress=100, message="No content")
-                        continue
-                    
-                    # Status: Embedding
-                    if file_status_id:
-                        update_file_status(supabase, file_status_id,
-                            status="embedding", progress=50, message=f"Embedding {len(chunks)} chunks...",
-                            chunks_total=len(chunks))
-                        
-                    # Embed
-                    embeddings = generate_embeddings_batch_sync(chunks)
-                    
-                    # Status: Indexing
-                    if file_status_id:
-                        update_file_status(supabase, file_status_id,
-                            status="indexing", progress=75, message="Saving to database...")
-                    
-                    # Insert Chunks in batches to prevent DB timeout
-                    DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))
-                    chunk_records = []
-                    for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
-                        if embedding is None:
-                            continue
-                        chunk_records.append({
-                            "document_id": parent_doc_id,
-                            "content": chunk_text,
-                            "embedding": embedding,
-                            "chunk_index": i
-                        })
-                    
-                    if chunk_records:
-                        inserted_count = 0
-                        for batch_start in range(0, len(chunk_records), DB_BATCH_SIZE):
-                            batch = chunk_records[batch_start:batch_start + DB_BATCH_SIZE]
-                            try:
-                                insert_rows_with_retry(
-                                    supabase,
-                                    "document_chunks",
-                                    batch,
-                                    context=f"notion_sync doc={doc.metadata.get('page_id', 'unknown')} batch={batch_start // DB_BATCH_SIZE + 1}",
-                                )
-                                inserted_count += len(batch)
-                            except Exception as batch_err:
-                                logger.error(f"❌ [NotionSync] Batch insert failed: {batch_err}")
-                                continue
-                        
-                        if inserted_count > 0:
-                            total_chunks += inserted_count
-                            processed_docs += 1
-                            
-                            # Status: Completed
-                            if file_status_id:
-                                update_file_status(supabase, file_status_id,
-                                    status="completed", progress=100, message="Complete",
-                                    chunks_processed=inserted_count, document_id=str(parent_doc_id))
-                            
-                            # Update job progress
-                            if job_id:
-                                supabase.table("ingestion_jobs").update({
-                                    "processed_files": processed_docs,
-                                    "message": f"Processed {processed_docs}/{len(documents)} pages",
-                                    "status_message": f"Processed {processed_docs}/{len(documents)} pages"
-                                }).eq("id", job_id).execute()
-                        else:
-                            if file_status_id:
-                                update_file_status(supabase, file_status_id,
-                                    status="failed", progress=0, error="No chunks inserted")
-                        
-                except Exception as e:
-                    logger.error(f"❌ [NotionSync] Error saving {doc_title}: {e}")
-                    if file_status_id:
-                        update_file_status(supabase, file_status_id,
-                            status="failed", progress=0, error=str(e))
-                    errors.append(str(e))
-            
-            # 4. Update job to completed
-            if job_id:
-                final_status = "completed" if processed_docs > 0 else "failed"
-                supabase.table("ingestion_jobs").update({
-                    "status": final_status,
-                    "processed_files": processed_docs,
-                    "progress": 100,
-                    "message": f"Synced {processed_docs} pages, {total_chunks} chunks",
-                    "status_message": f"Synced {processed_docs} pages, {total_chunks} chunks"
-                }).eq("id", job_id).execute()
-            
-            # 5. Update Integration Status
-            supabase.table("user_integrations").update({
-                "last_sync_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }).eq("id", integration_id).execute()
-            
-            return {
-                "status": "success",
-                "files_processed": processed_docs,
-                "chunks_created": total_chunks,
-                "errors": errors,
-                "job_id": job_id
-            }
-
-        except requests.exceptions.HTTPError as e:
-            # ... existing error handling ...
-            if e.response.status_code == 401:
-                logger.error(f"❌ [NotionSync] Authentication failed: {e}")
-                raise Exception("Integration requires reconnection (Token Expired/Revoked)") from e
-            logger.error(f"❌ [NotionSync] HTTP Error: {e}")
-            raise e
-        except Exception as e:
-            logger.error(f"❌ [NotionSync] Sync failed: {e}")
-            # Mark job as failed if exists
-            if 'job_id' in locals() and job_id:
-                supabase.table("ingestion_jobs").update({
-                    "status": "failed",
-                    "error_message": str(e)
-                }).eq("id", job_id).execute()
-            raise e
+        logger.info("📥 [Notion] Completed fetch for %s initial item(s)", len(item_ids))

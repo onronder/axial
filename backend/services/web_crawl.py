@@ -1,15 +1,18 @@
 """
 Web crawl queueing helpers.
 
-Shared between legacy /ingest and new /integrations/web/crawl endpoints.
+Shared across web crawl endpoints.
 """
 
 from datetime import datetime, timezone
 from typing import Dict
 
+import logging
+
 from core.db import get_supabase
 from worker.tasks import crawl_discovery_task
 
+logger = logging.getLogger(__name__)
 
 def queue_web_crawl(
     *,
@@ -60,15 +63,18 @@ def queue_web_crawl(
             },
         )
     except Exception as exc:
-        supabase.table("web_crawl_configs").update({
-            "status": "failed",
-            "error_message": str(exc),
-            "updated_at": now,
-        }).eq("id", crawl_id).execute()
-        raise
+        logger.error("❌ [Crawl] Celery dispatch failed for %s: %s", crawl_id, exc)
+        supabase.table("web_crawl_configs").update(
+            {
+                "status": "failed",
+                "error_message": f"dispatch_failed: {exc}",
+                "updated_at": now,
+            }
+        ).eq("id", crawl_id).execute()
+        raise RuntimeError(f"Failed to dispatch crawl: {exc}") from exc
 
-    supabase.table("web_crawl_configs").update({
-        "celery_task_id": task.id
-    }).eq("id", crawl_id).execute()
+    supabase.table("web_crawl_configs").update(
+        {"celery_task_id": task.id, "updated_at": now}
+    ).eq("id", crawl_id).execute()
 
     return {"crawl_id": crawl_id, "task_id": task.id}

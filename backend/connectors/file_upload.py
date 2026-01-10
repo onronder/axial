@@ -6,7 +6,7 @@ It's the simplest connector and serves as a reference implementation.
 """
 
 import logging
-from typing import AsyncIterator, Dict, Any, Optional
+from typing import Any, AsyncIterator, Dict, Optional
 
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
 from core.db import get_supabase
@@ -104,16 +104,6 @@ class FileUploadConnector(EnhancedConnector):
     async def list_items(self, user_id: str, parent_id: Optional[str] = None):
         """File uploads don't support browsing."""
         return []
-    
-    async def ingest(self, config: Dict[str, Any]):
-        """Legacy method - redirects to fetch_documents."""
-        item_ids = config.get("item_ids", [])
-        credentials = config.get("credentials")
-        user_id = config.get("user_id")
-        
-        async for doc in self.fetch_documents(item_ids, credentials, user_id=user_id):
-            # Convert to legacy ConnectorDocument
-            yield doc.to_connector_document()
     
     def validate_credentials(self, credentials: Dict[str, Any]) -> bool:
         """No credentials needed for file upload."""

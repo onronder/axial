@@ -26,8 +26,8 @@ interface UsageContextValue {
     storagePercent: number;
     canWebCrawl: boolean;
     teamEnabled: boolean;
-    refresh: () => Promise<void>;
-    refreshPlan: () => Promise<void>;
+    refresh: (force?: boolean) => Promise<void>;
+    refreshPlan: (force?: boolean) => Promise<void>;
 }
 
 const UsageContext = createContext<UsageContextValue | undefined>(undefined);
@@ -95,7 +95,7 @@ export function UsageProvider({ children }: UsageProviderProps) {
     const filesPercent = filesLimit > 0 ? (filesUsed / filesLimit) * 100 : 0;
     const storagePercent = storageLimit > 0 ? (storageUsed / storageLimit) * 100 : 0;
 
-    const refresh = useCallback(() => fetchAll(true), [fetchAll]);
+    const refresh = useCallback((force: boolean = true) => fetchAll(force), [fetchAll]);
 
     const value: UsageContextValue = {
         usage,

@@ -40,6 +40,15 @@ const createTestQueryClient = () => new QueryClient({
     },
 });
 
+const createDisabledQueryClient = () => new QueryClient({
+    defaultOptions: {
+        queries: {
+            retry: false,
+            enabled: false,
+        },
+    },
+});
+
 // Test wrapper with all required providers
 const wrapper = ({ children }: { children: ReactNode }) => {
     const queryClient = createTestQueryClient();
@@ -80,6 +89,18 @@ describe('useChatHistory', () => {
 
         it('should handle fetch error gracefully', async () => {
             mockApiGet.mockRejectedValue(new Error('Network error'));
+
+            const { result } = renderHook(() => useChatHistory(), { wrapper });
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            expect(result.current.conversations).toEqual([]);
+        });
+
+        it('should default to empty array when API returns null data', async () => {
+            mockApiGet.mockResolvedValue({ data: null });
 
             const { result } = renderHook(() => useChatHistory(), { wrapper });
 
@@ -135,6 +156,28 @@ describe('useChatHistory', () => {
                 })
             );
         });
+
+        it('should handle createNewChat when cache is empty', async () => {
+            const queryClient = createDisabledQueryClient();
+            const disabledWrapper = ({ children }: { children: ReactNode }) => (
+                <QueryClientProvider client={queryClient}>
+                    <ChatHistoryProvider>{children}</ChatHistoryProvider>
+                </QueryClientProvider>
+            );
+
+            const newChat = { id: 'new-empty', title: 'New Chat', created_at: '2024-01-01', updated_at: '2024-01-01' };
+            mockApiPost.mockResolvedValue({ data: newChat });
+
+            const { result } = renderHook(() => useChatHistory(), { wrapper: disabledWrapper });
+
+            await act(async () => {
+                await result.current.createNewChat('New Chat');
+            });
+
+            await waitFor(() => {
+                expect(result.current.conversations[0]).toEqual(newChat);
+            });
+        });
     });
 
     describe('deleteChat', () => {
@@ -188,19 +231,40 @@ describe('useChatHistory', () => {
                 })
             ));
         });
+
+        it('should handle delete when cache is empty', async () => {
+            const queryClient = createDisabledQueryClient();
+            const disabledWrapper = ({ children }: { children: ReactNode }) => (
+                <QueryClientProvider client={queryClient}>
+                    <ChatHistoryProvider>{children}</ChatHistoryProvider>
+                </QueryClientProvider>
+            );
+
+            mockApiDelete.mockResolvedValue({});
+
+            const { result } = renderHook(() => useChatHistory(), { wrapper: disabledWrapper });
+
+            await act(async () => {
+                await result.current.deleteChat('missing');
+            });
+
+            expect(mockApiDelete).toHaveBeenCalledWith('/conversations/missing');
+            expect(result.current.conversations).toEqual([]);
+        });
     });
 
     describe('renameChat', () => {
         it('should rename a chat and update state', async () => {
             const existingConversations = [
                 { id: '1', title: 'Old Title', created_at: '2024-01-01', updated_at: '2024-01-01' },
+                { id: '2', title: 'Other Chat', created_at: '2024-01-01', updated_at: '2024-01-01' },
             ];
             mockApiGet.mockResolvedValue({ data: existingConversations });
             mockApiPatch.mockResolvedValue({ data: { ...existingConversations[0], title: 'New Title' } });
 
             const { result } = renderHook(() => useChatHistory(), { wrapper });
 
-            await waitFor(() => expect(result.current.conversations.length).toBe(1));
+            await waitFor(() => expect(result.current.conversations.length).toBe(2));
 
             await act(async () => {
                 await result.current.renameChat('1', 'New Title');
@@ -215,6 +279,50 @@ describe('useChatHistory', () => {
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Chat renamed' })
             );
+
+            expect(result.current.conversations.find(c => c.id === '2')?.title).toBe('Other Chat');
+        });
+
+        it('should show error toast on rename failure', async () => {
+            mockApiPatch.mockRejectedValue({ message: 'Rename failed', response: { data: { detail: 'Server error' } } });
+
+            const { result } = renderHook(() => useChatHistory(), { wrapper });
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            await act(async () => {
+                try {
+                    await result.current.renameChat('1', 'New Title');
+                } catch {
+                    // Expected rejection
+                }
+            });
+
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Error',
+                    variant: 'destructive',
+                })
+            );
+        });
+
+        it('should handle rename when cache is empty', async () => {
+            const queryClient = createDisabledQueryClient();
+            const disabledWrapper = ({ children }: { children: ReactNode }) => (
+                <QueryClientProvider client={queryClient}>
+                    <ChatHistoryProvider>{children}</ChatHistoryProvider>
+                </QueryClientProvider>
+            );
+
+            mockApiPatch.mockResolvedValue({ data: { id: 'missing', title: 'New', created_at: '', updated_at: '' } });
+
+            const { result } = renderHook(() => useChatHistory(), { wrapper: disabledWrapper });
+
+            await act(async () => {
+                await result.current.renameChat('missing', 'New');
+            });
+
+            expect(result.current.conversations).toEqual([]);
         });
     });
 

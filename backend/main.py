@@ -74,7 +74,7 @@ def init_sentry() -> None:
 init_sentry()
 
 # Import routers
-from api.v1.ingest import router as ingest_router
+from api.v1.uploads import router as uploads_router
 from api.v1.search import router as search_router
 from api.v1.chat import router as chat_router
 from api.v1.documents import router as documents_router
@@ -221,7 +221,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # =============================================================================
 # API Routers
 # =============================================================================
-app.include_router(ingest_router, prefix="/api/v1/ingest", tags=["ingestion"])
+app.include_router(uploads_router, prefix="/api/v1/uploads", tags=["uploads"])
 app.include_router(search_router, prefix="/api/v1", tags=["search"])
 app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(documents_router, prefix="/api/v1", tags=["documents"])

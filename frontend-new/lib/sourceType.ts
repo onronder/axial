@@ -9,11 +9,8 @@ export type CanonicalSourceType =
   | "local";
 
 const SOURCE_TYPE_ALIASES: Record<string, string> = {
-  file: "file_upload",
-  upload: "file_upload",
   "file-upload": "file_upload",
   file_upload: "file_upload",
-  drive: "google_drive",
   "google-drive": "google_drive",
   google_drive: "google_drive",
   notion: "notion",
@@ -27,7 +24,7 @@ const SOURCE_TYPE_ALIASES: Record<string, string> = {
 
 export function normalizeSourceType(value?: string | null): string | undefined {
   if (!value) return undefined;
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
   return SOURCE_TYPE_ALIASES[normalized] ?? normalized;
 }
 

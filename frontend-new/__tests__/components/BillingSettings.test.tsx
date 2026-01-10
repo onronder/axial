@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { BillingSettings } from '@/components/settings/BillingSettings';
 
 // Mock dependencies
@@ -20,6 +20,9 @@ const mockUseUsage = vi.fn();
 const mockApiGet = vi.fn();
 const mockApiPost = vi.fn();
 const mockApiDelete = vi.fn();
+const { mockToast } = vi.hoisted(() => ({
+    mockToast: { error: vi.fn(), success: vi.fn() },
+}));
 
 vi.mock('@/hooks/useProfile', () => ({
     useProfile: () => mockProfile(),
@@ -39,6 +42,10 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('@/components/branding/AxioLogo', () => ({
     AxioLogo: () => <div data-testid="axio-logo">Logo</div>,
+}));
+
+vi.mock('sonner', () => ({
+    toast: mockToast,
 }));
 
 // Mock window.open
@@ -170,6 +177,51 @@ describe('BillingSettings Component', () => {
             // Enterprise appears in badge and card
             const enterpriseElements = screen.getAllByText('Enterprise');
             expect(enterpriseElements.length).toBeGreaterThan(0);
+        });
+
+        it('should fall back to profile plan when usage plan is missing', async () => {
+            mockProfile.mockReturnValue({
+                profile: { plan: 'starter' },
+                isLoading: false,
+            });
+            mockUseUsage.mockReturnValue({
+                plan: null,
+                isPlanInherited: false,
+            });
+
+            await renderBilling();
+
+            expect(screen.getByText('Starter Plan')).toBeInTheDocument();
+        });
+
+        it('should default to Free plan details when plan is unknown', async () => {
+            mockProfile.mockReturnValue({
+                profile: { plan: 'mystery' },
+                isLoading: false,
+            });
+            mockUseUsage.mockReturnValue({
+                plan: null,
+                isPlanInherited: false,
+            });
+
+            await renderBilling();
+
+            expect(screen.getByText('Free Plan')).toBeInTheDocument();
+        });
+
+        it('should default to Free plan when no plan is available', async () => {
+            mockProfile.mockReturnValue({
+                profile: null,
+                isLoading: false,
+            });
+            mockUseUsage.mockReturnValue({
+                plan: null,
+                isPlanInherited: false,
+            });
+
+            await renderBilling();
+
+            expect(screen.getByText('Free Plan')).toBeInTheDocument();
         });
     });
 
@@ -314,6 +366,23 @@ describe('BillingSettings Component', () => {
             expect(screen.getByText('Contact Sales')).toBeInTheDocument();
         });
 
+        it('should open enterprise contact modal when Contact Sales is clicked', async () => {
+            mockProfile.mockReturnValue({
+                profile: { plan: 'free' },
+                isLoading: false,
+            });
+            mockUseUsage.mockReturnValue({
+                plan: 'free',
+                isPlanInherited: false,
+            });
+
+            await renderBilling();
+
+            fireEvent.click(screen.getByText('Contact Sales'));
+
+            expect(screen.getByText('Contact Enterprise Sales')).toBeInTheDocument();
+        });
+
         it('should disable button for current plan', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'pro' },
@@ -359,6 +428,26 @@ describe('BillingSettings Component', () => {
 
             (window as unknown as { location: Location }).location = originalLocation;
         });
+
+        it('should show toast when checkout URL is missing', async () => {
+            mockProfile.mockReturnValue({
+                profile: { plan: 'free' },
+                isLoading: false,
+            });
+            mockUseUsage.mockReturnValue({
+                plan: 'free',
+                isPlanInherited: false,
+            });
+            mockApiPost.mockResolvedValue({ data: {} });
+
+            await renderBilling();
+
+            fireEvent.click(screen.getByText('Upgrade to Pro'));
+
+            await waitFor(() => {
+                expect(mockToast.error).toHaveBeenCalledWith('Failed to start checkout. Please try again.');
+            });
+        });
     });
 
     describe('Payment Methods Section', () => {
@@ -389,6 +478,24 @@ describe('BillingSettings Component', () => {
         });
 
         it('should show no history message', async () => {
+            await renderBilling();
+
+            expect(screen.getByText('No billing history available')).toBeInTheDocument();
+        });
+
+        it('should handle invoice fetch errors gracefully', async () => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            mockApiGet.mockRejectedValue(new Error('Invoice error'));
+
+            await renderBilling();
+
+            expect(consoleSpy).toHaveBeenCalled();
+            consoleSpy.mockRestore();
+        });
+
+        it('should handle null invoice data', async () => {
+            mockApiGet.mockResolvedValue({ data: null });
+
             await renderBilling();
 
             expect(screen.getByText('No billing history available')).toBeInTheDocument();
@@ -424,6 +531,142 @@ describe('BillingSettings Component', () => {
             await renderBilling();
 
             expect(screen.queryByText('Manage Subscription')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('Portal Redirect', () => {
+        it('should open portal URL when manage subscription is clicked', async () => {
+            mockApiPost.mockResolvedValue({ data: { url: 'https://polar.sh/portal' } });
+
+            await renderBilling();
+
+            fireEvent.click(screen.getByText('Manage Subscription'));
+
+            await waitFor(() => {
+                expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/portal', '_blank');
+            });
+        });
+
+        it('should show toast on portal error', async () => {
+            mockApiPost.mockResolvedValue({ data: {} });
+
+            await renderBilling();
+
+            fireEvent.click(screen.getByText('Manage Subscription'));
+
+            await waitFor(() => {
+                expect(mockToast.error).toHaveBeenCalledWith('Failed to open subscription portal');
+            });
+        });
+    });
+
+    describe('Billing History Items', () => {
+        it('should render invoice list and open invoice link', async () => {
+            mockApiGet.mockResolvedValue({
+                data: [
+                    {
+                        id: 'inv-1',
+                        amount: 2900,
+                        currency: 'usd',
+                        status: 'paid',
+                        created_at: '2024-01-01T00:00:00Z',
+                        product_name: 'Pro Plan',
+                        invoice_url: 'https://polar.sh/invoices/inv-1',
+                    },
+                ],
+            });
+
+            await renderBilling();
+
+            const invoiceLabel = screen.getByText('Pro Plan', { selector: 'p' });
+            expect(invoiceLabel).toBeInTheDocument();
+            const invoiceRow = invoiceLabel.parentElement?.parentElement?.parentElement;
+            expect(invoiceRow).toBeTruthy();
+            if (!invoiceRow) {
+                throw new Error('Invoice row not found');
+            }
+            expect(within(invoiceRow).getByText('$29')).toBeInTheDocument();
+
+            const invoiceButton = within(invoiceRow).getByRole('button');
+            fireEvent.click(invoiceButton);
+
+            expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/invoices/inv-1', '_blank');
+        });
+
+        it('should render formatted invoice amount and fallback date on invalid date', async () => {
+            const dateSpy = vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(() => {
+                throw new Error('Bad date');
+            });
+
+            mockApiGet.mockResolvedValue({
+                data: [
+                    {
+                        id: 'inv-2',
+                        amount: 2950,
+                        currency: 'usd',
+                        status: 'open',
+                        created_at: 'bad-date',
+                        product_name: 'Starter Plan',
+                        invoice_url: null,
+                    },
+                ],
+            });
+
+            await renderBilling();
+
+            const invoiceLabel = screen.getByText('Starter Plan', { selector: 'p' });
+            const invoiceRow = invoiceLabel.parentElement?.parentElement?.parentElement;
+            expect(invoiceRow).toBeTruthy();
+            if (!invoiceRow) {
+                throw new Error('Invoice row not found');
+            }
+
+            expect(within(invoiceRow).getByText('$29.50')).toBeInTheDocument();
+            expect(within(invoiceRow).getByText('bad-date')).toBeInTheDocument();
+            expect(within(invoiceRow).getByText('open').className).toContain('outline');
+
+            dateSpy.mockRestore();
+        });
+    });
+
+    describe('Cancel Subscription Flow', () => {
+        it('should cancel subscription when confirmed', async () => {
+            await renderBilling();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel Subscription' }));
+            fireEvent.click(screen.getByRole('button', { name: /Yes, Cancel Subscription/i }));
+
+            await waitFor(() => {
+                expect(mockApiDelete).toHaveBeenCalledWith('/billing/subscription');
+            });
+
+            expect(mockToast.success).toHaveBeenCalled();
+        });
+
+        it('should show error toast on cancel failure', async () => {
+            mockApiDelete.mockResolvedValue({ data: { success: false, message: 'Failed' } });
+
+            await renderBilling();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel Subscription' }));
+            fireEvent.click(screen.getByRole('button', { name: /Yes, Cancel Subscription/i }));
+
+            await waitFor(() => {
+                expect(mockToast.error).toHaveBeenCalledWith('Failed to cancel subscription. Please try again.');
+            });
+        });
+
+        it('should show error toast when cancel failure has no message', async () => {
+            mockApiDelete.mockResolvedValue({ data: { success: false } });
+
+            await renderBilling();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel Subscription' }));
+            fireEvent.click(screen.getByRole('button', { name: /Yes, Cancel Subscription/i }));
+
+            await waitFor(() => {
+                expect(mockToast.error).toHaveBeenCalledWith('Failed to cancel subscription. Please try again.');
+            });
         });
     });
 });

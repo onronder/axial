@@ -11,8 +11,10 @@ class DummyRequests:
         self._raise = raise_exc
         self.calls = []
 
-    def post(self, url, headers=None, data=None, files=None):
-        self.calls.append({"url": url, "headers": headers, "data": data, "files": files})
+    def post(self, url, headers=None, data=None, files=None, json=None, **_kwargs):
+        if json is not None and data is None:
+            data = json
+        self.calls.append({"url": url, "headers": headers, "data": data, "files": files, "json": json})
         if self._raise:
             raise RuntimeError("network error")
         if self._responses:

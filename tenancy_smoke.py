@@ -1,6 +1,5 @@
 import jwt
 import requests
-import json
 
 BASE_URL = "http://localhost:8000"
 
@@ -13,19 +12,47 @@ def test_ingest(user_id):
     token = generate_token(user_id)
     headers = {"Authorization": f"Bearer {token}"}
     
-    files = {
-        'file': ('test_doc.txt', 'This is a test document for user ' + user_id, 'text/plain')
-    }
-    data = {
-        'metadata': json.dumps({"client_id": "test_client"})
-    }
-    
     print(f"Ingesting for user {user_id}...")
     try:
-        response = requests.post(f"{BASE_URL}/api/v1/ingest", headers=headers, files=files, data=data)
+        content = f"This is a test document for user {user_id}".encode("utf-8")
+        filename = "test_doc.txt"
+
+        upload_payload = {
+            "filename": filename,
+            "file_type": "text/plain",
+            "file_size": len(content),
+        }
+        upload_res = requests.post(
+            f"{BASE_URL}/api/v1/uploads/upload-url",
+            headers=headers,
+            json=upload_payload,
+            timeout=30,
+        )
+        upload_res.raise_for_status()
+        upload_data = upload_res.json()
+
+        signed_url = upload_data["upload_url"]
+        storage_path = upload_data["storage_path"]
+
+        put_headers = {"Content-Type": "text/plain"}
+        put_res = requests.put(signed_url, data=content, headers=put_headers, timeout=60)
+        put_res.raise_for_status()
+
+        reference_payload = {
+            "storage_path": storage_path,
+            "filename": filename,
+            "file_size": len(content),
+            "metadata": {"client_id": "test_client"},
+        }
+        response = requests.post(
+            f"{BASE_URL}/api/v1/uploads/file/reference",
+            headers=headers,
+            json=reference_payload,
+            timeout=30,
+        )
         print(f"Status: {response.status_code}")
         print(f"Response: {response.text}")
-        return response.status_code == 200
+        return response.status_code in (200, 202)
     except Exception as e:
         print(f"Ingest failed: {e}")
         return False

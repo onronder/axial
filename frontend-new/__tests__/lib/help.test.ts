@@ -100,6 +100,19 @@ Content`);
 
             expect(articles).toHaveLength(1);
         });
+
+        it('should use fallback metadata when frontmatter is missing', async () => {
+            (fs.existsSync as any).mockReturnValue(true);
+            (fs.readdirSync as any).mockReturnValue(['plain.md']);
+            (fs.readFileSync as any).mockReturnValue('Just content');
+
+            const { getAllArticles } = await import('@/lib/help');
+            const articles = getAllArticles();
+
+            expect(articles[0].title).toBe('plain');
+            expect(articles[0].category).toBe('General');
+            expect(articles[0].order).toBe(999);
+        });
     });
 
     describe('getArticleBySlug', () => {
@@ -131,6 +144,18 @@ This is the article body.`);
             expect(article?.title).toBe('Test Article');
             expect(article?.category).toBe('Test Category');
             expect(article?.content).toContain('Full Content');
+        });
+
+        it('should use fallback fields when frontmatter is empty', async () => {
+            (fs.existsSync as any).mockReturnValue(true);
+            (fs.readFileSync as any).mockReturnValue('Just content');
+
+            const { getArticleBySlug } = await import('@/lib/help');
+            const article = getArticleBySlug('plain-article');
+
+            expect(article?.title).toBe('plain-article');
+            expect(article?.category).toBe('General');
+            expect(article?.order).toBe(999);
         });
     });
 

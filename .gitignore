@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 venv/
 .venv/
+.venv*/
+*.venv/
 .env
 
 # MacOS
@@ -20,3 +22,8 @@ test_ingest.sh
 # Test results & local logs
 TEST_RESULTS/
 .coverage
+.coverage.*
+htmlcov/
+
+# Node
+node_modules/

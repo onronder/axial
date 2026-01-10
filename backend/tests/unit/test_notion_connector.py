@@ -1,103 +1,180 @@
-import asyncio
-import requests
 import sys
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from connectors.enhanced import AuthenticationError, SourceDocument, SourceType
 from connectors.notion import NotionConnector
-from connectors.base import ConnectorDocument, ConnectorItem
 from services.oauth_token_manager import TokenRefreshError
-from core.config import settings
+
+
+def _make_table(data=None):
+    table = MagicMock()
+    table.select.return_value = table
+    table.eq.return_value = table
+    table.single.return_value = table
+    table.execute.return_value = MagicMock(data=data)
+    return table
 
 
 def test_get_connector_definition_id_success():
+    connector = NotionConnector()
     supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
-        data={"id": "def-1"}
-    )
+    supabase.table.return_value = _make_table({"id": "def-1"})
 
     with patch("connectors.notion.get_supabase", return_value=supabase):
-        connector = NotionConnector()
         assert connector._get_connector_definition_id() == "def-1"
 
 
 def test_get_connector_definition_id_missing():
+    connector = NotionConnector()
     supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
-        data=None
-    )
+    supabase.table.return_value = _make_table(None)
 
     with patch("connectors.notion.get_supabase", return_value=supabase):
-        connector = NotionConnector()
         with pytest.raises(ValueError):
             connector._get_connector_definition_id()
 
 
-def test_authorize_returns_true_when_connected():
+def test_authorize_implementation_true_false():
+    connector = NotionConnector()
     supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
-        data=[{"id": "int-1"}]
-    )
+    table = _make_table([{"id": "int-1"}])
+    supabase.table.return_value = table
 
     with patch("connectors.notion.get_supabase", return_value=supabase), \
-         patch.object(NotionConnector, "_get_connector_definition_id", return_value="def-1"):
-        connector = NotionConnector()
+         patch.object(connector, "_get_connector_definition_id", return_value="def-1"):
         assert connector._authorize_implementation("user-1") is True
 
+    table.execute.return_value = MagicMock(data=[])
+    with patch("connectors.notion.get_supabase", return_value=supabase), \
+         patch.object(connector, "_get_connector_definition_id", return_value="def-1"):
+        assert connector._authorize_implementation("user-1") is False
 
-def test_authorize_async_wrapper_uses_threadpool():
+
+def test_get_access_token_missing_integration():
     connector = NotionConnector()
-    with patch("connectors.notion.run_in_threadpool", new_callable=AsyncMock) as run_in_threadpool:
-        run_in_threadpool.return_value = True
-        result = asyncio.run(connector.authorize("user-1"))
-
-    assert result is True
-    run_in_threadpool.assert_awaited_once_with(connector._authorize_implementation, "user-1")
-
-
-def test_get_access_token_raises_when_missing():
     supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
-        data=[]
-    )
+    supabase.table.return_value = _make_table([])
 
     with patch("connectors.notion.get_supabase", return_value=supabase), \
-         patch.object(NotionConnector, "_get_connector_definition_id", return_value="def-1"):
-        connector = NotionConnector()
+         patch.object(connector, "_get_connector_definition_id", return_value="def-1"):
         with pytest.raises(ValueError):
             connector._get_access_token("user-1")
 
 
 def test_get_access_token_refresh_error():
+    connector = NotionConnector()
     supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
-        data=[{"id": "int-1"}]
-    )
+    supabase.table.return_value = _make_table([{"id": "int-1"}])
 
     with patch("connectors.notion.get_supabase", return_value=supabase), \
-         patch.object(NotionConnector, "_get_connector_definition_id", return_value="def-1"), \
-         patch("services.oauth_token_manager.OAuthTokenManager.get_valid_credentials", side_effect=TokenRefreshError("refresh")):
-        connector = NotionConnector()
+         patch.object(connector, "_get_connector_definition_id", return_value="def-1"), \
+         patch("connectors.notion.OAuthTokenManager.get_valid_credentials", side_effect=TokenRefreshError("boom")):
         with pytest.raises(ValueError):
             connector._get_access_token("user-1")
 
 
-def test_list_items_top_level_pages_and_databases():
+def test_get_access_token_success():
     connector = NotionConnector()
+    supabase = MagicMock()
+    supabase.table.return_value = _make_table([{"id": "int-1"}])
 
-    page_result = {
+    with patch("connectors.notion.get_supabase", return_value=supabase), \
+         patch.object(connector, "_get_connector_definition_id", return_value="def-1"), \
+         patch(
+             "connectors.notion.OAuthTokenManager.get_valid_credentials",
+             return_value={"access_token": "token"},
+         ):
+        assert connector._get_access_token("user-1") == "token"
+
+
+def test_get_headers_contains_auth_and_version():
+    connector = NotionConnector()
+    headers = connector._get_headers("token")
+    assert headers["Authorization"] == "Bearer token"
+    assert headers["Notion-Version"] == connector.NOTION_API_VERSION
+
+
+def test_make_request_rate_limit_counts(monkeypatch):
+    connector = NotionConnector()
+    counter = MagicMock()
+    metrics_module = SimpleNamespace(retry_total=MagicMock())
+    metrics_module.retry_total.labels.return_value = counter
+    monkeypatch.setitem(sys.modules, "core.metrics", metrics_module)
+
+    response = MagicMock()
+    response.status_code = 429
+    response.json.return_value = {"ok": True}
+    response.raise_for_status.return_value = None
+
+    with patch("connectors.notion.requests.request", return_value=response):
+        result = connector._make_request("GET", "search", "token")
+
+    assert result == {"ok": True}
+    assert counter.inc.called
+
+
+def test_make_request_rate_limit_metrics_failure(monkeypatch):
+    connector = NotionConnector()
+    monkeypatch.setitem(sys.modules, "core.metrics", SimpleNamespace())
+
+    response = MagicMock()
+    response.status_code = 429
+    response.json.return_value = {"ok": True}
+    response.raise_for_status.return_value = None
+
+    with patch("connectors.notion.requests.request", return_value=response):
+        assert connector._make_request("GET", "search", "token") == {"ok": True}
+
+
+def test_list_items_parent_returns_children():
+    connector = NotionConnector()
+    blocks_result = {
+        "results": [
+            {"id": "page-1", "type": "child_page", "child_page": {"title": "Page A"}},
+            {"id": "db-1", "type": "child_database", "child_database": {"title": "DB A"}},
+        ],
+        "has_more": False,
+    }
+
+    with patch.object(connector, "_get_access_token", return_value="token"), \
+         patch.object(connector, "_make_request", return_value=blocks_result):
+        items = connector._list_items_implementation("user-1", parent_id="parent-1")
+
+    assert len(items) == 2
+    assert items[0].parent_id == "parent-1"
+
+
+def test_list_items_parent_error_returns_empty():
+    connector = NotionConnector()
+    with patch.object(connector, "_get_access_token", return_value="token"), \
+         patch.object(connector, "_make_request", side_effect=Exception("boom")):
+        items = connector._list_items_implementation("user-1", parent_id="parent-1")
+
+    assert items == []
+
+
+def test_list_items_root_includes_pages_and_databases():
+    connector = NotionConnector()
+    pages_result = {
         "results": [
             {
                 "id": "page-1",
                 "parent": {"type": "workspace"},
                 "properties": {
-                    "title": {"type": "title", "title": [{"plain_text": "Page"}]}
+                    "title": {"type": "title", "title": [{"plain_text": "Page One"}]},
                 },
-                "icon": {"type": "emoji", "emoji": "📄"},
+                "icon": {"type": "emoji", "emoji": "E"},
             },
-            {"id": "page-2", "parent": {"type": "database"}},
+            {
+                "id": "page-2",
+                "parent": {"type": "page"},
+                "properties": {
+                    "title": {"type": "title", "title": [{"plain_text": "Skip"}]},
+                },
+            },
         ]
     }
     db_result = {
@@ -105,760 +182,316 @@ def test_list_items_top_level_pages_and_databases():
             {
                 "id": "db-1",
                 "parent": {"type": "workspace"},
-                "title": [{"plain_text": "Database"}],
+                "title": [{"plain_text": "DB One"}],
+                "icon": {"type": "emoji", "emoji": "D"},
+            },
+            {
+                "id": "db-2",
+                "parent": {"type": "page"},
+                "title": [{"plain_text": "Skip DB"}],
             }
         ]
     }
 
     with patch.object(connector, "_get_access_token", return_value="token"), \
-         patch.object(connector, "_make_request", side_effect=[page_result, db_result]):
+         patch.object(connector, "_make_request", side_effect=[pages_result, db_result]):
         items = connector._list_items_implementation("user-1", parent_id=None)
 
-    assert len(items) == 2
-    assert items[0].name == "Page"
-    assert items[1].name == "Database"
+    names = [item.name for item in items]
+    assert "Page One" in names
+    assert "DB One" in names
+    assert "Skip" not in names
 
 
-def test_list_items_root_aliases_to_none():
-    connector = NotionConnector()
-    search_result = {"results": []}
-
-    with patch.object(connector, "_get_access_token", return_value="token"), \
-         patch.object(connector, "_make_request", side_effect=[search_result, search_result]) as mock_request:
-        items = connector._list_items_implementation("user-1", parent_id="root")
-
-    assert items == []
-    assert mock_request.call_count == 2
-
-
-def test_list_items_children():
-    connector = NotionConnector()
-    child_result = {
-        "results": [
-            {"id": "child-1", "type": "child_page", "child_page": {"title": "Child"}},
-            {"id": "db-1", "type": "child_database", "child_database": {"title": "DB"}},
-        ]
-    }
-
-    with patch.object(connector, "_get_access_token", return_value="token"), \
-         patch.object(connector, "_make_request", return_value=child_result):
-        items = connector._list_items_implementation("user-1", parent_id="page-1")
-
-    assert len(items) == 2
-    assert items[0].name == "Child"
-
-
-def test_list_items_children_handles_error():
-    connector = NotionConnector()
-    with patch.object(connector, "_get_access_token", return_value="token"), \
-         patch.object(connector, "_make_request", side_effect=RuntimeError("boom")):
-        items = connector._list_items_implementation("user-1", parent_id="page-1")
-
-    assert items == []
-
-
-def test_list_items_async_wrapper_uses_threadpool():
-    connector = NotionConnector()
-    with patch("connectors.notion.run_in_threadpool", new_callable=AsyncMock) as run_in_threadpool:
-        run_in_threadpool.return_value = []
-        result = asyncio.run(connector.list_items("user-1", parent_id="root"))
-
-    assert result == []
-    run_in_threadpool.assert_awaited_once_with(connector._list_items_implementation, "user-1", "root")
-
-
-def test_extract_text_from_blocks_formats_output():
+def test_extract_text_from_blocks_formats():
     connector = NotionConnector()
     blocks = [
         {"type": "heading_1", "heading_1": {"rich_text": [{"plain_text": "Title"}]}},
-        {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Hello"}]}},
-        {"type": "code", "code": {"language": "python", "rich_text": [{"plain_text": "print('hi')"}]}},
-    ]
-
-    content = connector._extract_text_from_blocks(blocks)
-    assert "# Title" in content
-    assert "Hello" in content
-    assert "```python" in content
-
-
-def test_extract_text_from_blocks_includes_divider_and_lists():
-    connector = NotionConnector()
-    blocks = [
-        {"type": "divider"},
+        {"type": "heading_2", "heading_2": {"rich_text": [{"plain_text": "Subtitle"}]}},
+        {"type": "heading_3", "heading_3": {"rich_text": [{"plain_text": "Section"}]}},
+        {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Para"}]}},
         {"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": [{"plain_text": "Item"}]}},
+        {"type": "quote", "quote": {"rich_text": [{"plain_text": "Quote"}]}},
+        {"type": "code", "code": {"rich_text": [{"plain_text": "print(1)"}], "language": "python"}},
+        {"type": "divider"},
     ]
 
-    content = connector._extract_text_from_blocks(blocks)
-    assert "---" in content
-    assert "• Item" in content
+    text = connector._extract_text_from_blocks(blocks)
+    assert "# Title" in text
+    assert "## Subtitle" in text
+    assert "### Section" in text
+    assert "Para" in text
+    assert "\u2022 Item" in text
+    assert "> Quote" in text
+    assert "```python" in text
+    assert "---" in text
 
 
-def test_ingest_implementation_yields_document():
+@pytest.mark.asyncio
+async def test_fetch_documents_async_wrapper():
+    connector = NotionConnector()
+    doc = SourceDocument(
+        content="Hello",
+        metadata={"title": "Doc"},
+        source_type=SourceType.NOTION,
+        source_id="page-1",
+        filename="Doc.md",
+        mime_type="text/markdown",
+        size_bytes=5,
+    )
+
+    with patch.object(connector, "fetch_documents_sync", return_value=iter([doc])):
+        docs = []
+        async for item in connector.fetch_documents(["page-1"], user_id="user-1"):
+            docs.append(item)
+
+    assert docs == [doc]
+
+
+def test_fetch_documents_sync_empty_item_ids_returns_empty():
+    connector = NotionConnector()
+    assert list(connector.fetch_documents_sync([])) == []
+
+
+def test_fetch_documents_sync_integration_not_found():
+    connector = NotionConnector()
+    supabase = MagicMock()
+    supabase.table.return_value = _make_table(None)
+
+    with patch("connectors.notion.get_supabase", return_value=supabase):
+        with pytest.raises(AuthenticationError):
+            list(
+                connector.fetch_documents_sync(
+                    ["page-1"],
+                    credentials={"integration_id": "int-1"},
+                )
+            )
+
+
+def test_fetch_documents_sync_recurses_child_pages_and_databases():
     connector = NotionConnector()
 
-    def make_request_side_effect(method, endpoint, access_token, json_data=None):
+    def fake_request(method, endpoint, access_token, json_data=None):
         if endpoint.startswith("pages/"):
+            page_id = endpoint.split("/")[1]
             return {
                 "properties": {
-                    "title": {"type": "title", "title": [{"plain_text": "Page"}]}
-                },
-                "url": "https://notion.so/page",
-            }
-        if endpoint.startswith("blocks/") and "children" in endpoint:
-            return {
-                "results": [
-                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Hello"}]}}
-                ],
-                "has_more": False,
-            }
-        return {}
-
-    config = {
-        "item_ids": ["page-1"],
-        "credentials": {"access_token": "token"},
-    }
-
-    with patch.object(connector, "_make_request", side_effect=make_request_side_effect):
-        docs = list(connector._ingest_implementation(config))
-
-    assert len(docs) == 1
-    assert docs[0].metadata["page_id"] == "page-1"
-
-
-def test_ingest_implementation_recurses_children_and_databases():
-    connector = NotionConnector()
-
-    def make_request_side_effect(method, endpoint, access_token, json_data=None):
-        if endpoint.startswith("pages/"):
-            page_id = endpoint.split("/")[-1]
-            return {
-                "properties": {
-                    "title": {"type": "title", "title": [{"plain_text": f"Page-{page_id}"}]}
+                    "title": {"type": "title", "title": [{"plain_text": f"Title {page_id}"}]},
                 },
                 "url": f"https://notion.so/{page_id}",
+                "parent": {"page_id": "parent-1"},
             }
-        if endpoint.startswith("blocks/page-1/children"):
+        if endpoint.startswith("blocks/root/children?start_cursor=cursor-1"):
+            return {"results": [], "has_more": False}
+        if endpoint.startswith("blocks/root/children"):
             return {
                 "results": [
-                    {"type": "child_page", "id": "child-1"},
-                    {"type": "child_database", "id": "db-1"},
-                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Hello"}]}},
+                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Root"}]}},
+                    {"id": "child-1", "type": "child_page", "child_page": {"title": "Child"}},
+                    {"id": "db-1", "type": "child_database", "child_database": {"title": "DB"}},
                 ],
-                "has_more": False,
+                "has_more": True,
+                "next_cursor": "cursor-1",
             }
-        if endpoint.startswith("databases/db-1/query"):
-            return {"results": [{"id": "db-page-1"}]}
         if endpoint.startswith("blocks/child-1/children"):
             return {
                 "results": [
-                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Child"}]}}
+                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Child"}]}},
                 ],
                 "has_more": False,
             }
         if endpoint.startswith("blocks/db-page-1/children"):
             return {
                 "results": [
-                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "DB"}]}}
+                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "DB"}]}},
+                ],
+                "has_more": False,
+            }
+        if endpoint.startswith("databases/"):
+            return {"results": [{"id": "db-page-1"}]}
+        return {"results": [], "has_more": False}
+
+    with patch.object(connector, "_get_access_token", return_value="token"), \
+         patch.object(connector, "_make_request", side_effect=fake_request):
+        docs = list(connector.fetch_documents_sync(["root"], user_id="user-1"))
+
+    assert len(docs) == 3
+    titles = [doc.metadata["title"] for doc in docs]
+    assert "Title root" in titles
+    assert "Title child-1" in titles
+    assert "Title db-page-1" in titles
+
+
+def test_fetch_documents_sync_handles_database_query_error():
+    connector = NotionConnector()
+
+    def fake_request(method, endpoint, access_token, json_data=None):
+        if endpoint.startswith("pages/"):
+            return {
+                "properties": {
+                    "title": {"type": "title", "title": [{"plain_text": "Root"}]},
+                },
+                "url": "https://notion.so/root",
+            }
+        if endpoint.startswith("blocks/root/children"):
+            return {
+                "results": [
+                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Root"}]}},
+                    {"id": "db-1", "type": "child_database", "child_database": {"title": "DB"}},
+                ],
+                "has_more": False,
+            }
+        if endpoint.startswith("databases/"):
+            raise RuntimeError("boom")
+        return {"results": [], "has_more": False}
+
+    with patch.object(connector, "_get_access_token", return_value="token"), \
+         patch.object(connector, "_make_request", side_effect=fake_request):
+        docs = list(connector.fetch_documents_sync(["root"], user_id="user-1"))
+
+    assert len(docs) == 1
+
+
+def test_fetch_documents_sync_skips_duplicate_pages():
+    connector = NotionConnector()
+
+    def fake_request(method, endpoint, access_token, json_data=None):
+        if endpoint.startswith("pages/"):
+            return {
+                "properties": {
+                    "title": {"type": "title", "title": [{"plain_text": "Root"}]},
+                },
+                "url": "https://notion.so/root",
+            }
+        if endpoint.startswith("blocks/root/children"):
+            return {
+                "results": [
+                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Root"}]}},
                 ],
                 "has_more": False,
             }
         return {"results": [], "has_more": False}
 
-    config = {
-        "item_ids": ["page-1"],
-        "credentials": {"access_token": "token"},
-    }
-
-    with patch.object(connector, "_make_request", side_effect=make_request_side_effect):
-        docs = list(connector._ingest_implementation(config))
-
-    assert len(docs) == 3
-    assert {doc.metadata["page_id"] for doc in docs} == {"page-1", "child-1", "db-page-1"}
-
-
-def test_ingest_implementation_missing_integration_id_raises():
-    connector = NotionConnector()
-    supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
-        data=None
-    )
-
-    with patch("connectors.notion.get_supabase", return_value=supabase):
-        with pytest.raises(ValueError):
-            list(connector._ingest_implementation({
-                "credentials": {"integration_id": "int-1"},
-                "item_ids": ["page-1"],
-            }))
-
-
-def test_ingest_implementation_requires_credentials():
-    connector = NotionConnector()
-    with pytest.raises(ValueError):
-        list(connector._ingest_implementation({"item_ids": ["page-1"]}))
-
-
-def test_make_request_records_rate_limit(monkeypatch):
-    connector = NotionConnector()
-    response = MagicMock()
-    response.status_code = 429
-    response.raise_for_status = MagicMock()
-    response.json.return_value = {"ok": True}
-
-    counter = MagicMock()
-    counter.labels.return_value = counter
-
-    monkeypatch.setattr("connectors.notion.requests.request", lambda **kwargs: response)
-    monkeypatch.setattr("core.metrics.retry_total", counter)
-
-    result = connector._make_request("GET", "pages/x", "token")
-
-    assert result == {"ok": True}
-    counter.labels.assert_called_with("notion", "rate_limit")
-
-
-def test_make_request_rate_limit_metrics_error_is_ignored(monkeypatch):
-    connector = NotionConnector()
-    response = MagicMock()
-    response.status_code = 429
-    response.raise_for_status = MagicMock()
-    response.json.return_value = {"ok": True}
-
-    class Counter:
-        def labels(self, *_args, **_kwargs):
-            raise RuntimeError("metrics down")
-
-    monkeypatch.setattr("connectors.notion.requests.request", lambda **kwargs: response)
-    monkeypatch.setattr("core.metrics.retry_total", Counter())
-
-    result = connector._make_request("GET", "pages/x", "token")
-
-    assert result == {"ok": True}
-
-
-def test_ingest_async_wrapper_uses_iterate_in_threadpool():
-    connector = NotionConnector()
-    config = {"item_ids": ["page-1"], "credentials": {"access_token": "token"}}
-
-    with patch.object(connector, "_ingest_implementation", return_value="gen"), \
-         patch("starlette.concurrency.iterate_in_threadpool", return_value="stream") as iterate_in_threadpool:
-        result = asyncio.run(connector.ingest(config))
-
-    assert result == "stream"
-    iterate_in_threadpool.assert_called_once_with("gen")
-
-
-def test_sync_implementation_processes_documents(monkeypatch):
-    connector = NotionConnector()
-    doc = ConnectorDocument(page_content="hello", metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda user_id, parent_id=None: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda config: [doc])
-
-    supabase = MagicMock()
-
-    def make_table(responses):
-        table = MagicMock()
-        table.select.return_value = table
-        table.insert.return_value = table
-        table.update.return_value = table
-        table.eq.return_value = table
-        table.limit.return_value = table
-        table.execute.side_effect = [SimpleNamespace(data=resp) for resp in responses]
-        return table
-
-    tables = {
-        "ingestion_jobs": make_table([[{"id": "job-1"}], [{"id": "job-1"}], [{"id": "job-1"}]]),
-        "documents": make_table([[], [{"id": "doc-1"}]]),
-        "user_integrations": make_table([[{"id": "int-1"}]]),
-    }
-    supabase.table.side_effect = lambda name: tables[name]
-
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-    monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda chunks: [[0.1] * 3 for _ in chunks])
-    monkeypatch.setattr("connectors.notion.insert_rows_with_retry", lambda *args, **kwargs: None)
-    monkeypatch.setattr("connectors.notion.compute_content_hash", lambda *_: "hash")
-    monkeypatch.setattr("worker.tasks.create_file_status", lambda *args, **kwargs: "status-1")
-    monkeypatch.setattr("worker.tasks.update_file_status", lambda *args, **kwargs: None)
-    monkeypatch.setattr("connectors.notion.settings", settings)
-    monkeypatch.setattr(settings, "MAX_FILE_SIZE", 10 * 1024 * 1024)
-    monkeypatch.setattr(settings, "CHUNK_INSERT_BATCH_SIZE", 10)
-
-    result = connector._sync_implementation("user-1", "int-1")
-
-    assert result["status"] == "success"
-    assert result["files_processed"] == 1
-
-
-def test_sync_async_wrapper_uses_threadpool():
-    connector = NotionConnector()
-    with patch("connectors.notion.run_in_threadpool", new_callable=AsyncMock) as run_in_threadpool:
-        run_in_threadpool.return_value = {"status": "success"}
-        result = asyncio.run(connector.sync("user-1", "int-1"))
-
-    assert result == {"status": "success"}
-    run_in_threadpool.assert_awaited_once_with(connector._sync_implementation, "user-1", "int-1")
-
-
-def test_get_access_token_success():
-    supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
-        data=[{"id": "int-1"}]
-    )
-
-    with patch("connectors.notion.get_supabase", return_value=supabase), \
-         patch.object(NotionConnector, "_get_connector_definition_id", return_value="def-1"), \
-         patch("services.oauth_token_manager.OAuthTokenManager.get_valid_credentials", return_value={"access_token": "token"}):
-        connector = NotionConnector()
-        assert connector._get_access_token("user-1") == "token"
-
-
-def test_list_items_skips_non_workspace_database_and_sets_icon():
-    connector = NotionConnector()
-
-    page_result = {"results": []}
-    db_result = {
-        "results": [
-            {"id": "db-1", "parent": {"type": "database"}, "title": [{"plain_text": "Skip"}]},
-            {"id": "db-2", "parent": {"type": "workspace"}, "title": [{"plain_text": "DB"}], "icon": {"type": "emoji", "emoji": "🧠"}},
-        ]
-    }
-
     with patch.object(connector, "_get_access_token", return_value="token"), \
-         patch.object(connector, "_make_request", side_effect=[page_result, db_result]):
-        items = connector._list_items_implementation("user-1", parent_id=None)
-
-    assert len(items) == 1
-    assert items[0].icon == "🧠"
-
-
-def test_extract_text_from_blocks_heading_and_quote():
-    connector = NotionConnector()
-    blocks = [
-        {"type": "heading_2", "heading_2": {"rich_text": [{"plain_text": "H2"}]}},
-        {"type": "heading_3", "heading_3": {"rich_text": [{"plain_text": "H3"}]}},
-        {"type": "quote", "quote": {"rich_text": [{"plain_text": "Quoted"}]}},
-    ]
-
-    content = connector._extract_text_from_blocks(blocks)
-    assert "## H2" in content
-    assert "### H3" in content
-    assert "> Quoted" in content
-
-
-def test_ingest_implementation_uses_integration_id_credentials():
-    connector = NotionConnector()
-    supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
-        data={"id": "int-1"}
-    )
-
-    with patch("connectors.notion.get_supabase", return_value=supabase), \
-         patch("services.oauth_token_manager.OAuthTokenManager.get_valid_credentials", return_value={"access_token": "token"}):
-        list(
-            connector._ingest_implementation(
-                {"item_ids": [], "credentials": {"integration_id": "int-1"}}
-            )
-        )
-
-
-def test_ingest_implementation_fallback_user_id():
-    connector = NotionConnector()
-    with patch.object(connector, "_get_access_token", return_value="token"):
-        list(connector._ingest_implementation({"item_ids": [], "user_id": "user-1"}))
-
-
-def test_ingest_implementation_recursion_guard_and_cursor(monkeypatch):
-    connector = NotionConnector()
-
-    def make_request(method, endpoint, access_token, json_data=None):
-        if endpoint.startswith("pages/"):
-            return {"properties": {"title": {"type": "title", "title": [{"plain_text": "Title"}]}}}
-        if endpoint.startswith("blocks/") and "start_cursor" not in endpoint:
-            return {
-                "results": [
-                    {"type": "child_page", "id": "page-1"},
-                    {"type": "child_database", "id": "db-1"},
-                ],
-                "has_more": True,
-                "next_cursor": "next",
-            }
-        if endpoint.startswith("blocks/") and "start_cursor=next" in endpoint:
-            return {"results": [], "has_more": False}
-        if endpoint.startswith("databases/"):
-            raise RuntimeError("db fail")
-        return {}
-
-    monkeypatch.setattr(connector, "_make_request", make_request)
-    monkeypatch.setattr(connector, "_extract_text_from_blocks", lambda _blocks: "content")
-
-    docs = list(
-        connector._ingest_implementation(
-            {"item_ids": ["page-1"], "credentials": {"access_token": "token"}}
-        )
-    )
+         patch.object(connector, "_make_request", side_effect=fake_request):
+        docs = list(connector.fetch_documents_sync(["root", "root"], user_id="user-1"))
 
     assert len(docs) == 1
 
 
-def test_ingest_implementation_handles_errors():
+def test_fetch_documents_sync_handles_page_fetch_error():
     connector = NotionConnector()
 
-    def boom(*_args, **_kwargs):
-        raise RuntimeError("boom")
+    def fake_request(method, endpoint, access_token, json_data=None):
+        if endpoint.startswith("pages/"):
+            raise RuntimeError("boom")
+        return {"results": [], "has_more": False}
 
-    with patch.object(connector, "_make_request", side_effect=boom):
-        docs = list(
-            connector._ingest_implementation(
-                {"item_ids": ["page-1"], "credentials": {"access_token": "token"}}
-            )
-        )
+    with patch.object(connector, "_get_access_token", return_value="token"), \
+         patch.object(connector, "_make_request", side_effect=fake_request):
+        docs = list(connector.fetch_documents_sync(["root"], user_id="user-1"))
 
     assert docs == []
 
 
-def test_sync_returns_when_no_root_items(monkeypatch):
+def test_connector_type_notion():
     connector = NotionConnector()
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [])
-
-    result = connector._sync_implementation("user-1", "int-1")
-
-    assert result["files_processed"] == 0
+    assert connector.connector_type == SourceType.NOTION
 
 
-def test_sync_returns_when_no_documents(monkeypatch):
+@pytest.mark.asyncio
+async def test_authorize_async_wrapper():
     connector = NotionConnector()
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: [])
 
-    result = connector._sync_implementation("user-1", "int-1")
-
-    assert result["files_processed"] == 0
+    with patch("connectors.notion.run_in_threadpool", side_effect=lambda fn, *args: fn(*args)), \
+         patch.object(connector, "_authorize_implementation", return_value=True):
+        assert await connector.authorize("user-1") is True
 
 
-def test_sync_skips_large_document(monkeypatch):
+@pytest.mark.asyncio
+async def test_list_items_async_wrapper():
     connector = NotionConnector()
-    doc = ConnectorDocument(page_content="x" * 10, metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
 
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: [doc])
+    with patch("connectors.notion.run_in_threadpool", side_effect=lambda fn, *args: fn(*args)), \
+         patch.object(connector, "_list_items_implementation", return_value=["ok"]):
+        items = await connector.list_items("user-1", parent_id="root")
 
+    assert items == ["ok"]
+
+
+def test_list_items_root_string_maps_to_none():
+    connector = NotionConnector()
+    pages_result = {"results": []}
+    db_result = {"results": []}
+
+    with patch.object(connector, "_get_access_token", return_value="token"), \
+         patch.object(connector, "_make_request", side_effect=[pages_result, db_result]) as make_request:
+        connector._list_items_implementation("user-1", parent_id="root")
+
+    assert make_request.call_count == 2
+
+
+def test_fetch_documents_sync_requires_credentials_or_user():
+    connector = NotionConnector()
+    with pytest.raises(AuthenticationError):
+        list(connector.fetch_documents_sync(["page-1"]))
+
+
+def test_fetch_documents_sync_integration_id_success():
+    connector = NotionConnector()
     supabase = MagicMock()
-    table = MagicMock()
-    table.insert.return_value.execute.return_value = MagicMock(data=[{"id": "job-1"}])
-    supabase.table.return_value = table
+    supabase.table.return_value = _make_table({"id": "int-1"})
 
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-    monkeypatch.setattr("worker.tasks.create_file_status", lambda *args, **kwargs: "status-1")
-    monkeypatch.setattr("worker.tasks.update_file_status", lambda *args, **kwargs: None)
-    monkeypatch.setattr(settings, "MAX_FILE_SIZE", 1)
+    def fake_request(method, endpoint, access_token, json_data=None):
+        if endpoint.startswith("pages/"):
+            return {
+                "properties": {
+                    "title": {"type": "title", "title": [{"plain_text": "Page One"}]},
+                },
+                "url": "https://notion.so/page-1",
+                "parent": {"page_id": "parent-1"},
+            }
+        if endpoint.startswith("blocks/") and endpoint.endswith("/children"):
+            return {
+                "results": [
+                    {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "Hello"}]}},
+                ],
+                "has_more": False,
+            }
+        return {}
 
-    result = connector._sync_implementation("user-1", "int-1")
-    assert result["files_processed"] == 0
+    with patch("connectors.notion.get_supabase", return_value=supabase), \
+         patch("connectors.notion.OAuthTokenManager.get_valid_credentials", return_value={"access_token": "token"}), \
+         patch.object(connector, "_make_request", side_effect=fake_request):
+        docs = list(connector.fetch_documents_sync(
+            ["page-1"],
+            credentials={"integration_id": "int-1"},
+            user_id="user-1",
+        ))
+
+    assert len(docs) == 1
+    assert isinstance(docs[0], SourceDocument)
+    assert docs[0].filename == "Page One.md"
+    assert docs[0].parent_id == "parent-1"
 
 
-def test_sync_existing_document_and_batch_insert_failure(monkeypatch):
+def test_fetch_documents_sync_skips_empty_content():
     connector = NotionConnector()
-    doc = ConnectorDocument(page_content="hello", metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
 
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: [doc])
-
-    supabase = MagicMock()
-
-    def make_table(responses):
-        table = MagicMock()
-        table.select.return_value = table
-        table.insert.return_value = table
-        table.update.return_value = table
-        table.eq.return_value = table
-        table.limit.return_value = table
-        table.execute.side_effect = [SimpleNamespace(data=resp) for resp in responses]
-        return table
-
-    tables = {
-        "ingestion_jobs": make_table([[{"id": "job-1"}], [{"id": "job-1"}]]),
-        "documents": make_table([[{"id": "doc-1"}], [{"id": "doc-1"}]]),
-        "user_integrations": make_table([[{"id": "int-1"}]]),
-    }
-    supabase.table.side_effect = lambda name: tables.get(name, make_table([[]]))
-
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-    monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda chunks: [None, [0.1]])
-    monkeypatch.setattr("connectors.notion.insert_rows_with_retry", lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("db fail")))
-    monkeypatch.setattr("connectors.notion.delete_rows_with_retry", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("connectors.notion.compute_content_hash", lambda *_: "hash")
-    monkeypatch.setattr("worker.tasks.create_file_status", lambda *args, **kwargs: "status-1")
-    monkeypatch.setattr("worker.tasks.update_file_status", lambda *args, **kwargs: None)
-    monkeypatch.setattr(settings, "CHUNK_INSERT_BATCH_SIZE", 10)
-
-    result = connector._sync_implementation("user-1", "int-1")
-    assert result["status"] == "success"
-
-
-def test_sync_document_insert_failure(monkeypatch):
-    connector = NotionConnector()
-    doc = ConnectorDocument(page_content="hello", metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: [doc])
-
-    supabase = MagicMock()
-
-    def make_table(responses):
-        table = MagicMock()
-        table.select.return_value = table
-        table.insert.return_value = table
-        table.update.return_value = table
-        table.eq.return_value = table
-        table.limit.return_value = table
-        table.execute.side_effect = [SimpleNamespace(data=resp) for resp in responses]
-        return table
-
-    tables = {
-        "ingestion_jobs": make_table([[{"id": "job-1"}], [{"id": "job-1"}]]),
-        "documents": make_table([[], None]),
-        "user_integrations": make_table([[{"id": "int-1"}]]),
-    }
-    supabase.table.side_effect = lambda name: tables.get(name, make_table([[]]))
-
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-    monkeypatch.setattr("worker.tasks.create_file_status", lambda *args, **kwargs: "status-1")
-    monkeypatch.setattr("worker.tasks.update_file_status", lambda *args, **kwargs: None)
-
-    result = connector._sync_implementation("user-1", "int-1")
-    assert result["status"] == "success"
-
-
-def test_sync_skips_when_no_chunks(monkeypatch):
-    connector = NotionConnector()
-    doc = ConnectorDocument(page_content="hello", metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: [doc])
-
-    supabase = MagicMock()
-
-    def make_table(responses):
-        table = MagicMock()
-        table.select.return_value = table
-        table.insert.return_value = table
-        table.update.return_value = table
-        table.eq.return_value = table
-        table.limit.return_value = table
-        table.execute.side_effect = [SimpleNamespace(data=resp) for resp in responses]
-        return table
-
-    tables = {
-        "ingestion_jobs": make_table([[{"id": "job-1"}], [{"id": "job-1"}]]),
-        "documents": make_table([[], [{"id": "doc-1"}]]),
-        "user_integrations": make_table([[{"id": "int-1"}]]),
-    }
-    supabase.table.side_effect = lambda name: tables.get(name, make_table([[]]))
-
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-    monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda chunks: [[0.1]])
-    monkeypatch.setattr("connectors.notion.compute_content_hash", lambda *_: "hash")
-    monkeypatch.setattr("worker.tasks.create_file_status", lambda *args, **kwargs: "status-1")
-    monkeypatch.setattr("worker.tasks.update_file_status", lambda *args, **kwargs: None)
-
-    class DummySplitter:
-        def split_text(self, *_args, **_kwargs):
-            return []
-
-    monkeypatch.setitem(
-        sys.modules,
-        "langchain_text_splitters",
-        SimpleNamespace(RecursiveCharacterTextSplitter=lambda *args, **kwargs: DummySplitter()),
-    )
-
-    result = connector._sync_implementation("user-1", "int-1")
-    assert result["status"] == "success"
-
-
-def test_sync_processing_exception_records_error(monkeypatch):
-    connector = NotionConnector()
-    doc = ConnectorDocument(page_content="hello", metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: [doc])
-
-    supabase = MagicMock()
-
-    def make_table(responses):
-        table = MagicMock()
-        table.select.return_value = table
-        table.insert.return_value = table
-        table.update.return_value = table
-        table.eq.return_value = table
-        table.limit.return_value = table
-        table.execute.side_effect = [SimpleNamespace(data=resp) for resp in responses]
-        return table
-
-    tables = {
-        "ingestion_jobs": make_table([[{"id": "job-1"}], [{"id": "job-1"}]]),
-        "documents": make_table([[], [{"id": "doc-1"}]]),
-        "user_integrations": make_table([[{"id": "int-1"}]]),
-    }
-    supabase.table.side_effect = lambda name: tables.get(name, make_table([[]]))
-
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-    monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda _chunks: (_ for _ in ()).throw(Exception("boom")))
-    monkeypatch.setattr("connectors.notion.compute_content_hash", lambda *_: "hash")
-    monkeypatch.setattr("worker.tasks.create_file_status", lambda *args, **kwargs: "status-1")
-    monkeypatch.setattr("worker.tasks.update_file_status", lambda *args, **kwargs: None)
-
-    result = connector._sync_implementation("user-1", "int-1")
-    assert result["errors"]
-
-
-def test_sync_http_error_401_raises(monkeypatch):
-    connector = NotionConnector()
-    response = MagicMock()
-    response.status_code = 401
-    error = requests.exceptions.HTTPError(response=response)
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
-
-    with pytest.raises(Exception, match="Integration requires reconnection"):
-        connector._sync_implementation("user-1", "int-1")
-
-
-def test_sync_http_error_non_401_raises(monkeypatch):
-    connector = NotionConnector()
-    response = MagicMock()
-    response.status_code = 400
-    error = requests.exceptions.HTTPError(response=response)
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
-
-    with pytest.raises(requests.exceptions.HTTPError):
-        connector._sync_implementation("user-1", "int-1")
-
-
-def test_sync_batch_insert_failure_marks_failed(monkeypatch):
-    connector = NotionConnector()
-    doc = ConnectorDocument(page_content="hello", metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: [doc])
-
-    supabase = MagicMock()
-
-    def make_table(responses):
-        table = MagicMock()
-        table.select.return_value = table
-        table.insert.return_value = table
-        table.update.return_value = table
-        table.eq.return_value = table
-        table.limit.return_value = table
-        table.execute.side_effect = [SimpleNamespace(data=resp) for resp in responses]
-        return table
-
-    tables = {
-        "ingestion_jobs": make_table([[{"id": "job-1"}], [{"id": "job-1"}]]),
-        "documents": make_table([[{"id": "doc-1"}], [{"id": "doc-1"}]]),
-        "user_integrations": make_table([[{"id": "int-1"}]]),
-    }
-    supabase.table.side_effect = lambda name: tables.get(name, make_table([[]]))
-
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-    monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda chunks: [[0.1] for _ in chunks])
-    monkeypatch.setattr("connectors.notion.insert_rows_with_retry", lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("db fail")))
-    monkeypatch.setattr("connectors.notion.delete_rows_with_retry", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("connectors.notion.compute_content_hash", lambda *_: "hash")
-    monkeypatch.setattr("worker.tasks.create_file_status", lambda *args, **kwargs: "status-1")
-    update_mock = MagicMock()
-    monkeypatch.setattr("worker.tasks.update_file_status", update_mock)
-    monkeypatch.setattr(settings, "CHUNK_INSERT_BATCH_SIZE", 10)
-
-    connector._sync_implementation("user-1", "int-1")
-
-    assert update_mock.called
-
-
-def test_sync_exception_updates_job(monkeypatch):
-    connector = NotionConnector()
-    doc = ConnectorDocument(page_content="hello", metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: (_ for _ in ()).throw(Exception("boom")))
-
-    supabase = MagicMock()
-
-    def make_table(responses):
-        table = MagicMock()
-        table.select.return_value = table
-        table.insert.return_value = table
-        table.update.return_value = table
-        table.eq.return_value = table
-        table.limit.return_value = table
-        table.execute.side_effect = [SimpleNamespace(data=resp) for resp in responses]
-        return table
-
-    ingestion_jobs = make_table([[{"id": "job-1"}], [{"id": "job-1"}]])
-    user_integrations = make_table([[{"id": "int-1"}]])
-    documents = make_table([[]])
-
-    def table_side_effect(name):
-        if name == "ingestion_jobs":
-            return ingestion_jobs
-        if name == "user_integrations":
-            return user_integrations
-        if name == "documents":
-            return documents
-        return make_table([[]])
-
-    supabase.table.side_effect = table_side_effect
-
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-
-    with pytest.raises(Exception):
-        connector._sync_implementation("user-1", "int-1")
-
-
-def test_sync_global_exception_marks_job_failed(monkeypatch):
-    connector = NotionConnector()
-    doc = ConnectorDocument(page_content="hello", metadata={"title": "Doc", "page_id": "page-1", "source_url": "url"})
-
-    monkeypatch.setattr(connector, "_list_items_implementation", lambda *_args, **_kwargs: [ConnectorItem(id="page-1", name="Doc", type="folder")])
-    monkeypatch.setattr(connector, "_ingest_implementation", lambda _config: [doc])
-
-    supabase = MagicMock()
-
-    def make_table(responses):
-        table = MagicMock()
-        table.select.return_value = table
-        table.insert.return_value = table
-        table.update.return_value = table
-        table.eq.return_value = table
-        table.limit.return_value = table
-        table.execute.side_effect = [SimpleNamespace(data=resp) for resp in responses]
-        return table
-
-    ingestion_jobs = make_table([[{"id": "job-1"}], [{"id": "job-1"}]])
-    user_integrations = make_table([[{"id": "int-1"}]])
-    user_integrations.update.return_value.eq.return_value.execute.side_effect = Exception("boom")
-    documents = make_table([[], [{"id": "doc-1"}]])
-
-    def table_side_effect(name):
-        if name == "ingestion_jobs":
-            return ingestion_jobs
-        if name == "user_integrations":
-            return user_integrations
-        if name == "documents":
-            return documents
-        return make_table([[]])
-
-    supabase.table.side_effect = table_side_effect
-
-    monkeypatch.setattr("core.db.get_supabase", lambda: supabase)
-    monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda chunks: [[0.1] * 3 for _ in chunks])
-    monkeypatch.setattr("connectors.notion.insert_rows_with_retry", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("connectors.notion.compute_content_hash", lambda *_: "hash")
-    monkeypatch.setattr("worker.tasks.create_file_status", lambda *args, **kwargs: "status-1")
-    monkeypatch.setattr("worker.tasks.update_file_status", lambda *args, **kwargs: None)
-
-    with pytest.raises(Exception):
-        connector._sync_implementation("user-1", "int-1")
-
-    assert ingestion_jobs.update.called
+    def fake_request(method, endpoint, access_token, json_data=None):
+        if endpoint.startswith("pages/"):
+            return {
+                "properties": {
+                    "title": {"type": "title", "title": [{"plain_text": "Empty Page"}]},
+                },
+                "url": "https://notion.so/page-2",
+            }
+        if endpoint.startswith("blocks/") and endpoint.endswith("/children"):
+            return {"results": [], "has_more": False}
+        return {}
+
+    with patch.object(connector, "_get_access_token", return_value="token"), \
+         patch.object(connector, "_make_request", side_effect=fake_request):
+        docs = list(connector.fetch_documents_sync(["page-2"], user_id="user-1"))
+
+    assert docs == []

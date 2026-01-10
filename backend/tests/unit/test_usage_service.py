@@ -68,6 +68,18 @@ async def test_get_user_usage_subscription_lookup_error_defaults_active():
 
 
 @pytest.mark.asyncio
+async def test_get_user_usage_raises_unexpected_profile_error():
+    user_id = uuid4()
+    supabase = MagicMock()
+    profile_table = _make_table(execute_side_effect=Exception("boom"))
+    supabase.table.side_effect = lambda name: profile_table
+
+    with patch("services.usage.get_supabase", return_value=supabase):
+        with pytest.raises(Exception):
+            await usage_service.get_user_usage(user_id)
+
+
+@pytest.mark.asyncio
 async def test_get_user_usage_reads_subscription_status():
     user_id = uuid4()
     supabase = MagicMock()

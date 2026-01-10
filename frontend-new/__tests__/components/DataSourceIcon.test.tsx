@@ -51,8 +51,50 @@ describe('DataSourceIcon Component', () => {
             expect(svg).toBeInTheDocument();
         });
 
+        it('renders Teams icon for teams sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="teams" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
+        it('renders Confluence icon for confluence sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="confluence" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
+        it('renders Discord icon for discord sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="discord" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
+        it('renders Box icon for box sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="box" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
+        it('renders Airtable icon for airtable sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="airtable" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
         it('renders Globe icon for url-crawler sourceId', () => {
             const { container } = render(<DataSourceIcon sourceId="url-crawler" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
+        it('renders Coda icon for coda sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="coda" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
+        it('renders YouTube icon for youtube sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="youtube" />);
             const svg = container.querySelector('svg');
             expect(svg).toBeInTheDocument();
         });

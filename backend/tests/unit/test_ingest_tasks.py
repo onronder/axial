@@ -2,10 +2,9 @@
 Unit Tests for Zero-Copy Ingestion Tasks
 
 Tests the Store-Forward-Process-Delete architecture:
-- ingest_file_task (file upload processing)
-- ingest_connector_task (Drive/Notion processing)
+- process_file_task (file upload processing)
 - Storage operations (upload, download, delete)
-- Atomic RPC insertion
+- Batched chunk insertion
 """
 
 import pytest
@@ -78,77 +77,6 @@ class TestIngestFileTask:
         )
         
         mock_supabase_instance.table.assert_called_with("notifications")
-
-
-class TestIngestConnectorTask:
-    """Test the connector ingestion task (Drive/Notion)."""
-    
-
-    @patch('worker.tasks.get_connector')
-    @patch('worker.tasks.get_supabase')
-    @patch('worker.tasks.generate_embeddings_batch_sync')
-    @patch('worker.tasks.DocumentProcessorFactory')
-    def test_executes_drive_ingestion(self, mock_factory, mock_embeddings, mock_supabase, mock_get_connector):
-        """Should execute drive ingestion using sync fetch."""
-        from worker.tasks import ingest_connector_task
-        
-        # Mock connector with AsyncMock for ingest
-        mock_connector = Mock()
-        mock_connector.fetch_documents_sync = Mock(return_value=[
-            Mock(content="test", metadata={"title": "test"}, filename="test.txt")
-        ])
-        
-        mock_get_connector.return_value = mock_connector
-        
-        # Mock Supabase
-        mock_supabase.return_value.rpc.return_value.execute.return_value = Mock(data="doc-id")
-        
-        # Mock Embeddings
-        mock_embeddings.return_value = [[0.1, 0.2]]
-        
-        # Mock Processor
-        mock_result = Mock()
-        mock_result.file_type = "txt"
-        mock_result.total_tokens = 10
-        mock_result.metadata = {}
-        mock_result.chunks = [Mock(content="test chunk", chunk_index=0, metadata={}, token_count=5)]
-        mock_factory.process.return_value = mock_result
-        mock_factory.process_web_content.return_value = mock_result
-        
-        # Execute task
-        ingest_connector_task(
-            user_id="user-123",
-            job_id="job-123",
-            connector_type="drive",
-            item_id="file-123"
-        )
-        
-        # Verify fetch was called
-        mock_connector.fetch_documents_sync.assert_called_once()
-        mock_factory.process.assert_called()  # Drive uses generic process
-        mock_embeddings.assert_called()
-    
-    # helper _async_return removed as it is replaced by async_gen closure
-
-    def test_drive_ingestion(self):
-        """Should ingest from Google Drive."""
-        connector_type = "drive"
-        assert connector_type == "drive"
-    
-    def test_notion_ingestion(self):
-        """Should ingest from Notion."""
-        connector_type = "notion"
-        assert connector_type == "notion"
-    
-    def test_handles_empty_results(self):
-        """Should handle connectors returning no documents."""
-        result = {"status": "skipped", "message": "No content processed"}
-        assert result["status"] == "skipped"
-    
-    def test_decrypts_credentials(self):
-        """Should decrypt OAuth credentials before use."""
-        from worker.tasks import decrypt_token
-        assert callable(decrypt_token)
 
 
 class TestStorageOperations:
@@ -239,10 +167,10 @@ class TestRetryBehavior:
     
     def test_task_has_autoretry(self):
         """Should have autoretry_for configured."""
-        from worker.tasks import ingest_file_task
+        from worker.tasks import process_file_task
         
         # Check task options
-        assert hasattr(ingest_file_task, 'retry_for') or True  # Decorator handles this
+        assert hasattr(process_file_task, 'retry_for') or True  # Decorator handles this
     
     def test_task_has_retry_backoff(self):
         """Should have exponential backoff configured."""

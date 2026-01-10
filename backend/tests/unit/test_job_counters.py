@@ -108,6 +108,15 @@ def test_record_job_update_ignores_unknown_field():
         assert counters["job_status_updates"] == 0
 
 
+def test_record_job_update_handles_exception():
+    class BadRedis(FakeRedis):
+        def hincrby(self, key, field, amount):
+            raise RuntimeError("boom")
+
+    with patch("core.job_counters._get_redis_client", return_value=BadRedis()):
+        job_counters.record_job_update("ingest_job", "job-1", "job_status_updates")
+
+
 def test_normalize_item_id_handles_empty():
     assert job_counters._normalize_item_id("") is None
 

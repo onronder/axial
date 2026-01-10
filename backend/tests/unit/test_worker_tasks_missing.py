@@ -28,6 +28,33 @@ def _make_table(data=None):
     return table
 
 
+def test_collect_documents_sync_requires_sync_fetch():
+    connector = SimpleNamespace()
+    with pytest.raises(RuntimeError):
+        tasks._collect_documents_sync(connector, ["item"], None, "user-1")
+
+
+def test_collect_documents_sync_rejects_coroutine_function():
+    async def fetch_documents_sync(_item_ids, _credentials, user_id=None):
+        return []
+
+    connector = SimpleNamespace(fetch_documents_sync=fetch_documents_sync)
+    with pytest.raises(RuntimeError):
+        tasks._collect_documents_sync(connector, ["item"], None, "user-1")
+
+
+def test_collect_documents_sync_rejects_async_results():
+    async def _gen():
+        yield "doc"
+
+    def fetch_documents_sync(_item_ids, _credentials, user_id=None):
+        return _gen()
+
+    connector = SimpleNamespace(fetch_documents_sync=fetch_documents_sync)
+    with pytest.raises(RuntimeError):
+        tasks._collect_documents_sync(connector, ["item"], None, "user-1")
+
+
 def test_update_job_status_sets_failed_files():
     supabase = MagicMock()
     table = _make_table([])
@@ -151,7 +178,7 @@ def test_ingest_document_batched_no_chunks():
         supabase=supabase,
         user_id="user-1",
         doc_title="Doc",
-        source_type="file",
+        source_type="file_upload",
         metadata={},
         chunks_payload=[],
         file_size_bytes=1,
@@ -171,7 +198,7 @@ def test_ingest_document_batched_insert_error(monkeypatch):
         supabase=supabase,
         user_id="user-1",
         doc_title="Doc",
-        source_type="file",
+        source_type="file_upload",
         metadata={},
         chunks_payload=[{"content": "x", "embedding": [0.1], "chunk_index": 0, "metadata": {}}],
         file_size_bytes=1,
@@ -349,7 +376,7 @@ def test_process_document_pipeline_handles_string_content(monkeypatch):
         user_id="user-1",
         job_id="job-1",
         file_status_id="status-1",
-        source_type="file",
+        source_type="file_upload",
         metadata={},
     )
 
@@ -379,7 +406,7 @@ def test_process_document_pipeline_skips_none_embeddings(monkeypatch):
         user_id="user-1",
         job_id="job-1",
         file_status_id="status-1",
-        source_type="file",
+        source_type="file_upload",
         metadata={},
     )
 
@@ -403,17 +430,19 @@ def test_unified_ingest_task_base64_fallback(monkeypatch):
     table = _make_table([{"id": "status-1"}])
     supabase.table.return_value = table
 
-    async def fetch_docs(*_args, **_kwargs):
-        doc = SimpleNamespace(
+    def fetch_docs(*_args, **_kwargs):
+        yield SimpleNamespace(
             filename="file.bin",
             content="notbase64",
             size_bytes=1,
             mime_type="application/octet-stream",
             metadata={},
+            source_type="file_upload",
+            source_id="src-1",
+            parent_id=None,
         )
-        yield doc
 
-    connector = SimpleNamespace(fetch_documents=fetch_docs)
+    connector = SimpleNamespace(fetch_documents_sync=fetch_docs)
 
     class FakeGroup:
         def apply_async(self):
@@ -462,37 +491,11 @@ def test_process_file_task_handles_string_content(monkeypatch):
                 "storage_path": "uploads/x",
                 "size_bytes": 1,
                 "mime_type": "text/plain",
+                "metadata": "oops",
             },
             "status-1",
             "file_upload",
         )
-
-
-def test_ingest_connector_task_handles_iterable(monkeypatch):
-    doc = SimpleNamespace(content=b"hi", metadata={"title": "Doc"}, filename="Doc.txt")
-    connector = SimpleNamespace(fetch_documents_sync=lambda *_args, **_kwargs: [doc])
-
-    supabase = MagicMock()
-    monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
-    monkeypatch.setattr(tasks, "get_connector", lambda *_args, **_kwargs: connector)
-    monkeypatch.setattr(tasks, "DocumentProcessorFactory", SimpleNamespace(process=lambda **_kwargs: SimpleNamespace(chunks=[])))
-    monkeypatch.setattr(tasks, "generate_embeddings_batch_sync", lambda *_args, **_kwargs: [])
-
-    with patch("os.unlink", side_effect=Exception("boom")):
-        result = tasks.ingest_connector_task("user-1", "job-1", "connector", "item-1")
-
-    assert result["processed"] == 1
-
-
-def test_ingest_connector_task_handles_none(monkeypatch):
-    connector = SimpleNamespace(fetch_documents_sync=lambda *_args, **_kwargs: [])
-    supabase = MagicMock()
-    monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
-    monkeypatch.setattr(tasks, "get_connector", lambda *_args, **_kwargs: connector)
-
-    result = tasks.ingest_connector_task("user-1", "job-1", "connector", "item-1")
-
-    assert result["processed"] == 0
 
 
 def test_finalize_job_task_already_completed():
@@ -637,16 +640,18 @@ def test_process_page_task_rate_limit_and_delay(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 1
-    connector.ingest_sync.return_value = []
+    connector.fetch_documents_sync.return_value = []
 
     monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
     monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: False)
 
     with patch("connectors.web.WebConnector", return_value=connector), \
-         patch("time.sleep", return_value=None):
+         patch("time.sleep", return_value=None), \
+         patch("worker.tasks._record_crawl_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_page_task.run("user-1", "https://example.com", crawl_id="crawl-1")
 
     assert result["status"] == "skipped"
+    record_outcome.assert_called()
 
 
 def test_process_page_task_no_chunks(monkeypatch):
@@ -655,7 +660,7 @@ def test_process_page_task_no_chunks(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.ingest_sync.return_value = [SimpleNamespace(page_content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
 
     result_obj = SimpleNamespace(chunks=[], total_tokens=0)
 
@@ -663,10 +668,12 @@ def test_process_page_task_no_chunks(monkeypatch):
     monkeypatch.setattr("services.parsers.DocumentProcessorFactory", SimpleNamespace(process_web_content=lambda *_args, **_kwargs: result_obj))
     monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: True)
 
-    with patch("connectors.web.WebConnector", return_value=connector):
+    with patch("connectors.web.WebConnector", return_value=connector), \
+         patch("worker.tasks._record_crawl_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_page_task.run("user-1", "https://example.com", crawl_id="crawl-1")
 
     assert result["status"] == "skipped"
+    record_outcome.assert_called()
 
 
 def test_process_page_task_no_embeddings(monkeypatch):
@@ -675,7 +682,7 @@ def test_process_page_task_no_embeddings(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.ingest_sync.return_value = [SimpleNamespace(page_content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
 
     chunk = SimpleNamespace(content="hi", token_count=1, chunk_index=0, metadata={})
     result_obj = SimpleNamespace(chunks=[chunk], total_tokens=1)
@@ -685,10 +692,12 @@ def test_process_page_task_no_embeddings(monkeypatch):
     monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda *_args, **_kwargs: [None])
     monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: True)
 
-    with patch("connectors.web.WebConnector", return_value=connector):
+    with patch("connectors.web.WebConnector", return_value=connector), \
+         patch("worker.tasks._record_crawl_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_page_task.run("user-1", "https://example.com", crawl_id="crawl-1")
 
     assert result["status"] == "failed"
+    record_outcome.assert_called()
 
 
 def test_process_page_task_doc_insert_failed(monkeypatch):
@@ -697,7 +706,7 @@ def test_process_page_task_doc_insert_failed(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.ingest_sync.return_value = [SimpleNamespace(page_content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
 
     chunk = SimpleNamespace(content="hi", token_count=1, chunk_index=0, metadata={})
     result_obj = SimpleNamespace(chunks=[chunk], total_tokens=1)
@@ -708,10 +717,12 @@ def test_process_page_task_doc_insert_failed(monkeypatch):
     monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(tasks, "ingest_document_batched", lambda **_kwargs: None)
 
-    with patch("connectors.web.WebConnector", return_value=connector):
+    with patch("connectors.web.WebConnector", return_value=connector), \
+         patch("worker.tasks._record_crawl_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_page_task.run("user-1", "https://example.com", crawl_id="crawl-1")
 
     assert result["status"] == "failed"
+    record_outcome.assert_called()
 
 
 def test_process_page_task_increment_error(monkeypatch):
@@ -720,7 +731,7 @@ def test_process_page_task_increment_error(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.ingest_sync.return_value = [SimpleNamespace(page_content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
 
     chunk = SimpleNamespace(content="hi", token_count=1, chunk_index=0, metadata={})
     result_obj = SimpleNamespace(chunks=[chunk], total_tokens=1)
@@ -731,10 +742,12 @@ def test_process_page_task_increment_error(monkeypatch):
     monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(tasks, "ingest_document_batched", lambda **_kwargs: "doc-1")
 
-    with patch("connectors.web.WebConnector", return_value=connector):
+    with patch("connectors.web.WebConnector", return_value=connector), \
+         patch("worker.tasks._record_crawl_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_page_task.run("user-1", "https://example.com", crawl_id="crawl-1")
 
     assert result["status"] == "success"
+    record_outcome.assert_called()
 
 
 def test_process_page_task_exception_path(monkeypatch):
@@ -743,16 +756,19 @@ def test_process_page_task_exception_path(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.ingest_sync.return_value = [SimpleNamespace(page_content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
 
     monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
     monkeypatch.setattr("services.parsers.DocumentProcessorFactory", SimpleNamespace(process_web_content=lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("boom"))))
     monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(tasks, "send_failure_email_notification", lambda *_args, **_kwargs: None)
+    notify = MagicMock()
+    monkeypatch.setattr(tasks, "send_failure_email_notification", notify)
 
     with patch("connectors.web.WebConnector", return_value=connector):
         with pytest.raises(Exception):
             tasks.process_page_task.run("user-1", "https://example.com", crawl_id="crawl-1")
+
+    notify.assert_called_once()
 
 
 def test_finalize_crawl_task_already_completed(monkeypatch):

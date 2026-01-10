@@ -123,9 +123,9 @@ export type DocumentSourceType =
   | 'web'
   | 'notion'
   | 'slack'
-  | 'local'
-  | 'drive'
-  | 'upload';
+  | 'onedrive'
+  | 'dropbox'
+  | 'local';
 export type DocumentStatus = 'indexed' | 'processing' | 'error';
 
 export interface Document {
@@ -309,4 +309,3 @@ export interface SubscriptionDetail {
     current_period_end?: string;
     cancel_at_period_end: boolean;
 }
-

@@ -89,6 +89,18 @@ describe('useNotificationSettings', () => {
             expect(result.current.error).toBeTruthy();
         });
 
+        it('should set fallback error for non-Error failures', async () => {
+            mockApi.get.mockRejectedValue('bad');
+
+            const { result } = renderHook(() => useNotificationSettings());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            expect(result.current.error).toBe('Failed to fetch settings');
+        });
+
         it('should start with loading state true', async () => {
             const { result } = renderHook(() => useNotificationSettings());
             expect(result.current.isLoading).toBe(true);
