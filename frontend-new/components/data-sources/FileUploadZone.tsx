@@ -69,7 +69,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
 
       // Capture job ID for progress tracking
       if (ingestionResponse?.job_id) {
-        setCurrentJobId((prev) => prev ?? ingestionResponse.job_id);
+        setCurrentJobId(() => ingestionResponse.job_id ?? null);
       }
 
       return true;
