@@ -479,10 +479,10 @@ class TestPlanLimitsConsistency:
         assert QUOTA_LIMITS["enterprise"].max_storage_bytes > QUOTA_LIMITS["pro"].max_storage_bytes
     
     @pytest.mark.unit
-    def test_web_crawl_only_on_paid_plans(self):
-        """Web crawl should only be available on Pro and Enterprise."""
+    def test_web_crawl_on_starter_and_above(self):
+        """Web crawl should be enabled for Starter and higher."""
         assert QUOTA_LIMITS["free"].allow_web_crawl is False
-        assert QUOTA_LIMITS["starter"].allow_web_crawl is False
+        assert QUOTA_LIMITS["starter"].allow_web_crawl is True
         assert QUOTA_LIMITS["pro"].allow_web_crawl is True
         assert QUOTA_LIMITS["enterprise"].allow_web_crawl is True
     

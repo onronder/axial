@@ -36,7 +36,7 @@ QUOTA_LIMITS = {
         max_files=settings.LIMITS_STARTER_FILES,
         max_storage_bytes=settings.LIMITS_STARTER_MB * 1024 * 1024,
         max_team_seats=1,
-        allow_web_crawl=False,
+        allow_web_crawl=True,
         model_tier="standard"
     ),
     "pro": PlanLimits(
