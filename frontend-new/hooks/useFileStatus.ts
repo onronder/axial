@@ -14,6 +14,7 @@ export type FileStatusType =
     | "processing" // legacy alias for parsing
     | "embedding"
     | "indexing"
+    | "indexed" // completed but still receives legacy status upstream
     | "completed"
     | "failed"
     | "skipped"
@@ -161,7 +162,7 @@ export function useAllActiveFiles(): UseFileStatusReturn {
             const { data, error: fetchError } = await supabase
                 .from("ingestion_file_status")
                 .select("*")
-                .not("status", "in", '("completed","failed","skipped","cancelled")')
+                .not("status", "in", '("completed","failed","skipped","cancelled","indexed")')
                 .order("created_at", { ascending: false })
                 .limit(20);
 
@@ -194,15 +195,15 @@ export function useAllActiveFiles(): UseFileStatusReturn {
 
                     if (payload.eventType === "INSERT") {
                         // Add new files that aren't completed
-                        if (newFile.status !== "completed" && newFile.status !== "failed") {
+                        if (!["completed", "failed", "skipped", "cancelled", "indexed"].includes(newFile.status)) {
                             setFiles((prev) => [newFile, ...prev].slice(0, 20));
                         }
                     }
 
                     if (payload.eventType === "UPDATE") {
                         setFiles((prev) => {
-                            // If completed/failed, remove from active list
-                            if (["completed", "failed", "skipped", "cancelled"].includes(newFile.status)) {
+                            // If completed/failed or equivalent, remove from active list
+                            if (["completed", "failed", "skipped", "cancelled", "indexed"].includes(newFile.status)) {
                                 return prev.filter((f) => f.id !== newFile.id);
                             }
                             // Otherwise update in place
@@ -243,6 +244,7 @@ export function getStatusLabel(status: FileStatusType): string {
         processing: "Parsing...",
         embedding: "Embedding...",
         indexing: "Indexing...",
+        indexed: "Indexed",
         completed: "Complete",
         failed: "Failed",
         skipped: "Skipped",
@@ -262,6 +264,7 @@ export function getStatusColor(status: FileStatusType): string {
         processing: "text-amber-500",
         embedding: "text-purple-500",
         indexing: "text-cyan-500",
+        indexed: "text-green-500",
         completed: "text-green-500",
         failed: "text-red-500",
         skipped: "text-amber-500",

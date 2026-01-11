@@ -1,17 +1,19 @@
-'use client'
+"use client"
 
-import { useState, useEffect } from "react"
-import { X, Upload, Globe, BookOpen, Loader2, CheckCircle } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
+import { useEffect, useState } from "react"
+import { BookOpen, CheckCircle, Globe, Loader2, Upload, X } from "lucide-react"
+
+import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal"
 // NotionInput removed - using OAuth flow now
 import { WebInput, validateUrl } from "@/components/ingest/WebInput"
 import { useDataSources } from "@/hooks/useDataSources"
+import { useFileStatus } from "@/hooks/useFileStatus"
 import { useToast } from "@/hooks/use-toast"
-import { motion, AnimatePresence } from "framer-motion"
-import { authFetch, getUploadUrl, uploadToStorage, ingestFileReference } from "@/lib/api"
+import { authFetch, getUploadUrl, ingestFileReference, uploadToStorage } from "@/lib/api"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 
 type TabType = 'file' | 'url' | 'website' | 'notion'
 
@@ -35,24 +37,21 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
     const { toast } = useToast()
 
     const [loading, setLoading] = useState(false)
-    const [progress, setProgress] = useState(0)
+    const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+
+    // Track job status for unified ingestion progress
+    const { files: fileStatuses } = useFileStatus(currentJobId)
 
     // Sync activeTab when initialTab changes
     useEffect(() => {
         setActiveTab(initialTab)
     }, [initialTab])
 
-    // Reset progress when tab changes
-    useEffect(() => {
-        setProgress(0)
-    }, [activeTab])
-
     if (!isOpen) return null
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setFile(e.target.files[0])
-            setProgress(0)
         }
     }
 
@@ -70,18 +69,12 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
         }
 
         setLoading(true)
-        setProgress(10) // Start progress
-
-        // Fake progress animation for better UX during queueing
-        const interval = setInterval(() => {
-            setProgress(prev => Math.min(prev + 5, 90))
-        }, 300)
 
         try {
+            let ingestionJobId: string | null = null
+
             if (activeTab === 'file') {
                 if (!file) {
-                    setLoading(false)
-                    clearInterval(interval)
                     return
                 }
                 const uploadUrl = await getUploadUrl(file.name, file.type || "application/octet-stream", file.size)
@@ -89,18 +82,16 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 if (!uploaded) {
                     throw new Error("Failed to upload file to storage")
                 }
-                await ingestFileReference(
+                const ingestionResponse = await ingestFileReference(
                     uploadUrl.storage_path,
                     file.name,
                     file.size,
                     { client_id: "frontend_user" }
                 )
-
+                ingestionJobId = ingestionResponse?.job_id ?? null
             } else if (activeTab === 'url' || activeTab === 'website') {
                 const targetUrl = activeTab === 'website' ? websiteUrl : url
                 if (!targetUrl) {
-                    setLoading(false)
-                    clearInterval(interval)
                     return
                 }
 
@@ -109,17 +100,20 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                     throw new Error("Please enter a valid URL starting with http:// or https://")
                 }
                 const crawlType = activeTab === 'website' ? 'sitemap' : 'single'
-                await authFetch.post('/integrations/web/crawl', {
+                const { data } = await authFetch.post('/integrations/web/crawl', {
                     url: targetUrl,
                     crawl_type: crawlType,
                     max_depth: 1,
                     respect_robots: true,
                     allow_subdomains: false
                 })
+
+                ingestionJobId = data?.job_id ?? null
             }
 
-            clearInterval(interval)
-            setProgress(100)
+            if (ingestionJobId) {
+                setCurrentJobId(ingestionJobId)
+            }
 
             // Robust error handling: Check content type
             // Axios-based calls throw on non-2xx; fetch path removed for web crawl.
@@ -131,19 +125,12 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 className: "bg-green-50 border-green-200 text-green-900",
             })
 
-            // Close modal after short delay to show 100% progress
-            setTimeout(() => {
-                onClose()
-                // Reset form
-                setFile(null)
-                setUrl("")
-                setWebsiteUrl("")
-                setProgress(0)
-            }, 800)
+            // Reset form but keep modal open so progress modal can display
+            setFile(null)
+            setUrl("")
+            setWebsiteUrl("")
 
         } catch (err) {
-            clearInterval(interval)
-            setProgress(0)
             const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
             console.error(message)
             toast({
@@ -152,8 +139,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 variant: "destructive",
             })
         } finally {
-            // Only unset loading if we errored, otherwise we wait for the timeout close
-            // This prevents the button from becoming enabled while modal is closing
+            setLoading(false)
         }
     }
 
@@ -266,29 +252,6 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                             </div>
                         )}
 
-                        <AnimatePresence>
-                            {loading && (
-                                <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    className="pt-2"
-                                >
-                                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                        <motion.div
-                                            className="h-full bg-slate-900"
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${progress}%` }}
-                                            transition={{ duration: 0.3 }}
-                                        />
-                                    </div>
-                                    <p className="text-xs text-center text-slate-500 mt-1">
-                                        {progress < 100 ? "Queueing ingestion..." : "Done!"}
-                                    </p>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-
                         {activeTab !== 'notion' && (
                             <div className="flex justify-end gap-2 pt-2">
                                 <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
@@ -305,6 +268,21 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                     </form>
                 </CardContent>
             </Card>
+
+            {/* Unified Ingestion Progress */}
+            {currentJobId && (
+                <IngestionProgressModal
+                    jobId={currentJobId}
+                    files={fileStatuses}
+                    totalFiles={fileStatuses.length}
+                    overallProgress={
+                        fileStatuses.length > 0
+                            ? (fileStatuses.filter((f) => f.status === "completed").length / fileStatuses.length) * 100
+                            : 0
+                    }
+                    onClose={() => setCurrentJobId(null)}
+                />
+            )}
         </div>
     )
 }

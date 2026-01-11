@@ -8,6 +8,8 @@ import { Slider } from "@/components/ui/slider";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { useFileStatus } from "@/hooks/useFileStatus";
+import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 
 interface URLCrawlerInputProps {
   source: DataSource;
@@ -26,6 +28,9 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
   const [url, setUrl] = useState("");
   const [depth, setDepth] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
+  const { files: fileStatuses } = useFileStatus(currentJobId);
 
   const handleCrawl = async () => {
     if (!url.trim()) return;
@@ -44,13 +49,18 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
 
     setIsLoading(true);
     try {
-      await api.post("/integrations/web/crawl", {
+      const response = await api.post("/integrations/web/crawl", {
         url,
         crawl_type: depth > 1 ? "recursive" : "single",
         max_depth: depth,
         respect_robots: true,
         allow_subdomains: false,
       });
+
+      const jobId = (response as { data?: { job_id?: string } })?.data?.job_id ?? null;
+      if (jobId) {
+        setCurrentJobId(jobId);
+      }
 
       toast({
         title: "Crawl Started",
@@ -136,6 +146,22 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
           </Button>
         </div>
       </div>
+
+      {currentJobId && (
+        <IngestionProgressModal
+          jobId={currentJobId}
+          files={fileStatuses}
+          totalFiles={fileStatuses.length}
+          overallProgress={
+            fileStatuses.length > 0
+              ? (fileStatuses.filter((f) => f.status === "completed" || f.status === "indexed").length /
+                  fileStatuses.length) *
+                100
+              : 0
+          }
+          onClose={() => setCurrentJobId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -25,5 +25,9 @@ TEST_RESULTS/
 .coverage.*
 htmlcov/
 
+# Local env overrides
+.env.local
+frontend-new/.env.local
+
 # Node
 node_modules/

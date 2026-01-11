@@ -40,11 +40,11 @@ export function IngestionProgressModal({
     const keyboardShortcuts = useRef<KeyboardShortcuts | null>(null);
     const focusTrap = useRef<FocusTrap | null>(null);
 
-    const completedFiles = files.filter((f) => f.status === "completed").length;
+    const completedFiles = files.filter((f) => f.status === "completed" || f.status === "indexed").length;
     const failedFiles = files.filter((f) => f.status === "failed").length;
     const skippedFiles = files.filter((f) => f.status === "skipped").length;
     const processingFiles = files.filter(
-        (f) => !["completed", "failed", "skipped", "cancelled"].includes(f.status)
+        (f) => !["completed", "indexed", "failed", "skipped", "cancelled"].includes(f.status)
     ).length;
 
     const allComplete = completedFiles + failedFiles + skippedFiles === totalFiles;
@@ -202,9 +202,9 @@ type StageStatus = "pending" | "in_progress" | "complete" | "failed";
 function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const statusLabel = getStatusLabel(file.status);
-    const isProcessing = !["completed", "failed", "skipped", "cancelled"].includes(file.status);
+    const isProcessing = !["completed", "indexed", "failed", "skipped", "cancelled"].includes(file.status);
     const isFailed = file.status === "failed";
-    const isCompleted = file.status === "completed";
+    const isCompleted = file.status === "completed" || file.status === "indexed";
     const isSkipped = file.status === "skipped";
     const isCancelled = file.status === "cancelled";
     const hasChunks = file.chunks_total > 0;
@@ -246,7 +246,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
             stages.chunking = 'complete';
             stages.embedding = 'complete';
             stages.indexing = 'in_progress';
-        } else if (file.status === 'completed' || file.status === 'skipped') {
+        } else if (file.status === 'completed' || file.status === 'indexed' || file.status === 'skipped') {
             stages.uploading = 'complete';
             stages.parsing = 'complete';
             stages.chunking = 'complete';
@@ -271,7 +271,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
         if (file.status === 'uploading') return 'uploading';
         if (file.status === 'parsing' || file.status === 'processing') return 'parsing';
         if (file.status === 'embedding') return 'embedding';
-        if (file.status === 'indexing') return 'indexing';
+        if (file.status === 'indexing' || file.status === 'indexed') return 'indexing';
         return 'parsing';
     };
 

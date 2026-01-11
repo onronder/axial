@@ -69,7 +69,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
 
       // Capture job ID for progress tracking
       if (ingestionResponse?.job_id) {
-        setCurrentJobId(() => ingestionResponse.job_id ?? null);
+        setCurrentJobId(ingestionResponse.job_id ?? null);
       }
 
       return true;
@@ -188,7 +188,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
       </div>
 
       {/* Progress Modal */}
-      {currentJobId && fileStatuses.length > 0 && (
+      {currentJobId && (
         <IngestionProgressModal
           jobId={currentJobId}
           files={fileStatuses}
