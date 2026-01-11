@@ -11,13 +11,14 @@ from typing import Optional
 from uuid import UUID
 
 from core.security import get_current_user
+from api.v1.dependencies import validate_team_access
 from services.usage import get_user_usage_with_limits
 from core.quotas import QUOTA_LIMITS, format_bytes
 
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 # ============================================================

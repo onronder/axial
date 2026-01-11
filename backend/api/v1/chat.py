@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Backgrou
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, AsyncGenerator
+from api.v1.dependencies import validate_team_access
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
@@ -21,7 +22,7 @@ import json
 import sentry_sdk
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 # Rate limiter instance
 limiter = Limiter(key_func=get_remote_address)
@@ -46,7 +47,7 @@ class MessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    sources: List[str] = []
+    sources: List[Any] = []
     created_at: str
 
 @router.get("/conversations", response_model=List[ConversationResponse])
@@ -166,7 +167,11 @@ async def get_messages(
     
     try:
         response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
-        return response.data
+        messages = response.data or []
+        for msg in messages:
+            if "sources" in msg and msg.get("sources") is None:
+                msg["sources"] = []
+        return messages
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch messages: {str(e)}")
 
@@ -268,7 +273,7 @@ def condense_question(query: str, history: List[Dict[str, str]]) -> str:
     If chat history exists, rewrite the query as a standalone question.
     Uses GPT-4o-mini for speed and cost efficiency.
     """
-    if not history:
+    if not history or all(not (msg.get("content") or "").strip() for msg in history):
         return query
     
     # Format history for the prompt
@@ -594,8 +599,8 @@ async def chat_endpoint(
 
         # Save messages if conversation_id is provided
         message_id = save_messages(
-            supabase, payload.conversation_id, payload.query, answer, 
-            [s.get("label", "") for s in sources_metadata]
+            supabase, payload.conversation_id, payload.query, answer,
+            sources_metadata
         )
 
         return ChatResponse(
@@ -635,7 +640,7 @@ async def stream_chat_response(
         # Save messages
         message_id = save_messages(
             supabase, conversation_id, question, full_response,
-            [s.get("label", "") for s in sources]
+            sources
         )
         
         yield f"data: {json.dumps({'type': 'done', 'message_id': message_id})}\n\n"
@@ -646,7 +651,7 @@ async def stream_chat_response(
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
 
-def save_messages(supabase, conversation_id: str, query: str, answer: str, sources: List[str]) -> Optional[str]:
+def save_messages(supabase, conversation_id: str, query: str, answer: str, sources: List[Any]) -> Optional[str]:
     """Save user and assistant messages to database."""
     if not conversation_id:
         return None
@@ -668,7 +673,7 @@ def save_messages(supabase, conversation_id: str, query: str, answer: str, sourc
             "conversation_id": conversation_id,
             "role": "assistant",
             "content": answer,
-            "sources": sources,
+            "sources": sources or [],
             "created_at": now
         }).execute()
         

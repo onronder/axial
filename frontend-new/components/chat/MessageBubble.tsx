@@ -104,12 +104,27 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const [highlightedCitationIndex, setHighlightedCitationIndex] = useState<number | null>(null);
 
   // Normalize sources to SourceMetadata format
-  const normalizedSources: SourceMetadata[] = (message.sources || []).map((source): SourceMetadata => {
+  const normalizedSources: SourceMetadata[] = (message.sources || []).map((source, idx): SourceMetadata => {
+    if (typeof source === "string") {
+      return {
+        index: idx + 1,
+        type: "Source",
+        label: source,
+        url: undefined,
+        page: undefined,
+        section: undefined,
+        source: source,
+        source_type: "Source",
+        title: source,
+        source_url: undefined,
+      };
+    }
+
     const base = source as SourceMetadata;
     return {
-      index: base.index,
+      index: base.index ?? idx + 1,
       type: base.type ?? base.source_type ?? base.source,
-      label: base.label ?? base.title,
+      label: base.label ?? base.title ?? base.source,
       url: base.url ?? base.source_url,
       page: base.page,
       section: base.section,

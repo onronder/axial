@@ -9,13 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional, List
 from datetime import datetime, timezone
 import json
+from api.v1.dependencies import validate_team_access
 from core.security import get_current_user
 from core.db import get_supabase
 from models import NotificationResponse, NotificationListResponse, UnreadCountResponse
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 # =============================================================================

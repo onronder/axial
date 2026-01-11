@@ -23,7 +23,8 @@ def queue_web_crawl(
     respect_robots: bool,
     max_pages: int,
     allow_subdomains: bool,
-    is_recrawl: bool = False
+    is_recrawl: bool = False,
+    include_job_id: bool = False
 ) -> Dict[str, str]:
     """Create a crawl config record and dispatch crawl discovery."""
     supabase = get_supabase()
@@ -47,6 +48,29 @@ def queue_web_crawl(
         raise RuntimeError("Failed to create crawl config")
 
     crawl_id = str(crawl_res.data[0]["id"])
+    ingestion_job_id = crawl_id
+
+    # Create ingestion job so progress tray can track crawl
+    job_record = {
+            "id": ingestion_job_id,
+            "user_id": user_id,
+            "provider": "web",
+            "status": "pending",
+            "total_files": 0,
+            "processed_files": 0,
+            "failed_files": 0,
+            "progress": 0,
+            "message": f"Queued crawl for {root_url}",
+            "status_message": f"Queued crawl for {root_url}",
+        }
+    try:
+        supabase.table("ingestion_jobs").upsert(job_record, on_conflict="id").execute()
+    except Exception as job_exc:
+        try:
+            supabase.table("ingestion_jobs").insert(job_record).execute()
+        except Exception as inner_exc:
+            logger.warning("⚠️ [Crawl] Failed to create ingestion job: %s", inner_exc)
+            ingestion_job_id = None
 
     try:
         task = crawl_discovery_task.delay(
@@ -60,6 +84,7 @@ def queue_web_crawl(
                 "respect_robots": respect_robots,
                 "allow_subdomains": allow_subdomains,
                 "is_recrawl": is_recrawl,
+                "job_id": ingestion_job_id,
             },
         )
     except Exception as exc:
@@ -77,4 +102,15 @@ def queue_web_crawl(
         {"celery_task_id": task.id, "updated_at": now}
     ).eq("id", crawl_id).execute()
 
-    return {"crawl_id": crawl_id, "task_id": task.id}
+    if ingestion_job_id:
+        try:
+            supabase.table("ingestion_jobs").update({
+                "celery_task_id": task.id
+            }).eq("id", ingestion_job_id).execute()
+        except Exception:
+            pass
+
+    response = {"crawl_id": crawl_id, "task_id": task.id}
+    if include_job_id and ingestion_job_id:
+        response["job_id"] = ingestion_job_id
+    return response

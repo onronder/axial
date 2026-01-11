@@ -34,6 +34,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useProfile } from '@/hooks/useProfile';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 // ============================================================
 // Types
@@ -136,6 +138,7 @@ function formatRetryTime(nextRetryAt: string | null): string {
 
 export function DLQDashboard() {
     const { toast } = useToast();
+    const { profile, isLoading: profileLoading } = useProfile();
     const [tasks, setTasks] = useState<FailedTask[]>([]);
     const [stats, setStats] = useState<DLQStats | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -143,6 +146,31 @@ export function DLQDashboard() {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<FailedTaskStatus | 'all'>('all');
     const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
+    const isViewer = profile?.role === 'viewer';
+    const isReadOnly = profileLoading || isViewer;
+    const actionLockedReason = isReadOnly
+        ? profileLoading
+            ? "Loading permissions..."
+            : "View-only members cannot retry or resolve tasks."
+        : null;
+
+    const guardActions = (action: string) => {
+        if (isReadOnly) {
+            toast({
+                title: "View only",
+                description: actionLockedReason || `You don't have permission to ${action}.`,
+                variant: "destructive",
+            });
+            return false;
+        }
+        return true;
+    };
+
+    useEffect(() => {
+        if (isReadOnly && selectedTasks.size > 0) {
+            setSelectedTasks(new Set());
+        }
+    }, [isReadOnly, selectedTasks]);
 
     // Fetch DLQ data
     const fetchData = useCallback(async () => {
@@ -175,6 +203,7 @@ export function DLQDashboard() {
 
     // Retry single task
     const retryTask = async (taskId: string) => {
+        if (!guardActions("retry tasks")) return;
         setIsRetrying(taskId);
         try {
             await api.post(`/dlq/retry/${taskId}`);
@@ -198,6 +227,7 @@ export function DLQDashboard() {
     // Retry selected tasks
     const retrySelected = async () => {
         if (selectedTasks.size === 0) return;
+        if (!guardActions("retry tasks")) return;
 
         try {
             // Sequential retry for selected tasks (no batch endpoint yet)
@@ -222,6 +252,7 @@ export function DLQDashboard() {
 
     // Mark as resolved
     const resolveTask = async (taskId: string) => {
+        if (!guardActions("resolve tasks")) return;
         try {
             await api.post(`/dlq/resolve/${taskId}`);
             toast({
@@ -250,6 +281,7 @@ export function DLQDashboard() {
 
     // Toggle task selection
     const toggleSelection = (taskId: string) => {
+        if (!guardActions("select tasks")) return;
         setSelectedTasks(prev => {
             const next = new Set(prev);
             if (next.has(taskId)) {
@@ -276,6 +308,18 @@ export function DLQDashboard() {
                     Refresh
                 </Button>
             </div>
+
+            {actionLockedReason && (
+                <Alert className="border-amber-400/40 bg-amber-500/5">
+                    <AlertTitle className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-400" />
+                        View-only access
+                    </AlertTitle>
+                    <AlertDescription className="text-sm text-amber-100">
+                        {actionLockedReason}
+                    </AlertDescription>
+                </Alert>
+            )}
 
             {/* Stats Cards */}
             {stats && (
@@ -332,7 +376,7 @@ export function DLQDashboard() {
                         <SelectItem value="resolved">Resolved</SelectItem>
                     </SelectContent>
                 </Select>
-                {selectedTasks.size > 0 && (
+                {selectedTasks.size > 0 && !isReadOnly && (
                     <Button onClick={retrySelected} className="gap-2">
                         <RotateCcw className="h-4 w-4" />
                         Retry {selectedTasks.size} Selected
@@ -380,6 +424,7 @@ export function DLQDashboard() {
                                                 checked={selectedTasks.has(task.id)}
                                                 onChange={() => toggleSelection(task.id)}
                                                 className="h-4 w-4"
+                                                disabled={isReadOnly}
                                             />
                                         </TableCell>
                                         <TableCell>
@@ -423,7 +468,7 @@ export function DLQDashboard() {
                                                         size="sm"
                                                         variant="ghost"
                                                         onClick={() => retryTask(task.id)}
-                                                        disabled={isRetrying === task.id}
+                                                        disabled={isRetrying === task.id || isReadOnly}
                                                     >
                                                         {isRetrying === task.id ? (
                                                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -437,6 +482,7 @@ export function DLQDashboard() {
                                                         size="sm"
                                                         variant="ghost"
                                                         onClick={() => resolveTask(task.id)}
+                                                        disabled={isReadOnly}
                                                     >
                                                         <CheckCircle className="h-4 w-4" />
                                                     </Button>

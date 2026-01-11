@@ -10,6 +10,7 @@ from core.security import get_current_user, encrypt_token, decrypt_token
 from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
+from api.v1.dependencies import validate_team_access, require_editor
 from services.usage import check_feature_access
 from services.web_crawl import queue_web_crawl
 from connectors.web import WebConnector
@@ -22,7 +23,7 @@ import logging
 import httpx
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 def _require_provider(provider: str) -> str:
@@ -146,7 +147,7 @@ async def get_user_integrations(
 async def exchange_google_token(
     request: ExchangeRequest,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Exchange Google OAuth code for tokens and persist to user_integrations.
@@ -269,7 +270,7 @@ async def exchange_google_token(
 @router.post("/integrations/notion/exchange")
 async def exchange_notion_token(
     request: ExchangeRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Exchange Notion OAuth code for tokens and persist to user_integrations.
@@ -477,7 +478,7 @@ async def get_provider_status(
 @router.delete("/integrations/{provider}")
 async def disconnect_provider(
     provider: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Disconnect a provider integration.
@@ -632,7 +633,7 @@ async def list_provider_items(
 async def crawl_web(
     request: Request,
     body: WebCrawlRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """Queue a web crawl with best-practice defaults."""
     try:
@@ -665,6 +666,7 @@ async def crawl_web(
                 respect_robots=body.respect_robots,
                 max_pages=max_pages,
                 allow_subdomains=body.allow_subdomains,
+                include_job_id=True,
             )
         except Exception as crawl_exc:
             logger.error("❌ [Crawl] Queue failed for %s: %s", normalized_url, crawl_exc)
@@ -674,6 +676,7 @@ async def crawl_web(
             "status": "queued",
             "crawl_id": result["crawl_id"],
             "task_id": result["task_id"],
+            "job_id": result.get("job_id"),
             "root_url": normalized_url,
         }
     except HTTPException:
@@ -686,7 +689,7 @@ async def crawl_web(
 @router.delete("/integrations/web/crawl/{config_id}")
 async def delete_crawl_config(
     config_id: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Delete a web crawl configuration.
@@ -750,7 +753,7 @@ async def delete_crawl_config(
 async def ingest_provider_items(
     provider: str,
     request: IngestRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Ingest items from a provider (Download, Parse, Embed, Store).
@@ -787,12 +790,14 @@ async def ingest_provider_items(
                 respect_robots=True,
                 max_pages=1,
                 allow_subdomains=False,
+                include_job_id=True,
             )
 
             return {
                 "status": "queued",
                 "crawl_id": result["crawl_id"],
                 "task_id": result["task_id"],
+                "job_id": result.get("job_id"),
                 "root_url": normalized_url,
             }
 
@@ -962,7 +967,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
 async def sync_integration(
     integration_id: str,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Trigger a manual sync for an integration.

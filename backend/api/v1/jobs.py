@@ -7,6 +7,7 @@ Used for polling-based progress updates during ingestion.
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
+from api.v1.dependencies import validate_team_access, require_editor
 from core.security import get_current_user
 from core.db import get_supabase
 from core.ingestion_utils import normalize_provider
@@ -14,7 +15,7 @@ from models import IngestionJobResponse
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 @router.get("/jobs/active", response_model=Optional[IngestionJobResponse])
@@ -175,7 +176,7 @@ async def list_recent_jobs(
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_job(
     job_id: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Cancel an in-progress ingestion job.
@@ -258,7 +259,7 @@ async def cancel_job(
 @router.post("/jobs/files/{file_status_id}/retry")
 async def retry_file(
     file_status_id: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Retry a failed file ingestion.
@@ -395,7 +396,7 @@ async def get_job_files(
 @router.post("/jobs/{job_id}/retry")
 async def retry_job(
     job_id: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Retry an entire failed ingestion job.

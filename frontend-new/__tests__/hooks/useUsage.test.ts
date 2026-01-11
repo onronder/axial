@@ -46,7 +46,7 @@ const createDeferred = <T,>() => {
             plan: 'pro',
             files: { used: 25, limit: 100 },
             storage: { used_bytes: 52428800, limit_bytes: 1073741824 }, // 50MB / 1GB
-            features: { web_crawl: true, team_enabled: false },
+            features: { web_crawl: true, team: false, premium_models: false },
         });
         mockGetEffectivePlan.mockResolvedValue({
             plan: 'pro',
@@ -149,7 +149,7 @@ const createDeferred = <T,>() => {
                 plan: 'pro',
                 files: { used: 25, limit: 100 },
                 storage: { used_bytes: 52428800, limit_bytes: 1073741824 },
-                features: { web_crawl: true, team_enabled: false },
+                features: { web_crawl: true, team: false },
             });
             planDeferred.resolve({ plan: 'pro', inherited: false });
 
@@ -349,7 +349,7 @@ const createDeferred = <T,>() => {
                 plan: 'free',
                 files: { used: 0, limit: 0 },
                 storage: { used_bytes: 0, limit_bytes: 0 },
-                features: { web_crawl: false, team_enabled: false },
+                features: { web_crawl: false, team: false },
             });
 
             const { result } = renderHook(() => useUsage(), { wrapper });
@@ -367,7 +367,7 @@ const createDeferred = <T,>() => {
                 plan: 'starter',
                 files: { used: 50, limit: 50 },
                 storage: { used_bytes: 1000, limit_bytes: 1000 },
-                features: { web_crawl: false, team_enabled: false },
+                features: { web_crawl: false, team: false },
             });
 
             const { result } = renderHook(() => useUsage(), { wrapper });

@@ -64,7 +64,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useTeamMembers, Role, MemberStatus, TeamMember } from "@/hooks/useTeamMembers";
+import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { bulkInvite } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -77,7 +79,8 @@ const statusStyles: Record<MemberStatus, { label: string; className: string }> =
 
 export function TeamSettings() {
   const { toast } = useToast();
-  const { teamEnabled, plan } = useUsage();
+  const { teamEnabled, plan, isLoading: usageLoading } = useUsage();
+  const { profile, isLoading: profileLoading } = useProfile();
 
   const {
     members,
@@ -122,8 +125,35 @@ export function TeamSettings() {
   // CSV Template data URI
   const CSV_TEMPLATE = "data:text/csv;charset=utf-8,email,role,name%0Aalice%40example.com,editor,Alice%0Abob%40example.com,viewer,Bob";
 
+  const role = profile?.role;
+  const isTeamMember = !!role;
+  const isViewer = role === "viewer";
+  const isAdmin = role === "admin" || !isTeamMember; // treat solo owners as admin
+  const canManageMembers = teamEnabled && isAdmin && !isViewer;
+  const managementLockedReason = !teamEnabled
+    ? `Team management is locked on your ${plan || "current"} plan. Upgrade to enable invites and role changes.`
+    : isViewer
+      ? "View-only members cannot invite or modify teammates."
+      : !isAdmin
+        ? "Only team admins can manage members."
+        : null;
+
+  const ensureCanManage = (action: string) => {
+    if (!canManageMembers) {
+      toast({
+        title: "Action blocked",
+        description: managementLockedReason || `You don't have permission to ${action}.`,
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
+  };
+
   // Handle bulk CSV upload
   const handleBulkImport = async () => {
+    if (!ensureCanManage("import team members")) return;
+
     if (!bulkFile) return;
 
     setIsBulkImporting(true);
@@ -184,6 +214,8 @@ export function TeamSettings() {
   }, [filteredMembers, currentPage, pageSize]);
 
   const handleInvite = async () => {
+    if (!ensureCanManage("invite team members")) return;
+
     if (!inviteEmail.trim() || !isEmailValid) return;
 
     setIsInviting(true);
@@ -198,12 +230,14 @@ export function TeamSettings() {
   };
 
   const openEditRoleDialog = (member: TeamMember) => {
+    if (!ensureCanManage("edit team roles")) return;
     setEditingMember(member);
     setSelectedRole(member.role);
     setEditRoleDialogOpen(true);
   };
 
   const handleSaveRole = async () => {
+    if (!ensureCanManage("edit team roles")) return;
     if (editingMember) {
       await updateMemberRole(editingMember.id, selectedRole);
     }
@@ -212,10 +246,12 @@ export function TeamSettings() {
   };
 
   const handleRevokeAccess = async (memberId: string) => {
+    if (!ensureCanManage("remove team members")) return;
     await removeMember(memberId);
   };
 
   const handleResendInvite = async (member: TeamMember) => {
+    if (!ensureCanManage("resend invitations")) return;
     await resendInvite(member.id, member.email);
   };
 
@@ -259,7 +295,7 @@ export function TeamSettings() {
     return member.email.slice(0, 2).toUpperCase();
   };
 
-  if (isLoading) {
+  if (isLoading || profileLoading || usageLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -303,6 +339,18 @@ export function TeamSettings() {
             </Link>
           </CardContent>
         </Card>
+      )}
+
+      {managementLockedReason && teamEnabled && (
+        <Alert className="border-amber-400/40 bg-amber-500/5">
+          <AlertTitle className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-amber-400" />
+            Team access restricted
+          </AlertTitle>
+          <AlertDescription className="text-sm text-amber-100">
+            {managementLockedReason}
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Stats Cards */}
@@ -351,7 +399,11 @@ export function TeamSettings() {
       <div className="flex flex-wrap gap-3">
         <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2">
+            <Button
+              className="gap-2"
+              disabled={!canManageMembers}
+              title={!canManageMembers ? managementLockedReason ?? "Team management locked" : undefined}
+            >
               <UserPlus className="h-4 w-4" />
               Invite Member
             </Button>
@@ -392,7 +444,11 @@ export function TeamSettings() {
               <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleInvite} className="gap-2" disabled={isInviting || !inviteEmail.trim() || !isEmailValid}>
+              <Button
+                onClick={handleInvite}
+                className="gap-2"
+                disabled={isInviting || !inviteEmail.trim() || !isEmailValid || !canManageMembers}
+              >
                 {isInviting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -408,18 +464,23 @@ export function TeamSettings() {
         <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
           <DialogTrigger asChild>
             <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" className="gap-2" disabled={!teamEnabled}>
-                    <Upload className="h-4 w-4" />
-                    Bulk Import (.csv)
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{teamEnabled ? "Upload a CSV list for large teams" : "Upgrade to use bulk import"}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  disabled={!canManageMembers}
+                  title={!canManageMembers ? managementLockedReason ?? "Team management locked" : undefined}
+                >
+                  <Upload className="h-4 w-4" />
+                  Bulk Import (.csv)
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                  <p>{canManageMembers ? "Upload a CSV list for large teams" : managementLockedReason || "Team management locked"}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
@@ -437,6 +498,7 @@ export function TeamSettings() {
                   accept=".csv"
                   onChange={handleFileChange}
                   className="cursor-pointer"
+                  disabled={!canManageMembers}
                 />
                 {bulkFile && (
                   <p className="text-sm text-muted-foreground">
@@ -465,7 +527,11 @@ export function TeamSettings() {
               <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleBulkImport} className="gap-2" disabled={!bulkFile || isBulkImporting}>
+              <Button
+                onClick={handleBulkImport}
+                className="gap-2"
+                disabled={!bulkFile || isBulkImporting || !canManageMembers}
+              >
                 {isBulkImporting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -578,8 +644,14 @@ export function TeamSettings() {
                     <TableCell>
                       <Select
                         value={member.role}
-                        onValueChange={(value) => updateMemberRole(member.id, value as Role)}
-                        disabled={member.role === 'admin' && members.filter(m => m.role === 'admin' && m.status === 'active').length === 1}
+                        onValueChange={(value) => {
+                          if (!ensureCanManage("change roles")) return;
+                          updateMemberRole(member.id, value as Role);
+                        }}
+                        disabled={
+                          !canManageMembers ||
+                          (member.role === 'admin' && members.filter(m => m.role === 'admin' && m.status === 'active').length === 1)
+                        }
                       >
                         <SelectTrigger className="w-[110px] h-8">
                           <SelectValue />
@@ -602,17 +674,29 @@ export function TeamSettings() {
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={!canManageMembers}
+                            title={!canManageMembers ? managementLockedReason ?? "Team management locked" : undefined}
+                          >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="bg-popover">
-                          <DropdownMenuItem onClick={() => openEditRoleDialog(member)}>
+                          <DropdownMenuItem
+                            onClick={() => openEditRoleDialog(member)}
+                            disabled={!canManageMembers}
+                          >
                             <UserCog className="mr-2 h-4 w-4" />
                             Edit Role
                           </DropdownMenuItem>
                           {member.status === "pending" && (
-                            <DropdownMenuItem onClick={() => handleResendInvite(member)}>
+                            <DropdownMenuItem
+                              onClick={() => handleResendInvite(member)}
+                              disabled={!canManageMembers}
+                            >
                               <Send className="mr-2 h-4 w-4" />
                               Resend Invite
                             </DropdownMenuItem>
@@ -621,6 +705,7 @@ export function TeamSettings() {
                           <DropdownMenuItem
                             onClick={() => handleRevokeAccess(member.id)}
                             className="text-destructive focus:text-destructive"
+                            disabled={!canManageMembers}
                           >
                             <UserX className="mr-2 h-4 w-4" />
                             Revoke Access
@@ -737,7 +822,11 @@ export function TeamSettings() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-role">New Role</Label>
-              <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as Role)}>
+              <Select
+                value={selectedRole}
+                onValueChange={(v) => setSelectedRole(v as Role)}
+                disabled={!canManageMembers}
+              >
                 <SelectTrigger id="edit-role">
                   <SelectValue />
                 </SelectTrigger>
@@ -768,7 +857,9 @@ export function TeamSettings() {
             <Button variant="outline" onClick={() => setEditRoleDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveRole}>Save Changes</Button>
+            <Button onClick={handleSaveRole} disabled={!canManageMembers}>
+              Save Changes
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

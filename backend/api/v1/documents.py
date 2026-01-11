@@ -7,11 +7,11 @@ from core.db import get_supabase
 from core.rate_limit import limiter
 from core.ingestion_utils import normalize_provider
 from services.audit import log_document_delete
-from api.v1.dependencies import validate_team_access
+from api.v1.dependencies import validate_team_access, require_editor
 from services.cleanup import cleanup_service
 from services.team_service import team_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 # =============================================================================
@@ -28,6 +28,7 @@ class DocumentDTO(BaseModel):
     # Documents only exist after successful ingestion, so default to completed
     indexing_status: str = "completed"
     size: Optional[int] = 0
+    file_size_bytes: Optional[int] = 0
     metadata: Dict[str, Any]
 
 
@@ -51,6 +52,12 @@ class DocumentChunkDTO(BaseModel):
     content: str
     chunk_index: int
     metadata: Dict[str, Any] = {}
+
+
+class BulkDeleteRequest(BaseModel):
+    """Payload for bulk document deletion."""
+    document_ids: Optional[List[str]] = None
+    source_type: Optional[str] = None
 
 
 # =============================================================================
@@ -148,10 +155,14 @@ async def list_documents(
             d["source_type"] = normalize_provider(d.get("source_type")) or d.get("source_type")
             d['status'] = d.get('status', 'indexed')
             d['indexing_status'] = 'completed'
+            d["metadata"] = d.get("metadata") or {}
             # Fallback for size if not top-level
-            if 'size' not in d or d['size'] is None:
-                meta = d.get('metadata') or {}
-                d['size'] = meta.get('size') or meta.get('file_size') or meta.get('file_size_bytes') or 0
+            meta = d["metadata"]
+            file_size = d.get("file_size_bytes")
+            if file_size is None:
+                file_size = meta.get('file_size') or meta.get('size') or meta.get('file_size_bytes') or 0
+            d["file_size_bytes"] = file_size or 0
+            d["size"] = file_size or 0
                 
             docs.append(d)
         
@@ -186,6 +197,7 @@ async def list_documents(
                 # Convert failed files to DocumentDTO format
                 for f in failed_files:
                     provider = provider_map.get(str(f.get("job_id"))) or "file_upload"
+                    file_size = f.get("file_size_bytes", 0)
                     docs.append({
                         "id": f["id"],
                         "title": f["filename"],
@@ -194,7 +206,8 @@ async def list_documents(
                         "created_at": f["created_at"],
                         "status": "failed",
                         "indexing_status": "failed",
-                        "size": f.get("file_size_bytes", 0),
+                        "file_size_bytes": file_size,
+                        "size": file_size,
                         "metadata": {
                             "error": f.get("error_message", "Unknown error"),
                             "job_id": str(f.get("job_id", ""))
@@ -212,22 +225,103 @@ async def list_documents(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch documents: {str(e)}")
 
+@router.delete("/documents")
+@limiter.limit("30/minute")
+async def bulk_delete_documents(
+    payload: BulkDeleteRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(require_editor)
+):
+    """
+    Bulk delete documents by ID list or by source type.
+    
+    Does NOT disconnect connectors; only removes indexed records and related chunks.
+    """
+    supabase = get_supabase()
+
+    if not payload.document_ids and not payload.source_type:
+        raise HTTPException(status_code=400, detail="Provide document_ids or source_type to delete.")
+
+    doc_ids: List[str] = []
+
+    if payload.document_ids:
+        doc_ids.extend(payload.document_ids)
+
+    # Expand by source type if provided
+    if payload.source_type:
+        normalized_source = normalize_provider(payload.source_type) or payload.source_type
+        try:
+            source_docs = supabase.table("documents")\
+                .select("id")\
+                .eq("user_id", user_id)\
+                .eq("source_type", normalized_source)\
+                .execute()
+            doc_ids.extend([row["id"] for row in (source_docs.data or []) if row.get("id")])
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to resolve documents for source: {e}")
+
+    # Deduplicate and validate
+    doc_ids = list({d for d in doc_ids if d})
+    if not doc_ids:
+        return {"status": "success", "deleted": 0, "failed": []}
+
+    deleted: List[str] = []
+    failed: List[Dict[str, str]] = []
+
+    for doc_id in doc_ids:
+        try:
+            await cleanup_service.delete_single_document(doc_id, user_id)
+            deleted.append(doc_id)
+        except Exception as e:
+            failed.append({"id": doc_id, "error": str(e)})
+
+    # Best-effort usage sync so storage meter stays accurate
+    try:
+        supabase.rpc("recalculate_user_usage", {"target_user_id": user_id}).execute()
+    except Exception:
+        pass
+
+    # Audit log only records aggregate to avoid noisy entries
+    if deleted:
+        try:
+            from services.audit import audit_logger
+            audit_logger.log(
+                background_tasks,
+                user_id=user_id,
+                action="document.bulk_delete",
+                resource_type="document",
+                resource_id="bulk",
+                details={
+                    "deleted_count": len(deleted),
+                    "source_type": payload.source_type,
+                },
+                request=request
+            )
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "deleted": len(deleted),
+        "failed": failed
+    }
+
 @router.delete("/documents/{doc_id}")
 @limiter.limit("30/minute")
 async def delete_document(
     doc_id: str,
     request: Request,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     supabase = get_supabase()
     
     try:
-        # RBAC Check: Viewers cannot delete documents
         team = await team_service.get_user_team(user_id)
         if team and team.get("user_role") == "viewer":
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="Viewers cannot delete documents."
             )
 
@@ -269,7 +363,7 @@ async def update_document(
     update: DocumentUpdate,
     request: Request,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_editor)
 ):
     """
     Update document metadata (title, description, tags).
@@ -281,7 +375,6 @@ async def update_document(
     supabase = get_supabase()
     
     try:
-        # RBAC Check: Viewers cannot update documents
         team = await team_service.get_user_team(user_id)
         if team and team.get("user_role") == "viewer":
             raise HTTPException(
@@ -349,9 +442,12 @@ async def update_document(
         # Return updated document
         updated_doc['status'] = updated_doc.get('status', 'indexed')
         updated_doc['indexing_status'] = 'completed'
-        if 'size' not in updated_doc or updated_doc['size'] is None:
-            meta = updated_doc.get('metadata') or {}
-            updated_doc['size'] = meta.get('size') or meta.get('file_size') or 0
+        meta = updated_doc.get('metadata') or {}
+        file_size = updated_doc.get("file_size_bytes")
+        if file_size is None:
+            file_size = meta.get('file_size') or meta.get('size') or meta.get('file_size_bytes') or 0
+        updated_doc["file_size_bytes"] = file_size or 0
+        updated_doc['size'] = file_size or 0
         
         return updated_doc
         

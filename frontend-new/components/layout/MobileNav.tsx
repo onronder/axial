@@ -15,15 +15,15 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
     return (
         <>
             {/* Mobile header */}
-            <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
+            <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-white/10 bg-background/80 backdrop-blur-xl px-4 md:hidden">
                 <button
                     onClick={() => onToggle(true)}
-                    className="p-2 -ml-2 rounded-md hover:bg-muted"
+                    className="p-2 -ml-2 rounded-md hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     aria-label="Open menu"
                 >
                     <Menu className="h-5 w-5" />
                 </button>
-                <span className="font-semibold">Axio Hub</span>
+                <span className="font-display text-lg text-gradient">Axio Hub</span>
             </header>
 
             {/* Mobile sidebar overlay */}
@@ -31,12 +31,12 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                 <div className="fixed inset-0 z-50 md:hidden">
                     {/* Backdrop */}
                     <div
-                        className="absolute inset-0 bg-black/50"
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
                         onClick={() => onToggle(false)}
                         aria-label="Close menu"
                     />
                     {/* Sidebar */}
-                    <aside className="absolute inset-y-0 left-0 w-72 border-r border-sidebar-border">
+                    <aside className="absolute inset-y-0 left-0 w-72 border-r border-white/10 shadow-2xl">
                         <DashboardSidebar />
                     </aside>
                 </div>

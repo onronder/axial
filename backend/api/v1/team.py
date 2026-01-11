@@ -7,12 +7,13 @@ Endpoints for managing teams and team members.
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
+from api.v1.dependencies import validate_team_access, require_admin
 from core.security import get_current_user
 from core.db import get_supabase
 from services.team_service import team_service
 from datetime import datetime, timezone
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 # ============================================================
 # MODELS

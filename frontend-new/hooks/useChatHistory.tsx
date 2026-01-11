@@ -10,7 +10,7 @@ export interface Message {
     id: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
-    sources?: Source[];
+    sources?: Array<Source | string | Record<string, unknown>>;
     created_at: string;
 }
 

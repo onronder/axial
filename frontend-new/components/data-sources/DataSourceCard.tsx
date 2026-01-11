@@ -21,6 +21,7 @@ interface DataSourceCardProps {
   onConnect: (type: string) => void;
   onDisconnect: (type: string) => Promise<void>;
   onSync: (integrationId: string) => Promise<{ success: boolean; jobId: string }>;
+  disabled?: boolean;
 }
 
 function formatLastSync(lastSyncAt: string | null): string {
@@ -46,12 +47,21 @@ export function DataSourceCard({
   onConnect,
   onDisconnect,
   onSync,
+  disabled = false,
 }: DataSourceCardProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const handleConnect = async () => {
+    if (disabled) {
+      toast({
+        title: "View only",
+        description: "You need editor or admin access to connect sources.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsLoading(true);
     try {
       onConnect(source.type);
@@ -66,6 +76,14 @@ export function DataSourceCard({
   };
 
   const handleDisconnect = async () => {
+    if (disabled) {
+      toast({
+        title: "View only",
+        description: "You need editor or admin access to manage connections.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsLoading(true);
     try {
       await onDisconnect(source.type);
@@ -85,6 +103,14 @@ export function DataSourceCard({
   };
 
   const handleSync = async () => {
+    if (disabled) {
+      toast({
+        title: "View only",
+        description: "You need editor or admin access to sync data.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!source.integrationId) return;
     setIsSyncing(true);
     try {
@@ -108,10 +134,10 @@ export function DataSourceCard({
   return (
     <div
       className={cn(
-        "group rounded-xl border bg-card p-4 transition-all duration-300",
+        "group glass-card border-white/10 p-4 transition-all duration-300",
         source.isConnected
-          ? "border-primary/30 bg-gradient-to-br from-primary/5 to-transparent"
-          : "border-border hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5"
+          ? "border-primary/30 bg-gradient-to-br from-primary/10 via-transparent to-transparent shadow-glow"
+          : "hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5"
       )}
     >
       {/* Row 1: Icon + Badge */}
@@ -166,7 +192,7 @@ export function DataSourceCard({
             size="sm"
             className="gap-1.5 px-3 h-8 text-xs font-medium shadow-sm"
             onClick={onBrowse}
-            disabled={isLoading || isSyncing}
+            disabled={isLoading || isSyncing || disabled}
           >
             <ExternalLink className="h-3.5 w-3.5" />
             Browse
@@ -180,7 +206,7 @@ export function DataSourceCard({
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
                   onClick={handleSync}
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading || isSyncing || disabled}
                 >
                   <RefreshCw
                     className={cn("h-4 w-4", isSyncing && "animate-spin")}
@@ -199,7 +225,7 @@ export function DataSourceCard({
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   onClick={handleDisconnect}
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading || isSyncing || disabled}
                 >
                   {isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -220,7 +246,7 @@ export function DataSourceCard({
           size="sm"
           className="w-full h-8 text-xs font-medium hover:border-primary hover:bg-primary/5 hover:text-primary"
           onClick={handleConnect}
-          disabled={isLoading}
+          disabled={isLoading || disabled}
         >
           {isLoading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
           Connect

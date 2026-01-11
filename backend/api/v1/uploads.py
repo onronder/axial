@@ -12,7 +12,7 @@ from typing import Optional
 from models import IngestResponse
 from core.db import get_supabase
 from services.usage import check_can_upload
-from api.v1.dependencies import validate_team_access
+from api.v1.dependencies import validate_team_access, require_editor
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 import uuid
@@ -21,7 +21,7 @@ import logging
 import re
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 def sanitize_filename(filename: str) -> str:
@@ -128,7 +128,7 @@ class FileReferenceRequest(BaseModel):
 async def generate_upload_url(
     request: Request,
     body: UploadUrlRequest,
-    user_id: str = Depends(validate_team_access)
+    user_id: str = Depends(require_editor)
 ):
     """
     Generate a presigned URL for direct-to-storage file upload.
@@ -189,7 +189,7 @@ async def generate_upload_url(
 async def ingest_file_reference(
     request: Request,
     body: FileReferenceRequest,
-    user_id: str = Depends(validate_team_access)
+    user_id: str = Depends(require_editor)
 ):
     """
     Trigger ingestion for a file that was already uploaded to storage.

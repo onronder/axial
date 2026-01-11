@@ -76,6 +76,7 @@ def update_job_status(
     message: str = None,
     failed_files: int = None,
     progress: int = None,
+    total_files: int = None,
 ):
     """Helper to update ingestion job status in the database."""
     try:
@@ -87,6 +88,8 @@ def update_job_status(
             update_data["processed_files"] = processed_files
         if failed_files is not None:
             update_data["failed_files"] = failed_files
+        if total_files is not None:
+            update_data["total_files"] = total_files
         if error_message is not None:
             update_data["error_message"] = error_message
         if message is not None:
@@ -286,6 +289,7 @@ def _record_crawl_outcome_and_maybe_finalize(
     crawl_id: Optional[str],
     url: str,
     outcome: str,
+    job_id: Optional[str] = None,
 ) -> None:
     if not crawl_id:
         return
@@ -309,6 +313,22 @@ def _record_crawl_outcome_and_maybe_finalize(
     if total > 0 and processed >= total:
         if mark_crawl_finalizing(crawl_id):
             finalize_crawl_task.apply_async(kwargs={"user_id": user_id, "crawl_id": crawl_id})
+
+    if job_id:
+        try:
+            progress = None
+            if total:
+                progress = min(100, int((processed / total) * 100))
+            update_job_status(
+                supabase,
+                job_id,
+                status="processing",
+                processed_files=processed,
+                failed_files=counters.get("failed", 0),
+                progress=progress,
+            )
+        except Exception:
+            pass
 
 
 def ingest_document_batched(
@@ -1805,7 +1825,9 @@ def update_crawl_status(
     total_pages: Optional[int] = None,
     pages_ingested: Optional[int] = None,
     pages_failed: Optional[int] = None,
-    error_message: Optional[str] = None
+    error_message: Optional[str] = None,
+    job_id: Optional[str] = None,
+    message: Optional[str] = None,
 ) -> None:
     """Update crawl progress in web_crawl_configs with safe defaults."""
     try:
@@ -1824,6 +1846,48 @@ def update_crawl_status(
             update_data["pages_failed"] = pages_failed
         if error_message is not None:
             update_data["error_message"] = error_message
+        if message is not None:
+            update_data["status_message"] = message
+            update_data["message"] = message
+        job_ref = job_id or crawl_id
+        if job_ref:
+            try:
+                progress = None
+                processed_total = None
+                total = total_pages
+                if total_pages is not None and total_pages >= 0:
+                    total = total_pages
+                if pages_ingested is not None or pages_failed is not None:
+                    processed_total = (pages_ingested or 0) + (pages_failed or 0)
+                    if total:
+                        progress = min(100, int((processed_total / total) * 100)) if total > 0 else None
+                if progress is None and status in {"completed", "failed", "cancelled"}:
+                    progress = 100
+
+                job_update: Dict[str, Any] = {
+                    "updated_at": update_data["updated_at"],
+                }
+                if status:
+                    job_update["status"] = status if status != "processing" else "processing"
+                if total is not None:
+                    job_update["total_files"] = total
+                if processed_total is not None:
+                    job_update["processed_files"] = processed_total
+                if pages_failed is not None:
+                    job_update["failed_files"] = pages_failed
+                if progress is not None:
+                    job_update["progress"] = progress
+                if message:
+                    job_update["message"] = message
+                    job_update["status_message"] = message
+                if error_message:
+                    job_update["error_message"] = error_message
+
+                if len(job_update) > 1:  # more than updated_at
+                    supabase.table("ingestion_jobs").update(job_update).eq("id", job_ref).execute()
+            except Exception as job_err:
+                logger.debug(f"⚠️ [Crawl] Failed to mirror status to ingestion_jobs: {job_err}")
+
         supabase.table("web_crawl_configs").update(update_data).eq("id", crawl_id).execute()
         if status_updates_total:
             status_updates_total.labels("crawl", status or "update").inc()
@@ -1859,6 +1923,7 @@ def crawl_discovery_task(
     
     task_id = self.request.id
     crawl_id = crawl_config.get("crawl_id")
+    job_id = crawl_config.get("job_id") or crawl_id
     crawl_type = crawl_config.get("crawl_type", "single")
     max_depth = min(int(crawl_config.get("max_depth", 1)), 10)
     max_pages = min(int(crawl_config.get("max_pages", 500)), 10000)
@@ -1886,7 +1951,24 @@ def crawl_discovery_task(
         
         # Update status
         if crawl_id:
-            update_crawl_status(supabase, crawl_id, status="discovering")
+            update_crawl_status(
+                supabase,
+                crawl_id,
+                status="discovering",
+                job_id=job_id,
+                message="Discovering pages..."
+            )
+        if job_id:
+            try:
+                update_job_status(
+                    supabase,
+                    job_id,
+                    status="processing",
+                    progress=5,
+                    message="Discovering pages..."
+                )
+            except Exception:
+                pass
         
         create_notification(
             supabase, user_id,
@@ -1955,11 +2037,18 @@ def crawl_discovery_task(
         logger.info(f"📊 [Discovery] Discovered {total_pages} URLs after filtering")
         
         if crawl_id:
-            update_crawl_status(supabase, crawl_id, status="processing", total_pages=total_pages)
+            update_crawl_status(
+                supabase,
+                crawl_id,
+                status="processing",
+                total_pages=total_pages,
+                job_id=job_id,
+                message="Preparing pages for crawling..."
+            )
         
         if total_pages == 0:
             if crawl_id:
-                update_crawl_status(supabase, crawl_id, status="completed", total_pages=0)
+                update_crawl_status(supabase, crawl_id, status="completed", total_pages=0, job_id=job_id)
             return {"status": "completed", "message": "No pages found"}
         
         # ===== DEDUP AGAINST EXISTING =====
@@ -1990,26 +2079,57 @@ def crawl_discovery_task(
         
         if not urls_to_process:
             if crawl_id:
-                update_crawl_status(supabase, crawl_id, status="completed", total_pages=0)
+                update_crawl_status(supabase, crawl_id, status="completed", total_pages=0, job_id=job_id)
             return {"status": "completed", "message": "No new URLs to crawl"}
         
         if crawl_id:
-            update_crawl_status(supabase, crawl_id, status="processing", total_pages=len(urls_to_process))
+            update_crawl_status(
+                supabase,
+                crawl_id,
+                status="processing",
+                total_pages=len(urls_to_process),
+                job_id=job_id,
+                message=f"Processing {len(urls_to_process)} pages..."
+            )
         
         # ===== DISPATCH PHASE: Parallel processing =====
+        if job_id:
+            counters_ready = init_ingest_job_counters(job_id, len(urls_to_process))
+            if not counters_ready:
+                logger.warning(f"🕸️ [Discovery:{task_id}] ⚠️ Redis counters unavailable for ingestion job")
+            try:
+                supabase.table("ingestion_file_status").delete().eq("job_id", job_id).execute()
+            except Exception as cleanup_err:
+                logger.debug(f"⚠️ [Discovery:{task_id}] Failed to reset file statuses for job {job_id}: {cleanup_err}")
+
         if crawl_id:
             counters_ready = init_crawl_counters(crawl_id, len(urls_to_process))
             if not counters_ready:
                 logger.warning(f"🕸️ [Discovery:{task_id}] ⚠️ Redis counters unavailable; relying on reconciliation")
 
-        page_tasks = group(
+        file_status_ids: List[Optional[str]] = []
+        if job_id:
+            for url in urls_to_process:
+                file_status_ids.append(create_file_status(
+                    supabase,
+                    job_id,
+                    user_id,
+                    filename=url,
+                    file_size=0,
+                ))
+        else:
+            file_status_ids = [None for _ in urls_to_process]
+
+        page_tasks = group([
             process_page_task.s(
                 user_id=user_id,
                 url=url,
                 crawl_id=crawl_id,
-                respect_robots=respect_robots
-            ) for url in urls_to_process
-        )
+                respect_robots=respect_robots,
+                job_id=job_id,
+                file_status_id=file_status_ids[idx] if idx < len(file_status_ids) else None,
+            ) for idx, url in enumerate(urls_to_process)
+        ])
         
         result = page_tasks.apply_async()
         
@@ -2029,7 +2149,9 @@ def crawl_discovery_task(
             update_crawl_status(
                 supabase, crawl_id,
                 status="failed",
-                error_message=str(e)
+                error_message=str(e),
+                job_id=job_id,
+                message=str(e)
             )
         
         create_notification(
@@ -2056,7 +2178,9 @@ def process_page_task(
     user_id: str,
     url: str,
     crawl_id: str = None,
-    respect_robots: bool = True
+    respect_robots: bool = True,
+    job_id: str = None,
+    file_status_id: str = None
 ):
     """
     Worker task for processing a single web page.
@@ -2071,12 +2195,47 @@ def process_page_task(
     logger.info(f"📄 [Page:{task_id}] Processing: {url}")
     
     supabase = get_supabase()
+    job_ref = job_id
+
+    def mark_file_status(
+        status: str,
+        progress: int | None = None,
+        message: str | None = None,
+        error: str | None = None,
+        chunks_total: int | None = None,
+        chunks_processed: int | None = None,
+        document_id: str | None = None,
+    ) -> None:
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id=job_ref,
+            status=status,
+            progress=progress,
+            message=message,
+            error=error,
+            chunks_total=chunks_total,
+            chunks_processed=chunks_processed,
+            document_id=document_id,
+        )
+
+    def record_ingest_outcome(outcome: str) -> None:
+        if not job_ref or not file_status_id:
+            return
+        _record_ingest_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            job_ref,
+            file_status_id,
+            outcome,
+        )
     
     try:
         from connectors.web import WebConnector
         from services.parsers import DocumentProcessorFactory
         
         connector = WebConnector()
+        mark_file_status("uploading", progress=10, message="Fetching page...")
         if not connector.is_safe_url(url):
             logger.warning(f"⚠️ [Page:{task_id}] Unsafe URL blocked: {url}")
             if crawl_id:
@@ -2090,7 +2249,10 @@ def process_page_task(
                 crawl_id,
                 url,
                 "failed",
+                job_id=job_ref,
             )
+            mark_file_status("failed", progress=0, message="URL blocked", error="unsafe_url")
+            record_ingest_outcome("failed")
             return {"status": "failed", "url": url, "error": "unsafe_url"}
         
         # Rate limiting - wait if needed
@@ -2124,7 +2286,10 @@ def process_page_task(
                 crawl_id,
                 url,
                 "skipped",
+                job_id=job_ref,
             )
+            mark_file_status("failed", progress=0, message="No content retrieved", error="no_content")
+            record_ingest_outcome("skipped")
             return {"status": "skipped", "url": url}
         
         doc = docs[0]
@@ -2142,6 +2307,7 @@ def process_page_task(
         
         # Process using MarkdownProcessor (treats web content as markdown)
         result = DocumentProcessorFactory.process_web_content(page_content, source_url)
+        mark_file_status("processing", progress=40, message="Parsing page content...")
         
         if not result.chunks:
             logger.warning(f"⚠️ [Page:{task_id}] No chunks generated from: {url}")
@@ -2156,11 +2322,15 @@ def process_page_task(
                 crawl_id,
                 url,
                 "skipped",
+                job_id=job_ref,
             )
+            mark_file_status("failed", progress=0, message="No extractable content", error="no_chunks")
+            record_ingest_outcome("skipped")
             return {"status": "skipped", "url": url}
         
         # Embed
         from services.embeddings import generate_embeddings_batch_sync
+        mark_file_status("embedding", progress=55, message=f"Embedding {len(result.chunks)} chunks...")
         
         chunk_texts = [_sanitize_text(chunk.content) for chunk in result.chunks]
         token_counts = [chunk.token_count for chunk in result.chunks]
@@ -2198,7 +2368,10 @@ def process_page_task(
                 crawl_id,
                 url,
                 "failed",
+                job_id=job_ref,
             )
+            mark_file_status("failed", progress=0, message="Embedding failed", error="no_embeddings")
+            record_ingest_outcome("failed")
             return {"status": "failed", "url": url, "error": "no_embeddings"}
         
         # Document metadata
@@ -2213,6 +2386,7 @@ def process_page_task(
         content_bytes = page_content.encode("utf-8")
         content_size = len(content_bytes)
         content_hash = compute_content_hash(content_bytes)
+        mark_file_status("indexing", progress=80, message="Saving to database...")
 
         doc_id = ingest_document_batched(
             supabase=supabase,
@@ -2239,7 +2413,10 @@ def process_page_task(
                 crawl_id,
                 url,
                 "failed",
+                job_id=job_ref,
             )
+            mark_file_status("failed", progress=0, message="Database insert failed", error="db_insert_failed")
+            record_ingest_outcome("failed")
             return {"status": "failed", "url": url, "error": "db_insert_failed"}
         
         logger.info(f"✅ [Page:{task_id}] Stored: {url} ({len(result.chunks)} chunks)")
@@ -2259,31 +2436,41 @@ def process_page_task(
             crawl_id,
             url,
             "success",
+            job_id=job_ref,
         )
+        mark_file_status("completed", progress=100, message="Indexed", document_id=doc_id, chunks_total=len(chunks_payload), chunks_processed=len(chunks_payload))
+        record_ingest_outcome("success")
         
         return {"status": "success", "url": url}
         
     except Exception as e:
         logger.error(f"❌ [Page:{task_id}] Failed {url}: {e}")
         
-        if crawl_id:
+        try:
+            if crawl_id:
+                try:
+                    supabase.rpc("increment_crawl_counter", {
+                        "p_crawl_id": crawl_id,
+                        "p_field": "pages_failed"
+                    }).execute()
+                except Exception:
+                    pass
+            
+            _record_crawl_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                crawl_id,
+                url,
+                "failed",
+                job_id=job_ref,
+            )
+            mark_file_status("failed", progress=0, message="Unexpected error", error=str(e)[:200])
+            record_ingest_outcome("failed")
+        finally:
             try:
-                supabase.rpc("increment_crawl_counter", {
-                    "p_crawl_id": crawl_id,
-                    "p_field": "pages_failed"
-                }).execute()
+                send_failure_email_notification(supabase, user_id, url, str(e))
             except Exception:
                 pass
-        
-        _record_crawl_outcome_and_maybe_finalize(
-            supabase,
-            user_id,
-            crawl_id,
-            url,
-            "failed",
-        )
-        
-        send_failure_email_notification(supabase, user_id, url, str(e))
         
         raise
 
@@ -2352,13 +2539,37 @@ def finalize_crawl_task(
     )
 
     final_status = "completed" if success_count > 0 or skipped_count > 0 else "failed"
+    if final_status == "failed":
+        status_msg = f"All {failed_count} pages failed"
+    else:
+        status_parts = [f"Processed {processed_total}/{total_pages or processed_total} pages"]
+        if skipped_count:
+            status_parts.append(f"{skipped_count} skipped")
+        if failed_count:
+            status_parts.append(f"{failed_count} failed")
+        status_msg = ", ".join(status_parts)
     update_crawl_status(
         supabase,
         crawl_id,
         status=final_status,
         pages_ingested=success_count,
-        pages_failed=failed_count
+        pages_failed=failed_count,
+        job_id=crawl_id,
+        message=status_msg
     )
+
+    try:
+        update_job_status(
+            supabase,
+            crawl_id,
+            status=final_status,
+            processed_files=processed_total,
+            failed_files=failed_count,
+            progress=100,
+            message=status_msg,
+        )
+    except Exception:
+        pass
 
     if job_counters_finalize:
         job_counters_finalize.labels("crawl", counts_source).inc()
@@ -2439,6 +2650,37 @@ def check_scheduled_crawls(self):
                     "error_message": None,
                     "updated_at": now.isoformat()
                 }).eq("id", crawl_id).execute()
+
+                try:
+                    supabase.table("ingestion_jobs").upsert({
+                        "id": crawl_id,
+                        "user_id": user_id,
+                        "provider": "web",
+                        "status": "pending",
+                        "total_files": 0,
+                        "processed_files": 0,
+                        "failed_files": 0,
+                        "progress": 0,
+                        "message": f"Queued crawl for {root_url}",
+                        "status_message": f"Queued crawl for {root_url}",
+                    }, on_conflict="id").execute()
+                except Exception as job_exc:
+                    try:
+                        supabase.table("ingestion_jobs").insert({
+                            "id": crawl_id,
+                            "user_id": user_id,
+                            "provider": "web",
+                            "status": "pending",
+                            "total_files": 0,
+                            "processed_files": 0,
+                            "failed_files": 0,
+                            "progress": 0,
+                            "message": f"Queued crawl for {root_url}",
+                            "status_message": f"Queued crawl for {root_url}",
+                        }).execute()
+                    except Exception as inner_err:
+                        logger.warning(f"⚠️ [Scheduler] Failed to upsert ingestion job for crawl {crawl_id}: {inner_err}")
+                        inner_err = None
                 
                 # Queue crawl discovery task for web crawl
                 task = crawl_discovery_task.delay(
@@ -2451,7 +2693,8 @@ def check_scheduled_crawls(self):
                         "max_pages": max_pages,
                         "respect_robots": respect_robots,
                         "allow_subdomains": allow_subdomains,
-                        "is_recrawl": True
+                        "is_recrawl": True,
+                        "job_id": crawl_id,
                     }
                 )
                 # Calculate next_crawl_at based on interval
@@ -2473,6 +2716,14 @@ def check_scheduled_crawls(self):
                     update_data["next_crawl_at"] = next_crawl.isoformat()
                 
                 supabase.table("web_crawl_configs").update(update_data).eq("id", crawl_id).execute()
+                try:
+                    supabase.table("ingestion_jobs").update({
+                        "celery_task_id": task.id,
+                        "status": "processing",
+                        "message": "Queued for scheduled crawl"
+                    }).eq("id", crawl_id).execute()
+                except Exception:
+                    pass
                 
                 crawls_triggered += 1
                 
@@ -2553,14 +2804,19 @@ def cleanup_old_jobs(self):
     Runs daily via Celery Beat to prevent database bloat.
     Deletes jobs older than 30 days that are no longer active.
     """
-    from core.db import get_supabase
     from datetime import datetime, timedelta, timezone
     
     task_id = self.request.id[:8] if self.request.id else "cleanup"
     logger.info(f"🧹 [Cleanup:{task_id}] Starting database cleanup...")
     
     try:
-        supabase = get_supabase()
+        from core import db
+
+        supabase_fn = get_supabase
+        if getattr(supabase_fn, "__module__", "") == "core.db" and getattr(db, "get_supabase", None):
+            supabase_fn = db.get_supabase
+
+        supabase = supabase_fn()
         
         # Calculate cutoff date (30 days ago)
         cutoff_date = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()

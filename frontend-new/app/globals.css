@@ -4,57 +4,17 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 217 91% 53%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 263 83% 58%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 53%;
-    --radius: 0.5rem;
-
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217 91% 53%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 47% 15%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222 47% 18%;
-    --sidebar-ring: 217 91% 53%;
-    --sidebar-muted: 215 25% 63%;
-
-    /* Sidebar dimensions - set here to prevent hydration flash */
-    --sidebar-width: 16rem;
-    --sidebar-width-icon: 3rem;
-  }
-
-  .dark {
-    --background: 222 53% 8%;
+    /* Void & Glass default (dark-first) */
+    --background: 224 71% 4%; /* #030712 */
     --foreground: 210 40% 98%;
-    --card: 217 33% 17%;
+    --card: 224 71% 4%;
     --card-foreground: 210 40% 98%;
-    --popover: 217 33% 17%;
+    --popover: 224 71% 4%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 53%;
+    --primary: 263 83% 58%; /* Electric Violet */
     --primary-foreground: 0 0% 100%;
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 189 94% 43%; /* Neon Cyan */
+    --secondary-foreground: 0 0% 100%;
     --muted: 217 33% 17%;
     --muted-foreground: 215 25% 63%;
     --accent: 263 83% 58%;
@@ -65,18 +25,61 @@
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
-    --border: 217 24% 27%;
-    --input: 217 24% 27%;
-    --ring: 217 91% 53%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 263 83% 58%;
+    --radius: 0.75rem;
 
-    --sidebar-background: 217 33% 17%;
+    /* Sidebar - glass */
+    --sidebar-background: 224 71% 4%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217 91% 53%;
+    --sidebar-primary: 263 83% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 33% 22%;
+    --sidebar-accent: 217 33% 17%;
     --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 217 24% 27%;
-    --sidebar-ring: 217 91% 53%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 263 83% 58%;
+    --sidebar-muted: 215 25% 63%;
+
+    /* Sidebar dimensions - set here to prevent hydration flash */
+    --sidebar-width: 16rem;
+    --sidebar-width-icon: 3rem;
+  }
+
+  /* Keep .dark for compatibility; same palette */
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 210 40% 98%;
+    --card: 224 71% 4%;
+    --card-foreground: 210 40% 98%;
+    --popover: 224 71% 4%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 263 83% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 189 94% 43%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 25% 63%;
+    --accent: 263 83% 58%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 263 83% 58%;
+
+    --sidebar-background: 224 71% 4%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 263 83% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 263 83% 58%;
     --sidebar-muted: 215 25% 63%;
   }
 }
@@ -88,6 +91,10 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.05), transparent 40%),
+      radial-gradient(circle at 20% 20%, rgba(6, 182, 212, 0.04), transparent 30%);
+    background-attachment: fixed;
   }
 }
 

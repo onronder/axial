@@ -22,6 +22,7 @@ export const useNotificationSettings = () => {
     const [settings, setSettings] = useState<NotificationSetting[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [isResetting, setIsResetting] = useState(false);
 
     const fetchSettings = useCallback(async () => {
         setIsLoading(true);
@@ -91,13 +92,38 @@ export const useNotificationSettings = () => {
     const emailSettings = settings.filter(s => s.category === 'email');
     const systemSettings = settings.filter(s => s.category === 'system');
 
+    const resetToDefaults = async (): Promise<boolean> => {
+        setIsResetting(true);
+        try {
+            await api.delete('/settings/notifications');
+            await fetchSettings();
+            toast({
+                title: 'Notifications reset',
+                description: 'Preferences restored to defaults.',
+            });
+            return true;
+        } catch (err: unknown) {
+            console.error('Failed to reset notification settings:', err);
+            toast({
+                title: 'Error',
+                description: 'Failed to reset notification settings.',
+                variant: 'destructive',
+            });
+            return false;
+        } finally {
+            setIsResetting(false);
+        }
+    };
+
     return {
         settings,
         emailSettings,
         systemSettings,
         isLoading,
+        isResetting,
         error,
         toggleSetting,
         refresh: fetchSettings,
+        resetToDefaults,
     };
 };

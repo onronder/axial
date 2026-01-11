@@ -10,13 +10,13 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, ConfigDict
 
-from api.v1.dependencies import get_current_user, require_admin
+from api.v1.dependencies import get_current_user, require_admin, validate_team_access
 from core.db import get_supabase
 from worker.dlq_worker import retry_failed_tasks
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 # =============================================================================

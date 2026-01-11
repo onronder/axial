@@ -9,12 +9,12 @@ from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from core.security import get_current_user
+from api.v1.dependencies import validate_team_access, require_admin
 from core.db import get_supabase
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 # =============================================================================
@@ -46,7 +46,7 @@ class AuditLogListResponse(BaseModel):
 
 @router.get("/audit-logs", response_model=AuditLogListResponse)
 async def get_audit_logs(
-    user_id: str = Depends(get_current_user),
+    user_id: str = Depends(require_admin),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
     action: Optional[str] = None,
@@ -117,7 +117,7 @@ async def get_audit_logs(
 
 @router.get("/audit-logs/actions")
 async def get_audit_log_actions(
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_admin)
 ):
     """
     Get list of distinct action types in audit logs.

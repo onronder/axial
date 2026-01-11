@@ -9,6 +9,8 @@ import { WebInput, validateUrl } from "@/components/ingest/WebInput"
 import { useDataSources } from "@/hooks/useDataSources"
 import { useFileStatus } from "@/hooks/useFileStatus"
 import { useToast } from "@/hooks/use-toast"
+import { useProfile } from "@/hooks/useProfile"
+import { useUsage } from "@/hooks/useUsage"
 import { authFetch, getUploadUrl, ingestFileReference, uploadToStorage } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -35,6 +37,10 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
     const { connect, isConnected, loading: dsLoading } = useDataSources()
     const isNotionConnected = isConnected('notion')
     const { toast } = useToast()
+    const { profile } = useProfile()
+    const { canWebCrawl } = useUsage()
+    const isWebCrawlLocked = !canWebCrawl
+    const isViewer = profile?.role === "viewer"
 
     const [loading, setLoading] = useState(false)
     const [currentJobId, setCurrentJobId] = useState<string | null>(null)
@@ -56,12 +62,38 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
     }
 
     const handleNotionConnect = () => {
+        if (isViewer) {
+            toast({
+                title: "View only",
+                description: "You need editor or admin access to connect data sources.",
+                variant: "destructive",
+            })
+            return
+        }
         connect('notion')
         // OAuth redirect will happen, no need to set loading here managed by hook
     }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
+
+        if (isViewer) {
+            toast({
+                title: "View only",
+                description: "You need editor or admin access to ingest data.",
+                variant: "destructive",
+            })
+            return
+        }
+
+        if ((activeTab === 'website' || activeTab === 'url') && isWebCrawlLocked) {
+            toast({
+                title: "Upgrade required",
+                description: "Web crawling is available on Starter and above plans.",
+                variant: "destructive",
+            })
+            return
+        }
 
         // If Notion tab, we don't submit via this form anymore
         if (activeTab === 'notion') {
@@ -108,7 +140,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                     allow_subdomains: false
                 })
 
-                ingestionJobId = data?.job_id ?? null
+                ingestionJobId = data?.job_id || data?.crawl_id || null
             }
 
             if (ingestionJobId) {
@@ -155,6 +187,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
         { id: 'website' as const, label: 'Website', icon: Globe },
         { id: 'notion' as const, label: 'Notion', icon: BookOpen },
     ]
+    const isActionDisabled = loading || isViewer || (activeTab === 'website' && isWebCrawlLocked)
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={handleBackdropClick}>
@@ -193,16 +226,24 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                         {activeTab === 'file' && (
                             <div className="grid w-full items-center gap-1.5">
                                 <label className="text-sm font-medium leading-none">Select Document (PDF, TXT, MD)</label>
-                                <Input key="file-input" type="file" onChange={handleFileChange} />
+                                <Input key="file-input" type="file" onChange={handleFileChange} disabled={isViewer} />
                                 {file && <p className="text-xs text-slate-500">Selected: {file.name}</p>}
                             </div>
                         )}
 
                         {activeTab === 'website' && (
-                            <WebInput
-                                url={websiteUrl}
-                                onUrlChange={setWebsiteUrl}
-                            />
+                            <div className="space-y-2">
+                                <WebInput
+                                    url={websiteUrl}
+                                    onUrlChange={setWebsiteUrl}
+                                    disabled={isWebCrawlLocked || loading}
+                                />
+                                {isWebCrawlLocked && (
+                                    <p className="text-xs text-amber-500">
+                                        Web crawling is locked on your current plan. Upgrade to Starter or Pro to enable site ingestion.
+                                    </p>
+                                )}
+                            </div>
                         )}
 
                         {activeTab === 'notion' && (
@@ -233,7 +274,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                                         <Button
                                             type="button"
                                             onClick={handleNotionConnect}
-                                            disabled={dsLoading}
+                                            disabled={dsLoading || isViewer}
                                             className="bg-slate-900 text-white hover:bg-slate-800"
                                         >
                                             {dsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -255,7 +296,9 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                         {activeTab !== 'notion' && (
                             <div className="flex justify-end gap-2 pt-2">
                                 <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-                                <Button type="submit" disabled={loading}>{loading ? "Processing..." : "Ingest"}</Button>
+                                <Button type="submit" disabled={isActionDisabled}>
+                                    {loading ? "Processing..." : isWebCrawlLocked && activeTab === 'website' ? "Upgrade to unlock" : "Ingest"}
+                                </Button>
                             </div>
                         )}
 

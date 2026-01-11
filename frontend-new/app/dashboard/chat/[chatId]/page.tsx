@@ -10,6 +10,7 @@ import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { Loader2 } from "lucide-react";
 import { generateSmartTitle, streamChatResponse } from "@/lib/chat-utils";
 import { ModelId } from "@/lib/types";
+import { Source } from "@/types";
 
 /**
  * Unified ChatPage handles both:
@@ -34,6 +35,31 @@ export default function ChatPage() {
     const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [selectedModel, setSelectedModel] = useState<ModelId>('fast'); // Default to Fast
+
+    const normalizeSources = (rawSources: unknown): Source[] => {
+        if (!Array.isArray(rawSources)) return [];
+        return rawSources.map((entry, idx) => {
+            if (typeof entry === "string") {
+                return {
+                    index: idx + 1,
+                    type: "Source",
+                    label: entry,
+                };
+            }
+            const source = entry as Record<string, unknown>;
+            return {
+                index: (source.index as number) ?? idx + 1,
+                type: (source.type as string) || (source.source as string) || "Source",
+                label: (source.label as string)
+                    || (source.title as string)
+                    || (source.source as string)
+                    || `Source ${idx + 1}`,
+                url: (source.url as string) || (source.source_url as string),
+                page: (source.page as number) || (source.page_number as number),
+                section: (source.section as string) || (source.header_path as string),
+            };
+        });
+    };
 
     // Show onboarding modal when user has no documents and this is a new chat
     // TASK 3: Skip if user is already in a team (e.g. invited via email)
@@ -107,6 +133,7 @@ export default function ChatPage() {
         // Prepare placeholder for AI response
         const aiMessageId = (Date.now() + 1).toString();
         let aiContent = "";
+        let aiSources: Source[] = [];
 
         // Only set streaming message if NOT using simulateStreaming (which we are deleting)
         setStreamingMessage("");
@@ -128,8 +155,7 @@ export default function ChatPage() {
                     aiContent += event.content;
                     setStreamingMessage(aiContent);
                 } else if (event.type === 'sources') {
-                    // Update sources logic if needed, or store for final message
-                    // For now, we attach to final message update
+                    aiSources = normalizeSources(event.sources);
                 } else if (event.type === 'error') {
                     throw new Error(event.message);
                 }
@@ -140,14 +166,14 @@ export default function ChatPage() {
             setStreamingMessage(null);
 
             // Add final AI message to state
-            const aiMessage: Message = {
-                id: aiMessageId,
-                role: "assistant",
-                content: aiContent,
-                created_at: new Date().toISOString(),
-                // sources: data.sources // TODO: Capture sources from event
-            };
-            setMessages(prev => [...prev, aiMessage]);
+        const aiMessage: Message = {
+            id: aiMessageId,
+            role: "assistant",
+            content: aiContent,
+            created_at: new Date().toISOString(),
+            sources: aiSources
+        };
+        setMessages(prev => [...prev, aiMessage]);
 
         } catch (error) {
             console.error('💬 [ChatPage] Chat API error:', error);

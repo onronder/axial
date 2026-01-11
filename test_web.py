@@ -1,5 +1,8 @@
 import jwt
+import pytest
 import requests
+
+pytestmark = pytest.mark.skip(reason="Manual smoke script; fixtures not provided in automated runs.")
 
 BASE_URL = "http://localhost:8000"
 

@@ -143,7 +143,7 @@ function formatDate(dateString: string): string {
 
 export function BillingSettings() {
   const { profile, isLoading: profileLoading } = useProfile();
-  const { plan: effectivePlan, isPlanInherited } = useUsage();
+  const { plan: effectivePlan, isPlanInherited, usage } = useUsage();
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
@@ -153,6 +153,8 @@ export function BillingSettings() {
 
   const currentPlan = effectivePlan || profile?.plan || "free";
   const planInfo = planDetails[currentPlan] || planDetails.free;
+  const subscriptionStatus = usage?.subscription_status || "inactive";
+  const hasActiveSubscription = !["inactive", "canceled", "cancelled", "none"].includes(subscriptionStatus);
 
   // Fetch billing history
   const fetchInvoices = useCallback(async () => {
@@ -175,6 +177,11 @@ export function BillingSettings() {
     // Enterprise: open contact form modal
     if (planType === "enterprise") {
       setIsEnterpriseModalOpen(true);
+      return;
+    }
+
+    if (hasActiveSubscription) {
+      await handleManageSubscription();
       return;
     }
 
@@ -312,6 +319,28 @@ export function BillingSettings() {
             const Icon = plan.icon;
             const isPopular = plan.popular;
             const isEnterprise = plan.type === "enterprise";
+            const isManageAction = hasActiveSubscription && !isEnterprise;
+            const buttonLabel = isCurrentPlan && isManageAction
+              ? "Manage Subscription"
+              : isCurrentPlan
+                ? "Current Plan"
+                : isManageAction
+                  ? "Manage Subscription"
+                  : plan.buttonText;
+            const isLoadingAction = checkoutLoading === plan.type || (isManageAction && isPortalLoading);
+            const isDisabled = isLoadingAction || (!isManageAction && isCurrentPlan);
+
+            const onPlanAction = () => {
+              if (isEnterprise) {
+                handleUpgrade(plan.type);
+                return;
+              }
+              if (isManageAction) {
+                handleManageSubscription();
+                return;
+              }
+              handleUpgrade(plan.type);
+            };
 
             return (
               <Card
@@ -375,13 +404,13 @@ export function BillingSettings() {
                       isPopular && "bg-gradient-to-r from-cyan-500 to-purple-500 hover:opacity-90"
                     )}
                     variant={isCurrentPlan ? "outline" : isEnterprise ? "ghost" : isPopular ? "default" : "outline"}
-                    disabled={isCurrentPlan || checkoutLoading === plan.type}
-                    onClick={() => handleUpgrade(plan.type)}
+                    disabled={isDisabled}
+                    onClick={onPlanAction}
                   >
-                    {checkoutLoading === plan.type && (
+                    {isLoadingAction && (
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                     )}
-                    {isCurrentPlan ? "Current Plan" : plan.buttonText}
+                    {buttonLabel}
                   </Button>
                 </CardContent>
               </Card>

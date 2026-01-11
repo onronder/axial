@@ -16,6 +16,7 @@ import { NotificationSettings } from '@/components/settings/NotificationSettings
 
 // Mock the hook
 const mockToggleSetting = vi.fn();
+const mockResetToDefaults = vi.fn();
 const mockSettings = {
     emailSettings: [
         {
@@ -46,7 +47,9 @@ const mockSettings = {
         },
     ],
     isLoading: false,
+    isResetting: false,
     toggleSetting: mockToggleSetting,
+    resetToDefaults: mockResetToDefaults,
 };
 
 vi.mock('@/hooks/useNotificationSettings', () => ({

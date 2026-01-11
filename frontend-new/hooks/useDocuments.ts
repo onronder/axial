@@ -9,6 +9,13 @@ import { useToast } from "@/hooks/use-toast";
 /**
  * Backend document response interface.
  */
+type DocumentMetadata = {
+    error?: string;
+    file_size?: number;
+    size?: number;
+    [key: string]: unknown;
+};
+
 interface BackendDocument {
     id: string;
     title?: string;
@@ -19,7 +26,8 @@ interface BackendDocument {
     indexing_status?: string;
     created_at?: string;
     size?: number;
-    metadata?: { error?: string };
+    file_size_bytes?: number;
+    metadata?: DocumentMetadata;
 }
 
 /**
@@ -27,6 +35,8 @@ interface BackendDocument {
  */
 function mapDocument(d: BackendDocument): Document {
     const normalizedSource = normalizeSourceType(d.source_type) || "file_upload";
+    const meta: DocumentMetadata = d.metadata || {};
+    const resolvedSize = d.size ?? d.file_size_bytes ?? meta?.file_size ?? meta?.size ?? 0;
     return {
         id: d.id,
         name: d.title || d.name || "Untitled",
@@ -36,8 +46,8 @@ function mapDocument(d: BackendDocument): Document {
         status: (d.status as Document['status']) || "indexed",
         indexingStatus: (d.indexing_status as Document['indexingStatus']) || "completed",
         addedAt: d.created_at || new Date().toISOString(),
-        size: d.size || 0,
-        errorMessage: d.metadata?.error
+        size: resolvedSize || 0,
+        errorMessage: meta?.error
     };
 }
 
@@ -48,6 +58,11 @@ interface FetchDocsParams {
     page: number;
     pageSize: number;
     search?: string;
+}
+
+interface BulkDeletePayload {
+    documentIds?: string[];
+    sourceType?: string;
 }
 
 /**
@@ -77,6 +92,18 @@ async function fetchDocuments({ page, pageSize, search }: FetchDocsParams): Prom
  */
 async function deleteDocumentApi(id: string): Promise<void> {
     await api.delete(`/documents/${id}`);
+}
+
+/**
+ * Bulk delete documents by ids or source type.
+ */
+async function bulkDeleteDocumentsApi(payload: BulkDeletePayload): Promise<void> {
+    await api.delete("/documents", {
+        data: {
+            document_ids: payload.documentIds,
+            source_type: payload.sourceType
+        }
+    });
 }
 
 /**
@@ -170,6 +197,26 @@ export const useDocuments = (
         },
     });
 
+    // Mutation for bulk deleting documents
+    const bulkDeleteMutation = useMutation({
+        mutationFn: bulkDeleteDocumentsApi,
+        onSuccess: () => {
+            toast({
+                title: "Documents deleted",
+                description: "Selected documents have been removed.",
+            });
+            queryClient.invalidateQueries({ queryKey: ["documents"] });
+        },
+        onError: (err: Error) => {
+            console.error("Failed to bulk delete documents", err.message);
+            toast({
+                title: "Error",
+                description: "Failed to delete documents.",
+                variant: "destructive",
+            });
+        },
+    });
+
     // Mutation for updating documents
     const updateMutation = useMutation({
         mutationFn: ({ id, update }: { id: string; update: DocumentUpdate }) =>
@@ -199,6 +246,8 @@ export const useDocuments = (
         refresh: refetch,
         deleteDocument: deleteMutation.mutateAsync,
         isDeleting: deleteMutation.isPending,
+        bulkDeleteDocuments: bulkDeleteMutation.mutateAsync,
+        isBulkDeleting: bulkDeleteMutation.isPending,
         updateDocument: updateMutation.mutateAsync,
         isUpdating: updateMutation.isPending,
     };

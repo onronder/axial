@@ -7,11 +7,12 @@ Endpoints for user profile and notification settings management.
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
+from api.v1.dependencies import validate_team_access
 from core.security import get_current_user
 from core.db import get_supabase
 from datetime import datetime, timezone
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 # ============================================================
 # MODELS

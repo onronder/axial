@@ -15,9 +15,10 @@ import { IngestionProgressModal } from "@/components/ingestion/IngestionProgress
 
 interface FileUploadZoneProps {
   source: DataSource;
+  disabled?: boolean;
 }
 
-export function FileUploadZone({ source }: FileUploadZoneProps) {
+export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps) {
   const { toast } = useToast();
   const { filesUsed, filesLimit, refresh } = useUsage();
   const [isUploading, setIsUploading] = useState(false);
@@ -37,6 +38,15 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
    * 3. Trigger ingestion via our backend
    */
   const uploadFile = useCallback(async (file: File): Promise<boolean> => {
+    if (disabled) {
+      toast({
+        title: "View only",
+        description: "You need editor or admin access to upload files.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
     try {
       // Step 1: Get presigned upload URL
       setUploadStage("Getting upload URL...");
@@ -78,10 +88,19 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
       console.error(`Failed to upload ${file.name}:`, message);
       return false;
     }
-  }, []);
+  }, [disabled, toast]);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
+      if (disabled) {
+        toast({
+          title: "View only",
+          description: "You need editor or admin access to upload files.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       if (acceptedFiles.length === 0) return;
 
       setIsUploading(true);
@@ -123,7 +142,7 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
         });
       }
     },
-    [toast, refresh, uploadFile]
+    [toast, refresh, uploadFile, disabled]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -133,11 +152,21 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
       "text/plain": [".txt"],
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
     },
-    disabled: isUploading || isOverLimit,
+    disabled: isUploading || isOverLimit || disabled,
   });
 
   return (
     <div className="space-y-4">
+      {disabled && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>View only</AlertTitle>
+          <AlertDescription>
+            You need editor or admin access to upload files.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {isOverLimit && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -152,7 +181,11 @@ export function FileUploadZone({ source }: FileUploadZoneProps) {
         {...getRootProps()}
         className={cn(
           "rounded-xl border-2 border-dashed bg-card p-5 transition-all",
-          isUploading ? "cursor-wait opacity-75" : isOverLimit ? "cursor-not-allowed opacity-60 bg-muted/50" : "cursor-pointer",
+          isUploading
+            ? "cursor-wait opacity-75"
+            : disabled || isOverLimit
+              ? "cursor-not-allowed opacity-60 bg-muted/50"
+              : "cursor-pointer",
           isDragActive && !isOverLimit
             ? "border-primary bg-primary/5 shadow-brand"
             : "border-border hover:border-primary/50"

@@ -11,7 +11,7 @@ import { useState } from "react";
 import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
 
 export function PaywallGuard({ children }: { children: React.ReactNode }) {
-    const { plan: currentPlan, isLoading: isUsageLoading } = useUsage();
+    const { plan: currentPlan, isLoading: isUsageLoading, usage } = useUsage();
     // usePlans now returns fully hydrated plans with features/buttons from backend
     const { plans: apiPlans, isLoading: isPlansLoading } = usePlans();
     const { toast } = useToast();
@@ -22,7 +22,9 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
 
     // Check if user has a valid paid plan
     // If plan is null, it means we're still loading - don't show paywall
-    const hasAccess = currentPlan !== null && ['starter', 'pro', 'enterprise'].includes(currentPlan);
+    const subscriptionStatus = usage?.subscription_status;
+    const hasActiveSubscription = subscriptionStatus ? !['inactive', 'canceled', 'cancelled', 'none'].includes(subscriptionStatus) : false;
+    const hasAccess = currentPlan !== null && (['starter', 'pro', 'enterprise'].includes(currentPlan) || hasActiveSubscription);
 
     // Show loading if: explicitly loading OR plan hasn't been fetched yet
     if (isLoading || currentPlan === null) {

@@ -13,6 +13,8 @@ import { IngestionProgressModal } from "@/components/ingestion/IngestionProgress
 
 interface URLCrawlerInputProps {
   source: DataSource;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 type ApiError = {
@@ -23,7 +25,7 @@ type ApiError = {
   };
 };
 
-export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
+export function URLCrawlerInput({ source, disabled = false, disabledReason }: URLCrawlerInputProps) {
   const { toast } = useToast();
   const [url, setUrl] = useState("");
   const [depth, setDepth] = useState(1);
@@ -33,6 +35,15 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
   const { files: fileStatuses } = useFileStatus(currentJobId);
 
   const handleCrawl = async () => {
+    if (disabled) {
+      toast({
+        title: "Action locked",
+        description: disabledReason || "You need editor or admin access to run crawls.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!url.trim()) return;
 
     // Validate URL
@@ -57,7 +68,9 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
         allow_subdomains: false,
       });
 
-      const jobId = (response as { data?: { job_id?: string } })?.data?.job_id ?? null;
+      const jobId = (response as { data?: { job_id?: string; crawl_id?: string } })?.data?.job_id
+        || (response as { data?: { crawl_id?: string } })?.data?.crawl_id
+        || null;
       if (jobId) {
         setCurrentJobId(jobId);
       }
@@ -125,7 +138,7 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
             placeholder="https://example.com/docs"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            disabled={isLoading}
+            disabled={isLoading || disabled}
             onKeyDown={(e) => {
               if (e.key === "Enter" && url.trim()) {
                 handleCrawl();
@@ -134,7 +147,7 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
           />
           <Button
             onClick={handleCrawl}
-            disabled={!url.trim() || isLoading}
+            disabled={!url.trim() || isLoading || disabled}
             variant="gradient"
             size="icon"
           >
@@ -146,6 +159,10 @@ export function URLCrawlerInput({ source }: URLCrawlerInputProps) {
           </Button>
         </div>
       </div>
+
+      {disabledReason && (
+        <p className="mt-3 text-xs text-muted-foreground">{disabledReason}</p>
+      )}
 
       {currentJobId && (
         <IngestionProgressModal

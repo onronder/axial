@@ -25,7 +25,9 @@ interface UsageContextValue {
     storageLimit: number;
     storagePercent: number;
     canWebCrawl: boolean;
+    premiumModels: boolean;
     teamEnabled: boolean;
+    modelTier: string | null;
     refresh: (force?: boolean) => Promise<void>;
     refreshPlan: (force?: boolean) => Promise<void>;
 }
@@ -90,8 +92,11 @@ export function UsageProvider({ children }: UsageProviderProps) {
     const filesLimit = usage?.files.limit ?? 10;
     const storageUsed = usage?.storage.used_bytes ?? 0;
     const storageLimit = usage?.storage.limit_bytes ?? 100 * 1024 * 1024;
+    // Backend uses `features.team`; keep `team_enabled` for legacy compatibility
     const canWebCrawl = usage?.features.web_crawl ?? false;
-    const teamEnabled = usage?.features.team_enabled ?? false;
+    const teamEnabled = usage?.features.team ?? usage?.features.team_enabled ?? false;
+    const premiumModels = usage?.features.premium_models ?? false;
+    const modelTier = usage?.model_tier ?? null;
     const filesPercent = filesLimit > 0 ? (filesUsed / filesLimit) * 100 : 0;
     const storagePercent = storageLimit > 0 ? (storageUsed / storageLimit) * 100 : 0;
 
@@ -112,6 +117,8 @@ export function UsageProvider({ children }: UsageProviderProps) {
         storagePercent,
         canWebCrawl,
         teamEnabled,
+        premiumModels,
+        modelTier,
         refresh,
         refreshPlan: refresh,
     };

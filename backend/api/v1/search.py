@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+from api.v1.dependencies import validate_team_access
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
 from langchain_openai import OpenAIEmbeddings
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 class SearchRequest(BaseModel):
     query: str

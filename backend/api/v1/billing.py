@@ -21,10 +21,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from services.team_service import team_service
 from core.config import settings
-from core.security import get_current_user
+from api.v1.dependencies import validate_team_access
 from core.db import get_supabase
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 logger = logging.getLogger(__name__)
 
 POLAR_API_BASE = "https://api.polar.sh/v1"
@@ -313,7 +313,7 @@ async def list_plans():
 @router.post("/checkout")
 async def create_checkout_session(
     data: CheckoutRequest,
-    current_user_id: str = Depends(get_current_user)
+    current_user_id: str = Depends(validate_team_access)
 ):
     """
     Create a Polar checkout session for plan upgrade.
@@ -361,7 +361,7 @@ async def create_checkout_session(
 # ============================================================
 
 @router.post("/portal", response_model=PortalResponse)
-async def create_portal_session(current_user_id: str = Depends(get_current_user)):
+async def create_portal_session(current_user_id: str = Depends(validate_team_access)):
     """
     Create a Polar Customer Portal session.
     
@@ -414,7 +414,7 @@ async def create_portal_session(current_user_id: str = Depends(get_current_user)
 # ============================================================
 
 @router.get("/subscription", response_model=Optional[SubscriptionDetailResponse])
-async def get_current_subscription(current_user_id: str = Depends(get_current_user)):
+async def get_current_subscription(current_user_id: str = Depends(validate_team_access)):
     """
     Get current subscription details from Polar.
     
@@ -474,7 +474,7 @@ async def get_current_subscription(current_user_id: str = Depends(get_current_us
 # ============================================================
 
 @router.post("/subscription/cancel")
-async def cancel_subscription(current_user_id: str = Depends(get_current_user)):
+async def cancel_subscription(current_user_id: str = Depends(validate_team_access)):
     """
     Cancel the current subscription.
     
@@ -558,7 +558,7 @@ async def cancel_subscription(current_user_id: str = Depends(get_current_user)):
 # ============================================================
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
-async def get_billing_history(current_user_id: str = Depends(get_current_user)):
+async def get_billing_history(current_user_id: str = Depends(validate_team_access)):
     """
     Get billing history (orders) from Polar.
     
@@ -617,7 +617,7 @@ async def get_billing_history(current_user_id: str = Depends(get_current_user)):
 @router.get("/invoices/{order_id}/download")
 async def download_invoice(
     order_id: str,
-    current_user_id: str = Depends(get_current_user)
+    current_user_id: str = Depends(validate_team_access)
 ):
     """
     Get invoice download URL for an order.
@@ -666,7 +666,7 @@ async def download_invoice(
 # ============================================================
 
 @router.post("/fix-customer-id")
-async def fix_customer_id(current_user_id: str = Depends(get_current_user)):
+async def fix_customer_id(current_user_id: str = Depends(validate_team_access)):
     """
     Fetch and update customer_id from Polar for the current user's subscription.
     
@@ -753,7 +753,7 @@ class EnterpriseInquiryRequest(BaseModel):
 @router.post("/enterprise-inquiry")
 async def submit_enterprise_inquiry(
     data: EnterpriseInquiryRequest,
-    current_user_id: str = Depends(get_current_user)
+    current_user_id: str = Depends(validate_team_access)
 ):
     """
     Submit an enterprise inquiry - sends email to sales team via Resend.

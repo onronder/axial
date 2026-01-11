@@ -6,6 +6,7 @@ interface WebInputProps {
     url: string
     onUrlChange: (value: string) => void
     error?: string
+    disabled?: boolean
 }
 
 // Simple URL validation regex
@@ -15,7 +16,7 @@ export function validateUrl(url: string): boolean {
     return URL_REGEX.test(url)
 }
 
-export function WebInput({ url, onUrlChange, error }: WebInputProps) {
+export function WebInput({ url, onUrlChange, error, disabled = false }: WebInputProps) {
     const isValid = url === '' || validateUrl(url)
 
     return (
@@ -28,6 +29,7 @@ export function WebInput({ url, onUrlChange, error }: WebInputProps) {
                 placeholder="https://example.com/article"
                 value={url}
                 onChange={(e) => onUrlChange(e.target.value)}
+                disabled={disabled}
                 className={!isValid ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
             {!isValid && (

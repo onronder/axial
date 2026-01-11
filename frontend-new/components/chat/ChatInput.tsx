@@ -52,8 +52,8 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
   const activeModelName = validModels.find(m => m.id === selectedModel)?.name || 'Axio Fast';
 
   return (
-    <div className="border-t border-border bg-background/95 backdrop-blur-xl p-4">
-      <div className="mx-auto max-w-3xl">
+    <div className="border-t border-white/10 bg-white/5 backdrop-blur-xl p-4">
+      <div className="mx-auto max-w-4xl">
         {/* Model Selector Pill */}
         <div className="mb-2 flex justify-center">
           <DropdownMenu>
@@ -61,7 +61,7 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 gap-1.5 rounded-full border-primary/20 bg-primary/5 px-3 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary transition-all"
+                className="h-8 gap-1.5 rounded-full border-white/20 bg-white/10 px-4 text-xs font-medium text-foreground shadow-glow hover:bg-white/20 hover:text-white transition-all"
               >
                 {activeModelName}
                 <ChevronDown className="h-3 w-3 opacity-50" />
@@ -85,24 +85,24 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
         {/* Premium input container with glow effect */}
         <div
           className={`
-            relative flex items-end gap-2 rounded-2xl border bg-card p-2 
+            relative flex items-end gap-2 rounded-2xl border border-white/10 bg-white/5 p-2 
             transition-all duration-300
             ${isFocused
-              ? 'border-primary/50 shadow-lg shadow-primary/10 ring-4 ring-primary/5'
-              : 'border-border shadow-sm hover:border-primary/30 hover:shadow-md'
+              ? 'border-primary/50 shadow-glow ring-2 ring-primary/40'
+              : 'shadow-sm hover:border-white/20 hover:shadow-lg'
             }
           `}
         >
           {/* Gradient border overlay on focus */}
           {isFocused && (
-            <div className="absolute inset-0 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 blur-xl opacity-50" />
+            <div className="absolute inset-0 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 via-accent/20 to-primary/10 blur-2xl opacity-60" />
           )}
 
           {/* Attachment button */}
           <Button
             variant="ghost"
             size="icon"
-            className="shrink-0 h-9 w-9 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+            className="shrink-0 h-9 w-9 text-muted-foreground hover:text-primary hover:bg-white/10 transition-colors"
             disabled={disabled}
           >
             <Paperclip className="h-5 w-5" />
@@ -118,7 +118,7 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             placeholder={`Ask ${activeModelName.split(" ")[0]} anything...`}
-            className="min-h-[40px] max-h-[200px] flex-1 resize-none border-0 bg-transparent p-2 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60"
+            className="min-h-[40px] max-h-[200px] flex-1 resize-none border-0 bg-transparent p-2 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60 text-foreground"
             rows={1}
             disabled={disabled}
           />
@@ -131,7 +131,7 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
             size="icon"
             className={`
               shrink-0 h-9 w-9 transition-all duration-300
-              ${message.trim() ? 'scale-100 opacity-100' : 'scale-95 opacity-70'}
+              ${message.trim() ? 'scale-100 opacity-100 shadow-glow' : 'scale-95 opacity-70'}
             `}
           >
             <Send className="h-4 w-4" />

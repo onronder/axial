@@ -37,6 +37,7 @@ export interface FileItem {
 interface FileBrowserProps {
   source: DataSource;
   onBack: () => void;
+  isViewer?: boolean;
 }
 
 interface BreadcrumbItem {
@@ -44,7 +45,7 @@ interface BreadcrumbItem {
   name: string;
 }
 
-export function FileBrowser({ source, onBack }: FileBrowserProps) {
+export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserProps) {
   const { getFiles, ingestFiles } = useDataSources();
   const { toast } = useToast();
   // Use 'any' temporarily if FileItem isn't strictly defined in the mock hook result or define strict LocalFileItem
@@ -94,6 +95,7 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
   };
 
   const toggleSelection = (id: string) => {
+    if (isViewer) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -106,6 +108,7 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
   };
 
   const toggleAll = () => {
+    if (isViewer) return;
     // Select all items (both files and folders)
     const allIds = files.map((f) => f.id);
     if (allIds.every((id) => selectedIds.has(id))) {
@@ -116,6 +119,15 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
   };
 
   const handleIngest = async () => {
+    if (isViewer) {
+      toast({
+        title: "View only",
+        description: "You need editor or admin access to ingest files.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIngesting(true);
     try {
       await ingestFiles(source.id, Array.from(selectedIds));
@@ -199,10 +211,10 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">
-                <Checkbox
+              <Checkbox
                   checked={allItemsSelected}
                   onCheckedChange={toggleAll}
-                  disabled={itemCount === 0}
+                  disabled={itemCount === 0 || isViewer}
                 />
               </TableHead>
               <TableHead>Name</TableHead>
@@ -232,16 +244,17 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
                   onClick={() => {
                     if (file.type === "folder") {
                       handleFolderClick(file);
-                    } else {
+                    } else if (!isViewer) {
                       toggleSelection(file.id);
                     }
                   }}
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.has(file.id)}
-                      onCheckedChange={() => toggleSelection(file.id)}
-                    />
+                 <Checkbox
+                  checked={selectedIds.has(file.id)}
+                  onCheckedChange={() => toggleSelection(file.id)}
+                  disabled={isViewer}
+                />
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -273,7 +286,7 @@ export function FileBrowser({ source, onBack }: FileBrowserProps) {
             <span className="text-sm font-medium">
               {selectedIds.size} item{selectedIds.size > 1 ? "s" : ""} selected
             </span>
-            <Button onClick={handleIngest} disabled={ingesting} className="gap-2">
+            <Button onClick={handleIngest} disabled={ingesting || isViewer} className="gap-2">
               {ingesting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

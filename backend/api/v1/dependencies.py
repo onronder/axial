@@ -98,7 +98,7 @@ async def require_plan(required_plans: list[str]):
     return checker
 
 
-async def require_admin(user_id: str = Depends(get_current_user)) -> str:
+async def require_admin(user_id: str = Depends(validate_team_access)) -> str:
     """
     Dependency to require admin privileges.
     
@@ -150,6 +150,48 @@ async def require_admin(user_id: str = Depends(get_current_user)) -> str:
         )
 
 
+async def require_editor(user_id: str = Depends(validate_team_access)) -> str:
+    """
+    Require an editor or admin role (team owner counts as admin).
+    
+    Blocks viewers from performing write actions while allowing
+    solo users and team owners/admins.
+    """
+    try:
+        team = await team_service.get_user_team(user_id)
+
+        # Solo users (no team) are allowed
+        if not team:
+            return user_id
+
+        if team.get("is_owner"):
+            return user_id
+
+        role = team.get("user_role", "viewer")
+        if role not in ["admin", "editor"]:
+            logger.warning(
+                f"[require_editor] Write access denied for user {user_id[:8]}... (role={role})"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": "EDITOR_REQUIRED",
+                    "message": "You need editor or admin access to perform this action.",
+                },
+            )
+
+        return user_id
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[require_editor] Error checking role: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify permissions",
+        )
+
+
 # Re-export get_current_user for convenience
 __all__ = [
     'get_current_user',
@@ -157,4 +199,5 @@ __all__ = [
     'get_effective_plan',
     'require_plan',
     'require_admin',
+    'require_editor',
 ]

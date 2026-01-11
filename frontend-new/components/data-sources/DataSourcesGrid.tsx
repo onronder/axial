@@ -18,6 +18,8 @@ import { URLCrawlerInput } from "./URLCrawlerInput";
 import { FileUploadZone } from "./FileUploadZone";
 import { ComingSoonIntegrations } from "./ComingSoonIntegrations";
 import { useDataSources } from "@/hooks/useDataSources";
+import { useProfile } from "@/hooks/useProfile";
+import { useUsage } from "@/hooks/useUsage";
 import type { DataSourceCategory, MergedDataSource } from "@/types";
 
 // Category labels for display
@@ -54,10 +56,19 @@ export function DataSourcesGrid() {
     disconnect,
     syncIntegration
   } = useDataSources();
+  const { profile, isLoading: profileLoading } = useProfile();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter] = useState<FilterStatus>("all");
   const [browsing, setBrowsing] = useState<MergedDataSource | null>(null);
+  const isViewer = profile?.role === "viewer";
+  const { canWebCrawl } = useUsage();
+  const canRunWebCrawl = canWebCrawl && !isViewer;
+  const webCrawlDisabledReason = isViewer
+    ? "View-only members cannot run crawls or ingest data."
+    : !canWebCrawl
+      ? "Web crawling is available on Starter and above."
+      : undefined;
 
   const connectedCount = connectedSources.length;
 
@@ -99,11 +110,12 @@ export function DataSourcesGrid() {
           category: isDataSourceCategory(browsing.category) ? browsing.category : "files",
         }}
         onBack={() => setBrowsing(null)}
+        isViewer={isViewer}
       />
     );
   }
 
-  if (loading) {
+  if (loading || profileLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -137,6 +149,12 @@ export function DataSourcesGrid() {
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
+
+      {isViewer && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          You have view-only access. Connect, ingest, and sync actions are disabled.
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -196,6 +214,8 @@ export function DataSourcesGrid() {
                       description: source.description,
                       category: isDataSourceCategory(source.category) ? source.category : "web",
                     }}
+                    disabled={!canRunWebCrawl}
+                    disabledReason={webCrawlDisabledReason}
                   />
                 ) : (
                   <DataSourceCard
@@ -205,6 +225,7 @@ export function DataSourcesGrid() {
                     onConnect={connect}
                     onDisconnect={disconnect}
                     onSync={syncIntegration}
+                    disabled={isViewer}
                   />
                 )
               ))}
@@ -237,6 +258,7 @@ export function DataSourcesGrid() {
             description: "Drag & drop PDF, TXT, or DOCX files to upload",
             category: "files",
           }}
+          disabled={isViewer}
         />
       </div>
 

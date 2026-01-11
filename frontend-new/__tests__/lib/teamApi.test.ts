@@ -37,7 +37,7 @@ describe('Team & Usage API Methods', () => {
                 plan: 'pro',
                 files: { used: 25, limit: 100 },
                 storage: { used_bytes: 1000, limit_bytes: 10000 },
-                features: { web_crawl: true, team_enabled: false },
+                features: { web_crawl: true, team: false },
             };
 
             // Test the expected structure
@@ -51,7 +51,7 @@ describe('Team & Usage API Methods', () => {
                 plan: 'enterprise' as const,
                 files: { used: 500, limit: 1000 },
                 storage: { used_bytes: 5000000, limit_bytes: 10000000 },
-                features: { web_crawl: true, team_enabled: true },
+                features: { web_crawl: true, team: true },
             };
 
             expect(usage).toHaveProperty('plan');
@@ -59,7 +59,7 @@ describe('Team & Usage API Methods', () => {
             expect(usage).toHaveProperty('storage');
             expect(usage).toHaveProperty('features');
             expect(usage.features).toHaveProperty('web_crawl');
-            expect(usage.features).toHaveProperty('team_enabled');
+            expect(usage.features).toHaveProperty('team');
         });
 
         it('should support various plan types', () => {

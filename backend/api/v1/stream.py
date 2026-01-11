@@ -15,12 +15,13 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 import asyncio
 
+from api.v1.dependencies import validate_team_access
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 
 class StreamingChatRequest(BaseModel):

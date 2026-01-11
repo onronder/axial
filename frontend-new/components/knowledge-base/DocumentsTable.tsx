@@ -59,6 +59,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { StorageMeter } from "@/components/documents/StorageMeter";
 import { cn } from "@/lib/utils";
 import { normalizeSourceType } from "@/lib/sourceType";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const sourceIcons: Record<string, typeof FileText> = {
   google_drive: FileText,
@@ -72,33 +73,33 @@ const sourceIcons: Record<string, typeof FileText> = {
 const statusStyles: Record<string, { label: string; className: string; dotClass: string }> = {
   completed: {
     label: "Indexed",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    dotClass: "bg-emerald-500"
+    className: "bg-emerald-500/10 text-emerald-200 border-emerald-500/20",
+    dotClass: "bg-emerald-400"
   },
   indexed: { // Legacy fallback
     label: "Indexed",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    dotClass: "bg-emerald-500"
+    className: "bg-emerald-500/10 text-emerald-200 border-emerald-500/20",
+    dotClass: "bg-emerald-400"
   },
   processing: {
     label: "Processing",
-    className: "bg-blue-50 text-blue-700 border-blue-200",
-    dotClass: "bg-blue-500 animate-pulse"
+    className: "bg-blue-500/10 text-blue-200 border-blue-500/30",
+    dotClass: "bg-blue-400 animate-pulse"
   },
   pending: {
     label: "Pending",
-    className: "bg-yellow-50 text-yellow-700 border-yellow-200",
-    dotClass: "bg-yellow-500"
+    className: "bg-yellow-500/10 text-yellow-200 border-yellow-500/30",
+    dotClass: "bg-yellow-400"
   },
   failed: {
     label: "Failed",
-    className: "bg-red-50 text-red-700 border-red-200",
-    dotClass: "bg-red-500"
+    className: "bg-red-500/10 text-red-200 border-red-500/30",
+    dotClass: "bg-red-400"
   },
   error: { // Legacy fallback
     label: "Error",
-    className: "bg-red-50 text-red-700 border-red-200",
-    dotClass: "bg-red-500"
+    className: "bg-red-500/10 text-red-200 border-red-500/30",
+    dotClass: "bg-red-400"
   },
 };
 
@@ -112,6 +113,8 @@ export function DocumentsTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [clearSource, setClearSource] = useState<string>("");
 
   // Debounce search query
   useEffect(() => {
@@ -127,8 +130,23 @@ export function DocumentsTable() {
     totalCount,
     isLoading: isRefreshing,
     refresh: handleRefresh,
-    deleteDocument
+    deleteDocument,
+    bulkDeleteDocuments,
+    isBulkDeleting
   } = useDocuments(currentPage, pageSize, debouncedSearch);
+
+  // Drop selections that are no longer in the current dataset
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      documents.forEach((doc) => {
+        if (prev.has(doc.id)) {
+          next.add(doc.id);
+        }
+      });
+      return next;
+    });
+  }, [documents]);
 
   const { profile } = useProfile();
   const isViewer = profile?.role === 'viewer';
@@ -137,11 +155,63 @@ export function DocumentsTable() {
 
   // NOTE: Server-side pagination is used, so valid documents are just 'documents'
   const paginatedDocuments = documents;
+  const availableSources = Array.from(new Set(documents.map((doc) => normalizeSourceType(doc.sourceType) || doc.sourceType)));
+  const allVisibleSelected = paginatedDocuments.length > 0 && selectedIds.size === paginatedDocuments.length;
+
+  useEffect(() => {
+    if (clearSource && !availableSources.includes(clearSource)) {
+      setClearSource("");
+    }
+  }, [availableSources, clearSource]);
 
   const handleDelete = async () => {
     if (deleteId) {
       await deleteDocument(deleteId);
       setDeleteId(null);
+    }
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(paginatedDocuments.map((doc) => doc.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const toggleSelectOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkDeleteSelected = async () => {
+    if (isViewer || selectedIds.size === 0) return;
+    const confirmed = confirm(`Delete ${selectedIds.size} selected item(s)? This removes indexed data but keeps connectors linked.`);
+    if (!confirmed) return;
+    try {
+      await bulkDeleteDocuments({ documentIds: Array.from(selectedIds) });
+      setSelectedIds(new Set());
+    } catch {
+      // toast handled in hook
+    }
+  };
+
+  const handleClearBySource = async () => {
+    if (!clearSource || isViewer) return;
+    const confirmed = confirm(`Clear all indexed items from ${clearSource.replace('_', ' ')}? Connectors remain connected.`);
+    if (!confirmed) return;
+    try {
+      await bulkDeleteDocuments({ sourceType: clearSource });
+      setSelectedIds(new Set());
+    } catch {
+      // toast handled in hook
     }
   };
 
@@ -165,7 +235,7 @@ export function DocumentsTable() {
       {/* Header Area */}
       <div className="space-y-6">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Knowledge Base</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-gradient">Knowledge Base</h1>
           <p className="text-muted-foreground text-lg">
             Manage your ingested documents and connected data sources.
           </p>
@@ -177,59 +247,109 @@ export function DocumentsTable() {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
+      <div className="glass-card rounded-xl border border-white/10 shadow-glow overflow-hidden">
         {/* Toolbar */}
-        <div className="p-4 border-b flex flex-col sm:flex-row gap-4 justify-between items-center bg-muted/30">
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search documents..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="pl-9 bg-background focus-visible:ring-offset-0"
-            />
+        <div className="p-4 border-b border-white/10 space-y-3 bg-white/5 backdrop-blur-sm">
+          <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search documents..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="pl-9 bg-background focus-visible:ring-offset-0"
+              />
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleRefresh()}
+                disabled={isRefreshing}
+                className="ml-auto sm:ml-0 gap-2 h-9 border-white/20 bg-white/5 hover:bg-white/10"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
+                Refresh
+              </Button>
+              <Button variant="outline" size="sm" className="h-9 gap-2 border-white/20 bg-white/5 hover:bg-white/10">
+                <Filter className="h-3.5 w-3.5" />
+                Filter
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleRefresh()}
-              disabled={isRefreshing}
-              className="ml-auto sm:ml-0 gap-2 h-9"
-            >
-              <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
-              Refresh
-            </Button>
-            <Button variant="outline" size="sm" className="h-9 gap-2">
-              <Filter className="h-3.5 w-3.5" />
-              Filter
-            </Button>
+
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Bulk actions"}
+            </div>
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
+              <Select
+                value={clearSource}
+                onValueChange={(val) => setClearSource(val)}
+              >
+                <SelectTrigger className="w-[180px] h-9 bg-background/60 border-white/10">
+                  <SelectValue placeholder="Select source to clear" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSources.map((source) => (
+                    <SelectItem key={source} value={source}>
+                      {source.replace("_", " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 border-white/20 bg-white/5 hover:bg-white/10"
+                onClick={handleClearBySource}
+                disabled={!clearSource || isViewer || isRefreshing || isBulkDeleting}
+              >
+                Clear source
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-9"
+                onClick={handleBulkDeleteSelected}
+                disabled={selectedIds.size === 0 || isViewer || isRefreshing || isBulkDeleting}
+              >
+                Delete selected
+              </Button>
+            </div>
           </div>
         </div>
 
         {/* Table Content */}
         <div className="relative">
           <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow className="hover:bg-transparent border-b border-border/60">
-                <TableHead className="pl-6 w-[30%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Name</TableHead>
-                <TableHead className="w-[12%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Source</TableHead>
-                <TableHead className="w-[18%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Path</TableHead>
-                <TableHead className="w-[12%] font-medium text-xs uppercase tracking-wider text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[8%] text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">Size</TableHead>
-                <TableHead className="w-[12%] text-right pr-6 font-medium text-xs uppercase tracking-wider text-muted-foreground">Added</TableHead>
+            <TableHeader className="bg-transparent">
+              <TableRow className="hover:bg-transparent border-b border-white/10 uppercase tracking-[0.08em] text-xs text-muted-foreground">
+                <TableHead className="w-[40px] pl-4">
+                  <Checkbox
+                    aria-label="Select all"
+                    checked={allVisibleSelected}
+                    onCheckedChange={(checked) => toggleSelectAll(!!checked)}
+                  />
+                </TableHead>
+                <TableHead className="pl-2 w-[28%] font-medium text-xs">Name</TableHead>
+                <TableHead className="w-[12%] font-medium text-xs">Source</TableHead>
+                <TableHead className="w-[18%] font-medium text-xs">Path</TableHead>
+                <TableHead className="w-[12%] font-medium text-xs">Status</TableHead>
+                <TableHead className="w-[8%] text-right font-medium text-xs">Size</TableHead>
+                <TableHead className="w-[12%] text-right pr-6 font-medium text-xs">Added</TableHead>
                 <TableHead className="w-[5%]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedDocuments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-64 text-center">
+                  <TableCell colSpan={8} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center space-y-3">
-                      <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                      <div className="h-12 w-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
                         <FileText className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <div className="space-y-1">
@@ -251,10 +371,18 @@ export function DocumentsTable() {
                   const status = statusStyles[displayStatus] || statusStyles.completed;
 
                   return (
-                    <TableRow key={doc.id} className="group hover:bg-muted/30 transition-colors">
-                      <TableCell className="pl-6 py-4">
+                    <TableRow key={doc.id} className="group hover:bg-white/5 transition-colors border-b border-white/5">
+                      <TableCell className="pl-4">
+                        <Checkbox
+                          aria-label={`Select ${doc.name}`}
+                          checked={selectedIds.has(doc.id)}
+                          onCheckedChange={(checked) => toggleSelectOne(doc.id, !!checked)}
+                          disabled={isViewer}
+                        />
+                      </TableCell>
+                      <TableCell className="pl-2 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                          <div className="h-9 w-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
                             <FileText className="h-4 w-4 text-primary" />
                           </div>
                           <div className="flex flex-col min-w-0">
@@ -313,7 +441,7 @@ export function DocumentsTable() {
                               <MoreVertical className="h-4 w-4 text-muted-foreground" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" className="bg-sidebar/90 backdrop-blur-xl border border-white/10">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             {sourceType === 'file_upload' && (
                               <DropdownMenuItem>
@@ -353,7 +481,7 @@ export function DocumentsTable() {
         </div>
 
         {/* Footer / Pagination */}
-        <div className="p-4 border-t bg-muted/30 flex items-center justify-between">
+        <div className="p-4 border-t border-white/10 bg-white/5 backdrop-blur-sm flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>Rows per page</span>
             <Select
@@ -363,7 +491,7 @@ export function DocumentsTable() {
                 setCurrentPage(1);
               }}
             >
-              <SelectTrigger className="w-[70px] h-8 bg-background">
+              <SelectTrigger className="w-[70px] h-8 bg-background/60 border-white/10">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -387,7 +515,7 @@ export function DocumentsTable() {
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8 bg-background"
+                className="h-8 w-8 bg-background/60 border-white/10"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
               >
@@ -396,7 +524,7 @@ export function DocumentsTable() {
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8 bg-background"
+                className="h-8 w-8 bg-background/60 border-white/10"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
               >

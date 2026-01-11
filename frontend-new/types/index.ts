@@ -36,7 +36,7 @@ export interface Message {
     content: string;
     timestamp?: string;
     created_at?: string;
-    sources?: Source[];  // Structured RAG sources
+    sources?: Array<Source | string | Record<string, unknown>>;  // Structured RAG sources
 }
 
 export interface ChatConversation {
@@ -229,8 +229,11 @@ export interface UserUsage {
     };
     features: {
         web_crawl: boolean;
-        team_enabled: boolean;
+        team?: boolean;
+        team_enabled?: boolean;
+        premium_models?: boolean;
     };
+    model_tier?: string;
     subscription_status: string;
 }
 
