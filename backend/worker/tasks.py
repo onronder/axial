@@ -1437,7 +1437,7 @@ def process_file_task(
     
     try:
         update_file_status(supabase, file_status_id, job_id, status="uploading",
-            progress=10,
+            progress=5,
             message="Preparing file..."
         )
         
@@ -1462,7 +1462,7 @@ def process_file_task(
             file_status_id,
             job_id,
             status="processing",
-            progress=15,
+            progress=10,
             message="🛡️ Scanning for threats..."
         )
 

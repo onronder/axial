@@ -22,6 +22,29 @@ RUN apt-get update \
     gosu \
     && rm -rf /var/lib/apt/lists/*
 
+# Configure ClamAV to listen on TCP for instream scanning
+RUN cat > /etc/clamav/clamd.conf <<'EOF' \
+    && mkdir -p /var/log/clamav /var/run/clamav \
+    && chown -R clamav:clamav /var/log/clamav /var/run/clamav
+LogTime yes
+LogVerbose yes
+TCPSocket 3310
+TCPAddr 127.0.0.1
+Foreground yes
+User clamav
+AllowSupplementaryGroups yes
+FixStaleSocket yes
+LocalSocket /var/run/clamav/clamd.ctl
+PidFile /var/run/clamav/clamd.pid
+LogFile /var/log/clamav/clamav.log
+StreamMaxLength 200M
+MaxScanSize 500M
+MaxFileSize 200M
+EOF
+
+# Update virus definitions during build (best effort)
+RUN freshclam || true
+
 # Install Python dependencies
 COPY requirements.txt .
 

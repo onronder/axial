@@ -12,10 +12,12 @@ if command -v freshclam >/dev/null 2>&1; then
   gosu clamav freshclam --stdout || true
 fi
 
-# Start ClamAV daemon in the background with log to stdout
+# Start ClamAV daemon in the background with TCP listener for instream scans
 if command -v clamd >/dev/null 2>&1; then
-  gosu clamav clamd --foreground=yes --stdout &
-  sleep 2
+  echo "🛡️ Starting ClamAV daemon..."
+  gosu clamav clamd --config-file=/etc/clamav/clamd.conf --foreground=yes --stdout &
+  # Give clamd a moment to come up
+  sleep 3
 fi
 
 # Default command: uvicorn app server (override by passing args)
