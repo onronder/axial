@@ -1582,6 +1582,13 @@ def process_file_task(
                 file_status_id,
                 "skipped",
             )
+            audit_logger.log_sync(
+                user_id=user_id,
+                action="ingest.skipped",
+                resource_type="ingestion_job",
+                resource_id=job_id,
+                details={"filename": filename, "reason": reason or "unsupported", "source_type": source_type},
+            )
             return {"status": "skipped", "filename": filename, "reason": reason or "unsupported"}
         chunks = result.chunks
         
@@ -1603,6 +1610,13 @@ def process_file_task(
                 job_id,
                 file_status_id,
                 "skipped",
+            )
+            audit_logger.log_sync(
+                user_id=user_id,
+                action="ingest.skipped",
+                resource_type="ingestion_job",
+                resource_id=job_id,
+                details={"filename": filename, "reason": "empty_or_no_text", "source_type": source_type},
             )
             return {"status": "skipped", "filename": filename, "reason": "empty"}
         
@@ -2612,8 +2626,8 @@ def process_page_task(
                 file_status_id,
                 "skipped",
             )
-            logger.info(f"[ProcessFile:{task_id}] ♻️ Duplicate file detected (hash={content_hash}); skipping processing")
-            return {"status": "duplicate_skipped", "filename": filename}
+            logger.info(f"[ProcessFile:{task_id}] ♻️ Duplicate page detected for {url} (hash={content_hash}); skipping processing")
+            return {"status": "duplicate_skipped", "url": url, "title": page_title}
         mark_file_status("indexing", progress=80, message="Saving to database...")
 
         doc_id = ingest_document_batched(

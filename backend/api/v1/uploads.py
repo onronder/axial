@@ -16,6 +16,7 @@ from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
 from core.exceptions import QuotaExceededError
 from api.v1.dependencies import validate_team_access, require_editor
+from services.audit import audit_logger
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 import uuid
@@ -180,6 +181,13 @@ async def generate_upload_url(
         )
     except QuotaExceededError as exc:
         logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
+        audit_logger.log_sync(
+            user_id=user_id,
+            action="ingest.denied",
+            resource_type="ingestion_request",
+            resource_id=org_id,
+            details={"reason": str(exc), "plan": plan_code, "file_size": body.file_size},
+        )
         raise HTTPException(status_code=403, detail=str(exc))
     
     # 3. Generate unique storage path (SECURITY: sanitize filename to prevent path traversal)
@@ -292,6 +300,20 @@ async def ingest_file_reference(
         raise HTTPException(status_code=500, detail="Failed to create ingestion job")
     
     job_id = str(job_res.data[0]["id"])
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="ingest.queued",
+        resource_type="ingestion_job",
+        resource_id=job_id,
+        details={
+            "provider": provider,
+            "storage_path": body.storage_path,
+            "filename": body.filename,
+            "file_size": body.file_size,
+            "plan": plan_code,
+            "org_id": org_id,
+        },
+    )
     
     # Increment usage counters (best-effort)
     try:
