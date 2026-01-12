@@ -1456,7 +1456,17 @@ def process_file_task(
         if isinstance(content, str):
             content = content.encode("utf-8")
 
-        # Security: malware scan (stub)
+        # UX: indicate security scanning
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id,
+            status="processing",
+            progress=15,
+            message="🛡️ Scanning for threats..."
+        )
+
+        # Security: malware scan
         scan_result = scan_content(content)
         if not scan_result.get("safe"):
             reason = scan_result.get("reason") or "Security Violation: Malware Detected"
@@ -1485,6 +1495,15 @@ def process_file_task(
                 details={"filename": filename, "reason": reason},
             )
             return {"status": "failed", "filename": filename, "error": "Malware detected"}
+
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id,
+            status="processing",
+            progress=20,
+            message="✅ Scan passed. Parsing content...",
+        )
 
         if len(content) > settings.MAX_FILE_SIZE:
             if parser_rejections:

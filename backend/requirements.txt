@@ -59,6 +59,7 @@ trafilatura
 ultimate-sitemap-parser
 youtube-transcript-api
 lxml
+clamd
 
 # --- SERVER MONITORING ---
 psutil>=5.9.0

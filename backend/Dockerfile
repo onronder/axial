@@ -16,6 +16,10 @@ RUN apt-get update \
     libmagic1 \
     libgl1 \
     libglib2.0-0 \
+    clamav-daemon \
+    clamav-freshclam \
+    libclamav-dev \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -33,13 +37,14 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy application code
 COPY . .
 
-# Create a non-root user and switch to it
-# This prevents Celery security warnings and improves container security
+# Start script to launch ClamAV daemon before app
+RUN chmod +x /app/start.sh || true
+
+# Create a non-root user (appuser). We keep root as runtime to allow clamd start,
+# and drop to appuser inside start.sh for the app/worker processes.
 RUN groupadd -r appuser && useradd -r -g appuser appuser \
     && chown -R appuser:appuser /app
 
-USER appuser
-
 # Run the application
 # Railway injects PORT environment variable - we must use it
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["/app/start.sh"]
