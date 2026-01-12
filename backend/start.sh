@@ -23,9 +23,15 @@ fi
 # Ensure PORT is set (Railway injects it for web; default to 8000 for local)
 : "${PORT:=8000}"
 
+# If uvicorn is requested, force the resolved port regardless of caller args
+if [ "$#" -gt 0 ] && [ "$1" = "uvicorn" ]; then
+  shift
+  exec gosu appuser uvicorn "$@" --port "${PORT}"
+fi
+
 # Default command: uvicorn app server (override by passing args)
 if [ "$#" -gt 0 ]; then
   exec gosu appuser "$@"
 else
-  exec gosu appuser uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"
+  exec gosu appuser uvicorn main:app --host 0.0.0.0 --port "${PORT}"
 fi
