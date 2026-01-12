@@ -254,12 +254,14 @@ class DriveConnector(EnhancedConnector, BaseConnector):
         
         return self._get_credentials_by_integration(res.data[0])
 
-    async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[RemoteFile]:
-        """Async wrapper for listing items."""
-        return await run_in_threadpool(self._list_items_implementation, user_id, parent_id)
+    async def list_files(self, config: Dict[str, Any], since: Optional[str] = None) -> List[RemoteFile]:
+        """Async wrapper for listing items using config."""
+        user_id = config.get("user_id")
+        parent_id = config.get("parent_id")
+        return await run_in_threadpool(self._list_files_sync, user_id, parent_id)
 
-    def _list_items_implementation(self, user_id: str, parent_id: Optional[str] = None) -> List[RemoteFile]:
-        """Synchronous implementation of list_items."""
+    def _list_files_sync(self, user_id: str, parent_id: Optional[str] = None) -> List[RemoteFile]:
+        """Synchronous implementation of list_files."""
         creds = self._get_credentials(user_id)
         service = build('drive', 'v3', credentials=creds)
         

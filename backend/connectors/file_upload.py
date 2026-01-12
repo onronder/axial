@@ -100,9 +100,9 @@ class FileUploadConnector(EnhancedConnector):
     async def authorize(self, user_id: str) -> bool:
         """File uploads don't require authorization."""
         return True
-    
-    async def list_items(self, user_id: str, parent_id: Optional[str] = None):
-        """File uploads don't support browsing."""
+
+    async def list_files(self, config: Dict[str, Any], since: Optional[str] = None):
+        """File uploads don't support browsing; return empty list."""
         return []
     
     def validate_credentials(self, credentials: Dict[str, Any]) -> bool:

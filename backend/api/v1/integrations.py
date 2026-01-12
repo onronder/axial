@@ -661,7 +661,8 @@ async def list_provider_items(
     try:
         provider = _require_provider(provider)
         connector = get_connector(provider)
-        items = await connector.list_items(user_id, parent_id)
+        config = {"user_id": user_id, "parent_id": parent_id, "provider": provider}
+        items = await connector.list_files(config)
         return items
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
@@ -970,8 +971,8 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             raise
 
         # 3. Resolve root items to sync
-        root_items = await connector.list_items(user_id, parent_id=None)
-        item_ids = [item.id for item in (root_items or [])]
+        root_items = await connector.list_files({"user_id": user_id, "parent_id": None, "provider": provider})
+        item_ids = [getattr(item, "id", None) or item.get("id") for item in (root_items or []) if (getattr(item, "id", None) or (isinstance(item, dict) and item.get("id")))]
 
         if not item_ids:
             supabase.table("ingestion_jobs").update({

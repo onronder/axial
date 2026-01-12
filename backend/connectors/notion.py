@@ -131,37 +131,27 @@ class NotionConnector(EnhancedConnector, BaseConnector):
     
 
 
-    async def list_items(
+    async def list_files(
         self,
-        user_id: str,
-        parent_id: Optional[str] = None
+        config: Dict[str, Any],
+        since: Optional[str] = None
     ) -> List[RemoteFile]:
-        """Async wrapper for listing items."""
-        return await run_in_threadpool(self._list_items_implementation, user_id, parent_id)
-
-    def _list_items_implementation(
-        self,
-        user_id: str,
-        parent_id: Optional[str] = None
-    ) -> List[RemoteFile]:
-        """
-        List Notion pages with proper folder structure (Synchronous).
-        """
+        """List Notion pages/databases using config dict."""
+        user_id = config.get("user_id")
+        parent_id = config.get("parent_id")
         access_token = self._get_access_token(user_id)
         items: List[RemoteFile] = []
-        
-        # Handle "root" string as None
+
         if parent_id == "root":
             parent_id = None
-        
+
         if parent_id:
             # Get children of a specific page
             try:
                 result = self._make_request("GET", f"blocks/{parent_id}/children", access_token)
                 for block in result.get("results", []):
                     block_type = block.get("type")
-                    
-                    # Only include child pages and databases
+
                     if block_type == "child_page":
                         title = block.get("child_page", {}).get("title", "Untitled")
                         items.append(
@@ -191,22 +181,17 @@ class NotionConnector(EnhancedConnector, BaseConnector):
             except Exception as e:
                 logger.error(f"Failed to get children for {parent_id}: {e}")
         else:
-            # Get TOP-LEVEL pages only (no parent or parent is workspace)
             result = self._make_request("POST", "search", access_token, {
                 "page_size": 100,
                 "filter": {"property": "object", "value": "page"}
             })
-            
+
             for page in result.get("results", []):
-                # Check if this is a top-level page (parent type is workspace)
                 parent_info = page.get("parent", {})
                 parent_type = parent_info.get("type")
-                
-                # Only include pages that are directly in the workspace (top-level)
                 if parent_type != "workspace":
                     continue
-                
-                # Extract title
+
                 title = "Untitled"
                 props = page.get("properties", {})
                 for prop in props.values():
@@ -215,13 +200,7 @@ class NotionConnector(EnhancedConnector, BaseConnector):
                         if title_arr:
                             title = title_arr[0].get("plain_text", "Untitled")
                         break
-                
-                # Get icon emoji if available
-                icon = None
-                icon_data = page.get("icon")
-                if icon_data and icon_data.get("type") == "emoji":
-                    icon = icon_data.get("emoji")
-                
+
                 items.append(
                     RemoteFile(
                         id=page["id"],
@@ -233,30 +212,23 @@ class NotionConnector(EnhancedConnector, BaseConnector):
                         web_view_url=page.get("url"),
                     )
                 )
-            
-            # Also get top-level databases
+
             db_result = self._make_request("POST", "search", access_token, {
                 "page_size": 100,
                 "filter": {"property": "object", "value": "database"}
             })
-            
+
             for db in db_result.get("results", []):
                 parent_info = db.get("parent", {})
                 parent_type = parent_info.get("type")
-                
                 if parent_type != "workspace":
                     continue
-                
+
                 title = "Untitled Database"
                 title_arr = db.get("title", [])
                 if title_arr:
                     title = title_arr[0].get("plain_text", "Untitled Database")
-                
-                icon = None
-                icon_data = db.get("icon")
-                if icon_data and icon_data.get("type") == "emoji":
-                    icon = icon_data.get("emoji")
-                
+
                 items.append(
                     RemoteFile(
                         id=db["id"],
@@ -268,8 +240,8 @@ class NotionConnector(EnhancedConnector, BaseConnector):
                         web_view_url=None,
                     )
                 )
-        
-        logger.info(f"📄 [Notion] list_items(parent={parent_id}): Found {len(items)} items")
+
+        logger.info(f"📄 [Notion] list_files(parent={parent_id}): Found {len(items)} items")
         return items
 
 
