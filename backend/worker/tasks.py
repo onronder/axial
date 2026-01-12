@@ -142,6 +142,56 @@ TEXT_LIKE_EXTENSIONS = {
 }
 
 
+def _resolve_org_scope(supabase, user_id: str) -> Dict[str, Optional[str]]:
+    """
+    Resolve org scope for dedup: prefers team_id if present, otherwise user_id.
+    """
+    team_id = None
+    try:
+        res = supabase.table("team_members").select("team_id").eq("member_user_id", user_id).limit(1).execute()
+        if res.data:
+            team_id = res.data[0].get("team_id")
+    except Exception:
+        pass
+
+    if not team_id:
+        try:
+            owner_res = supabase.table("teams").select("id").eq("owner_id", user_id).limit(1).execute()
+            if owner_res.data:
+                team_id = owner_res.data[0].get("id")
+        except Exception:
+            pass
+
+    return {"team_id": team_id, "user_id": user_id}
+
+
+def _is_duplicate_document(supabase, content_hash: str, org_scope: Dict[str, Optional[str]], user_id: str) -> bool:
+    """
+    Check for existing document with same hash within org scope.
+    """
+    if not content_hash:
+        return False
+    try:
+        query = supabase.table("documents").select("id").eq("content_hash", content_hash)
+        if org_scope.get("team_id"):
+            query = query.eq("team_id", org_scope["team_id"])
+        else:
+            query = query.eq("user_id", user_id)
+        res = query.limit(1).execute()
+        if res.data:
+            # touch updated_at
+            try:
+                supabase.table("documents").update(
+                    {"updated_at": datetime.now(timezone.utc).isoformat()}
+                ).eq("id", res.data[0]["id"]).execute()
+            except Exception:
+                pass
+            return True
+    except Exception as exc:
+        logger.warning(f"⚠️ [Dedup] Duplicate check failed: {exc}")
+    return False
+
+
 def get_parse_timeout_seconds(filename: str, mime_type: str | None) -> int | None:
     ext = os.path.splitext(filename or "")[1].lower()
     mime = (mime_type or "").lower()
@@ -2486,6 +2536,26 @@ def process_page_task(
         content_bytes = page_content.encode("utf-8")
         content_size = len(content_bytes)
         content_hash = compute_content_hash(content_bytes)
+        org_scope = _resolve_org_scope(supabase, user_id)
+        if _is_duplicate_document(supabase, content_hash, org_scope, user_id):
+            # Treat as skipped/duplicate; do not parse/embed
+            update_file_status(
+                supabase,
+                file_status_id,
+                job_id,
+                status="skipped",
+                progress=100,
+                message="Duplicate detected; reusing existing document",
+            )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "skipped",
+            )
+            logger.info(f"[ProcessFile:{task_id}] ♻️ Duplicate file detected (hash={content_hash}); skipping processing")
+            return {"status": "duplicate_skipped", "filename": filename}
         mark_file_status("indexing", progress=80, message="Saving to database...")
 
         doc_id = ingest_document_batched(
