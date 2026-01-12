@@ -1848,7 +1848,6 @@ def update_crawl_status(
             update_data["error_message"] = error_message
         if message is not None:
             update_data["status_message"] = message
-            update_data["message"] = message
         job_ref = job_id or crawl_id
         if job_ref:
             try:

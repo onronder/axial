@@ -88,6 +88,7 @@ API proxy remains `/api/py/*` -> `/api/v1/*` via `frontend-new/next.config.ts`.
 - Added bulk delete endpoint `/api/v1/documents` (ids or `source_type`), blocks viewers, recalculates usage, and logs audit entries while preserving connector auth.
 - Web crawl queue/worker now creates or upserts ingestion jobs and per-page file statuses, threads `job_id` through discovery/process/finalize, and updates unified job progress (including scheduler recrawls).
 - Chat persistence keeps `sources` payloads on save/stream/get so downstream UI can render reference cards without refresh.
+- Web crawl hardening: sitemap preflight now skips HTML/login responses before parsing to avoid Sentry noise; crawl status updates no longer write a missing `message` column (uses `status_message` only).
 
 ### Frontend
 - Updated upload API calls to `/api/v1/uploads/*` in `frontend-new/lib/api.ts`.

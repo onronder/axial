@@ -11,6 +11,7 @@ from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, A
 from .base import ConnectorItem
 from core.db import get_supabase
 from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync
+from connectors.limits import connector_fetch_limit
 import requests
 from starlette.concurrency import run_in_threadpool
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
@@ -96,14 +97,14 @@ class NotionConnector(EnhancedConnector):
         """Make a request to the Notion API with retry logic."""
         url = f"{self.BASE_URL}/{endpoint}"
         headers = self._get_headers(access_token)
-        
-        response = requests.request(
-            method=method,
-            url=url,
-            headers=headers,
-            json=json_data,
-            timeout=30
-        )
+        with connector_fetch_limit("notion"):
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=json_data,
+                timeout=30
+            )
 
         if response.status_code in RATE_LIMIT_STATUS_CODES:
             logger.warning(f"⚠️ [Notion] Rate limit response {response.status_code} for {endpoint}")

@@ -16,6 +16,7 @@ from .base import ConnectorItem
 from core.db import get_supabase
 from core.config import settings
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
+from connectors.limits import connector_fetch_limit
 from core.resilience import with_google_retry
 
 logger = logging.getLogger(__name__)
@@ -37,11 +38,13 @@ class DriveConnector(EnhancedConnector):
 
     @with_google_retry(max_attempts=3)
     def _drive_get(self, service, **kwargs):
-        return service.files().get(**kwargs).execute()
+        with connector_fetch_limit("google_drive"):
+            return service.files().get(**kwargs).execute()
 
     @with_google_retry(max_attempts=3)
     def _drive_list(self, service, **kwargs):
-        return service.files().list(**kwargs).execute()
+        with connector_fetch_limit("google_drive"):
+            return service.files().list(**kwargs).execute()
     
     def _download_file_content(self, service, file_meta):
         """
@@ -71,17 +74,18 @@ class DriveConnector(EnhancedConnector):
             filename = f"{name}{ext}"
             
             try:
-                request = service.files().export_media(fileId=file_id, mimeType=export_mime)
-                # SpooledTemporaryFile: RAM < 10MB < Disk
-                with tempfile.SpooledTemporaryFile(max_size=MAX_MEM_SIZE, mode='w+b') as fh:
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    while not done:
-                        status, done = downloader.next_chunk()
-                        if status:
-                            logger.debug(f"📥 [Drive] Export progress {name}: {int(status.progress() * 100)}%")
-                    fh.seek(0)
-                    content = fh.read()
+                with connector_fetch_limit("google_drive"):
+                    request = service.files().export_media(fileId=file_id, mimeType=export_mime)
+                    # SpooledTemporaryFile: RAM < 10MB < Disk
+                    with tempfile.SpooledTemporaryFile(max_size=MAX_MEM_SIZE, mode='w+b') as fh:
+                        downloader = MediaIoBaseDownload(fh, request)
+                        done = False
+                        while not done:
+                            status, done = downloader.next_chunk()
+                            if status:
+                                logger.debug(f"📥 [Drive] Export progress {name}: {int(status.progress() * 100)}%")
+                        fh.seek(0)
+                        content = fh.read()
                 return content, export_mime, filename
             except Exception as e:
                 logger.warning(f"⚠️ [Drive] Export failed for {name}: {e}")
@@ -94,21 +98,21 @@ class DriveConnector(EnhancedConnector):
         # 3. Handle Binary files (Direct Download with streaming)
         else:
             try:
-                request = service.files().get_media(fileId=file_id)
-                # SpooledTemporaryFile: RAM < 10MB < Disk (prevents OOM on large files)
-                with tempfile.SpooledTemporaryFile(max_size=MAX_MEM_SIZE, mode='w+b') as fh:
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    while not done:
-                        status, done = downloader.next_chunk()
-                        if status:
-                            logger.debug(f"📥 [Drive] Download progress {name}: {int(status.progress() * 100)}%")
-                    fh.seek(0)
-                    content = fh.read()
+                with connector_fetch_limit("google_drive"):
+                    request = service.files().get_media(fileId=file_id)
+                    # SpooledTemporaryFile: RAM < 10MB < Disk (prevents OOM on large files)
+                    with tempfile.SpooledTemporaryFile(max_size=MAX_MEM_SIZE, mode='w+b') as fh:
+                        downloader = MediaIoBaseDownload(fh, request)
+                        done = False
+                        while not done:
+                            status, done = downloader.next_chunk()
+                            if status:
+                                logger.debug(f"📥 [Drive] Download progress {name}: {int(status.progress() * 100)}%")
+                        fh.seek(0)
+                        content = fh.read()
                 return content, mime_type, name
             except Exception as e:
                 logger.warning(f"⚠️ [Drive] Download failed for {name}: {e}")
-                return None, None, None
                 return None, None, None
 
     def _get_all_files_recursive(self, service, parent_id: str) -> Iterator[Dict]:

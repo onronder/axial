@@ -81,10 +81,10 @@ class Settings(BaseSettings):
     MAX_CHUNK_BATCH_SIZE: int = 100  # Process 100 chunks at a time
     MEMORY_WARNING_THRESHOLD: float = 0.85  # Warn at 85% memory
     MEMORY_CRITICAL_THRESHOLD: float = 0.95  # Stop at 95% memory
-    EMBEDDING_BATCH_SIZE: int = 500  # Safe default for OpenAI embeddings
+    EMBEDDING_BATCH_SIZE: int = 10  # Safe default for OpenAI embeddings
     EMBEDDING_MAX_TOKENS_PER_REQUEST: int = 250000  # Safety cap below OpenAI 300k limit
-    EMBEDDING_SLEEP_INTERVAL: float = 0.2  # Seconds between embedding batches
-    EMBEDDING_MAX_CONCURRENCY: int = 10  # Max concurrent embedding requests (async path)
+    EMBEDDING_SLEEP_INTERVAL: float = 0.5  # Seconds between embedding batches
+    EMBEDDING_MAX_CONCURRENCY: int = 3  # Max concurrent embedding requests (async path)
     CHUNK_INSERT_BATCH_SIZE: int = 100  # Batch size for PostgREST chunk inserts
     EMBEDDING_ADAPTIVE_LATENCY_FACTOR: float = 0.05  # Extra sleep = batch_duration * factor
     EMBEDDING_ADAPTIVE_MAX_SLEEP: float = 2.0  # Max extra sleep per batch

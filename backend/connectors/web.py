@@ -23,6 +23,7 @@ from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
 from .base import ConnectorItem
 import trafilatura
 import requests
+from connectors.limits import connector_fetch_limit
 
 logger = logging.getLogger(__name__)
 
@@ -129,20 +130,34 @@ class WebConnector(EnhancedConnector):
         Returns:
             List of page URLs found in the sitemap
         """
+        # Prefetch to ensure this looks like XML and not an HTML login page
+        try:
+            with connector_fetch_limit("web"):
+                head = self.session.get(sitemap_url, timeout=(10, 30), allow_redirects=True)
+            content_type = head.headers.get("Content-Type", "").lower()
+            if head.status_code >= 400 or "xml" not in content_type:
+                logger.warning(f"⚠️ [Web] Sitemap preflight failed or not XML ({head.status_code}, {content_type}): {sitemap_url}")
+                return []
+            # Guard against HTML login responses
+            sniff = head.text.strip().lower()
+            if sniff.startswith("<!doctype html") or sniff.startswith("<html"):
+                logger.warning(f"⚠️ [Web] Sitemap response is HTML (likely login/forbidden): {sitemap_url}")
+                return []
+        except Exception as e:
+            logger.warning(f"⚠️ [Web] Sitemap preflight error for {sitemap_url}: {e}")
+            # Fall through to best-effort parsing
         try:
             from usp.tree import sitemap_tree_for_homepage
-            
-            # Parse the sitemap tree
             tree = sitemap_tree_for_homepage(sitemap_url)
-            
+
             urls = []
             for page in tree.all_pages():
                 if page.url:
                     urls.append(page.url)
-            
+
             logger.info(f"📍 [Web] Parsed sitemap: {len(urls)} URLs from {sitemap_url}")
             return urls
-            
+
         except ImportError:
             logger.warning("⚠️ [Web] ultimate-sitemap-parser not installed, falling back to basic parsing")
             return self._parse_sitemap_basic(sitemap_url)
@@ -155,10 +170,11 @@ class WebConnector(EnhancedConnector):
         try:
             from bs4 import BeautifulSoup
             
-            response = self.session.get(
-                sitemap_url,
-                timeout=(10, 30)
-            )
+            with connector_fetch_limit("web"):
+                response = self.session.get(
+                    sitemap_url,
+                    timeout=(10, 30)
+                )
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, "lxml-xml")
@@ -580,10 +596,11 @@ class WebConnector(EnhancedConnector):
 
         rp = RobotFileParser()
         try:
-            response = requests.get(robots_url, timeout=(10, 30), headers=self.DEFAULT_HEADERS)
-            if response.status_code >= 400:
-                return _AllowAll()
-            rp.parse(response.text.splitlines())
+            with connector_fetch_limit("web"):
+                response = requests.get(robots_url, timeout=(10, 30), headers=self.DEFAULT_HEADERS)
+                if response.status_code >= 400:
+                    return _AllowAll()
+                rp.parse(response.text.splitlines())
         except Exception as e:
             logger.warning(f"⚠️ [Web] robots.txt fetch failed for {robots_url}: {e}")
             return _AllowAll()
