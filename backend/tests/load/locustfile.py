@@ -1,6 +1,8 @@
 import os
+import uuid
 import logging
-from locust import HttpUser, task, between, events
+import time
+from locust import HttpUser, task, between
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -20,7 +22,6 @@ if not LOAD_TEST_EMAIL or not LOAD_TEST_PASSWORD:
     logger.warning("LOAD_TEST_EMAIL or LOAD_TEST_PASSWORD not set. Login will fail.")
 
 # Global cache for token to avoid rate limiting
-import time
 _CACHED_TOKEN = None
 _TOKEN_LAST_REFRESH = 0
 
@@ -86,8 +87,8 @@ def get_auth_token(client):
     return None
 
 class AxioUser(HttpUser):
-    # Default host to prevent InvalidSchema if user forgets http://
-    host = "http://localhost:8000"
+    # Allow overriding host via environment to target staging/prod
+    host = os.getenv("LOAD_TEST_HOST", "http://localhost:8000")
     
     # Realistic wait time between tasks (1-5 seconds)
     wait_time = between(1, 5)
@@ -125,6 +126,85 @@ class AxioUser(HttpUser):
              self.headers["Authorization"] = f"Bearer {token}"
              return True
         return False
+
+    # ---------------------------------------------------------------------
+    # Helpers for upload/dedup/throughput scenarios
+    # ---------------------------------------------------------------------
+    def _generate_presigned_upload(self, filename: str, content: bytes, mime: str = "text/plain"):
+        """
+        Step 1: Request signed URL
+        """
+        payload = {
+            "filename": filename,
+            "file_type": mime,
+            "file_size": len(content),
+        }
+        return self.client.post(
+            "/api/v1/uploads/upload-url",
+            json=payload,
+            headers=self.headers,
+            name="/uploads/upload-url",
+        )
+
+    def _upload_to_signed_url(self, upload_url: str, content: bytes, mime: str = "text/plain"):
+        """
+        Step 2: PUT the file to Supabase storage using the signed URL.
+        """
+        return self.client.put(
+            upload_url,
+            data=content,
+            headers={"Content-Type": mime},
+            name="/uploads/upload-url:put",
+        )
+
+    def _ingest_file_reference(self, storage_path: str, filename: str, content: bytes, metadata=None):
+        """
+        Step 3: Notify backend of uploaded file to trigger ingestion.
+        """
+        payload = {
+            "storage_path": storage_path,
+            "filename": filename,
+            "file_size": len(content),
+            "metadata": metadata or {},
+        }
+        return self.client.post(
+            "/api/v1/uploads/file/reference",
+            json=payload,
+            headers=self.headers,
+            name="/uploads/file/reference",
+        )
+
+    def _upload_once(self, label: str, content: bytes):
+        """
+        End-to-end upload flow: signed URL -> PUT -> ingest reference.
+        Returns ingestion job response.
+        """
+        if not self.token and not self.refresh_token():
+            return None
+
+        presigned = self._generate_presigned_upload(f"{label}.txt", content)
+        if presigned.status_code != 200:
+            presigned.failure(f"presign failed {presigned.status_code}: {presigned.text}")
+            return None
+
+        data = presigned.json()
+        upload_url = data.get("upload_url")
+        storage_path = data.get("storage_path")
+        if not upload_url or not storage_path:
+            presigned.failure("presign missing upload_url or storage_path")
+            return None
+
+        upload = self._upload_to_signed_url(upload_url, content)
+        if upload.status_code >= 300:
+            upload.failure(f"upload failed {upload.status_code}: {upload.text}")
+            return None
+
+        ingest = self._ingest_file_reference(storage_path, f"{label}.txt", content)
+        if ingest.status_code not in (200, 202):
+            ingest.failure(f"ingest failed {ingest.status_code}: {ingest.text}")
+            return None
+
+        return ingest
 
     @task(3)
     def chat_interaction(self):
@@ -189,3 +269,28 @@ class AxioUser(HttpUser):
             else:
                  response.failure(f"Profile fetch failed: {response.status_code} - {response.text}")
 
+    @task(2)
+    def the_sprinter(self):
+        """
+        Task C: Upload distinct small files quickly to validate throughput and queue split.
+        """
+        content = b"sprinter-" + uuid.uuid4().hex.encode()
+        label = f"sprinter-{uuid.uuid4().hex[:8]}"
+        self._upload_once(label, content)
+
+    @task(1)
+    def the_repeater(self):
+        """
+        Task D: Upload the same file twice to validate deduplication path.
+        Expect the second ingest to be near-instant (duplicate skip).
+        """
+        content = b"repeater-sample-content"
+        label = "repeater"
+
+        first = self._upload_once(f"{label}-{uuid.uuid4().hex[:6]}", content)
+        time.sleep(2)
+        second = self._upload_once(f"{label}-{uuid.uuid4().hex[:6]}", content)
+
+        # Optional sanity check: mark success if second call returns quickly
+        if second and second.elapsed.total_seconds() < 1:
+            second.success()

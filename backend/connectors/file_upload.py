@@ -6,8 +6,9 @@ It's the simplest connector and serves as a reference implementation.
 """
 
 import logging
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Dict, Iterator, Optional
 
+from connectors.base import ConnectorTransientError, RemoteFile
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
 from core.db import get_supabase
 
@@ -101,9 +102,49 @@ class FileUploadConnector(EnhancedConnector):
         """File uploads don't require authorization."""
         return True
 
-    async def list_files(self, config: Dict[str, Any], since: Optional[str] = None):
-        """File uploads don't support browsing; return empty list."""
-        return []
+    def validate_config(self, config: Dict[str, Any]) -> bool:
+        """
+        Minimal validation: file uploads are already validated upstream.
+        Accept a dict and optionally ensure path/storage_path is a string if provided.
+        """
+        if config is None:
+            return True
+        if not isinstance(config, dict):
+            return False
+        path = config.get("path") or config.get("storage_path")
+        return path is None or isinstance(path, str)
+
+    def list_files(self, config: Dict[str, Any], since: Optional[str] = None) -> Iterator[RemoteFile]:
+        """File uploads don't support browsing; return empty iterator."""
+        return iter([])
+
+    def fetch_file_content(self, file_id: str, config: Dict[str, Any]) -> bytes:
+        """
+        Download bytes from Supabase Storage using the provided storage path or file_id.
+        """
+        storage_path = None
+        if isinstance(config, dict):
+            storage_path = config.get("path") or config.get("storage_path")
+        storage_path = storage_path or file_id
+
+        supabase = get_supabase()
+        try:
+            file_data = supabase.storage.from_(STAGING_BUCKET).download(storage_path)
+        except Exception as exc:
+            logger.error("File upload download failed for %s: %s", storage_path, exc)
+            # Treat as transient; caller can retry or fail the job gracefully
+            raise ConnectorTransientError(str(exc))
+
+        if file_data is None:
+            raise ItemNotFoundError(f"File not found: {storage_path}")
+
+        if hasattr(file_data, "content"):
+            file_data = file_data.content  # supabase client response
+
+        if not isinstance(file_data, (bytes, bytearray)):
+            raise ConnectorTransientError(f"Unexpected download type for {storage_path}: {type(file_data)}")
+
+        return bytes(file_data)
     
     def validate_credentials(self, credentials: Dict[str, Any]) -> bool:
         """No credentials needed for file upload."""
