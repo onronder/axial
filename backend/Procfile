@@ -1,2 +1,2 @@
-web: ./start.sh uvicorn main:app --host 0.0.0.0 --port $PORT
+web: ./start.sh uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
 worker: ./start.sh python -m celery -A core.celery_app worker --pool=gevent --concurrency=${CELERY_CONCURRENCY:-10} --loglevel=info -Q celery,queues.parsing,queues.embedding,queues.indexing

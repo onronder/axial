@@ -15,10 +15,13 @@ fi
 # Start ClamAV daemon in the background with TCP listener for instream scans
 if command -v clamd >/dev/null 2>&1; then
   echo "🛡️ Starting ClamAV daemon..."
-  gosu clamav clamd --config-file=/etc/clamav/clamd.conf --foreground=yes --stdout &
+  gosu clamav clamd --config-file=/etc/clamav/clamd.conf --foreground=yes &
   # Give clamd a moment to come up
   sleep 3
 fi
+
+# Ensure PORT is set (Railway injects it for web; default to 8000 for local)
+: "${PORT:=8000}"
 
 # Default command: uvicorn app server (override by passing args)
 if [ "$#" -gt 0 ]; then

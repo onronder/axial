@@ -1,6 +1,4 @@
-# Celery Worker Dockerfile
-# Use same base as API but with Celery start command
-
+# Celery Worker Dockerfile with ClamAV + start.sh (parity with web image)
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -8,7 +6,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install system dependencies (includes ClamAV + gosu)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     gcc \
@@ -16,31 +14,56 @@ RUN apt-get update \
     libmagic1 \
     libgl1 \
     libglib2.0-0 \
+    clamav-daemon \
+    clamav-freshclam \
+    libclamav-dev \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure ClamAV to listen on TCP for instream scanning
+RUN cat > /etc/clamav/clamd.conf <<'EOF' \
+    && mkdir -p /var/log/clamav /var/run/clamav \
+    && chown -R clamav:clamav /var/log/clamav /var/run/clamav
+LogTime yes
+LogVerbose yes
+TCPSocket 3310
+TCPAddr 127.0.0.1
+Foreground yes
+User clamav
+AllowSupplementaryGroups yes
+FixStaleSocket yes
+LocalSocket /var/run/clamav/clamd.ctl
+PidFile /var/run/clamav/clamd.pid
+LogFile /var/log/clamav/clamav.log
+StreamMaxLength 200M
+MaxScanSize 500M
+MaxFileSize 200M
+EOF
+
+# Update virus definitions during build (best effort)
+RUN freshclam || true
 
 # Install Python dependencies
 COPY requirements.txt .
 
-# CACHE BUSTER: Change this value to force Railway to rebuild and install dependencies
-# Last updated: 2026-01-05T16:45:00Z - FORCE GEVENT INSTALL
+# CACHE BUSTER to force rebuilds when needed
 ARG CACHEBUST=2026010516450001
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
     # Force install critical dependencies (bypass Docker cache)
-    && pip install --no-cache-dir --force-reinstall gevent>=23.9.1 llama-parse>=0.5.0 nest_asyncio \
-    && python -c "import gevent; print(f'✅ gevent {gevent.__version__} installed')" \
-    && python -c "from llama_parse import LlamaParse; print('✅ LlamaParse installed successfully')"
+    && pip install --no-cache-dir --force-reinstall gevent>=23.9.1 \
+    && python -c "import gevent; print(f'✅ gevent {gevent.__version__} installed')"
 
 # Copy application code
 COPY . .
 
-# Create non-root user for security (eliminates Celery's "running as root" warning)
+# Start script to launch ClamAV before running worker
+RUN chmod +x /app/start.sh || true
+
+# Create non-root user (we drop privileges inside start.sh)
 RUN groupadd -r appuser && useradd -r -g appuser appuser \
     && chown -R appuser:appuser /app
 
-USER appuser
-
-# Run Celery worker
-# concurrency=2 for memory safety, loglevel=info for visibility
-CMD ["celery", "-A", "core.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+# Default command (overridden by Railway to use ./start.sh ...)
+CMD ["/app/start.sh", "python", "-m", "celery", "-A", "core.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
