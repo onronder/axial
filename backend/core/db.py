@@ -6,13 +6,46 @@ Provides Supabase client with connection pooling and optimization.
 
 import logging
 import asyncio
+import os
 from supabase import create_client, Client, ClientOptions
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # ✅ Singleton pattern for connection pooling
 _supabase_client: Client | None = None
+SessionLocal = None
+IngestionSessionLocal = None
+
+
+def _init_sqlalchemy_sessions():
+    """
+    Initialize SQLAlchemy session factories for general and ingestion roles.
+    Prefers INGESTION_DATABASE_URL; falls back to DATABASE_URL if present.
+    """
+    global SessionLocal, IngestionSessionLocal
+
+    ingestion_url = settings.INGESTION_DATABASE_URL or os.getenv("INGESTION_DATABASE_URL")
+    default_url = ingestion_url or os.getenv("DATABASE_URL")
+
+    ingestion_engine = None
+    if ingestion_url:
+        ingestion_engine = create_engine(ingestion_url, pool_pre_ping=True)
+        IngestionSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ingestion_engine)
+
+    # NOTE: This factory is prepared for future direct-DB access by workers (Least Privilege).
+    # Currently, workers use the Supabase HTTP Client. Do not remove this config.
+    if default_url and not SessionLocal:
+        default_engine = ingestion_engine or create_engine(default_url, pool_pre_ping=True)
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=default_engine)
+
+    if not IngestionSessionLocal:
+        IngestionSessionLocal = SessionLocal
+
+
+_init_sqlalchemy_sessions()
 
 def _build_client_options() -> ClientOptions:
     """Build Supabase client options with compatibility fallbacks."""

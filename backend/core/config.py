@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     REDIS_JOB_FINALIZE_TTL_SECONDS: int = 3600  # 1 hour
     REDIS_JOB_PROGRESS_UPDATE_BATCH: int = 10
     REDIS_JOB_PROGRESS_UPDATE_INTERVAL: int = 30
+
+    # Dedicated DB URL for least-privilege ingestion role (optional)
+    INGESTION_DATABASE_URL: Optional[str] = None
     
     # Email
     RESEND_API_KEY: Optional[str] = None

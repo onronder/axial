@@ -259,27 +259,27 @@ Notes:
 
 ## Step 7: Least-privilege DB roles for ingestion
 
-Status: TBD  
-Owner: TBD  
-Target start: TBD  
-Target end: TBD  
+Status: Infrastructure Ready / Integration Deferred  
+Owner: Backend / DBRE  
+Target start: 2026-01-12  
+Target end: Deferred to Phase 3  
 Dependencies: Step 1 completed  
 Inputs required:  
-- Role/permission model for ingestion operations: TBD  
-- Secret storage and rotation policy: TBD  
+- Role/permission model for ingestion operations: Completed (ingestion_role)  
+- Secret storage and rotation policy: Pending adoption when direct DB access is enabled  
 
 Sub-task checklist:  
-- [ ] Define least-privilege roles for ingestion (read/write scope only).  
-- [ ] Update DB permissions accordingly.  
+- [x] Define least-privilege roles for ingestion (read/write scope only).  
+- [x] Update DB permissions accordingly.  
 - [ ] Rotate and update secrets for workers.  
 - [ ] Validate RLS behavior under the new role.  
 - [ ] Add tests for cross-tenant access attempts.  
 
 Deliverables:  
-- Role and permission specification; updated secrets.  
+- Role and permission specification; updated secrets (pending integration).  
 
 Validation and acceptance:  
-- Ingestion succeeds with the restricted role; cross-tenant access denied.  
+- Ingestion succeeds with the restricted role; cross-tenant access denied (pending).  
 
 Rollback or contingency:  
 - Temporarily elevate permissions only to restore service, with explicit approval.  
@@ -291,7 +291,9 @@ Step completion check:
 - Record verification outcome in Notes.  
 
 Notes:  
-- TBD  
+- ingestion_role created and granted least-privilege access; BYPASSRLS scoped by table grants.  
+- IngestionSessionLocal wiring prepared; workers still use Supabase client (service key).  
+- Integration deferred to a direct-DB worker refactor (Phase 3).  
 
 ---
 

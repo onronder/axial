@@ -662,7 +662,38 @@ async def list_provider_items(
         provider = _require_provider(provider)
         connector = get_connector(provider)
         config = {"user_id": user_id, "parent_id": parent_id, "provider": provider}
-        items = await connector.list_files(config)
+        raw_items = await connector.list_files(config)
+
+        def _map_item(item: Any) -> Optional[dict]:
+            # Handle dataclass-like objects or dicts
+            if hasattr(item, "__dict__"):
+                data = item.__dict__
+            elif isinstance(item, dict):
+                data = item
+            else:
+                return None
+
+            mime = data.get("mime_type") or data.get("mimeType")
+            name = data.get("name") or data.get("id") or "Untitled"
+            item_type = "file"
+            # Infer folder-like types
+            if mime in {"application/vnd.google-apps.folder", "application/vnd.notion.page", "application/vnd.notion.database"}:
+                item_type = "folder"
+            item_id = data.get("id")
+            if not item_id:
+                return None
+            return {
+                "id": item_id,
+                "name": name,
+                "type": item_type,
+                "mimeType": mime,
+                "size": data.get("size"),
+                "parent_id": data.get("parent_id"),
+                "web_view_url": data.get("web_view_url"),
+            }
+
+        items = [_map_item(it) for it in (raw_items or []) if it]
+        items = [it for it in items if it]
         return items
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
