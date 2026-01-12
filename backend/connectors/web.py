@@ -83,7 +83,8 @@ class WebConnector(EnhancedConnector, BaseConnector):
         return True
 
     def validate_config(self, config: dict) -> bool:
-        return bool(config.get("url"))
+        url = config.get("url")
+        return bool(url) and self._is_safe_url(url)
 
     async def list_files(self, config: dict, since: Optional[str] = None) -> List[RemoteFile]:
         """
@@ -92,6 +93,8 @@ class WebConnector(EnhancedConnector, BaseConnector):
         url = config.get("url")
         if not url:
             return []
+        if not self._is_safe_url(url):
+            raise ValueError(f"Security Violation: Access to private network denied for {url}")
         return [
             RemoteFile(
                 id=url,
@@ -109,7 +112,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
         Fetch raw HTML/text for a given URL (file_id).
         """
         url = file_id
-        if not self.is_safe_url(url):
+        if not self._is_safe_url(url):
             raise ConnectorAuthError("Unsafe URL blocked")
         self._enforce_public_endpoint(url)
         html = self.fetch_html(url)
@@ -414,7 +417,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
         for url in urls:
             try:
-                if not self.is_safe_url(url):
+                if not self._is_safe_url(url):
                     logger.warning(f"⚠️ [Web] Unsafe URL blocked: {url}")
                     continue
 
@@ -500,7 +503,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
             logger.error(f"❌ [Web] HTML fetch failed for {url}: {e}")
             raise ConnectorTransientError(str(e)) from e
 
-    def is_safe_url(self, url: str) -> bool:
+    def _is_safe_url(self, url: str) -> bool:
         """Basic SSRF protection: allow only public http(s) URLs."""
         try:
             parsed = urlparse(url)
