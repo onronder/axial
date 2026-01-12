@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Search,
   RefreshCw,
@@ -135,15 +135,33 @@ export function DocumentsTable() {
     isBulkDeleting
   } = useDocuments(currentPage, pageSize, debouncedSearch);
 
-  // Drop selections that are no longer in the current dataset
+  // Keep selection in sync with currently loaded documents without causing loops
   useEffect(() => {
     setSelectedIds((prev) => {
+      // Fast path: no docs -> clear selections
+      if (documents.length === 0) {
+        return prev.size === 0 ? prev : new Set<string>();
+      }
+
+      // Only keep IDs that still exist
       const next = new Set<string>();
       documents.forEach((doc) => {
         if (prev.has(doc.id)) {
           next.add(doc.id);
         }
       });
+
+      // Avoid state update if nothing changed
+      if (next.size === prev.size) {
+        let identical = true;
+        for (const id of prev) {
+          if (!next.has(id)) {
+            identical = false;
+            break;
+          }
+        }
+        if (identical) return prev;
+      }
       return next;
     });
   }, [documents]);
@@ -151,11 +169,29 @@ export function DocumentsTable() {
   const { profile } = useProfile();
   const isViewer = profile?.role === 'viewer';
 
-  const totalPages = Math.ceil(totalCount / pageSize);
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(totalCount / pageSize) || 1),
+    [totalCount, pageSize]
+  );
 
-  // NOTE: Server-side pagination is used, so valid documents are just 'documents'
-  const paginatedDocuments = documents;
-  const availableSources = Array.from(new Set(documents.map((doc) => normalizeSourceType(doc.sourceType) || doc.sourceType)));
+  // Clamp page when total pages shrink
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  // Server returns the requested page already; memoize to keep referential stability
+  const paginatedDocuments = useMemo(() => documents, [documents]);
+  const availableSources = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          documents.map((doc) => normalizeSourceType(doc.sourceType) || doc.sourceType)
+        )
+      ),
+    [documents]
+  );
   const allVisibleSelected = paginatedDocuments.length > 0 && selectedIds.size === paginatedDocuments.length;
 
   useEffect(() => {

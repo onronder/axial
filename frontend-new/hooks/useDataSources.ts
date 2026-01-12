@@ -184,8 +184,22 @@ export const useDataSources = () => {
             const { data } = await api.get(`/integrations/${type}/items`, {
                 params: parentId ? { parent_id: parentId } : undefined
             });
-            console.log('📦 [useDataSources] ✅ Got', data?.length || 0, 'files');
-            return data || [];
+            const normalized = (data || []).map((item: any) => {
+                const id = String(item?.id ?? "");
+                const name = String(item?.name ?? item?.id ?? "Untitled");
+                const typeSafe = item?.type === "folder" ? "folder" : "file";
+                return {
+                    id,
+                    name,
+                    type: typeSafe,
+                    size: item?.size ?? null,
+                    mimeType: item?.mimeType ?? item?.mime_type ?? null,
+                    parentId: item?.parent_id ?? null,
+                    webViewUrl: item?.web_view_url ?? null,
+                };
+            });
+            console.log('📦 [useDataSources] ✅ Got', normalized.length, 'files');
+            return normalized;
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Unknown error';
             console.error('📦 [useDataSources] ❌ Get files failed:', message);

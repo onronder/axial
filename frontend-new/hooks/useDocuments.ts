@@ -6,6 +6,9 @@ import { Document } from "@/types";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 import { useToast } from "@/hooks/use-toast";
 
+// Stable fallback to avoid new array instances while queries are still loading
+const EMPTY_DOCS: Document[] = [];
+
 /**
  * Backend document response interface.
  */
@@ -153,8 +156,9 @@ export const useDocuments = (
         placeholderData: (previousData) => previousData // Keep prev data while fetching
     });
 
-    const documents = data?.documents || [];
-    const totalCount = data?.total || 0;
+    // Keep stable fallbacks to avoid rerender loops while the query is loading
+    const documents = data?.documents ?? EMPTY_DOCS;
+    const totalCount = data?.total ?? 0;
 
     // Mutation for deleting documents
     const deleteMutation = useMutation({
