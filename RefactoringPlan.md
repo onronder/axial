@@ -187,80 +187,40 @@ Phase 2 outcomes:
 
 ---
 
-## Phase 3 — Enterprise (Version update, isolation + compliance)
+## Phase 3 — Security Hardening & Content Safety (Replaces prior Phase 3)
 
-Goal: Predictable performance across many tenants, strong isolation, and enterprise-grade security and compliance without changing user workflows.
+Goal: Make the platform enterprise-ready by prioritizing security and safety across all tiers. The previous Phase 3 (partitioning/multi-region/ledger) is deferred as future infrastructure.
 
-1) Tenant partitioning or cell-based isolation
-- Dependency: Phase 2 complete
-- Change: Partition data to reduce blast radius and stabilize performance.
-- Full-stack changes:
-  - DB partitioning
-  - Worker routing by tenant
+1) SSRF Protection (Web Connector)
+- Secure against internal network scanning and localhost/private IP access; validate redirects/hosts.
 
-2) Multi-region ingestion with residency routing
-- Dependency: Step 1
-- Change: Route ingestion by tenant region.
-- Full-stack changes:
-  - Infra topology
-  - Region-aware routing logic
+2) Content Security (Malware Stub)
+- Add a streaming scan interface in the worker pipeline (stub ready for ClamAV or equivalent); reject/quarantine flagged content.
 
-3) Durable job ledger and event-driven ingestion
-- Dependency: Step 1
-- Change: Replace ad-hoc orchestration with durable ledger.
-- Full-stack changes:
-  - Worker orchestration updates
-  - Reliability model
+3) Enhanced Audit Logging
+- Log critical ingestion lifecycle events (ingest/delete/fail/skip/rate-limit) with org/user/source context for compliance.
 
-4) Optional write-optimized vector store
-- Dependency: Step 1
-- Change: Offload heavy ingestion spikes to a write-optimized store.
-- Full-stack changes:
-  - Vector storage strategy
-  - Retrieval path adjustments
-
-5) Advanced admission control
-- Dependency: Step 1
-- Change: Quotas and fairness guarantees per tenant.
-- Full-stack changes:
-  - API policy
-  - Scheduler behavior
-
-6) Connector sandboxing and SSRF controls
-- Dependency: Step 1
-- Change: Isolated connector runtime, network egress allowlists.
-- Full-stack changes:
-  - Connector execution environment
-
-7) File security scanning and parser sandboxing
-- Dependency: Step 1
-- Change: Malware scanning, strict MIME/type validation.
-- Full-stack changes:
-  - Worker pre-processing pipeline
-
-8) RAG security controls
-- Dependency: Step 1
-- Change: Server-side retrieval filters, prompt injection defenses, redaction.
-- Full-stack changes:
-  - Retrieval pipeline
-  - LLM guardrails
-
-9) Compliance readiness
-- Dependency: Step 1
-- Change: Audit logs, retention controls, incident response playbooks.
-- Full-stack changes:
-  - Ops and security processes
-
-10) Enterprise launch validation
-- Dependency: Steps 1-9
-- Change: Regional load tests, security testing, third-party audits.
-- Full-stack changes:
-  - QA and security verification
+4) Least-Privilege Role Activation (Planning)
+- Document the rollout plan to move workers to `ingestion_role` with feature flag/guardrails, prerequisites, and secret rotation steps.
 
 Phase 3 outcomes:
-- Strong tenant isolation and predictable performance
-- Enterprise-grade security and compliance posture
-- Scalable ingestion that supports large field teams and AI agents
+- Hardened ingestion against SSRF and unsafe content
+- Better compliance traceability via audit logs
+- Clear path to least-privilege execution for workers
+
+### Deferred: Future Enterprise Infrastructure (formerly Phase 3)
+- Tenant partitioning or cell-based isolation
+- Multi-region ingestion with residency routing
+- Durable job ledger and event-driven ingestion
+- Optional write-optimized vector store
+- Advanced admission control
+- Connector sandboxing and SSRF controls (deep isolation model)
+- File security scanning and parser sandboxing (full production AV/sandbox)
+- RAG security controls (advanced redaction/guardrails)
+- Compliance readiness (third-party audits, retention controls)
+- Enterprise launch validation (regional load tests, audits)
+
+Note: To be revisited when scale exceeds single-region Postgres limits.
 
 ---
 
@@ -285,4 +245,3 @@ Phase 3 outcomes:
 - Prompt injection/data exfil -> Phase 3 Step 8
 - Sensitive logging -> Phase 1 Step 10
 - Observability/SLOs -> Phase 1 Step 1, Phase 2 Step 12, Phase 3 Step 10
-

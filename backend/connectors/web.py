@@ -111,6 +111,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
         url = file_id
         if not self.is_safe_url(url):
             raise ConnectorAuthError("Unsafe URL blocked")
+        self._enforce_public_endpoint(url)
         html = self.fetch_html(url)
         if html is None:
             raise ConnectorTransientError("Failed to fetch content")
@@ -136,6 +137,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
             List of page URLs found in the sitemap
         """
         # Prefetch to ensure this looks like XML and not an HTML login page
+        self._enforce_public_endpoint(sitemap_url)
         try:
             with connector_fetch_limit("web"):
                 head = self.session.get(sitemap_url, timeout=(10, 30), allow_redirects=True)
@@ -482,6 +484,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
         Used by the worker for recursive crawling.
         """
         try:
+            self._enforce_public_endpoint(url)
             with connector_fetch_limit("web"):
                 html = trafilatura.fetch_url(url)
             if html is not None:
@@ -597,6 +600,24 @@ class WebConnector(EnhancedConnector, BaseConnector):
             or ip.is_multicast
             or ip.is_unspecified
         )
+
+    def _enforce_public_endpoint(self, url: str) -> None:
+        """
+        Explicit SSRF guard: resolve hostname and block private/loopback/link-local targets.
+        """
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("Security Violation: Access to private network denied.")
+
+        try:
+            ip_str = socket.gethostbyname(hostname)
+            ip_obj = ipaddress.ip_address(ip_str)
+        except Exception:
+            raise ValueError("Security Violation: Access to private network denied.")
+
+        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+            raise ValueError("Security Violation: Access to private network denied.")
 
     @lru_cache(maxsize=256)
     def _get_robots_parser(self, robots_url: str):

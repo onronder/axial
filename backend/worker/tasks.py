@@ -40,6 +40,8 @@ from services.email import email_service
 from connectors import get_connector
 from connectors.limits import connector_fetch_limit
 from services.embeddings import generate_embeddings_batch_sync
+from services.malware import scan_content
+from services.audit import audit_logger
 try:
     from core.metrics import (
         job_counters_missing,
@@ -1454,6 +1456,36 @@ def process_file_task(
         if isinstance(content, str):
             content = content.encode("utf-8")
 
+        # Security: malware scan (stub)
+        scan_result = scan_content(content)
+        if not scan_result.get("safe"):
+            reason = scan_result.get("reason") or "Security Violation: Malware Detected"
+            logger.critical(f"[ProcessFile:{task_id}] 🚫 Malware detected in {filename}: {reason}")
+            update_file_status(
+                supabase,
+                file_status_id,
+                job_id,
+                status="failed",
+                progress=0,
+                message="Security Violation: Malware Detected",
+                error=reason,
+            )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "failed",
+            )
+            audit_logger.log_sync(
+                user_id=user_id,
+                action="ingest.reject.malware",
+                resource_type="ingestion_job",
+                resource_id=job_id,
+                details={"filename": filename, "reason": reason},
+            )
+            return {"status": "failed", "filename": filename, "error": "Malware detected"}
+
         if len(content) > settings.MAX_FILE_SIZE:
             if parser_rejections:
                 parser_rejections.labels("file_too_large", source_type or "unknown").inc()
@@ -1628,6 +1660,13 @@ def process_file_task(
             job_id,
             file_status_id,
             "failed",
+        )
+        audit_logger.log_sync(
+            user_id=user_id,
+            action="ingest.failed",
+            resource_type="ingestion_job",
+            resource_id=job_id,
+            details={"filename": filename, "error": str(e)},
         )
         
         return {
