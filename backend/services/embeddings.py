@@ -11,6 +11,7 @@ from typing import List, Optional, Sequence
 from langchain_openai import OpenAIEmbeddings
 from core.config import settings
 from core.resilience import with_retry_sync
+from services.quotas import get_plan_max_tpm
 try:
     from core.metrics import embeddings_generated, operation_duration, retry_failure
 except Exception:
@@ -52,6 +53,42 @@ class _EmbeddingThrottle:
 
 
 _EMBEDDING_THROTTLE = _EmbeddingThrottle()
+
+
+class _TpmRegulator:
+    """Simple per-plan token-per-minute regulator to cap cost exposure."""
+
+    def __init__(self) -> None:
+        self._state = {}
+
+    def throttle(self, plan_code: str, tokens: int, max_tpm: Optional[int]) -> None:
+        if not max_tpm or max_tpm <= 0 or tokens <= 0:
+            return
+
+        now = time.time()
+        state = self._state.get(plan_code)
+        if not state or now >= state["reset_at"]:
+            state = {"tokens": 0, "reset_at": now + 60}
+            self._state[plan_code] = state
+
+        if state["tokens"] + tokens > max_tpm:
+            sleep_seconds = max(0.0, state["reset_at"] - now)
+            if sleep_seconds > 0:
+                logger.info(
+                    "⏱️ [Embeddings] Throttling embedding for Plan %s: Sleeping %.2fs (max_tpm=%s)",
+                    plan_code,
+                    sleep_seconds,
+                    max_tpm,
+                )
+                time.sleep(sleep_seconds)
+            now = time.time()
+            state["tokens"] = 0
+            state["reset_at"] = now + 60
+
+        state["tokens"] += min(tokens, max_tpm)
+
+
+_TPM_REGULATOR = _TpmRegulator()
 
 # Singleton embeddings model instance
 _embeddings_model: Optional[OpenAIEmbeddings] = None
@@ -104,6 +141,7 @@ async def generate_embeddings_batch(
     texts: List[str],
     token_counts: Optional[Sequence[int]] = None,
     max_tokens_per_batch: Optional[int] = None,
+    plan_code: Optional[str] = None,
 ) -> List[Optional[List[float]]]:
     """
     Async-compatible wrapper for legacy callers.
@@ -115,6 +153,7 @@ async def generate_embeddings_batch(
         texts,
         token_counts=token_counts,
         max_tokens_per_batch=max_tokens_per_batch,
+        plan_code=plan_code,
     )
 
 
@@ -169,6 +208,7 @@ def generate_embeddings_batch_sync(
     texts: List[str],
     token_counts: Optional[Sequence[int]] = None,
     max_tokens_per_batch: Optional[int] = None,
+    plan_code: Optional[str] = None,
 ) -> List[Optional[List[float]]]:
     """
     Synchronous batch embeddings helper.
@@ -212,6 +252,8 @@ def generate_embeddings_batch_sync(
         return model.embed_documents(batch_texts)
 
     batches = _build_batches(valid_texts, valid_token_counts, batch_size, max_tokens)
+    plan_label = (plan_code or settings.PLAN_STARTER).lower()
+    plan_max_tpm = get_plan_max_tpm(plan_code)
 
     all_embeddings: List[List[float]] = []
     total_duration = 0.0
@@ -233,6 +275,10 @@ def generate_embeddings_batch_sync(
         return status_code == 429
 
     for batch_idx, batch_texts in enumerate(batches):
+        # Pre-batch TPM throttle (cost safety valve)
+        tokens_in_batch = sum(_estimate_token_count(text) for text in batch_texts)
+        _TPM_REGULATOR.throttle(plan_label, tokens_in_batch, plan_max_tpm)
+
         batch_start = time.perf_counter()
         try:
             embeddings = embed_batch(batch_texts)

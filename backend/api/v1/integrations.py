@@ -11,10 +11,14 @@ from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
 from api.v1.dependencies import validate_team_access, require_editor
+from services.quotas import check_admission, increment_usage
+from services.team_service import team_service
+from core.exceptions import QuotaExceededError
 from services.usage import check_feature_access
 from services.web_crawl import queue_web_crawl
 from connectors.web import WebConnector
 from core.ingestion_utils import require_canonical_provider
+from connectors.registry import get_connector_manifest
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
@@ -28,7 +32,11 @@ router = APIRouter(dependencies=[Depends(validate_team_access)])
 
 def _require_provider(provider: str) -> str:
     try:
-        return require_canonical_provider(provider)
+        canonical = require_canonical_provider(provider)
+        manifest = get_connector_manifest(canonical)
+        if not manifest:
+            raise ValueError(f"Unknown provider: {provider}")
+        return canonical
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -76,6 +84,21 @@ class WebCrawlRequest(BaseModel):
     respect_robots: bool = Field(default=True)
     max_pages: int = Field(default=500, ge=1, le=10000)
     allow_subdomains: bool = Field(default=False)
+
+
+async def _resolve_org_and_plan(user_id: str) -> tuple[str, str]:
+    """
+    Determine org_id (team or user) and plan code for quota enforcement.
+    """
+    team = await team_service.get_user_team(user_id)
+    org_id = user_id
+    plan_code = None
+    if team:
+        org_id = team.get("id") or user_id
+        plan_code = team.get("plan")
+    if not plan_code:
+        plan_code = await team_service.get_effective_plan(user_id)
+    return org_id, plan_code
 
 
 # =============================================================================
@@ -404,6 +427,17 @@ async def exchange_notion_token(
                 items = [p["id"] for p in search_data.get("results", []) if p.get("object") == "page"]
         
         if items:
+            org_id, plan_code = await _resolve_org_and_plan(user_id)
+            try:
+                check_admission(
+                    org_id=org_id,
+                    plan_code=plan_code,
+                    file_size_bytes=None,
+                    job_count_increment=max(1, len(items)),
+                )
+            except QuotaExceededError as exc:
+                logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
+                raise HTTPException(status_code=403, detail=str(exc))
             # Create ingestion job
             job_data = {
                 "user_id": user_id,
@@ -426,9 +460,14 @@ async def exchange_notion_token(
                     job_id=str(job_id),
                     connector_type="notion",
                     item_ids=items,
-                    credentials={"integration_id": str(integration_id)}  # ✅ Pass integration_id for token refresh
+                    credentials={"integration_id": str(integration_id)},  # ✅ Pass integration_id for token refresh
+                    plan_code=plan_code,
                 )
                 logger.info(f"📥 [OAuth] Auto-ingestion started: {len(items)} pages, job {job_id}, task: {task.id}")
+                try:
+                    increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(items)))
+                except Exception as exc:
+                    logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
         else:
             logger.info("📥 [OAuth] No Notion pages found to ingest")
             
@@ -764,6 +803,18 @@ async def ingest_provider_items(
     """
     try:
         provider = _require_provider(provider)
+        org_id, plan_code = await _resolve_org_and_plan(user_id)
+        try:
+            check_admission(
+                org_id=org_id,
+                plan_code=plan_code,
+                file_size_bytes=None,
+                job_count_increment=max(1, len(request.item_ids)),
+            )
+        except QuotaExceededError as exc:
+            logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
+            raise HTTPException(status_code=403, detail=str(exc))
+
         if provider == "web":
             if len(request.item_ids) != 1:
                 raise HTTPException(
@@ -792,6 +843,11 @@ async def ingest_provider_items(
                 allow_subdomains=False,
                 include_job_id=True,
             )
+
+            try:
+                increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=1)
+            except Exception as exc:
+                logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
 
             return {
                 "status": "queued",
@@ -862,8 +918,13 @@ async def ingest_provider_items(
             job_id=str(job_id),
             connector_type=provider,
             item_ids=request.item_ids,  # Pass all items at once
-            credentials=credentials
+            credentials=credentials,
+            plan_code=plan_code,
         )
+        try:
+            increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(request.item_ids)))
+        except Exception as exc:
+            logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
         
         logger.info(f"📥 [Ingest] Queued task {task.id} for job {job_id}")
         
@@ -891,6 +952,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
     Background wrapper to run a full provider sync through unified ingestion.
     """
     supabase = get_supabase()
+    org_id, plan_code = await _resolve_org_and_plan(user_id)
     
     try:
         # 1. Update status to processing
@@ -934,15 +996,36 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             credentials = {"integration_id": integration_id}
 
         from worker.tasks import unified_ingest_task
+        try:
+            check_admission(
+                org_id=org_id,
+                plan_code=plan_code,
+                file_size_bytes=None,
+                job_count_increment=max(1, len(item_ids)),
+            )
+        except QuotaExceededError as exc:
+            logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
+            supabase.table("ingestion_jobs").update({
+                "status": "failed",
+                "error_message": str(exc),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", job_id).execute()
+            return
+
         task = unified_ingest_task.delay(
             user_id=user_id,
             job_id=str(job_id),
             connector_type=provider,
             item_ids=item_ids,
             credentials=credentials,
+            plan_code=plan_code,
         )
 
         logger.info(f"✅ [SyncJob] Queued unified ingest {task.id} for job {job_id}")
+        try:
+            increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(item_ids)))
+        except Exception as exc:
+            logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
         
     except Exception as e:
         logger.error(f"❌ [SyncJob] Failed {job_id}: {e}")

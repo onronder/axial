@@ -225,6 +225,13 @@ class TestParseSitemap:
         monkeypatch.setitem(sys.modules, "usp", SimpleNamespace(tree=tree_module))
         monkeypatch.setitem(sys.modules, "usp.tree", tree_module)
 
+        # Mock preflight check
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {"Content-Type": "application/xml"}
+        mock_response.text = '<?xml version="1.0"?>'
+        monkeypatch.setattr(connector.session, "get", lambda *args, **kwargs: mock_response)
+
         urls = connector.parse_sitemap("https://example.com/sitemap.xml")
 
         assert "https://example.com/a" in urls
@@ -592,6 +599,13 @@ class TestWebConnectorExtraPaths:
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        # Mock preflight check
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {"Content-Type": "application/xml"}
+        mock_response.text = '<?xml version="1.0"?>'
+        monkeypatch.setattr(connector.session, "get", lambda *args, **kwargs: mock_response)
 
         with patch.object(connector, "_parse_sitemap_basic", return_value=["https://example.com/a"]) as fallback:
             result = connector.parse_sitemap("https://example.com/sitemap.xml")

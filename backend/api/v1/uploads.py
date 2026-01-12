@@ -8,10 +8,13 @@ Supports the presigned upload flow:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from typing import Optional
+from typing import Optional, Tuple
 from models import IngestResponse
 from core.db import get_supabase
 from services.usage import check_can_upload
+from services.quotas import check_admission, increment_usage
+from services.team_service import team_service
+from core.exceptions import QuotaExceededError
 from api.v1.dependencies import validate_team_access, require_editor
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -63,6 +66,21 @@ def get_idempotency_key(request: Request) -> Optional[str]:
         return None
     key = key.strip()
     return key if key else None
+
+
+async def _resolve_org_and_plan(user_id: str) -> Tuple[str, str]:
+    """
+    Determine org_id (team or user) and plan code for quota enforcement.
+    """
+    team = await team_service.get_user_team(user_id)
+    org_id = user_id
+    plan_code = None
+    if team:
+        org_id = team.get("id") or user_id
+        plan_code = team.get("plan")
+    if not plan_code:
+        plan_code = await team_service.get_effective_plan(user_id)
+    return org_id, plan_code
 
 
 def find_existing_ingestion_job(supabase, user_id: str, provider: str, idempotency_key: str) -> Optional[dict]:
@@ -139,6 +157,7 @@ async def generate_upload_url(
     3. Frontend calls POST /file/reference to trigger ingestion
     """
     supabase = get_supabase()
+    org_id, plan_code = await _resolve_org_and_plan(user_id)
     
     # 1. Validate file type
     if body.file_type.lower() not in [m.lower() for m in ALLOWED_MIME_TYPES.keys()]:
@@ -152,6 +171,16 @@ async def generate_upload_url(
     quota_check = await check_can_upload(user_id, body.file_size)
     if not quota_check["allowed"]:
         raise HTTPException(status_code=403, detail=quota_check["reason"])
+    try:
+        check_admission(
+            org_id=org_id,
+            plan_code=plan_code,
+            file_size_bytes=body.file_size,
+            job_count_increment=1,
+        )
+    except QuotaExceededError as exc:
+        logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
+        raise HTTPException(status_code=403, detail=str(exc))
     
     # 3. Generate unique storage path (SECURITY: sanitize filename to prevent path traversal)
     unique_id = str(uuid.uuid4())
@@ -199,6 +228,7 @@ async def ingest_file_reference(
     2. Frontend calls this endpoint to trigger ingestion
     """
     supabase = get_supabase()
+    org_id, plan_code = await _resolve_org_and_plan(user_id)
     idempotency_key = get_idempotency_key(request)
     
     # 1. Verify file exists in storage
@@ -227,6 +257,16 @@ async def ingest_file_reference(
         except Exception:
             pass
         raise HTTPException(status_code=403, detail=quota_check["reason"])
+    try:
+        check_admission(
+            org_id=org_id,
+            plan_code=plan_code,
+            file_size_bytes=body.file_size,
+            job_count_increment=1,
+        )
+    except QuotaExceededError as exc:
+        logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
+        raise HTTPException(status_code=403, detail=str(exc))
     
     if idempotency_key:
         existing_job = find_existing_ingestion_job(supabase, user_id, "file_upload", idempotency_key)
@@ -253,6 +293,12 @@ async def ingest_file_reference(
     
     job_id = str(job_res.data[0]["id"])
     
+    # Increment usage counters (best-effort)
+    try:
+        increment_usage(org_id=org_id, storage_bytes=body.file_size, job_count_increment=1)
+    except Exception as exc:
+        logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
+    
     # 4. Dispatch to worker using unified ingestion
     from worker.tasks import unified_ingest_task
     try:
@@ -261,7 +307,8 @@ async def ingest_file_reference(
             job_id=job_id,
             connector_type=provider,
             item_ids=[body.storage_path],
-            credentials=None
+            credentials=None,
+            plan_code=plan_code,
         )
     except Exception as e:
         logger.error(f"[Upload] Failed to dispatch unified task: {e}")

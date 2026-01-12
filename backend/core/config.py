@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     PLAN_STARTER: str = "starter"
     PLAN_PRO: str = "pro"
     PLAN_ENTERPRISE: str = "enterprise"
+    PLAN_ENTERPRISE_SMALL: str = "enterprise_small"
+    PLAN_ENTERPRISE_MEDIUM: str = "enterprise_medium"
+    PLAN_ENTERPRISE_LARGE: str = "enterprise_large"
     
     @property
     def POLAR_PRODUCT_MAPPING(self) -> dict:
@@ -163,6 +166,22 @@ def get_polar_product_mapping() -> dict:
     if settings.POLAR_PRODUCT_ID_ENTERPRISE:
         mapping[settings.POLAR_PRODUCT_ID_ENTERPRISE] = settings.PLAN_ENTERPRISE
     return mapping
+
+# =============================================================================
+# High-Perception Quota Limits (Generous Concurrency, TPM safety valve)
+# =============================================================================
+# NOTE: These values are intentionally generous on concurrency to maximize
+# perceived speed, while TPM caps act as the cost-control governor.
+QUOTA_LIMITS = {
+    # "Generous" Self-Serve Tiers
+    "starter":           {"concurrent": 5,   "storage_mb": 100,     "daily_jobs": 10,    "max_tpm": 20000},
+    "pro":               {"concurrent": 10,  "storage_mb": 2000,    "daily_jobs": 100,   "max_tpm": 50000},
+
+    # Enterprise Tiers (High Performance)
+    "enterprise_small":  {"concurrent": 15,  "storage_mb": 50000,   "daily_jobs": 1000,  "max_tpm": 100000},
+    "enterprise_medium": {"concurrent": 25,  "storage_mb": 200000,  "daily_jobs": 5000,  "max_tpm": 250000},
+    "enterprise_large":  {"concurrent": 50,  "storage_mb": 1000000, "daily_jobs": 10000, "max_tpm": 500000},
+}
 
 # Initialize settings
 settings = Settings()

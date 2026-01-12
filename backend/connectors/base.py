@@ -1,89 +1,56 @@
 """
-Base Connector Interface
+Connector Base Interface and Standard Exceptions
 
-All data source connectors must extend BaseConnector and implement its abstract methods.
-This ensures consistent behavior across all integrations (Google Drive, Notion, Dropbox, etc.).
-
-STANDARD CONNECTOR BEHAVIOR:
-============================
-
-1. BROWSING (list_items):
-   - If parent_id is None/"root": Return TOP-LEVEL items only
-   - If parent_id is a folder ID: Return direct children of that folder
-   - Items should have type="folder" if they can contain children
-   - Items should have type="file" if they are leaf content
-
-2. SELECTION (Frontend):
-   - Users CAN select BOTH folders and files
-   - Selecting a folder = ingest everything inside it
-   - This is the expected behavior for ALL connectors
+All ingestion connectors must implement BaseConnector for consistent behavior and error handling.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import List, Optional
-from pydantic import BaseModel
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Iterator, Optional
 
 
-class ConnectorItem(BaseModel):
-    """
-    Represents an item in the file browser (file or folder).
-    
-    Attributes:
-        id: Unique identifier for this item (provider-specific)
-        name: Display name for the item
-        type: Either "file" or "folder"
-              - "folder": Can be navigated into, selecting ingests all children
-              - "file": Leaf node, can be directly ingested
-        mime_type: Optional MIME type (e.g., "application/pdf")
-        icon: Optional icon (emoji or icon name)
-        parent_id: Optional parent folder ID
-    """
+# Standard exceptions for connector implementations
+class ConnectorError(Exception):
+    """Base connector error."""
+
+
+class ConnectorAuthError(ConnectorError):
+    """Authentication/authorization failed."""
+
+
+class ConnectorRateLimitError(ConnectorError):
+    """Provider rate limit encountered; caller may retry with backoff."""
+
+
+class ConnectorTransientError(ConnectorError):
+    """Transient provider error; safe to retry."""
+
+
+@dataclass
+class RemoteFile:
     id: str
     name: str
-    type: str  # 'file' or 'folder'
-    mime_type: Optional[str] = None
-    icon: Optional[str] = None
+    mime_type: Optional[str]
+    size: Optional[int]
+    modified_at: Optional[datetime]
     parent_id: Optional[str] = None
+    web_view_url: Optional[str] = None
 
 
 class BaseConnector(ABC):
-    """
-    Abstract base class for all data source connectors.
-    
-    All connectors must implement:
-    - authorize(): Check if user has valid credentials
-    - list_items(): Browse files/folders for the file browser UI
-    - list_items(): Browse files/folders for the file browser UI
-    """
-    
-    @abstractmethod
-    async def authorize(self, user_id: str) -> bool:
-        """
-        Check if the user has valid credentials for this provider.
-        
-        Args:
-            user_id: The authenticated user's ID
-            
-        Returns:
-            True if connected and credentials are valid
-        """
-        pass
+    """Abstract base class for all ingestion connectors."""
 
     @abstractmethod
-    async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
-        """
-        List files/folders from the provider for the file browser UI.
-        
-        IMPORTANT: 
-        - If parent_id is None or "root": Return TOP-LEVEL items only
-        - If parent_id is a folder ID: Return direct children of that folder
-        - All items that can contain children should have type="folder"
-        
-        Args:
-            user_id: The authenticated user's ID
-            parent_id: Optional folder ID to list children of
-            
-        Returns:
-            List of ConnectorItem objects representing files and folders
-        """
-        pass
+    def validate_config(self, config: dict) -> bool:
+        """Validate connector-specific config (tokens, IDs, scopes)."""
+
+    @abstractmethod
+    def list_files(self, config: dict, since: datetime | None = None) -> Iterator[RemoteFile]:
+        """Yield RemoteFile entries discoverable for ingestion."""
+
+    @abstractmethod
+    def fetch_file_content(self, file_id: str, config: dict) -> bytes:
+        """Return raw file bytes for a given remote file id."""

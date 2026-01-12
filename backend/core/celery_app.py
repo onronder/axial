@@ -7,6 +7,7 @@ Uses Redis as broker and result backend.
 
 import os
 from celery import Celery
+from kombu import Queue
 from celery.schedules import crontab  # Required for beat schedule
 from core.config import settings
 
@@ -98,6 +99,26 @@ celery_app.conf.update(
     # Time limits (soft raises SoftTimeLimitExceeded, hard kills task)
     task_soft_time_limit=settings.CELERY_TASK_SOFT_TIME_LIMIT,
     task_time_limit=settings.CELERY_TASK_TIME_LIMIT,
+
+    # ============================================================
+    # Queue Topology (Stage Isolation)
+    # ============================================================
+    task_queues=(
+        Queue("celery"),  # default/orchestration
+        Queue("queues.parsing"),
+        Queue("queues.embedding"),
+        Queue("queues.indexing"),
+    ),
+    task_routes={
+        "worker.tasks.unified_ingest_task": {"queue": "celery"},
+        "worker.tasks.process_file_task": {"queue": "queues.parsing"},
+        "worker.tasks.crawl_discovery_task": {"queue": "queues.parsing"},
+        "worker.tasks.process_page_task": {"queue": "queues.parsing"},
+        "worker.tasks.generate_embeddings_task": {"queue": "queues.embedding"},
+        "worker.tasks.index_chunks_task": {"queue": "queues.indexing"},
+        "worker.tasks.finalize_job_task": {"queue": "celery"},
+        "worker.tasks.finalize_crawl_task": {"queue": "celery"},
+    },
     
     # ============================================================
     # CELERY BEAT - Scheduled Tasks

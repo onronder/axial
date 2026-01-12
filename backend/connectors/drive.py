@@ -12,7 +12,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from starlette.concurrency import run_in_threadpool
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
-from .base import ConnectorItem
+from connectors.base import BaseConnector, ConnectorAuthError, ConnectorRateLimitError, ConnectorTransientError, RemoteFile
 from core.db import get_supabase
 from core.config import settings
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
@@ -22,7 +22,7 @@ from core.resilience import with_google_retry
 logger = logging.getLogger(__name__)
 
 
-class DriveConnector(EnhancedConnector):
+class DriveConnector(EnhancedConnector, BaseConnector):
     """
     Google Drive connector for unified ingestion.
     
@@ -39,12 +39,18 @@ class DriveConnector(EnhancedConnector):
     @with_google_retry(max_attempts=3)
     def _drive_get(self, service, **kwargs):
         with connector_fetch_limit("google_drive"):
-            return service.files().get(**kwargs).execute()
+            try:
+                return service.files().get(**kwargs).execute()
+            except Exception as exc:
+                raise ConnectorTransientError(str(exc)) from exc
 
     @with_google_retry(max_attempts=3)
     def _drive_list(self, service, **kwargs):
         with connector_fetch_limit("google_drive"):
-            return service.files().list(**kwargs).execute()
+            try:
+                return service.files().list(**kwargs).execute()
+            except Exception as exc:
+                raise ConnectorTransientError(str(exc)) from exc
     
     def _download_file_content(self, service, file_meta):
         """
@@ -89,7 +95,7 @@ class DriveConnector(EnhancedConnector):
                 return content, export_mime, filename
             except Exception as e:
                 logger.warning(f"⚠️ [Drive] Export failed for {name}: {e}")
-                return None, None, None
+                raise ConnectorTransientError(str(e)) from e
 
         # 2. Handle Folders (skip)
         elif mime_type == 'application/vnd.google-apps.folder':
@@ -113,7 +119,7 @@ class DriveConnector(EnhancedConnector):
                 return content, mime_type, name
             except Exception as e:
                 logger.warning(f"⚠️ [Drive] Download failed for {name}: {e}")
-                return None, None, None
+                raise ConnectorTransientError(str(e)) from e
 
     def _get_all_files_recursive(self, service, parent_id: str) -> Iterator[Dict]:
         """
@@ -174,6 +180,9 @@ class DriveConnector(EnhancedConnector):
     async def authorize(self, user_id: str) -> bool:
         """Async wrapper for authorization check."""
         return await run_in_threadpool(self._authorize_implementation, user_id)
+
+    def validate_config(self, config: dict) -> bool:
+        return bool(config.get("user_id") or config.get("integration_id"))
 
     def _authorize_implementation(self, user_id: str) -> bool:
         """Synchronous implementation of authorize."""
@@ -245,11 +254,11 @@ class DriveConnector(EnhancedConnector):
         
         return self._get_credentials_by_integration(res.data[0])
 
-    async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
+    async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[RemoteFile]:
         """Async wrapper for listing items."""
         return await run_in_threadpool(self._list_items_implementation, user_id, parent_id)
 
-    def _list_items_implementation(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
+    def _list_items_implementation(self, user_id: str, parent_id: Optional[str] = None) -> List[RemoteFile]:
         """Synchronous implementation of list_items."""
         creds = self._get_credentials(user_id)
         service = build('drive', 'v3', credentials=creds)
@@ -265,17 +274,20 @@ class DriveConnector(EnhancedConnector):
         )
 
         files = results.get('files', [])
-        items = []
+        items: List[RemoteFile] = []
         for f in files:
             is_folder = f['mimeType'] == 'application/vnd.google-apps.folder'
-            items.append(ConnectorItem(
-                id=f['id'],
-                name=f['name'],
-                type='folder' if is_folder else 'file',
-                mime_type=f['mimeType'],
-                icon=f.get('iconLink'),
-                parent_id=query_parent
-            ))
+            items.append(
+                RemoteFile(
+                    id=f["id"],
+                    name=f["name"],
+                    mime_type=f["mimeType"],
+                    size=int(f.get("size") or 0) if not is_folder else None,
+                    modified_at=None,
+                    parent_id=query_parent,
+                    web_view_url=f.get("webViewLink"),
+                )
+            )
         return items
 
 
@@ -297,7 +309,7 @@ class DriveConnector(EnhancedConnector):
         credentials: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Iterator[SourceDocument]:
-        user_id = kwargs.get("user_id")
+        user_id = kwargs.get("user_id") or credentials.get("user_id") if credentials else None
         if not item_ids:
             return iter(())
 

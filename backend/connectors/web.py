@@ -20,7 +20,13 @@ from functools import lru_cache
 from typing import List, Dict, Any, Optional, Set, Iterator, AsyncIterator
 from urllib.parse import urlparse, urljoin, urlunparse, parse_qsl, urlencode
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
-from .base import ConnectorItem
+from connectors.base import (
+    BaseConnector,
+    ConnectorAuthError,
+    ConnectorRateLimitError,
+    ConnectorTransientError,
+    RemoteFile,
+)
 import trafilatura
 import requests
 from connectors.limits import connector_fetch_limit
@@ -35,7 +41,7 @@ YOUTUBE_PATTERNS = [
 ]
 
 
-class WebConnector(EnhancedConnector):
+class WebConnector(EnhancedConnector, BaseConnector):
     """
     Advanced Web Connector with sitemap, recursion, and YouTube support.
     
@@ -76,40 +82,39 @@ class WebConnector(EnhancedConnector):
         """Web connector is public/open, always authorized."""
         return True
 
-    async def list_items(self, user_id: str, parent_id: Optional[str] = None) -> List[ConnectorItem]:
+    def validate_config(self, config: dict) -> bool:
+        return bool(config.get("url"))
+
+    async def list_files(self, config: dict, since: Optional[str] = None) -> List[RemoteFile]:
         """
-        List previously crawled URLs.
-        Queries web_crawl_configs table to show crawl history.
+        Treat list_files as discovery: accept a root URL and return it as a RemoteFile entry.
         """
-        try:
-            from core.db import get_supabase
-            supabase = get_supabase()
-            
-            # Query crawl history from DB
-            # Note: supabase-py client is synchronous, so .execute() blocks.
-            response = supabase.table("web_crawl_configs").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
-            
-            items = []
-            if response.data:
-                for config in response.data:
-                    items.append(ConnectorItem(
-                        id=config["id"],
-                        name=config["root_url"],
-                        type="web_crawl",
-                        metadata={
-                            "status": config.get("status", "unknown"),
-                            "pages_found": config.get("total_pages_found", 0),
-                            "crawl_type": config.get("crawl_type", "single"),
-                            "created_at": config.get("created_at"),
-                            "depth": config.get("depth", 1)
-                        }
-                    ))
-            
-            return items
-            
-        except Exception as e:
-            logger.error(f"❌ [Web] Failed to list crawl history: {e}")
+        url = config.get("url")
+        if not url:
             return []
+        return [
+            RemoteFile(
+                id=url,
+                name=url,
+                mime_type="text/html",
+                size=None,
+                modified_at=None,
+                parent_id=None,
+                web_view_url=url,
+            )
+        ]
+
+    def fetch_file_content(self, file_id: str, config: dict) -> bytes:
+        """
+        Fetch raw HTML/text for a given URL (file_id).
+        """
+        url = file_id
+        if not self.is_safe_url(url):
+            raise ConnectorAuthError("Unsafe URL blocked")
+        html = self.fetch_html(url)
+        if html is None:
+            raise ConnectorTransientError("Failed to fetch content")
+        return html.encode("utf-8")
 
     # =========================================================================
     # DISCOVERY METHODS
@@ -135,12 +140,14 @@ class WebConnector(EnhancedConnector):
             with connector_fetch_limit("web"):
                 head = self.session.get(sitemap_url, timeout=(10, 30), allow_redirects=True)
             content_type = head.headers.get("Content-Type", "").lower()
-            if head.status_code >= 400 or "xml" not in content_type:
-                logger.warning(f"⚠️ [Web] Sitemap preflight failed or not XML ({head.status_code}, {content_type}): {sitemap_url}")
+            body_lower = (head.text or "").strip().lower()
+            if head.status_code >= 400:
+                logger.warning(f"⚠️ [Web] Sitemap preflight failed ({head.status_code}): {sitemap_url}")
                 return []
-            # Guard against HTML login responses
-            sniff = head.text.strip().lower()
-            if sniff.startswith("<!doctype html") or sniff.startswith("<html"):
+            if "xml" not in content_type:
+                logger.warning(f"⚠️ [Web] Sitemap preflight not xml ({content_type}): {sitemap_url}")
+                return []
+            if body_lower.startswith("<!doctype html") or body_lower.startswith("<html"):
                 logger.warning(f"⚠️ [Web] Sitemap response is HTML (likely login/forbidden): {sitemap_url}")
                 return []
         except Exception as e:
@@ -475,13 +482,20 @@ class WebConnector(EnhancedConnector):
         Used by the worker for recursive crawling.
         """
         try:
-            html = trafilatura.fetch_url(url)
+            with connector_fetch_limit("web"):
+                html = trafilatura.fetch_url(url)
             if html is not None:
+                if max_bytes and len(html.encode("utf-8")) > max_bytes:
+                    raise ConnectorTransientError("Content too large")
                 return html
             return None
+        except ConnectorAuthError:
+            raise
+        except ConnectorRateLimitError:
+            raise
         except Exception as e:
             logger.error(f"❌ [Web] HTML fetch failed for {url}: {e}")
-            return None
+            raise ConnectorTransientError(str(e)) from e
 
     def is_safe_url(self, url: str) -> bool:
         """Basic SSRF protection: allow only public http(s) URLs."""

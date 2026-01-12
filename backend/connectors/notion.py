@@ -8,7 +8,13 @@ Updated to support Universal Connector Architecture (Sync Ingest).
 import logging
 from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
-from .base import ConnectorItem
+from connectors.base import (
+    BaseConnector,
+    ConnectorAuthError,
+    ConnectorRateLimitError,
+    ConnectorTransientError,
+    RemoteFile,
+)
 from core.db import get_supabase
 from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync
 from connectors.limits import connector_fetch_limit
@@ -19,7 +25,7 @@ from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 logger = logging.getLogger(__name__)
 
 
-class NotionConnector(EnhancedConnector):
+class NotionConnector(EnhancedConnector, BaseConnector):
     """
     Connector for Notion integration.
     Uses the unified ingestion interface for raw content delivery.
@@ -114,7 +120,12 @@ class NotionConnector(EnhancedConnector):
                     retry_total.labels("notion", "rate_limit").inc()
                 except Exception:
                     pass
-
+        if response.status_code == 401:
+            raise ConnectorAuthError("Notion auth failed")
+        if response.status_code in RATE_LIMIT_STATUS_CODES:
+            raise ConnectorRateLimitError(f"Rate limited: {response.status_code}")
+        if response.status_code >= 500:
+            raise ConnectorTransientError(f"Notion server error: {response.status_code}")
         response.raise_for_status()
         return response.json()
     
@@ -124,7 +135,7 @@ class NotionConnector(EnhancedConnector):
         self,
         user_id: str,
         parent_id: Optional[str] = None
-    ) -> List[ConnectorItem]:
+    ) -> List[RemoteFile]:
         """Async wrapper for listing items."""
         return await run_in_threadpool(self._list_items_implementation, user_id, parent_id)
 
@@ -132,12 +143,12 @@ class NotionConnector(EnhancedConnector):
         self,
         user_id: str,
         parent_id: Optional[str] = None
-    ) -> List[ConnectorItem]:
+    ) -> List[RemoteFile]:
         """
         List Notion pages with proper folder structure (Synchronous).
         """
         access_token = self._get_access_token(user_id)
-        items = []
+        items: List[RemoteFile] = []
         
         # Handle "root" string as None
         if parent_id == "root":
@@ -153,22 +164,30 @@ class NotionConnector(EnhancedConnector):
                     # Only include child pages and databases
                     if block_type == "child_page":
                         title = block.get("child_page", {}).get("title", "Untitled")
-                        items.append(ConnectorItem(
-                            id=block["id"],
-                            name=title,
-                            type="folder",  # Pages can contain sub-pages, so treat as folder
-                            mime_type="application/vnd.notion.page",
-                            parent_id=parent_id
-                        ))
+                        items.append(
+                            RemoteFile(
+                                id=block["id"],
+                                name=title,
+                                mime_type="application/vnd.notion.page",
+                                size=None,
+                                modified_at=None,
+                                parent_id=parent_id,
+                                web_view_url=None,
+                            )
+                        )
                     elif block_type == "child_database":
                         title = block.get("child_database", {}).get("title", "Untitled Database")
-                        items.append(ConnectorItem(
-                            id=block["id"],
-                            name=title,
-                            type="folder",
-                            mime_type="application/vnd.notion.database",
-                            parent_id=parent_id
-                        ))
+                        items.append(
+                            RemoteFile(
+                                id=block["id"],
+                                name=title,
+                                mime_type="application/vnd.notion.database",
+                                size=None,
+                                modified_at=None,
+                                parent_id=parent_id,
+                                web_view_url=None,
+                            )
+                        )
             except Exception as e:
                 logger.error(f"Failed to get children for {parent_id}: {e}")
         else:
@@ -203,14 +222,17 @@ class NotionConnector(EnhancedConnector):
                 if icon_data and icon_data.get("type") == "emoji":
                     icon = icon_data.get("emoji")
                 
-                items.append(ConnectorItem(
-                    id=page["id"],
-                    name=title,
-                    type="folder",  # All pages can have children, so treat as folders
-                    mime_type="application/vnd.notion.page",
-                    icon=icon,
-                    parent_id=None
-                ))
+                items.append(
+                    RemoteFile(
+                        id=page["id"],
+                        name=title,
+                        mime_type="application/vnd.notion.page",
+                        size=None,
+                        modified_at=None,
+                        parent_id=None,
+                        web_view_url=page.get("url"),
+                    )
+                )
             
             # Also get top-level databases
             db_result = self._make_request("POST", "search", access_token, {
@@ -235,14 +257,17 @@ class NotionConnector(EnhancedConnector):
                 if icon_data and icon_data.get("type") == "emoji":
                     icon = icon_data.get("emoji")
                 
-                items.append(ConnectorItem(
-                    id=db["id"],
-                    name=title,
-                    type="folder",
-                    mime_type="application/vnd.notion.database",
-                    icon=icon,
-                    parent_id=None
-                ))
+                items.append(
+                    RemoteFile(
+                        id=db["id"],
+                        name=title,
+                        mime_type="application/vnd.notion.database",
+                        size=None,
+                        modified_at=None,
+                        parent_id=None,
+                        web_view_url=None,
+                    )
+                )
         
         logger.info(f"📄 [Notion] list_items(parent={parent_id}): Found {len(items)} items")
         return items
@@ -313,7 +338,7 @@ class NotionConnector(EnhancedConnector):
         elif user_id:
             access_token = self._get_access_token(user_id)
         else:
-            raise AuthenticationError("No credentials or user_id provided for Notion fetch")
+            raise ConnectorAuthError("No credentials or user_id provided for Notion fetch")
 
         processed_ids = set()
 

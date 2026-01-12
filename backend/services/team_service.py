@@ -422,7 +422,7 @@ class TeamService:
             
             # Get team details
             team_response = supabase.table("teams").select(
-                "id, name, slug, owner_id, created_at"
+                "id, name, slug, owner_id, created_at, plan"
             ).eq("id", team_id).single().execute()
             
             if team_response.data:
@@ -430,6 +430,7 @@ class TeamService:
                 team["user_role"] = member_role
                 team["user_joined_at"] = joined_at
                 team["is_owner"] = team["owner_id"] == user_id
+                team["plan"] = team.get("plan") or "starter"
                 return team
             
             return None

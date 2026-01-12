@@ -1106,6 +1106,7 @@ def unified_ingest_task(
     item_ids: Optional[List[str]] = None,
     credentials: Dict[str, Any] = None,
     item_id: Optional[str] = None,
+    plan_code: Optional[str] = None,
 ):
     """
     UNIFIED ingestion task for ALL data sources.
@@ -1137,7 +1138,7 @@ def unified_ingest_task(
     elif not isinstance(item_ids, list):
         item_ids = [item_ids]
 
-    logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}")
+    logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}, Plan: {plan_code or 'starter'}")
     
     supabase = get_supabase()
     
@@ -1268,7 +1269,8 @@ def unified_ingest_task(
                     job_id=job_id,
                     file_data=file_data,
                     file_status_id=file_status_id,
-                    connector_type=connector_type
+                    connector_type=connector_type,
+                    plan_code=plan_code,
                 )
             )
         
@@ -1334,7 +1336,8 @@ def unified_ingest_task(
     acks_late=True,
     soft_time_limit=600,  # 10 min per file
     time_limit=660,  # Hard kill at 11 min
-    ignore_result=True
+    ignore_result=True,
+    queue="queues.parsing",
 )
 def process_file_task(
     self,
@@ -1342,7 +1345,8 @@ def process_file_task(
     job_id: str,
     file_data: Dict[str, Any],
     file_status_id: str,
-    connector_type: str
+    connector_type: str,
+    plan_code: Optional[str] = None,
 ):
     """
     Process a SINGLE file independently.
@@ -1501,31 +1505,28 @@ def process_file_task(
             )
             return {"status": "skipped", "filename": filename, "reason": "empty"}
         
-        # STEP 3: Generate embeddings
-        update_file_status(supabase, file_status_id, job_id, status="embedding",
+        # STEP 3: Dispatch embeddings task (queue isolation)
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id,
+            status="embedding",
             progress=60,
-            message=f"Generating embeddings for {len(chunks)} chunks...",
+            message=f"Queueing embeddings for {len(chunks)} chunks...",
             chunks_total=len(chunks),
-            chunks_processed=0
+            chunks_processed=0,
         )
-        
-        texts = [_sanitize_text(chunk.content) for chunk in chunks]
-        token_counts = [chunk.token_count for chunk in chunks]
-        embeddings = generate_embeddings_batch_sync(texts, token_counts=token_counts)
-        
-        # STEP 4: Store in database
-        update_file_status(supabase, file_status_id, job_id, status="indexing",
-            progress=85,
-            message="Storing in database..."
-        )
-        
-        existing_doc_id = None
-        if content_hash:
-            existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
-                "title", filename
-            ).eq("content_hash", content_hash).limit(1).execute()
-            if existing.data:
-                existing_doc_id = existing.data[0]["id"]
+
+        chunk_payload = []
+        for chunk in chunks:
+            chunk_payload.append(
+                {
+                    "content": _sanitize_text(chunk.content),
+                    "chunk_index": chunk.chunk_index,
+                    "token_count": chunk.token_count,
+                    "metadata": chunk.metadata or {},
+                }
+            )
 
         doc_payload = {
             "user_id": user_id,
@@ -1541,110 +1542,26 @@ def process_file_task(
                 "source_id": source_id,
                 "source_url": source_url,
                 "parent_id": parent_id,
+                "file_type": result.file_type,
+                "total_tokens": result.total_tokens,
+                "total_chunks": len(chunks),
             },
-        }
-
-        if existing_doc_id:
-            delete_rows_with_retry(
-                supabase,
-                "document_chunks",
-                "document_id",
-                existing_doc_id,
-                context=f"replace doc_id={existing_doc_id}",
-            )
-            doc_update = {**doc_payload, "updated_at": datetime.now(timezone.utc).isoformat()}
-            supabase.table("documents").update(doc_update).eq("id", existing_doc_id).execute()
-            doc_id = existing_doc_id
-            logger.info(f"♻️ Reusing document {doc_id} for {filename}")
-        else:
-            doc_result = supabase.table("documents").insert(doc_payload).execute()
-            if not doc_result.data:
-                raise Exception("Failed to create document record")
-            doc_id = doc_result.data[0]["id"]
-        
-        # Insert chunks in batches
-        BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))
-        inserted_chunks = 0
-        total_chunks = len(chunks)
-        for i in range(0, len(chunks), BATCH_SIZE):
-            batch = chunks[i:i+BATCH_SIZE]
-            batch_embeddings = embeddings[i:i+BATCH_SIZE]
-            batch_texts = texts[i:i+BATCH_SIZE]
-            
-            chunk_records = []
-            for j, (chunk, embedding, chunk_text) in enumerate(zip(batch, batch_embeddings, batch_texts)):
-                if embedding is None:
-                    continue
-                chunk_records.append({
-                    "document_id": doc_id,
-                    "content": chunk_text,
-                    "embedding": embedding,
-                    "chunk_index": i + j,
-                })
-
-            if not chunk_records:
-                continue
-
-            try:
-                insert_rows_with_retry(
-                    supabase,
-                    "document_chunks",
-                    chunk_records,
-                    context=f"doc_id={doc_id} batch={i // BATCH_SIZE + 1}",
-                )
-                inserted_chunks += len(chunk_records)
-            except Exception as e:
-                logger.error(f"❌ Failed to insert chunk batch {i//BATCH_SIZE + 1}: {e}")
-                continue
-            if total_chunks > 0:
-                indexing_progress = 85 + int((inserted_chunks / total_chunks) * 15)
-                update_file_status(supabase, file_status_id, job_id, progress=indexing_progress,
-                    chunks_processed=inserted_chunks,
-                    message=f"Indexing {inserted_chunks}/{total_chunks} chunks..."
-                )
-
-        if inserted_chunks == 0:
-            update_file_status(supabase, file_status_id, job_id, status="failed",
-                progress=0,
-                message="No embeddings generated",
-                error="No embeddings generated"
-            )
-            _record_ingest_outcome_and_maybe_finalize(
-                supabase,
-                user_id,
-                job_id,
-                file_status_id,
-                "failed",
-            )
-            return {"status": "failed", "filename": filename, "error": "No embeddings generated"}
-        
-        # STEP 5: Success
-        total_time = int(time.time() - start_time)
-        update_file_status(supabase, file_status_id, job_id, status="completed",
-            progress=100,
-            message=f"✅ Completed in {total_time}s",
-            chunks_total=len(chunks),
-            chunks_processed=inserted_chunks,
-            document_id=doc_id
-        )
-        
-        _record_ingest_outcome_and_maybe_finalize(
-            supabase,
-            user_id,
-            job_id,
-            file_status_id,
-            "success",
-        )
-        
-        logger.info(f"[ProcessFile:{task_id}] ✅ {filename}: {inserted_chunks} chunks in {total_time}s")
-        
-        return {
-            "status": "success",
+            "job_id": job_id,
+            "file_status_id": file_status_id,
+            "connector_type": connector_type,
             "filename": filename,
-            "doc_id": doc_id,
-            "chunks": inserted_chunks,
-            "time": total_time
+            "plan_code": plan_code,
         }
+
+        generate_embeddings_task.apply_async(
+            args=[chunk_payload, doc_payload, plan_code],
+            queue="queues.embedding",
+        )
+
+        logger.info(
+            f"[ProcessFile:{task_id}] ✅ Dispatched embedding task for {filename} (job: {job_id}, plan={plan_code or 'starter'})"
+        )
+        return {"status": "queued_embedding", "filename": filename}
         
     except Exception as e:
         logger.error(f"[ProcessFile:{task_id}] ❌ {filename}: {e}")
@@ -1685,6 +1602,188 @@ def process_file_task(
                 os.unlink(local_path)
             except:
                 pass
+
+
+@celery_app.task(
+    bind=True,
+    queue="queues.embedding",
+    ignore_result=True,
+)
+def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_code: Optional[str] = None):
+    """
+    Generate embeddings for parsed chunks on the embedding queue, then dispatch indexing.
+    """
+    task_id = self.request.id
+    supabase = get_supabase()
+    job_id = doc_payload.get("job_id")
+    file_status_id = doc_payload.get("file_status_id")
+    user_id = doc_payload.get("user_id")
+    filename = doc_payload.get("filename", "unknown")
+    plan_label = plan_code or doc_payload.get("plan_code") or settings.PLAN_STARTER
+
+    try:
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id,
+            status="embedding",
+            progress=65,
+            message=f"Embedding {len(chunk_payload)} chunks...",
+            chunks_total=len(chunk_payload),
+            chunks_processed=0,
+        )
+
+        texts = [c.get("content") or "" for c in chunk_payload]
+        token_counts = [c.get("token_count") for c in chunk_payload]
+
+        embeddings = generate_embeddings_batch_sync(
+            texts,
+            token_counts=token_counts,
+            plan_code=plan_label,
+        )
+
+        enriched_chunks = []
+        for chunk, embedding in zip(chunk_payload, embeddings):
+            if embedding is None:
+                continue
+            enriched = {
+                "content": chunk.get("content") or "",
+                "embedding": embedding,
+                "chunk_index": chunk.get("chunk_index", 0),
+                "token_count": chunk.get("token_count"),
+            }
+            enriched_chunks.append(enriched)
+
+        if not enriched_chunks:
+            raise ValueError("No embeddings generated")
+
+        index_chunks_task.apply_async(
+            args=[enriched_chunks, doc_payload],
+            queue="queues.indexing",
+        )
+        logger.info(
+            f"[EmbedTask:{task_id}] ✅ Dispatched indexing for {filename} (job: {job_id}, plan={plan_label})"
+        )
+
+    except Exception as exc:
+        logger.error(f"[EmbedTask:{task_id}] ❌ {filename}: {exc}")
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id,
+            status="failed",
+            progress=0,
+            message=str(exc)[:300],
+            error=str(exc)[:500],
+        )
+        _record_ingest_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            job_id,
+            file_status_id,
+            "failed",
+        )
+
+
+@celery_app.task(
+    bind=True,
+    queue="queues.indexing",
+    ignore_result=True,
+)
+def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
+    """
+    Persist document and chunk embeddings on the indexing queue.
+    """
+    task_id = self.request.id
+    supabase = get_supabase()
+    user_id = doc_payload.get("user_id")
+    job_id = doc_payload.get("job_id")
+    file_status_id = doc_payload.get("file_status_id")
+    filename = doc_payload.get("filename", "unknown")
+
+    try:
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id,
+            status="indexing",
+            progress=85,
+            message="Storing in database...",
+            chunks_total=len(chunk_payload),
+            chunks_processed=0,
+        )
+
+        chunk_records = []
+        for chunk in chunk_payload:
+            embedding = chunk.get("embedding")
+            if embedding is None:
+                continue
+            chunk_records.append(
+                {
+                    "content": chunk.get("content") or "",
+                    "embedding": embedding,
+                    "chunk_index": chunk.get("chunk_index", 0),
+                    "metadata": {"token_count": chunk.get("token_count")},
+                }
+            )
+
+        if not chunk_records:
+            raise ValueError("No embeddings generated")
+
+        doc_id = ingest_document_batched(
+            supabase=supabase,
+            user_id=user_id,
+            doc_title=doc_payload.get("title") or filename,
+            source_type=doc_payload.get("source_type") or "unknown",
+            metadata=doc_payload.get("metadata") or {},
+            chunks_payload=chunk_records,
+            file_size_bytes=doc_payload.get("file_size_bytes") or 0,
+            job_id=job_id,
+            source_url=doc_payload.get("source_url"),
+            file_status_id=file_status_id,
+            content_hash=doc_payload.get("content_hash"),
+        )
+
+        total_chunks = len(chunk_records)
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id,
+            status="completed",
+            progress=100,
+            message="✅ Completed",
+            chunks_total=total_chunks,
+            chunks_processed=total_chunks,
+            document_id=doc_id,
+        )
+
+        _record_ingest_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            job_id,
+            file_status_id,
+            "success",
+        )
+        logger.info(f"[IndexTask:{task_id}] ✅ Stored {total_chunks} chunks for {filename} (doc={doc_id})")
+
+    except Exception as exc:
+        logger.error(f"[IndexTask:{task_id}] ❌ {filename}: {exc}")
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id,
+            status="failed",
+            progress=0,
+            message=str(exc)[:300],
+            error=str(exc)[:500],
+        )
+        _record_ingest_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            job_id,
+            file_status_id,
+            "failed",
+        )
 
 
 @celery_app.task(
@@ -1900,7 +1999,8 @@ def update_crawl_status(
     autoretry_for=(ConnectionError, TimeoutError),
     retry_backoff=True,
     max_retries=2,
-    ignore_result=True
+    ignore_result=True,
+    queue="queues.parsing",
 )
 def crawl_discovery_task(
     self,
@@ -2170,7 +2270,8 @@ def crawl_discovery_task(
     retry_backoff=True,
     max_retries=3,
     rate_limit="10/s",
-    ignore_result=True
+    ignore_result=True,
+    queue="queues.parsing",
 )
 def process_page_task(
     self,
