@@ -4,20 +4,33 @@ from connectors.base import BaseConnector
 
 
 class BaseConnectorHarness(BaseConnector):
-    async def authorize(self, user_id: str) -> bool:
-        return await super().authorize(user_id)
+    """Test harness implementing all abstract methods."""
+    
+    def list_files(self, config: dict, parent_id=None):
+        return iter([])
+    
+    def fetch_file_content(self, file_id: str, config: dict) -> bytes:
+        return b""
+    
+    def validate_config(self, config: dict) -> bool:
+        return True
 
-    async def list_items(self, user_id: str, parent_id=None):
-        return await super().list_items(user_id, parent_id)
 
-
-@pytest.mark.asyncio
-async def test_base_connector_authorize_pass_through():
+def test_base_connector_list_files_returns_iterator():
+    """Test that list_files returns an iterator."""
     connector = BaseConnectorHarness()
-    assert await connector.authorize("user-1") is None
+    result = list(connector.list_files({}))
+    assert result == []
 
 
-@pytest.mark.asyncio
-async def test_base_connector_list_items_pass_through():
+def test_base_connector_fetch_file_content_returns_bytes():
+    """Test that fetch_file_content returns bytes."""
     connector = BaseConnectorHarness()
-    assert await connector.list_items("user-1") is None
+    result = connector.fetch_file_content("file-1", {})
+    assert result == b""
+
+
+def test_base_connector_validate_config_returns_bool():
+    """Test that validate_config returns a boolean."""
+    connector = BaseConnectorHarness()
+    assert connector.validate_config({}) is True

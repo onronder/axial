@@ -11,12 +11,14 @@ from fastapi import BackgroundTasks, HTTPException
 
 from api.v1.integrations import (
     ExchangeRequest,
+    MicrosoftExchangeRequest,
     IngestRequest,
     WebCrawlRequest,
     _require_provider,
     crawl_web,
     disconnect_provider,
     exchange_google_token,
+    exchange_microsoft_token,
     exchange_notion_token,
     get_available_connectors,
     get_provider_status,
@@ -74,6 +76,9 @@ class FakeAsyncClient:
     async def post(self, url, **kwargs):
         return self.responses.pop(0)
 
+    async def get(self, url, **kwargs):
+        return self.responses.pop(0)
+
 
 class TestGoogleDriveConnector:
     @pytest.mark.asyncio
@@ -90,22 +95,27 @@ class TestGoogleDriveConnector:
             {"id": "folder-1", "name": "Folder", "mime_type": "application/vnd.google-apps.folder"},
         ]
         connector = MagicMock()
-        connector.list_items = AsyncMock(return_value=items)
+        connector.list_files = AsyncMock(return_value=items)
 
         with patch("api.v1.integrations.get_connector", return_value=connector):
             result = await list_provider_items("google_drive", user_id="user-1")
 
-        assert result == items
+        assert result[0]["id"] == "file-1"
+        assert result[0]["type"] == "file"
+        assert result[1]["id"] == "folder-1"
+        assert result[1]["type"] == "folder"
 
     @pytest.mark.asyncio
     async def test_list_drive_items_supports_folder_navigation(self):
         connector = MagicMock()
-        connector.list_items = AsyncMock(return_value=[])
+        connector.list_files = AsyncMock(return_value=[])
 
         with patch("api.v1.integrations.get_connector", return_value=connector):
             await list_provider_items("google_drive", user_id="user-1", parent_id="folder-123")
 
-        connector.list_items.assert_awaited_once_with("user-1", "folder-123")
+        connector.list_files.assert_awaited_once_with(
+            {"user_id": "user-1", "parent_id": "folder-123", "provider": "google_drive"}
+        )
 
     @pytest.mark.asyncio
     async def test_list_drive_items_filters_supported_types(self):
@@ -114,12 +124,12 @@ class TestGoogleDriveConnector:
             {"id": "file-2", "mime_type": "text/plain"},
         ]
         connector = MagicMock()
-        connector.list_items = AsyncMock(return_value=items)
+        connector.list_files = AsyncMock(return_value=items)
 
         with patch("api.v1.integrations.get_connector", return_value=connector):
             result = await list_provider_items("google_drive", user_id="user-1")
 
-        assert any(item["mime_type"] == "application/pdf" for item in result)
+        assert any(item["mimeType"] == "application/pdf" for item in result)
 
     @pytest.mark.asyncio
     async def test_recursive_folder_ingestion(self):
@@ -379,15 +389,22 @@ class TestAsyncIngestion:
                 "user_integrations": build_table(None),
             }
         )
+        test_user_id = "00000000-0000-0000-0000-000000000001"
 
-        with patch("api.v1.integrations.get_supabase", return_value=supabase):
+        # Use a valid provider and mock the provider/feature checks
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations._require_provider", return_value="web"), \
+             patch("api.v1.integrations._resolve_org_and_plan", return_value=("org-1", "starter")), \
+             patch("api.v1.integrations.check_admission"), \
+             patch("api.v1.integrations.check_feature_access", return_value={"allowed": True}):
             with pytest.raises(HTTPException) as exc:
                 await ingest_provider_items(
-                    "file_upload",
-                    IngestRequest(item_ids=["file-1"]),
-                    user_id="user-1",
+                    "web",
+                    IngestRequest(item_ids=["https://example.com"]),
+                    user_id=test_user_id,
                 )
 
+        # No integration found = 401
         assert exc.value.status_code == 401
 
     @pytest.mark.asyncio
@@ -401,13 +418,19 @@ class TestAsyncIngestion:
         )
         task = MagicMock()
         task.delay.return_value = SimpleNamespace(id="task-1")
+        test_user_id = "00000000-0000-0000-0000-000000000001"
 
-        with patch("api.v1.integrations.get_supabase", return_value=supabase):
+        # Use a valid provider and mock the provider/feature checks
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations._require_provider", return_value="web"), \
+             patch("api.v1.integrations._resolve_org_and_plan", return_value=("org-1", "starter")), \
+             patch("api.v1.integrations.check_admission"), \
+             patch("api.v1.integrations.check_feature_access", return_value={"allowed": True}):
             with patch("worker.tasks.unified_ingest_task", task):
                 response = await ingest_provider_items(
-                    "file_upload",
-                    IngestRequest(item_ids=["file-1"]),
-                    user_id="user-1",
+                    "web",
+                    IngestRequest(item_ids=["https://example.com"]),
+                    user_id=test_user_id,
                 )
 
         assert response["status"] == "accepted"
@@ -964,7 +987,7 @@ class TestRunBackgroundSync:
     @pytest.mark.asyncio
     async def test_run_background_sync_success(self):
         supabase = build_supabase({"ingestion_jobs": build_table([])})
-        connector = SimpleNamespace(list_items=AsyncMock(return_value=[SimpleNamespace(id="root-1")]))
+        connector = SimpleNamespace(list_files=AsyncMock(return_value=[SimpleNamespace(id="root-1")]))
         task = MagicMock()
         task.delay.return_value = SimpleNamespace(id="task-1")
 
@@ -979,7 +1002,7 @@ class TestRunBackgroundSync:
     @pytest.mark.asyncio
     async def test_run_background_sync_no_items_completes(self):
         supabase = build_supabase({"ingestion_jobs": build_table([])})
-        connector = SimpleNamespace(list_items=AsyncMock(return_value=[]))
+        connector = SimpleNamespace(list_files=AsyncMock(return_value=[]))
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("connectors.get_connector", return_value=connector):
@@ -1653,7 +1676,7 @@ class TestIntegrationsAdditional:
         supabase.table().update().eq().execute.return_value = MagicMock(data=[{"id": "job-1"}])
 
         connector = MagicMock()
-        connector.list_items = AsyncMock(side_effect=Exception("invalid_grant"))
+        connector.list_files = AsyncMock(side_effect=Exception("invalid_grant"))
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("connectors.get_connector", return_value=connector):
@@ -1771,3 +1794,107 @@ class TestDisconnectProviderCoverage:
                 await disconnect_provider("google_drive", user_id="user-1")
 
         assert exc.value.status_code == 500
+
+
+class TestMicrosoftOAuth:
+    @pytest.mark.asyncio
+    async def test_microsoft_oauth_onedrive_success(self, monkeypatch):
+        connector_def_table = build_table({"id": "def-1"})
+        upsert_table = build_table([{"id": "int-1"}])
+        supabase = build_supabase(
+            {"connector_definitions": connector_def_table, "user_integrations": upsert_table}
+        )
+
+        token_response = FakeResponse(
+            200,
+            {"access_token": "access-token", "refresh_token": "refresh-token", "expires_in": 3600},
+        )
+        drive_response = FakeResponse(200, {"id": "drive-1"})
+
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_CLIENT_ID", "cid")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_CLIENT_SECRET", "secret")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_REDIRECT_URI", "https://example.com/callback")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_SCOPES_ONEDRIVE", "scope")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_SCOPES_SHAREPOINT", "scope")
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations.encrypt_token", side_effect=lambda value: f"enc-{value}"), \
+             patch("api.v1.integrations.audit_logger.log_sync"), \
+             patch(
+                 "api.v1.integrations.httpx.AsyncClient",
+                 side_effect=[FakeAsyncClient([token_response]), FakeAsyncClient([drive_response])],
+             ):
+            result = await exchange_microsoft_token(
+                MicrosoftExchangeRequest(code="code", target_type="onedrive"),
+                user_id="user-1",
+            )
+
+        assert result["status"] == "success"
+        assert result["provider"] == "onedrive"
+        assert upsert_table.upsert.called
+
+    @pytest.mark.asyncio
+    async def test_microsoft_oauth_sharepoint_success(self, monkeypatch):
+        connector_def_table = build_table({"id": "def-2"})
+        upsert_table = build_table([{"id": "int-2"}])
+        supabase = build_supabase(
+            {"connector_definitions": connector_def_table, "user_integrations": upsert_table}
+        )
+
+        token_response = FakeResponse(
+            200,
+            {"access_token": "access-token", "refresh_token": "refresh-token", "expires_in": 3600},
+        )
+        site_response = FakeResponse(200, {"id": "site-1"})
+        drive_response = FakeResponse(200, {"id": "drive-2"})
+
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_CLIENT_ID", "cid")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_CLIENT_SECRET", "secret")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_REDIRECT_URI", "https://example.com/callback")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_SCOPES_ONEDRIVE", "scope")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_SCOPES_SHAREPOINT", "scope")
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations.encrypt_token", side_effect=lambda value: f"enc-{value}"), \
+             patch("api.v1.integrations.audit_logger.log_sync"), \
+             patch(
+                 "api.v1.integrations.httpx.AsyncClient",
+                 side_effect=[
+                     FakeAsyncClient([token_response]),
+                     FakeAsyncClient([site_response, drive_response]),
+                 ],
+             ):
+            result = await exchange_microsoft_token(
+                MicrosoftExchangeRequest(code="code", target_type="sharepoint"),
+                user_id="user-1",
+            )
+
+        assert result["status"] == "success"
+        assert result["provider"] == "sharepoint"
+        assert upsert_table.upsert.called
+
+    @pytest.mark.asyncio
+    async def test_microsoft_oauth_exchange_failure(self, monkeypatch):
+        connector_def_table = build_table({"id": "def-1"})
+        supabase = build_supabase({"connector_definitions": connector_def_table})
+
+        token_response = FakeResponse(400, {"error": "invalid_grant"})
+
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_CLIENT_ID", "cid")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_CLIENT_SECRET", "secret")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_REDIRECT_URI", "https://example.com/callback")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_SCOPES_ONEDRIVE", "scope")
+        monkeypatch.setattr("api.v1.integrations.settings.MICROSOFT_SCOPES_SHAREPOINT", "scope")
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch(
+                 "api.v1.integrations.httpx.AsyncClient",
+                 return_value=FakeAsyncClient([token_response]),
+             ):
+            with pytest.raises(HTTPException) as exc:
+                await exchange_microsoft_token(
+                    MicrosoftExchangeRequest(code="code", target_type="onedrive"),
+                    user_id="user-1",
+                )
+
+        assert exc.value.status_code == 400

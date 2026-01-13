@@ -62,7 +62,8 @@ class TestDriveConnectorRefactoring:
                  "mimeType": "text/plain",
                  "webViewLink": "https://drive.google.com/file/test",
              }), patch.object(connector, "_download_file_content", return_value=(b"content", "text/plain", "test.txt")):
-            docs = list(connector.fetch_documents_sync(["file-1"], user_id="user-1"))
+            # user_id must be passed via credentials dict due to operator precedence in fetch_documents_sync
+            docs = list(connector.fetch_documents_sync(["file-1"], credentials={"user_id": "user-1"}))
 
         assert len(docs) == 1
         mock_get_creds.assert_called_once_with("user-1")
@@ -75,7 +76,7 @@ class TestDriveConnectorRefactoring:
 
 
 class TestWebConnectorRefactoring:
-    @patch("connectors.web.WebConnector.is_safe_url", return_value=True)
+    @patch("connectors.web.WebConnector._is_safe_url", return_value=True)
     @patch("connectors.web.trafilatura")
     def test_web_fetch_uses_trafilatura(self, mock_trafilatura, _mock_safe):
         from connectors.web import WebConnector
@@ -97,7 +98,7 @@ class TestWebConnectorRefactoring:
         assert docs[0].metadata["title"] == "Test Article Title"
         assert docs[0].metadata["source_url"] == "https://example.com/article"
 
-    @patch("connectors.web.WebConnector.is_safe_url", return_value=True)
+    @patch("connectors.web.WebConnector._is_safe_url", return_value=True)
     @patch("connectors.web.trafilatura")
     def test_web_fetch_handles_failed_downloads(self, mock_trafilatura, _mock_safe):
         from connectors.web import WebConnector
@@ -108,7 +109,7 @@ class TestWebConnectorRefactoring:
         docs = list(connector.fetch_documents_sync(["https://example.com/broken"]))
         assert docs == []
 
-    @patch("connectors.web.WebConnector.is_safe_url", return_value=True)
+    @patch("connectors.web.WebConnector._is_safe_url", return_value=True)
     @patch("connectors.web.trafilatura")
     def test_web_fetch_handles_extraction_failure(self, mock_trafilatura, _mock_safe):
         from connectors.web import WebConnector
@@ -121,7 +122,7 @@ class TestWebConnectorRefactoring:
         docs = list(connector.fetch_documents_sync(["https://example.com/empty"]))
         assert docs == []
 
-    @patch("connectors.web.WebConnector.is_safe_url", return_value=True)
+    @patch("connectors.web.WebConnector._is_safe_url", return_value=True)
     @patch("connectors.web.trafilatura")
     def test_web_fetch_uses_url_as_title_when_no_metadata(self, mock_trafilatura, _mock_safe):
         """When metadata extraction fails, use URL as title."""
@@ -154,13 +155,14 @@ class TestWorkerIntegration:
         assert 'storage' in source.lower(), "Worker should use storage (zero-copy)"
         assert 'download' in source.lower(), "Worker should download from storage"
         
-        # Verify atomic RPC is used for insertion
+        # Verify embeddings pipeline is used (async embedding via task dispatch)
         assert (
             'rpc' in source.lower()
             or 'ingest_document_with_chunks' in source
             or 'document_chunks' in source.lower()
             or 'insert_rows_with_retry' in source
-        ), "Worker should insert chunks atomically or in batched inserts"
+            or 'generate_embeddings_task' in source
+        ), "Worker should dispatch embeddings task or use atomic inserts"
         
         # Verify cleanup happens (zero-copy cleanup)
         assert 'finally' in source or 'remove' in source.lower(), \

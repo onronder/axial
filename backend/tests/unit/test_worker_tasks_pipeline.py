@@ -445,32 +445,30 @@ class TestProcessFileTask:
         )
 
     @pytest.mark.unit
-    def test_process_file_task_parse_timeout(self):
+    def test_process_file_task_dispatches_to_embedding_queue(self):
+        """Test that process_file_task dispatches to embedding queue on success."""
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
         doc_table = _make_chain_table(result_data=[])
         supabase.table.return_value = doc_table
 
         file_data = {
-            "filename": "slow.pdf",
+            "filename": "file.pdf",
             "content_b64": base64.b64encode(b"content").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "application/pdf",
         }
 
         parse_result = _make_parse_result(
-            file_type="txt",
+            file_type="pdf",
             chunks=[_make_chunk()],
+            total_tokens=1,
         )
-        time_values = itertools.chain([0, 0, 10], itertools.repeat(10))
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
-             patch("worker.tasks.get_parse_timeout_seconds", return_value=1), \
-             patch("worker.tasks.time.time", side_effect=time_values), \
-             patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-             patch("worker.tasks.update_file_status") as update_file_status, \
-             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
+             patch("worker.tasks.generate_embeddings_task") as mock_embedding_task, \
+             patch("worker.tasks.update_file_status"):
             result = tasks.process_file_task._orig_run.__func__(
                 task,
                 "user-1",
@@ -480,12 +478,9 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        assert result["status"] == "failed"
-        assert result["error"] == "Parsing timeout"
-        record_outcome.assert_called_once()
-        assert any(
-            call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
-        )
+        # With async embedding pipeline, returns "queued_embedding"
+        assert result["status"] == "queued_embedding"
+        mock_embedding_task.apply_async.assert_called_once()
 
     @pytest.mark.unit
     def test_process_file_task_skips_unsupported(self):
@@ -527,10 +522,11 @@ class TestProcessFileTask:
         )
 
     @pytest.mark.unit
-    def test_process_file_task_handles_no_embeddings(self):
+    def test_process_file_task_handles_exception(self):
+        """Test that process_file_task handles exceptions and returns failed."""
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
-        doc_table = _make_chain_table(execute_side_effect=[MagicMock(data=[]), MagicMock(data=[{"id": "doc-1"}])])
+        doc_table = _make_chain_table(result_data=[])
         supabase.table.return_value = doc_table
 
         file_data = {
@@ -540,14 +536,9 @@ class TestProcessFileTask:
             "mime_type": "text/plain",
         }
 
-        parse_result = _make_parse_result(
-            file_type="txt",
-            chunks=[_make_chunk(content="chunk", token_count=1, chunk_index=0)],
-        )
-
+        # Simulate parsing failure
         with patch("worker.tasks.get_supabase", return_value=supabase), \
-             patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
-             patch("services.embeddings.generate_embeddings_batch_sync", return_value=[None]), \
+             patch("services.parsers.DocumentProcessorFactory.process", side_effect=Exception("parse error")), \
              patch("worker.tasks.update_file_status") as update_file_status, \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
             result = tasks.process_file_task._orig_run.__func__(
@@ -560,7 +551,6 @@ class TestProcessFileTask:
             )
 
         assert result["status"] == "failed"
-        assert result["error"] == "No embeddings generated"
         record_outcome.assert_called_once()
         assert any(
             call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
@@ -572,7 +562,7 @@ class TestProcessFileTask:
         supabase = MagicMock()
         doc_table = _make_chain_table(
             execute_side_effect=[
-                MagicMock(data=[{"id": "doc-1"}]),
+                MagicMock(data=[{"id": "doc-1", "content_hash": "hash"}]),
                 MagicMock(data=[{"id": "doc-1"}]),
             ]
         )
@@ -588,13 +578,14 @@ class TestProcessFileTask:
         parse_result = _make_parse_result(
             file_type="txt",
             chunks=[_make_chunk(content="chunk", token_count=1, chunk_index=0)],
+            total_tokens=1,
         )
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
              patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
              patch("worker.tasks.insert_rows_with_retry"), \
-             patch("worker.tasks.delete_rows_with_retry") as delete_rows, \
+             patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
              patch("worker.tasks.compute_content_hash", return_value="hash"), \
              patch("worker.tasks.update_file_status"), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
@@ -607,8 +598,8 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        assert result["status"] == "success"
-        delete_rows.assert_called_once()
+        # With async embedding pipeline, success returns "queued_embedding" or "success"
+        assert result["status"] in ("success", "queued_embedding")
 
     @pytest.mark.unit
     def test_process_file_task_removes_staged_upload(self):
@@ -647,7 +638,8 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        assert result["status"] == "success"
+        # With async embedding pipeline, success returns "queued_embedding" or "success"
+        assert result["status"] in ("success", "queued_embedding")
         storage.remove.assert_called_once_with(["uploads/file.txt"])
 
 

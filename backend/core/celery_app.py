@@ -6,6 +6,7 @@ Uses Redis as broker and result backend.
 """
 
 import os
+import sys
 from celery import Celery
 from kombu import Queue
 from celery.schedules import crontab  # Required for beat schedule
@@ -14,6 +15,15 @@ from core.config import settings
 # =============================================================================
 # Sentry Error Tracking + Logs for Celery Workers
 # =============================================================================
+def _is_test_runtime() -> bool:
+    return (
+        settings.ENVIRONMENT == "test"
+        or "PYTEST_CURRENT_TEST" in os.environ
+        or "pytest" in sys.modules
+        or os.getenv("CELERY_TASK_ALWAYS_EAGER") == "1"
+    )
+
+
 def init_celery_sentry() -> None:
     if settings.SENTRY_DSN and settings.ENVIRONMENT != "test":
         try:
@@ -161,3 +171,10 @@ celery_app.conf.update(
         },
     },
 )
+
+# Avoid publishing test jobs to external brokers during pytest runs.
+if _is_test_runtime():
+    celery_app.conf.update(
+        task_always_eager=True,
+        task_eager_propagates=True,
+    )

@@ -9,7 +9,6 @@ import {
     Package,
     Server,
     Hash,
-    Users,
     Clock,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -84,14 +83,6 @@ const COMING_SOON_INTEGRATIONS: ComingSoonIntegration[] = [
         icon: <Hash className="h-6 w-6" />,
         category: "Communication",
         badge: "Coming Soon",
-    },
-    {
-        id: "teams",
-        name: "Microsoft Teams",
-        description: "Team chat & collaboration",
-        icon: <Users className="h-6 w-6" />,
-        category: "Communication",
-        badge: "Enterprise",
     },
 ];
 

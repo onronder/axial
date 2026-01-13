@@ -25,12 +25,15 @@ import type { DataSourceCategory, MergedDataSource } from "@/types";
 
 // Category labels for display
 const CATEGORY_LABELS: Record<string, string> = {
-  "Cloud Storage": "Cloud Storage",
-  "Knowledge Base": "Knowledge Base",
-  "Web": "Web Resources",
-  "files": "Files",
-  "other": "Other",
+  cloud: "Cloud Storage",
+  files: "Files",
+  web: "Web Resources",
+  database: "Databases",
+  productivity: "Productivity Tools",
+  apps: "Applications",
+  other: "Other",
 };
+const CATEGORY_ORDER = ["cloud", "files", "productivity", "web", "database", "apps", "other"];
 
 type FilterStatus = "all" | "connected" | "not-connected";
 
@@ -45,6 +48,14 @@ const DATA_SOURCE_CATEGORIES: DataSourceCategory[] = [
 
 const isDataSourceCategory = (value: string | null | undefined): value is DataSourceCategory =>
   !!value && DATA_SOURCE_CATEGORIES.includes(value as DataSourceCategory);
+
+const LOCAL_UPLOAD_TYPES = new Set(["file_upload", "file-upload", "local"]);
+const CATEGORY_SOURCE_ORDER: Record<string, string[]> = {
+  cloud: ["google_drive", "onedrive", "sharepoint"],
+  files: ["sftp", "file_upload", "file-upload", "local"],
+};
+
+const normalizeType = (value: string) => value.toLowerCase().replace(/-/g, "_");
 
 export function DataSourcesGrid() {
   const {
@@ -73,6 +84,20 @@ export function DataSourcesGrid() {
       : undefined;
 
   const connectedCount = connectedSources.length;
+  const localUploadSource: MergedDataSource = {
+    id: "local-upload",
+    definitionId: "local-upload",
+    type: "file_upload",
+    name: "Local Files",
+    description: "Drag & drop PDF, TXT, or DOCX files to upload",
+    iconPath: null,
+    category: "files",
+    isConnected: false,
+    lastSyncAt: null,
+    integrationId: null,
+  };
+  const hasLocalUpload = dataSources.some((source) => LOCAL_UPLOAD_TYPES.has(source.type));
+  const displaySources = hasLocalUpload ? dataSources : [...dataSources, localUploadSource];
 
   const handleConnect = (type: string) => {
     if (type === "sftp") {
@@ -83,9 +108,9 @@ export function DataSourcesGrid() {
   };
 
   // Get unique categories from data
-  const categories = [...new Set(dataSources.map(ds => ds.category))].filter(Boolean);
+  const categories = [...new Set(displaySources.map(ds => ds.category))].filter(Boolean);
 
-  const filteredSources = dataSources.filter((source) => {
+  const filteredSources = displaySources.filter((source) => {
     const matchesSearch = source.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = categoryFilter === "all" || source.category === categoryFilter;
     const matchesStatus =
@@ -203,14 +228,29 @@ export function DataSourcesGrid() {
 
       {/* Grid by Category */}
       <div className="space-y-8">
-        {Object.entries(groupedSources).map(([category, sources]) => (
+        {[...CATEGORY_ORDER, ...Object.keys(groupedSources)]
+          .filter((category, index, list) => list.indexOf(category) === index)
+          .filter((category) => groupedSources[category])
+          .map((category) => {
+            const sources = groupedSources[category];
+            const order = CATEGORY_SOURCE_ORDER[category] || [];
+            const orderedSources = [...sources].sort((a, b) => {
+              const aIndex = order.indexOf(normalizeType(a.type));
+              const bIndex = order.indexOf(normalizeType(b.type));
+              if (aIndex !== bIndex) {
+                return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) -
+                  (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
+              }
+              return a.name.localeCompare(b.name);
+            });
+            return (
           <div key={category} className="space-y-4">
             <h2 className="font-medium text-foreground border-b border-border pb-2">
               {CATEGORY_LABELS[category] || category}
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {sources.map((source) => (
-                // Use URLCrawlerInput for web type, DataSourceCard for others
+              {orderedSources.map((source) => (
+                // Use URLCrawlerInput for web type, FileUploadZone for local upload, DataSourceCard for others
                 source.type === "web" ? (
                   <URLCrawlerInput
                     key={source.id}
@@ -227,6 +267,21 @@ export function DataSourcesGrid() {
                     disabled={!canRunWebCrawl}
                     disabledReason={webCrawlDisabledReason}
                   />
+                ) : LOCAL_UPLOAD_TYPES.has(source.type) ? (
+                  <FileUploadZone
+                    key={source.id}
+                    source={{
+                      id: source.id,
+                      name: source.name,
+                      type: "file",
+                      status: "disconnected",
+                      lastSync: "-",
+                      icon: "upload",
+                      description: source.description,
+                      category: "files",
+                    }}
+                    disabled={isViewer}
+                  />
                 ) : (
                   <DataSourceCard
                     key={source.id}
@@ -241,7 +296,8 @@ export function DataSourcesGrid() {
               ))}
             </div>
           </div>
-        ))}
+            );
+          })}
 
 
         {/* Empty state */}
@@ -250,26 +306,6 @@ export function DataSourcesGrid() {
             No data sources available. Try adjusting your filters.
           </div>
         )}
-      </div>
-
-      {/* File Upload Section */}
-      <div className="space-y-4">
-        <h2 className="font-medium text-foreground border-b border-border pb-2">
-          Local Files
-        </h2>
-        <FileUploadZone
-          source={{
-            id: "local-upload",
-            name: "Upload Files",
-            type: "file",
-            status: "disconnected",
-            lastSync: "-",
-            icon: "upload",
-            description: "Drag & drop PDF, TXT, or DOCX files to upload",
-            category: "files",
-          }}
-          disabled={isViewer}
-        />
       </div>
 
       <SftpConnectModal

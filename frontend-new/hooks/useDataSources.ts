@@ -36,6 +36,25 @@ export const useDataSources = () => {
 
         return connectors.map(connector => {
             const integration = integrationMap.get(connector.type);
+            const normalizedType = connector.type?.toLowerCase();
+            const rawCategory = (connector.category || "").toLowerCase().replace(/\s+/g, "_");
+            let normalizedCategory = rawCategory || "other";
+            if (normalizedCategory === "cloud_storage" || normalizedCategory === "cloud") {
+                normalizedCategory = "cloud";
+            } else if (normalizedCategory === "file" || normalizedCategory === "files") {
+                normalizedCategory = "files";
+            } else if (normalizedCategory === "web" || normalizedCategory === "web_resources") {
+                normalizedCategory = "web";
+            } else if (normalizedCategory === "database" || normalizedCategory === "databases") {
+                normalizedCategory = "database";
+            } else if (normalizedCategory === "productivity" || normalizedCategory === "productivity_tools") {
+                normalizedCategory = "productivity";
+            } else if (normalizedCategory === "apps" || normalizedCategory === "applications") {
+                normalizedCategory = "apps";
+            }
+            if (normalizedType === "onedrive" || normalizedType === "sharepoint") {
+                normalizedCategory = "cloud";
+            }
             return {
                 id: connector.type, // Use type as ID for compatibility
                 definitionId: connector.id,
@@ -43,7 +62,7 @@ export const useDataSources = () => {
                 name: connector.name,
                 description: connector.description || "",
                 iconPath: connector.icon_path,
-                category: connector.category || "other",
+                category: normalizedCategory,
                 isConnected: !!integration,
                 lastSyncAt: integration?.last_sync_at || null,
                 integrationId: integration?.id || null,

@@ -716,6 +716,7 @@ def test_process_page_task_doc_insert_failed(monkeypatch):
     monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda *_args, **_kwargs: [[0.1]])
     monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(tasks, "ingest_document_batched", lambda **_kwargs: None)
+    monkeypatch.setattr(tasks, "_is_duplicate_document", lambda *_args, **_kwargs: False)
 
     with patch("connectors.web.WebConnector", return_value=connector), \
          patch("worker.tasks._record_crawl_outcome_and_maybe_finalize") as record_outcome:
@@ -741,6 +742,7 @@ def test_process_page_task_increment_error(monkeypatch):
     monkeypatch.setattr("services.embeddings.generate_embeddings_batch_sync", lambda *_args, **_kwargs: [[0.1]])
     monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(tasks, "ingest_document_batched", lambda **_kwargs: "doc-1")
+    monkeypatch.setattr(tasks, "_is_duplicate_document", lambda *_args, **_kwargs: False)
 
     with patch("connectors.web.WebConnector", return_value=connector), \
          patch("worker.tasks._record_crawl_outcome_and_maybe_finalize") as record_outcome:

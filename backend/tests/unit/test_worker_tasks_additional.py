@@ -17,11 +17,12 @@ def _make_chunk(content="chunk", token_count=1, chunk_index=0, metadata=None):
     )
 
 
-def _make_parse_result(file_type="txt", chunks=None, metadata=None):
+def _make_parse_result(file_type="txt", chunks=None, metadata=None, total_tokens=0):
     return SimpleNamespace(
         file_type=file_type,
         chunks=chunks or [],
         metadata=metadata or {},
+        total_tokens=total_tokens,
     )
 
 
@@ -258,6 +259,7 @@ def test_process_file_task_skips_empty_pdf(monkeypatch):
 
 
 def test_process_file_task_reuses_existing_document(monkeypatch):
+    """Test that process_file_task dispatches to embedding queue successfully."""
     task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
     supabase = MagicMock()
 
@@ -280,14 +282,12 @@ def test_process_file_task_reuses_existing_document(monkeypatch):
         "mime_type": "text/plain",
     }
 
-    parse_result = _make_parse_result(file_type="txt", chunks=[_make_chunk()])
+    parse_result = _make_parse_result(file_type="txt", chunks=[_make_chunk()], total_tokens=1)
 
     with patch("worker.tasks.get_supabase", return_value=supabase), \
          patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
-         patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-         patch("worker.tasks.delete_rows_with_retry") as delete_rows, \
-         patch("worker.tasks.insert_rows_with_retry") as insert_rows, \
-         patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
+         patch("worker.tasks.generate_embeddings_task") as mock_embedding_task, \
+         patch("worker.tasks.update_file_status"):
         result = tasks.process_file_task._orig_run.__func__(
             task,
             "user-1",
@@ -297,16 +297,16 @@ def test_process_file_task_reuses_existing_document(monkeypatch):
             "file_upload",
         )
 
-    assert result["status"] == "success"
-    delete_rows.assert_called_once()
-    insert_rows.assert_called_once()
-    record_outcome.assert_called()
+    # With async embedding pipeline, success returns "queued_embedding"
+    assert result["status"] == "queued_embedding"
+    mock_embedding_task.apply_async.assert_called_once()
 
 
-def test_process_file_task_insert_failure(monkeypatch):
+def test_process_file_task_dispatches_embedding_task(monkeypatch):
+    """Test that process_file_task dispatches to embedding queue on success."""
     task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
     supabase = MagicMock()
-    docs_table = _make_chain_table(execute_data=None)
+    docs_table = _make_chain_table(execute_data=[])
     supabase.table.return_value = docs_table
 
     file_data = {
@@ -316,13 +316,12 @@ def test_process_file_task_insert_failure(monkeypatch):
         "mime_type": "text/plain",
     }
 
-    parse_result = _make_parse_result(file_type="txt", chunks=[_make_chunk()])
+    parse_result = _make_parse_result(file_type="txt", chunks=[_make_chunk()], total_tokens=1)
 
     with patch("worker.tasks.get_supabase", return_value=supabase), \
          patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
-         patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-         patch("worker.tasks.update_file_status") as update_file_status, \
-         patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
+         patch("worker.tasks.generate_embeddings_task") as mock_embedding_task, \
+         patch("worker.tasks.update_file_status"):
         result = tasks.process_file_task._orig_run.__func__(
             task,
             "user-1",
@@ -332,23 +331,16 @@ def test_process_file_task_insert_failure(monkeypatch):
             "file_upload",
         )
 
-    assert result["status"] == "failed"
-    assert any(
-        call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
-    )
-    record_outcome.assert_called()
+    # With async embedding pipeline, returns "queued_embedding"
+    assert result["status"] == "queued_embedding"
+    mock_embedding_task.apply_async.assert_called_once()
 
-def test_process_file_task_chunk_insert_error():
+def test_process_file_task_handles_exception():
+    """Test that process_file_task handles exceptions and returns failed."""
     task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
     supabase = MagicMock()
-    docs_table = _make_chain_table(execute_data=[{"id": "doc-1"}])
-
-    def table_side_effect(name):
-        if name == "documents":
-            return docs_table
-        return _make_chain_table(execute_data=[])
-
-    supabase.table.side_effect = table_side_effect
+    docs_table = _make_chain_table(execute_data=[])
+    supabase.table.return_value = docs_table
 
     file_data = {
         "filename": "file.txt",
@@ -357,12 +349,9 @@ def test_process_file_task_chunk_insert_error():
         "mime_type": "text/plain",
     }
 
-    parse_result = _make_parse_result(file_type="txt", chunks=[_make_chunk()])
-
+    # Simulate parsing failure
     with patch("worker.tasks.get_supabase", return_value=supabase), \
-         patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
-         patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-         patch("worker.tasks.insert_rows_with_retry", side_effect=Exception("db fail")), \
+         patch("services.parsers.DocumentProcessorFactory.process", side_effect=Exception("parse fail")), \
          patch("worker.tasks.update_file_status") as update_file_status, \
          patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
         result = tasks.process_file_task._orig_run.__func__(

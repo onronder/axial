@@ -286,6 +286,7 @@ class TestProcessPageTask:
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("connectors.web.WebConnector", return_value=connector), \
              patch("worker.tasks.check_rate_limit", return_value=True), \
+             patch("worker.tasks._is_duplicate_document", return_value=False), \
              patch("services.parsers.DocumentProcessorFactory.process_web_content", return_value=parse_result), \
              patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
              patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
@@ -319,6 +320,7 @@ class TestProcessPageTask:
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("connectors.web.WebConnector", return_value=connector), \
              patch("worker.tasks.check_rate_limit", return_value=True), \
+             patch("worker.tasks._is_duplicate_document", return_value=False), \
              patch("services.parsers.DocumentProcessorFactory.process_web_content", return_value=parse_result) as process_web, \
              patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
              patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \

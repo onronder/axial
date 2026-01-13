@@ -24,7 +24,7 @@ from connectors.registry import get_connector_manifest
 from connectors.base import ConnectorAuthError, ConnectorTransientError
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Any
 from uuid import UUID
 import logging
 import httpx
@@ -308,18 +308,10 @@ async def exchange_google_token(
         user_id=user_id,
         action="connector.connect",
         resource_type="connector",
-        resource_id="notion",
-        details={"integration_id": integration_id, "workspace_id": workspace_id},
-    )
-    logger.info(f"🔐 [OAuth] Connected Google Drive (integration: {integration_id}). User can now select files to ingest.")
-
-    audit_logger.log_sync(
-        user_id=user_id,
-        action="connector.connect",
-        resource_type="connector",
         resource_id="google_drive",
         details={"integration_id": integration_id},
     )
+    logger.info(f"🔐 [OAuth] Connected Google Drive (integration: {integration_id}). User can now select files to ingest.")
 
     return {"status": "success", "provider": "google_drive", "integration_id": integration_id}
 
@@ -747,9 +739,6 @@ async def get_provider_status(
             return {"connected": False, "error": "Unknown provider"}
         
         connector_def_id = def_res.data["id"]
-        deleted_docs = 0
-        deleted_jobs = 0
-        deleted_sync = 0
         
         # Check if user has this integration
         int_res = supabase.table("user_integrations").select("id").eq(
@@ -772,6 +761,11 @@ async def disconnect_provider(
     """
     supabase = get_supabase()
     provider = _require_provider(provider)
+    
+    # Initialize cleanup counters before try block to ensure they're always defined
+    deleted_docs = 0
+    deleted_jobs = 0
+    deleted_sync = 0
     
     try:
         # Lookup connector definition by type
@@ -981,7 +975,7 @@ async def crawl_web(
         normalized_url = connector.normalize_url(body.url)
         if not normalized_url:
             raise HTTPException(status_code=400, detail="Invalid URL for crawling.")
-        if not connector.is_safe_url(normalized_url):
+        if not connector._is_safe_url(normalized_url):
             raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")
 
         crawl_type = body.crawl_type.lower()
@@ -1127,7 +1121,7 @@ async def ingest_provider_items(
             normalized_url = connector.normalize_url(request.item_ids[0])
             if not normalized_url:
                 raise HTTPException(status_code=400, detail="Invalid URL for crawling.")
-            if not connector.is_safe_url(normalized_url):
+            if not connector._is_safe_url(normalized_url):
                 raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")
 
             result = queue_web_crawl(

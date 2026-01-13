@@ -13,6 +13,7 @@ import sys
 _TEST_ENV_VARS = {
     "ENVIRONMENT": "test",
     "SENTRY_DSN": "",
+    "REDIS_URL": "redis://localhost:6379/0",
     "SUPABASE_URL": "http://localhost:54321",
     "SUPABASE_SECRET_KEY": (
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
@@ -24,10 +25,11 @@ _TEST_ENV_VARS = {
     "ALLOWED_ORIGINS": "http://localhost:3000",
     # Valid Fernet key (must be 32 url-safe base64-encoded bytes)
     "ENCRYPTION_KEY": "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
+    "CELERY_TASK_ALWAYS_EAGER": "1",
 }
 
 for key, value in _TEST_ENV_VARS.items():
-    os.environ.setdefault(key, value)
+    os.environ[key] = value
 
 # Add backend to path early so module imports resolve during collection.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

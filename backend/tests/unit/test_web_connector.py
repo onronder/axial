@@ -72,44 +72,39 @@ class TestWebAuthorizeAndList:
         assert await connector.authorize("user-1") is True
 
     @pytest.mark.asyncio
-    async def test_list_items_returns_configs(self):
+    async def test_list_files_returns_remote_files(self):
+        """Test list_files with valid URL config."""
         connector = WebConnector()
-        supabase = MagicMock()
-        table = MagicMock()
-        table.select.return_value = table
-        table.eq.return_value = table
-        table.order.return_value = table
-        table.limit.return_value = table
-        table.execute.return_value = MagicMock(
-            data=[
-                {
-                    "id": "crawl-1",
-                    "root_url": "https://example.com",
-                    "status": "completed",
-                    "total_pages_found": 2,
-                    "crawl_type": "single",
-                    "created_at": "2024-01-01T00:00:00Z",
-                }
-            ]
-        )
-        supabase.table.return_value = table
-
-        with patch("core.db.get_supabase", return_value=supabase):
-            items = await connector.list_items("user-1")
-
-        assert items
-        assert items[0].id == "crawl-1"
+        with patch.object(connector, "_is_safe_url", return_value=True):
+            items = await connector.list_files({"url": "https://example.com"})
+        assert len(items) == 1
+        assert items[0].id == "https://example.com"
 
     @pytest.mark.asyncio
-    async def test_list_items_handles_error(self):
+    async def test_list_files_blocks_unsafe_url(self):
+        """Test list_files rejects unsafe URLs."""
         connector = WebConnector()
-        supabase = MagicMock()
-        supabase.table.side_effect = Exception("db error")
+        with patch.object(connector, "_is_safe_url", return_value=False):
+            with pytest.raises(ValueError):
+                await connector.list_files({"url": "http://127.0.0.1"})
 
-        with patch("core.db.get_supabase", return_value=supabase):
-            items = await connector.list_items("user-1")
 
-        assert items == []
+class TestWebListFiles:
+    @pytest.mark.asyncio
+    async def test_list_files_blocks_private_url(self):
+        connector = WebConnector()
+        with patch.object(connector, "_is_safe_url", return_value=False):
+            with pytest.raises(ValueError):
+                await connector.list_files({"url": "http://127.0.0.1"})
+
+    @pytest.mark.asyncio
+    async def test_list_files_returns_remote_file(self):
+        connector = WebConnector()
+        with patch.object(connector, "_is_safe_url", return_value=True):
+            items = await connector.list_files({"url": "https://example.com"})
+
+        assert len(items) == 1
+        assert items[0].id == "https://example.com"
 
 
 def test_connector_type_web():
@@ -323,20 +318,20 @@ class TestCheckRobotsTxt:
 class TestWebIngest:
     def test_ingest_skips_unsafe_url(self):
         connector = WebConnector()
-        with patch.object(connector, "is_safe_url", return_value=False):
+        with patch.object(connector, "_is_safe_url", return_value=False):
             docs = list(connector.fetch_documents_sync(["http://bad"]))
         assert docs == []
 
     def test_ingest_skips_blocked_by_robots(self):
         connector = WebConnector()
-        with patch.object(connector, "is_safe_url", return_value=True), \
+        with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "check_robots_txt", return_value=False):
             docs = list(connector.fetch_documents_sync(["https://example.com"]))
         assert docs == []
 
     def test_ingest_handles_youtube(self):
         connector = WebConnector()
-        with patch.object(connector, "is_safe_url", return_value=True), \
+        with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "check_robots_txt", return_value=True), \
              patch.object(connector, "is_youtube_url", return_value=True), \
              patch.object(connector, "fetch_youtube_transcript", return_value="Transcript"), \
@@ -348,7 +343,7 @@ class TestWebIngest:
     def test_ingest_handles_html_text(self):
         connector = WebConnector()
         meta = SimpleNamespace(title="Title", author="Author", date="2024-01-01")
-        with patch.object(connector, "is_safe_url", return_value=True), \
+        with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "check_robots_txt", return_value=True), \
              patch.object(connector, "is_youtube_url", return_value=False), \
              patch.object(connector, "fetch_html", return_value="<html></html>"), \
@@ -374,15 +369,15 @@ class TestUrlNormalizationAndSafety:
 
     def test_is_safe_url_blocks_credentials(self):
         connector = WebConnector()
-        assert connector.is_safe_url("https://user:pass@example.com") is False
+        assert connector._is_safe_url("https://user:pass@example.com") is False
 
     def test_is_safe_url_blocks_private_ip(self):
         connector = WebConnector()
-        assert connector.is_safe_url("http://127.0.0.1/") is False
+        assert connector._is_safe_url("http://127.0.0.1/") is False
 
     def test_is_safe_url_allows_public_ip(self):
         connector = WebConnector()
-        assert connector.is_safe_url("https://8.8.8.8/") is True
+        assert connector._is_safe_url("https://8.8.8.8/") is True
 
     def test_is_safe_url_blocks_private_host_resolution(self, monkeypatch):
         connector = WebConnector()
@@ -393,7 +388,7 @@ class TestUrlNormalizationAndSafety:
             lambda *_args, **_kwargs: [(None, None, None, None, ("10.0.0.1", 0))],
         )
 
-        assert connector.is_safe_url("https://internal.example.com") is False
+        assert connector._is_safe_url("https://internal.example.com") is False
 
 
 class TestRobotsAndDomains:
@@ -437,7 +432,7 @@ class TestSitemapFallback:
 
     def test_ingest_handles_empty_text(self):
         connector = WebConnector()
-        with patch.object(connector, "is_safe_url", return_value=True), \
+        with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "check_robots_txt", return_value=True), \
              patch.object(connector, "is_youtube_url", return_value=False), \
              patch.object(connector, "fetch_html", return_value="<html></html>"), \
@@ -447,7 +442,7 @@ class TestSitemapFallback:
 
     def test_ingest_handles_fetch_failure(self):
         connector = WebConnector()
-        with patch.object(connector, "is_safe_url", return_value=True), \
+        with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "check_robots_txt", return_value=True), \
              patch.object(connector, "is_youtube_url", return_value=False), \
              patch.object(connector, "fetch_html", return_value=None):
@@ -471,7 +466,7 @@ class TestWebNormalization:
 
     def test_is_safe_url_rejects_private_ip(self):
         connector = WebConnector()
-        assert connector.is_safe_url("http://127.0.0.1") is False
+        assert connector._is_safe_url("http://127.0.0.1") is False
 
 
 class TestRobotsParser:
@@ -750,7 +745,7 @@ class TestWebConnectorExtraPaths:
     def test_ingest_handles_scrape_exception(self, monkeypatch):
         connector = WebConnector()
 
-        monkeypatch.setattr(connector, "is_safe_url", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr(connector, "_is_safe_url", lambda *_args, **_kwargs: True)
         monkeypatch.setattr(connector, "is_youtube_url", lambda *_args, **_kwargs: False)
         monkeypatch.setattr(
             connector,
@@ -878,7 +873,7 @@ class TestWebConnectorExtraPaths:
 
     def test_ingest_skips_unsafe_url(self):
         connector = WebConnector()
-        with patch.object(connector, "is_safe_url", return_value=False):
+        with patch.object(connector, "_is_safe_url", return_value=False):
             docs = list(connector.fetch_documents_sync(["http://bad"], respect_robots=False))
         assert docs == []
 
@@ -919,20 +914,23 @@ class TestWebConnectorExtraPaths:
 
     @patch("connectors.web.trafilatura")
     def test_fetch_html_handles_exception(self, mock_trafilatura):
+        """fetch_html raises ConnectorTransientError on exception."""
+        from connectors.base import ConnectorTransientError
         connector = WebConnector()
         mock_trafilatura.fetch_url.side_effect = Exception("boom")
-        assert connector.fetch_html("https://example.com") is None
+        with pytest.raises(ConnectorTransientError):
+            connector.fetch_html("https://example.com")
 
     def test_is_safe_url_rejects_scheme_and_auth(self):
         connector = WebConnector()
-        assert connector.is_safe_url("ftp://example.com") is False
-        assert connector.is_safe_url("http://user:pass@example.com") is False
-        assert connector.is_safe_url("http://") is False
+        assert connector._is_safe_url("ftp://example.com") is False
+        assert connector._is_safe_url("http://user:pass@example.com") is False
+        assert connector._is_safe_url("http://") is False
 
     def test_is_safe_url_handles_exception(self):
         connector = WebConnector()
         with patch("connectors.web.urlparse", side_effect=Exception("boom")):
-            assert connector.is_safe_url("https://example.com") is False
+            assert connector._is_safe_url("https://example.com") is False
 
     def test_is_safe_host_resolution_paths(self):
         connector = WebConnector()

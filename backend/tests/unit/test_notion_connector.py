@@ -97,7 +97,8 @@ def test_get_headers_contains_auth_and_version():
     assert headers["Notion-Version"] == connector.NOTION_API_VERSION
 
 
-def test_make_request_rate_limit_counts(monkeypatch):
+def test_make_request_rate_limit_raises(monkeypatch):
+    from connectors.base import ConnectorRateLimitError
     connector = NotionConnector()
     counter = MagicMock()
     metrics_module = SimpleNamespace(retry_total=MagicMock())
@@ -110,18 +111,15 @@ def test_make_request_rate_limit_counts(monkeypatch):
     response.raise_for_status.return_value = None
 
     with patch("connectors.notion.requests.request", return_value=response):
-        result = connector._make_request("GET", "search", "token")
-
-    assert result == {"ok": True}
-    assert counter.inc.called
+        with pytest.raises(ConnectorRateLimitError):
+            connector._make_request("GET", "search", "token")
 
 
-def test_make_request_rate_limit_metrics_failure(monkeypatch):
+def test_make_request_success():
     connector = NotionConnector()
-    monkeypatch.setitem(sys.modules, "core.metrics", SimpleNamespace())
 
     response = MagicMock()
-    response.status_code = 429
+    response.status_code = 200
     response.json.return_value = {"ok": True}
     response.raise_for_status.return_value = None
 
@@ -129,7 +127,8 @@ def test_make_request_rate_limit_metrics_failure(monkeypatch):
         assert connector._make_request("GET", "search", "token") == {"ok": True}
 
 
-def test_list_items_parent_returns_children():
+@pytest.mark.asyncio
+async def test_list_files_parent_returns_children():
     connector = NotionConnector()
     blocks_result = {
         "results": [
@@ -141,22 +140,24 @@ def test_list_items_parent_returns_children():
 
     with patch.object(connector, "_get_access_token", return_value="token"), \
          patch.object(connector, "_make_request", return_value=blocks_result):
-        items = connector._list_items_implementation("user-1", parent_id="parent-1")
+        items = await connector.list_files({"user_id": "user-1", "parent_id": "parent-1"}, since=None)
 
     assert len(items) == 2
     assert items[0].parent_id == "parent-1"
 
 
-def test_list_items_parent_error_returns_empty():
+@pytest.mark.asyncio
+async def test_list_files_parent_error_returns_empty():
     connector = NotionConnector()
     with patch.object(connector, "_get_access_token", return_value="token"), \
          patch.object(connector, "_make_request", side_effect=Exception("boom")):
-        items = connector._list_items_implementation("user-1", parent_id="parent-1")
+        items = await connector.list_files({"user_id": "user-1", "parent_id": "parent-1"}, since=None)
 
     assert items == []
 
 
-def test_list_items_root_includes_pages_and_databases():
+@pytest.mark.asyncio
+async def test_list_files_root_includes_pages_and_databases():
     connector = NotionConnector()
     pages_result = {
         "results": [
@@ -195,7 +196,7 @@ def test_list_items_root_includes_pages_and_databases():
 
     with patch.object(connector, "_get_access_token", return_value="token"), \
          patch.object(connector, "_make_request", side_effect=[pages_result, db_result]):
-        items = connector._list_items_implementation("user-1", parent_id=None)
+        items = await connector.list_files({"user_id": "user-1", "parent_id": None}, since=None)
 
     names = [item.name for item in items]
     assert "Page One" in names
@@ -409,31 +410,23 @@ async def test_authorize_async_wrapper():
 
 
 @pytest.mark.asyncio
-async def test_list_items_async_wrapper():
-    connector = NotionConnector()
-
-    with patch("connectors.notion.run_in_threadpool", side_effect=lambda fn, *args: fn(*args)), \
-         patch.object(connector, "_list_items_implementation", return_value=["ok"]):
-        items = await connector.list_items("user-1", parent_id="root")
-
-    assert items == ["ok"]
-
-
-def test_list_items_root_string_maps_to_none():
+async def test_list_files_root_string_maps_to_none():
     connector = NotionConnector()
     pages_result = {"results": []}
     db_result = {"results": []}
 
     with patch.object(connector, "_get_access_token", return_value="token"), \
          patch.object(connector, "_make_request", side_effect=[pages_result, db_result]) as make_request:
-        connector._list_items_implementation("user-1", parent_id="root")
+        await connector.list_files({"user_id": "user-1", "parent_id": "root"}, since=None)
 
+    # When parent_id is "root", it should be mapped to None and use the search API (2 calls: pages + databases)
     assert make_request.call_count == 2
 
 
 def test_fetch_documents_sync_requires_credentials_or_user():
+    from connectors.base import ConnectorAuthError
     connector = NotionConnector()
-    with pytest.raises(AuthenticationError):
+    with pytest.raises(ConnectorAuthError):
         list(connector.fetch_documents_sync(["page-1"]))
 
 

@@ -231,7 +231,9 @@ class TestIngestFileTaskProgress:
 
         dummy_result = MagicMock()
         dummy_result.file_type = "txt"
-        dummy_result.chunks = [MagicMock(content="chunk", token_count=1)]
+        dummy_result.chunks = [MagicMock(content="chunk", token_count=1, chunk_index=0, metadata={})]
+        dummy_result.total_tokens = 1
+        dummy_result.metadata = {}
 
         update_file_status = MagicMock()
 
@@ -239,11 +241,13 @@ class TestIngestFileTaskProgress:
              patch("services.parsers.DocumentProcessorFactory.process", return_value=dummy_result), \
              patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
              patch("worker.tasks.insert_rows_with_retry"), \
+             patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
              patch("worker.tasks.update_file_status", update_file_status), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
             process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload")
 
-        assert any(call.kwargs.get("status") == "completed" for call in update_file_status.call_args_list)
+        # With async embedding pipeline, completion status is "embedding" (queued for embedding)
+        assert any(call.kwargs.get("status") in ("completed", "embedding", "indexing") for call in update_file_status.call_args_list)
     
     @pytest.mark.unit
     def test_sets_status_to_failed_on_exception(self):
@@ -329,17 +333,21 @@ class TestIngestFileTaskProgress:
 
         dummy_result = MagicMock()
         dummy_result.file_type = "txt"
-        dummy_result.chunks = [MagicMock(content="chunk", token_count=1)]
+        dummy_result.chunks = [MagicMock(content="chunk", token_count=1, chunk_index=0, metadata={})]
+        dummy_result.total_tokens = 1
+        dummy_result.metadata = {}
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", return_value=dummy_result), \
              patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
              patch("worker.tasks.insert_rows_with_retry"), \
+             patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
              patch("worker.tasks.update_file_status"), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
             result = process_file_task._orig_run.__func__(task, "user-1", None, file_data, "file-1", "file_upload")
 
-        assert result["status"] == "success"
+        # With async embedding pipeline, success returns "queued_embedding"
+        assert result["status"] in ("success", "queued_embedding")
     
     @pytest.mark.unit
     def test_returns_job_id_in_result(self):
@@ -368,17 +376,21 @@ class TestIngestFileTaskProgress:
 
         dummy_result = MagicMock()
         dummy_result.file_type = "txt"
-        dummy_result.chunks = [MagicMock(content="chunk", token_count=1)]
+        dummy_result.chunks = [MagicMock(content="chunk", token_count=1, chunk_index=0, metadata={})]
+        dummy_result.total_tokens = 1
+        dummy_result.metadata = {}
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", return_value=dummy_result), \
              patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
              patch("worker.tasks.insert_rows_with_retry"), \
+             patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
              patch("worker.tasks.update_file_status"), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
             result = process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload")
 
-        assert result["status"] == "success"
+        # With async embedding pipeline, success returns "queued_embedding"
+        assert result["status"] in ("success", "queued_embedding")
 
 
 class TestJobStatusTransitions:

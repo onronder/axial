@@ -45,20 +45,20 @@ def test_get_credentials_missing_definition():
             connector._get_credentials("user-1")
 
 
-def test_list_items_implementation_returns_items():
+def test_list_files_sync_returns_items():
     connector = DriveConnector()
     files = [
         {"id": "folder-1", "name": "Folder", "mimeType": "application/vnd.google-apps.folder"},
-        {"id": "file-1", "name": "Doc", "mimeType": "text/plain"},
+        {"id": "file-1", "name": "Doc", "mimeType": "text/plain", "size": "1024"},
     ]
 
     with patch.object(connector, "_get_credentials", return_value=MagicMock()), \
          patch("connectors.drive.build", return_value=MagicMock()), \
          patch.object(connector, "_drive_list", return_value={"files": files}):
-        items = connector._list_items_implementation("user-1", parent_id=None)
+        items = connector._list_files_sync("user-1", parent_id=None)
 
     assert len(items) == 2
-    assert items[0].type == "folder"
+    assert items[0].mime_type == "application/vnd.google-apps.folder"
 
 
 def test_drive_list_calls_execute():
@@ -88,13 +88,13 @@ def test_authorize_async_wrapper():
     assert asyncio.run(run()) is True
 
 
-def test_list_items_async_wrapper():
+def test_list_files_async_wrapper():
     connector = DriveConnector()
 
     async def run():
         with patch("connectors.drive.run_in_threadpool", side_effect=lambda fn, *args: fn(*args)), \
-             patch.object(connector, "_list_items_implementation", return_value=[]):
-            return await connector.list_items("user-1", parent_id=None)
+             patch.object(connector, "_list_files_sync", return_value=[]):
+            return await connector.list_files({"user_id": "user-1"}, since=None)
 
     assert asyncio.run(run()) == []
 
@@ -201,7 +201,8 @@ def test_fetch_documents_sync_yields_source_document():
              "mimeType": "text/plain",
              "webViewLink": "https://drive.google.com/file/test",
          }), patch.object(connector, "_download_file_content", return_value=(b"hello", "text/plain", "Doc.txt")):
-        docs = list(connector.fetch_documents_sync(["file-1"], user_id="user-1"))
+        # user_id must be passed via credentials dict due to operator precedence in fetch_documents_sync
+        docs = list(connector.fetch_documents_sync(["file-1"], credentials={"user_id": "user-1"}))
 
     assert isinstance(docs[0], SourceDocument)
 
@@ -284,38 +285,34 @@ def test_get_credentials_success_calls_integration_lookup():
     get_creds.assert_called_once_with({"id": "int-1"})
 
 
-def test_download_file_content_export_error_returns_none():
+def test_download_file_content_export_error_raises():
     connector = DriveConnector()
     service = MagicMock()
     service.files.return_value.export_media.side_effect = Exception("boom")
 
-    content, mime_type, filename = connector._download_file_content(
-        service,
-        {
-            "id": "file-1",
-            "mimeType": "application/vnd.google-apps.document",
-            "name": "Doc",
-        },
-    )
-
-    assert content is None
-    assert mime_type is None
-    assert filename is None
+    from connectors.base import ConnectorTransientError
+    with pytest.raises(ConnectorTransientError):
+        connector._download_file_content(
+            service,
+            {
+                "id": "file-1",
+                "mimeType": "application/vnd.google-apps.document",
+                "name": "Doc",
+            },
+        )
 
 
-def test_download_file_content_binary_error_returns_none():
+def test_download_file_content_binary_error_raises():
     connector = DriveConnector()
     service = MagicMock()
     service.files.return_value.get_media.side_effect = Exception("boom")
 
-    content, mime_type, filename = connector._download_file_content(
-        service,
-        {"id": "file-1", "mimeType": "application/pdf", "name": "Doc"},
-    )
-
-    assert content is None
-    assert mime_type is None
-    assert filename is None
+    from connectors.base import ConnectorTransientError
+    with pytest.raises(ConnectorTransientError):
+        connector._download_file_content(
+            service,
+            {"id": "file-1", "mimeType": "application/pdf", "name": "Doc"},
+        )
 
 
 def test_get_all_files_recursive_handles_error():
@@ -417,7 +414,8 @@ def test_fetch_documents_sync_folder_branch_skips_missing_docs():
          }), \
          patch.object(connector, "_get_all_files_recursive", return_value=files), \
          patch.object(connector, "_build_source_document", side_effect=[None, doc]):
-        docs = list(connector.fetch_documents_sync(["folder-1"], user_id="user-1"))
+        # user_id must be passed via credentials dict due to operator precedence in fetch_documents_sync
+        docs = list(connector.fetch_documents_sync(["folder-1"], credentials={"user_id": "user-1"}))
 
     assert docs == [doc]
 
@@ -472,6 +470,7 @@ def test_fetch_documents_sync_continues_on_error():
              "webViewLink": "https://drive.google.com/file/test",
          }]), \
          patch.object(connector, "_build_source_document", return_value=doc):
-        docs = list(connector.fetch_documents_sync(["bad", "good"], user_id="user-1"))
+        # user_id must be passed via credentials dict due to operator precedence in fetch_documents_sync
+        docs = list(connector.fetch_documents_sync(["bad", "good"], credentials={"user_id": "user-1"}))
 
     assert docs == [doc]
