@@ -10,6 +10,7 @@ import {
     getMicrosoftRedirectUri,
     getMicrosoftClientId,
 } from "@/lib/utils";
+import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 import type { ConnectorDefinition, UserIntegration, MergedDataSource } from "@/types";
 
 /**
@@ -55,11 +56,21 @@ export const useDataSources = () => {
             if (normalizedType === "onedrive" || normalizedType === "sharepoint") {
                 normalizedCategory = "cloud";
             }
+            const rawName = (connector.name || "").trim();
+            const normalizedName = rawName.toLowerCase();
+            const typeLabel = formatSourceTypeLabel(normalizeSourceType(connector.type));
+            const isKeyLikeName = !rawName || rawName === connector.type || rawName.includes("_");
+            const displayName =
+                normalizedName === "knowledge_base"
+                    ? "Knowledge Base"
+                    : isKeyLikeName
+                        ? typeLabel
+                        : rawName;
             return {
                 id: connector.type, // Use type as ID for compatibility
                 definitionId: connector.id,
                 type: connector.type,
-                name: connector.name,
+                name: displayName,
                 description: connector.description || "",
                 iconPath: connector.icon_path,
                 category: normalizedCategory,

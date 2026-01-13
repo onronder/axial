@@ -21,41 +21,37 @@ const GoogleDriveIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-// Notion Logo SVG (official-style mark)
+// Notion Logo (raster)
 const NotionIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <rect x="2" y="2" width="20" height="20" rx="2.5" fill="#FFFFFF" stroke="#111111" strokeWidth="1.5" />
-    <path
-      d="M8.2 7.2h2.4l3.6 5.2V7.2h2.4v9.6h-2.4l-3.6-5.2v5.2H8.2z"
-      fill="#111111"
-    />
-  </svg>
+  <img
+    className={cn("object-contain", className)}
+    src="/assets/connectors/notion.png"
+    alt="Notion"
+    loading="lazy"
+    decoding="async"
+  />
 );
 
-// OneDrive Logo SVG (brand colors)
+// OneDrive Logo (raster)
 const OneDriveIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <path
-      d="M9.6 9.3a4.6 4.6 0 0 1 7.6-2.2 3.9 3.9 0 0 1 4.2 3.9 3.7 3.7 0 0 1-3.7 3.7H8.4a3.4 3.4 0 0 1-.3-6.7 4.4 4.4 0 0 1 1.5.3z"
-      fill="#0078D4"
-    />
-    <path
-      d="M7.8 9.2a3.4 3.4 0 0 0 .6 6.7h2.1V11a2.7 2.7 0 0 1 2.6-2.7 4.6 4.6 0 0 0-3.3 1.1z"
-      fill="#0A62C1"
-    />
-  </svg>
+  <img
+    className={cn("object-contain", className)}
+    src="/assets/connectors/onedrive.jpg"
+    alt="OneDrive"
+    loading="lazy"
+    decoding="async"
+  />
 );
 
-// SharePoint Logo SVG (brand colors)
+// SharePoint Logo (raster)
 const SharePointIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="12" cy="12" r="10" fill="#0078D4" />
-    <circle cx="16.5" cy="7.5" r="3.2" fill="#35C1F1" />
-    <path
-      d="M9.7 16.5c-1.7 0-3-.8-3-2s1-1.7 2.1-2l.7-.2c.7-.2 1-.3 1-.7 0-.4-.4-.6-1-.6-.7 0-1.4.2-2 .5l-.7-1.1c.8-.5 1.7-.7 2.8-.7 1.8 0 3 .9 3 2.2 0 1.2-.8 1.8-2 2.1l-.6.2c-.8.2-1.2.4-1.2.8 0 .4.5.7 1.2.7.8 0 1.5-.2 2.2-.6l.7 1.1c-.8.6-1.8.9-3 .9z"
-      fill="#FFFFFF"
-    />
-  </svg>
+  <img
+    className={cn("object-contain", className)}
+    src="/assets/connectors/sharepoint.png"
+    alt="SharePoint"
+    loading="lazy"
+    decoding="async"
+  />
 );
 
 // Dropbox Logo SVG
