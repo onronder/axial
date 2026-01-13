@@ -78,6 +78,7 @@ def init_job_counters(namespace: str, job_id: str, total: int) -> bool:
                 "success": 0,
                 "failed": 0,
                 "skipped": 0,
+                "discovery_done": 0,
                 "job_status_updates": 0,
                 "file_status_updates": 0,
             },
@@ -106,11 +107,12 @@ def get_job_counters(namespace: str, job_id: str, client=None) -> Optional[Dict[
                 "success",
                 "failed",
                 "skipped",
+                "discovery_done",
                 "job_status_updates",
                 "file_status_updates",
             ],
         )
-        if not any(values):
+        if all(value is None for value in values):
             return None
         return {
             "total": _to_int(values[0]),
@@ -118,8 +120,9 @@ def get_job_counters(namespace: str, job_id: str, client=None) -> Optional[Dict[
             "success": _to_int(values[2]),
             "failed": _to_int(values[3]),
             "skipped": _to_int(values[4]),
-            "job_status_updates": _to_int(values[5]),
-            "file_status_updates": _to_int(values[6]),
+            "discovery_done": _to_int(values[5]),
+            "job_status_updates": _to_int(values[6]),
+            "file_status_updates": _to_int(values[7]),
         }
     except Exception as exc:
         logger.warning("[Counters] Failed to read counters for %s: %s", job_id, exc)
@@ -182,6 +185,50 @@ def record_job_update(namespace: str, job_id: str, field: str) -> None:
         logger.warning("[Counters] Failed to record update for %s: %s", job_id, exc)
 
 
+def increment_job_total(namespace: str, job_id: str, increment: int) -> Optional[int]:
+    if not job_id or increment <= 0:
+        return None
+    client = _get_redis_client()
+    if not client:
+        return None
+    try:
+        counter_key = _counter_key(namespace, job_id)
+        total = client.hincrby(counter_key, "total", int(increment))
+        client.expire(counter_key, settings.REDIS_JOB_COUNTER_TTL_SECONDS)
+        return total
+    except Exception as exc:
+        logger.warning("[Counters] Failed to increment total for %s: %s", job_id, exc)
+        return None
+
+
+def mark_job_discovery_done(namespace: str, job_id: str) -> bool:
+    if not job_id:
+        return False
+    client = _get_redis_client()
+    if not client:
+        return False
+    try:
+        counter_key = _counter_key(namespace, job_id)
+        client.hset(counter_key, mapping={"discovery_done": 1})
+        client.expire(counter_key, settings.REDIS_JOB_COUNTER_TTL_SECONDS)
+        return True
+    except Exception as exc:
+        logger.warning("[Counters] Failed to mark discovery done for %s: %s", job_id, exc)
+        return False
+
+
+def is_job_discovery_done(namespace: str, job_id: str) -> bool:
+    if not job_id:
+        return True
+    counters = get_job_counters(namespace, job_id)
+    if not counters:
+        return True
+    discovery_done = counters.get("discovery_done")
+    if discovery_done is None:
+        return True
+    return bool(discovery_done)
+
+
 def mark_job_finalizing(namespace: str, job_id: str) -> bool:
     if not job_id:
         return False
@@ -220,6 +267,18 @@ def init_ingest_job_counters(job_id: str, total_files: int) -> bool:
 
 def record_ingest_outcome(job_id: str, file_status_id: str, outcome: str) -> Optional[Dict[str, int]]:
     return record_job_outcome(INGEST_NAMESPACE, job_id, file_status_id, outcome)
+
+
+def increment_ingest_job_total(job_id: str, increment: int) -> Optional[int]:
+    return increment_job_total(INGEST_NAMESPACE, job_id, increment)
+
+
+def mark_ingest_job_discovery_done(job_id: str) -> bool:
+    return mark_job_discovery_done(INGEST_NAMESPACE, job_id)
+
+
+def is_ingest_job_discovery_done(job_id: str) -> bool:
+    return is_job_discovery_done(INGEST_NAMESPACE, job_id)
 
 
 def get_ingest_job_counters(job_id: str) -> Optional[Dict[str, int]]:

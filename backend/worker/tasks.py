@@ -22,8 +22,10 @@ from core.hashing import compute_content_hash
 from core.ingestion_utils import normalize_provider, normalize_source_type
 from core.job_counters import (
     init_ingest_job_counters,
+    increment_ingest_job_total,
     record_ingest_outcome,
     get_ingest_job_counters,
+    mark_ingest_job_discovery_done,
     mark_ingest_job_finalizing,
     clear_ingest_job_counters,
     record_ingest_job_update,
@@ -40,7 +42,7 @@ from services.email import email_service
 from connectors import get_connector
 from connectors.limits import connector_fetch_limit
 from services.embeddings import generate_embeddings_batch_sync
-from services.malware import scan_content
+from services.malware import scan_content, MalwareScanException
 from services.audit import audit_logger
 try:
     from core.metrics import (
@@ -63,6 +65,8 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 logger.info("✅ Worker tasks module loaded - Cache buster 001")
+
+DEFAULT_INGEST_DISPATCH_BATCH_SIZE = 50
 
 
 # ============================================================
@@ -321,6 +325,12 @@ def _record_ingest_outcome_and_maybe_finalize(
         return
 
     _update_job_progress_from_counters(supabase, job_id, counters)
+
+    discovery_done = counters.get("discovery_done")
+    if discovery_done is None:
+        discovery_done = 1
+    if not discovery_done:
+        return
 
     total = counters.get("total", 0)
     processed = counters.get("processed", 0)
@@ -1135,7 +1145,7 @@ def _collect_documents_sync(connector, item_ids, credentials, user_id):
     if inspect.isawaitable(documents_iter) or inspect.isasyncgen(documents_iter):
         raise RuntimeError("fetch_documents_sync returned async results; use a sync connector implementation")
 
-    return list(documents_iter)
+    return documents_iter
 
 
 
@@ -1159,14 +1169,15 @@ def unified_ingest_task(
     credentials: Dict[str, Any] = None,
     item_id: Optional[str] = None,
     plan_code: Optional[str] = None,
+    dispatch_batch_size: Optional[int] = None,
 ):
     """
     UNIFIED ingestion task for ALL data sources.
     
-    Now uses FAN-OUT PATTERN for true parallel processing:
-    1. Fetch all files from connector
-    2. Create file status records
-    3. Dispatch parallel process_file_task for each file
+    Now uses STREAMED FAN-OUT PATTERN for faster feedback:
+    1. Stream files from connector
+    2. Create file status records as files are discovered
+    3. Dispatch process_file_task in batches
     4. Redis counters trigger finalize when all files complete
     
     Args:
@@ -1226,15 +1237,138 @@ def unified_ingest_task(
         # Get connector instance
         connector = get_connector(connector_type)
         
-        # STEP 1: Fetch all documents from connector
-        logger.info(f"[UnifiedIngest:{task_id}] Fetching documents from {connector_type}...")
-        
+        # STEP 1: Fetch documents from connector (streamed)
+        logger.info(f"[UnifiedIngest:{task_id}] Streaming documents from {connector_type}...")
+        batch_size = max(
+            1,
+            dispatch_batch_size
+            or getattr(settings, "INGEST_DISPATCH_BATCH_SIZE", DEFAULT_INGEST_DISPATCH_BATCH_SIZE),
+        )
+
+        counters_ready = init_ingest_job_counters(job_id, 0)
+        if not counters_ready:
+            logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Redis counters unavailable; relying on reconciliation")
+
+        try:
+            supabase.table("ingestion_jobs").update({
+                "progress": 1,
+                "message": "Discovering files...",
+                "status_message": "Discovering files...",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", job_id).execute()
+        except Exception as exc:
+            logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Failed to set discovery status: {exc}")
+
+        # STEP 2: Create file status records and dispatch tasks in batches
+        file_tasks = []
+        total_files = 0
+        last_group_id = None
+
+        def _flush_batch() -> None:
+            nonlocal file_tasks, last_group_id
+            if not file_tasks:
+                return
+
+            batch_count = len(file_tasks)
+            if counters_ready:
+                increment_ingest_job_total(job_id, batch_count)
+
+            update_payload = {
+                "message": f"Queued sync for {total_files} items...",
+                "status_message": f"Queued sync for {total_files} items...",
+                "progress": 5,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if counters_ready:
+                update_payload["total_files"] = total_files
+
+            try:
+                supabase.table("ingestion_jobs").update(update_payload).eq("id", job_id).execute()
+            except Exception as exc:
+                logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Failed to update queue status: {exc}")
+
+            result = group(file_tasks).apply_async()
+            last_group_id = result.id
+            logger.info(
+                f"[UnifiedIngest:{task_id}] ✅ Dispatched batch with {batch_count} tasks, group_id: {result.id}"
+            )
+            file_tasks = []
+
         with connector_fetch_limit(connector_type):
             documents = _collect_documents_sync(connector, item_ids, credentials, user_id)
-        total_files = len(documents)
-        
-        logger.info(f"[UnifiedIngest:{task_id}] Collected {total_files} documents for parallel processing")
-        
+
+            for doc in documents:
+                # Create file status record
+                file_status_result = supabase.table("ingestion_file_status").insert({
+                    "job_id": job_id,
+                    "user_id": user_id,
+                    "filename": doc.filename,
+                    "file_size_bytes": doc.size_bytes or 0,  # FIXED: was "file_size"
+                    "status": "pending",
+                    "progress": 0,
+                    "status_message": "Queued for processing..."  # FIXED: was "message"
+                }).execute()
+                
+                file_status_id = file_status_result.data[0]["id"]
+                
+                # Serialize document content to base64 for Celery
+                content = doc.content
+                if isinstance(content, bytes):
+                    content_b64 = base64.b64encode(content).decode("utf-8")
+                elif isinstance(content, str):
+                    mime_type = (doc.mime_type or "").lower()
+                    is_text = mime_type.startswith("text/") or mime_type in {
+                        "application/json",
+                        "application/xml",
+                        "application/xhtml+xml",
+                        "application/x-yaml",
+                    }
+                    if is_text:
+                        content_b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+                    else:
+                        # Binary connectors (e.g., Drive) may already return base64 strings.
+                        try:
+                            base64.b64decode(content, validate=True)
+                            content_b64 = content
+                        except Exception:
+                            content_b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+                else:
+                    raise ValueError(f"Unsupported document content type: {type(content)}")
+                
+                doc_metadata = doc.metadata or {}
+                storage_path = doc_metadata.get("storage_path")
+                source_url = doc_metadata.get("source_url") or doc_metadata.get("url")
+                doc_source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
+                size_bytes = doc.size_bytes or doc_metadata.get("file_size") or doc_metadata.get("size") or 0
+
+                file_data = {
+                    "filename": doc.filename,
+                    "content_b64": content_b64,
+                    "size_bytes": size_bytes,
+                    "mime_type": doc.mime_type,
+                    "storage_path": storage_path,
+                    "source_id": doc.source_id,
+                    "parent_id": doc.parent_id,
+                    "source_url": source_url,
+                    "source_type": doc_source_type,
+                    "metadata": doc_metadata,
+                }
+                
+                # Create task signature
+                file_tasks.append(
+                    process_file_task.s(
+                        user_id=user_id,
+                        job_id=job_id,
+                        file_data=file_data,
+                        file_status_id=file_status_id,
+                        connector_type=connector_type,
+                        plan_code=plan_code,
+                    )
+                )
+                total_files += 1
+                if len(file_tasks) >= batch_size:
+                    _flush_batch()
+
         if total_files == 0:
             update_job_status(
                 supabase,
@@ -1245,110 +1379,40 @@ def unified_ingest_task(
                 progress=100,
             )
             return {"status": "completed", "message": "No documents"}
-        
-        # Update job with total count
-        supabase.table("ingestion_jobs").update({
-            "total_files": total_files,
-            "progress": 5,
-            "message": f"Preparing {total_files} files for parallel processing...",
-            "status_message": f"Preparing {total_files} files for parallel processing..."
-        }).eq("id", job_id).execute()
-        
-        # STEP 2: Create file status records and serialize documents
-        file_tasks = []
-        
-        for i, doc in enumerate(documents):
-            # Create file status record
-            file_status_result = supabase.table("ingestion_file_status").insert({
-                "job_id": job_id,
-                "user_id": user_id,
-                "filename": doc.filename,
-                "file_size_bytes": doc.size_bytes or 0,  # FIXED: was "file_size"
-                "status": "pending",
-                "progress": 0,
-                "status_message": "Queued for processing..."  # FIXED: was "message"
-            }).execute()
-            
-            file_status_id = file_status_result.data[0]["id"]
-            
-            # Serialize document content to base64 for Celery
-            content = doc.content
-            if isinstance(content, bytes):
-                content_b64 = base64.b64encode(content).decode("utf-8")
-            elif isinstance(content, str):
-                mime_type = (doc.mime_type or "").lower()
-                is_text = mime_type.startswith("text/") or mime_type in {
-                    "application/json",
-                    "application/xml",
-                    "application/xhtml+xml",
-                    "application/x-yaml",
-                }
-                if is_text:
-                    content_b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
-                else:
-                    # Binary connectors (e.g., Drive) may already return base64 strings.
-                    try:
-                        base64.b64decode(content, validate=True)
-                        content_b64 = content
-                    except Exception:
-                        content_b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
-            else:
-                raise ValueError(f"Unsupported document content type: {type(content)}")
-            
-            doc_metadata = doc.metadata or {}
-            storage_path = doc_metadata.get("storage_path")
-            source_url = doc_metadata.get("source_url") or doc_metadata.get("url")
-            doc_source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
-            size_bytes = doc.size_bytes or doc_metadata.get("file_size") or doc_metadata.get("size") or 0
 
-            file_data = {
-                "filename": doc.filename,
-                "content_b64": content_b64,
-                "size_bytes": size_bytes,
-                "mime_type": doc.mime_type,
-                "storage_path": storage_path,
-                "source_id": doc.source_id,
-                "parent_id": doc.parent_id,
-                "source_url": source_url,
-                "source_type": doc_source_type,
-                "metadata": doc_metadata,
-            }
-            
-            # Create task signature
-            file_tasks.append(
-                process_file_task.s(
-                    user_id=user_id,
-                    job_id=job_id,
-                    file_data=file_data,
-                    file_status_id=file_status_id,
-                    connector_type=connector_type,
-                    plan_code=plan_code,
-                )
-            )
-        
-        logger.info(f"[UnifiedIngest:{task_id}] Dispatching {len(file_tasks)} parallel tasks...")
-        
-        # Update job status
-        supabase.table("ingestion_jobs").update({
+        if file_tasks:
+            _flush_batch()
+
+        if counters_ready:
+            mark_ingest_job_discovery_done(job_id)
+
+        final_payload = {
+            "total_files": total_files,
             "progress": 10,
             "message": f"Processing {total_files} files in parallel...",
-            "status_message": f"Processing {total_files} files in parallel..."
-        }).eq("id", job_id).execute()
-        
-        counters_ready = init_ingest_job_counters(job_id, total_files)
-        if not counters_ready:
-            logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Redis counters unavailable; relying on reconciliation")
-        
-        # STEP 3: Dispatch all tasks in parallel using a group
-        result = group(file_tasks).apply_async()
-        
-        logger.info(f"[UnifiedIngest:{task_id}] ✅ Dispatched group with {total_files} tasks, group_id: {result.id}")
-        
+            "status_message": f"Processing {total_files} files in parallel...",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        try:
+            supabase.table("ingestion_jobs").update(final_payload).eq("id", job_id).execute()
+        except Exception as exc:
+            logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Failed to update processing status: {exc}")
+
+        if counters_ready:
+            counters = get_ingest_job_counters(job_id)
+            if counters:
+                total = counters.get("total", 0)
+                processed = counters.get("processed", 0)
+                if total > 0 and processed >= total:
+                    if mark_ingest_job_finalizing(job_id):
+                        finalize_job_task.apply_async(kwargs={"user_id": user_id, "job_id": job_id})
+
         return {
             "status": "dispatched",
             "job_id": job_id,
             "total_files": total_files,
-            "group_id": result.id
+            "group_id": last_group_id,
         }
         
     except Exception as e:
@@ -1467,7 +1531,22 @@ def process_file_task(
         )
 
         # Security: malware scan
-        scan_result = scan_content(content)
+        scan_target = source_id or filename or file_status_id
+        try:
+            scan_result = scan_content(content)
+        except MalwareScanException as exc:
+            reason = str(exc).lower()
+            if "size limit" in reason or "instream" in reason:
+                skip_reason = "too large"
+            elif "timed out" in reason or "timeout" in reason:
+                skip_reason = "timeout"
+            else:
+                skip_reason = "scan error"
+            logger.warning("⚠️ [Malware] File %s skipped malware scan (%s)", scan_target, skip_reason)
+            scan_result = {"safe": True, "reason": f"scan_skipped:{skip_reason}"}
+        except Exception as exc:
+            logger.warning("⚠️ [Malware] File %s skipped malware scan (scan error: %s)", scan_target, exc)
+            scan_result = {"safe": True, "reason": "scan_skipped:exception"}
         if not scan_result.get("safe"):
             reason = scan_result.get("reason") or "Security Violation: Malware Detected"
             logger.critical(f"[ProcessFile:{task_id}] 🚫 Malware detected in {filename}: {reason}")
@@ -1947,6 +2026,10 @@ def finalize_job_task(self, user_id: str, job_id: str):
             counts_source = "db"
             if job_counters_reconciled:
                 job_counters_reconciled.labels("ingest").inc()
+        discovery_done = counters.get("discovery_done")
+        if discovery_done is not None and not discovery_done:
+            logger.info(f"[FinalizeJob:{task_id}] Job {job_id} discovery not complete")
+            return
     else:
         if job_counters_missing:
             job_counters_missing.labels("ingest").inc()

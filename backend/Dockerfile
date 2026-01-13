@@ -36,9 +36,11 @@ FixStaleSocket yes
 LocalSocket /var/run/clamav/clamd.ctl
 PidFile /var/run/clamav/clamd.pid
 LogFile /var/log/clamav/clamav.log
-StreamMaxLength 200M
-MaxScanSize 500M
-MaxFileSize 200M
+StreamMaxLength 1000M
+MaxScanSize 1000M
+MaxFileSize 1000M
+RecvTimeout 300
+SendTimeout 300
 EOF
 
 # Update virus definitions during build (best effort)

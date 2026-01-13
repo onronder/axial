@@ -45,6 +45,63 @@ interface BreadcrumbItem {
   name: string;
 }
 
+const MIME_TYPE_LABELS: Record<string, string> = {
+  "application/pdf": "PDF",
+  "text/plain": "Text",
+  "text/csv": "CSV",
+  "application/zip": "ZIP",
+  "application/x-7z-compressed": "7Z",
+  "application/x-rar-compressed": "RAR",
+  "application/vnd.ms-excel": "Excel",
+  "application/vnd.ms-excel.sheet.macroenabled.12": "Excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.template": "Excel",
+  "application/msword": "Word",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.template": "Word",
+  "application/vnd.ms-powerpoint": "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.slideshow": "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.template": "PowerPoint",
+};
+
+const getFileTypeLabel = (file: FileItem): string => {
+  if (file.type === "folder") return "Folder";
+  const mimeType = (file.mimeType || "").toLowerCase();
+  if (mimeType) {
+    const directMatch = MIME_TYPE_LABELS[mimeType];
+    if (directMatch) return directMatch;
+    if (mimeType.includes("spreadsheetml") || mimeType.includes("ms-excel") || mimeType.includes("excel")) {
+      return "Excel";
+    }
+    if (mimeType.includes("wordprocessingml") || mimeType.includes("msword") || mimeType.includes("word")) {
+      return "Word";
+    }
+    if (mimeType.includes("presentationml") || mimeType.includes("powerpoint")) {
+      return "PowerPoint";
+    }
+    if (mimeType.startsWith("image/")) {
+      return mimeType.split("/")[1]?.toUpperCase() || "Image";
+    }
+    if (mimeType.startsWith("text/")) {
+      return mimeType.split("/")[1]?.toUpperCase() || "Text";
+    }
+    if (mimeType.startsWith("audio/")) {
+      return "Audio";
+    }
+    if (mimeType.startsWith("video/")) {
+      return "Video";
+    }
+  }
+
+  const extension = file.name.split(".").pop();
+  if (extension && extension !== file.name) {
+    return extension.toUpperCase();
+  }
+
+  return mimeType ? mimeType.split("/")[1]?.toUpperCase() || "File" : "File";
+};
+
 export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserProps) {
   const { getFiles, ingestFiles } = useDataSources();
   const { toast } = useToast();
@@ -267,7 +324,7 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {file.type === "folder" ? "Folder" : file.mimeType?.split("/")[1]?.toUpperCase() || "File"}
+                    {getFileTypeLabel(file)}
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">
                     {formatSize(file.size)}

@@ -44,6 +44,10 @@ def _require_provider(provider: str) -> str:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _get_ingest_batch_size() -> int:
+    return max(1, getattr(settings, "INGEST_DISPATCH_BATCH_SIZE", 50))
+
+
 # =============================================================================
 # Pydantic Request/Response Models
 # =============================================================================
@@ -489,6 +493,7 @@ async def exchange_notion_token(
                     item_ids=items,
                     credentials={"integration_id": str(integration_id)},  # ✅ Pass integration_id for token refresh
                     plan_code=plan_code,
+                    dispatch_batch_size=_get_ingest_batch_size(),
                 )
                 logger.info(f"📥 [OAuth] Auto-ingestion started: {len(items)} pages, job {job_id}, task: {task.id}")
                 audit_logger.log_sync(
@@ -1283,6 +1288,7 @@ async def ingest_provider_items(
             item_ids=request.item_ids,  # Pass all items at once
             credentials=credentials,
             plan_code=plan_code,
+            dispatch_batch_size=_get_ingest_batch_size(),
         )
         try:
             increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(request.item_ids)))
@@ -1337,6 +1343,13 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             status="start",
             details={"job_id": job_id},
         )
+
+        supabase.table("ingestion_jobs").update({
+            "progress": 1,
+            "message": "Discovering files...",
+            "status_message": "Discovering files...",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", job_id).execute()
         
         # 2. Get Connector
         from connectors import get_connector
@@ -1408,6 +1421,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             item_ids=item_ids,
             credentials=credentials,
             plan_code=plan_code,
+            dispatch_batch_size=_get_ingest_batch_size(),
         )
 
         logger.info(f"✅ [SyncJob] Queued unified ingest {task.id} for job {job_id}")

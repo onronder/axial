@@ -10,6 +10,7 @@ import psutil
 from core.celery_app import celery_app
 from core.db import get_supabase
 from core.resilience import check_memory_usage
+from core.job_counters import is_ingest_job_discovery_done
 from core.metrics import (
     MEMORY_USAGE,
     MEMORY_AVAILABLE_MB,
@@ -179,6 +180,8 @@ def reconcile_ingestion_jobs():
             user_id = job.get("user_id")
             total_files = job.get("total_files") or 0
             if not job_id or total_files <= 0:
+                continue
+            if not is_ingest_job_discovery_done(job_id):
                 continue
 
             status_res = supabase.table("ingestion_file_status").select("status").eq(

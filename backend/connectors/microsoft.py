@@ -73,7 +73,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
     ) -> List[RemoteFile]:
         return await run_in_threadpool(self._list_files_sync, config, since)
 
-    def _list_files_sync(self, config: Dict[str, Any], since: Optional[datetime] = None) -> List[RemoteFile]:
+    def iter_files_sync(self, config: Dict[str, Any], since: Optional[datetime] = None) -> Iterator[RemoteFile]:
         resolved = self._resolve_config(config)
         if not self.validate_config(resolved):
             raise ConnectorAuthError("Invalid Microsoft Graph configuration")
@@ -86,9 +86,13 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         parent_id = resolved.get("parent_id")
 
         if parent_id is None:
-            return list(self._list_recursive_items(resolved, since))
+            yield from self._list_recursive_items(resolved, since)
+            return
 
-        return list(self._list_children_items(resolved, parent_id))
+        yield from self._list_children_items(resolved, parent_id)
+
+    def _list_files_sync(self, config: Dict[str, Any], since: Optional[datetime] = None) -> List[RemoteFile]:
+        return list(self.iter_files_sync(config, since))
 
     def fetch_file_content(self, file_id: str, config: dict) -> bytes:
         resolved = self._resolve_config(config)
