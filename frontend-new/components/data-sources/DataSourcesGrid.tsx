@@ -17,6 +17,7 @@ import { FileBrowser } from "./FileBrowser";
 import { URLCrawlerInput } from "./URLCrawlerInput";
 import { FileUploadZone } from "./FileUploadZone";
 import { ComingSoonIntegrations } from "./ComingSoonIntegrations";
+import { SftpConnectModal } from "./SftpConnectModal";
 import { useDataSources } from "@/hooks/useDataSources";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
@@ -61,6 +62,7 @@ export function DataSourcesGrid() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter] = useState<FilterStatus>("all");
   const [browsing, setBrowsing] = useState<MergedDataSource | null>(null);
+  const [sftpConnectOpen, setSftpConnectOpen] = useState(false);
   const isViewer = profile?.role === "viewer";
   const { canWebCrawl } = useUsage();
   const canRunWebCrawl = canWebCrawl && !isViewer;
@@ -71,6 +73,14 @@ export function DataSourcesGrid() {
       : undefined;
 
   const connectedCount = connectedSources.length;
+
+  const handleConnect = (type: string) => {
+    if (type === "sftp") {
+      setSftpConnectOpen(true);
+      return;
+    }
+    connect(type);
+  };
 
   // Get unique categories from data
   const categories = [...new Set(dataSources.map(ds => ds.category))].filter(Boolean);
@@ -222,7 +232,7 @@ export function DataSourcesGrid() {
                     key={source.id}
                     source={source}
                     onBrowse={() => setBrowsing(source)}
-                    onConnect={connect}
+                    onConnect={handleConnect}
                     onDisconnect={disconnect}
                     onSync={syncIntegration}
                     disabled={isViewer}
@@ -261,6 +271,12 @@ export function DataSourcesGrid() {
           disabled={isViewer}
         />
       </div>
+
+      <SftpConnectModal
+        open={sftpConnectOpen}
+        onOpenChange={setSftpConnectOpen}
+        onConnected={refresh}
+      />
 
       {/* Coming Soon Section */}
       <ComingSoonIntegrations />

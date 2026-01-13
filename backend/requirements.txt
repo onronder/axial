@@ -60,6 +60,7 @@ ultimate-sitemap-parser
 youtube-transcript-api
 lxml
 clamd
+paramiko>=3.4.0,<4.0.0
 
 # --- SERVER MONITORING ---
 psutil>=5.9.0

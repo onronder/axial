@@ -2,6 +2,7 @@ from typing import Dict, Type
 from connectors.drive import DriveConnector
 from connectors.file_upload import FileUploadConnector
 from connectors.notion import NotionConnector
+from connectors.sftp import SFTPConnector
 from connectors.web import WebConnector
 
 # Connector registry - ALL 4 connectors migrated
@@ -9,6 +10,7 @@ CONNECTORS: Dict[str, Type] = {
     "file_upload": FileUploadConnector,
     "google_drive": DriveConnector,
     "notion": NotionConnector,
+    "sftp": SFTPConnector,
     "web": WebConnector,
 }
 

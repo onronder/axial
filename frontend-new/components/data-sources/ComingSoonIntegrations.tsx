@@ -85,14 +85,6 @@ const COMING_SOON_INTEGRATIONS: ComingSoonIntegration[] = [
         category: "Enterprise Storage",
         badge: "Coming Soon",
     },
-    {
-        id: "sftp",
-        name: "Industrial Sync (SFTP)",
-        description: "Legacy systems & maintenance logs",
-        icon: <Server className="h-6 w-6" />,
-        category: "Enterprise Storage",
-        badge: "Enterprise",
-    },
     // Communication
     {
         id: "slack",

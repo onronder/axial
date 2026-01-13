@@ -15,10 +15,13 @@ from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
 from core.exceptions import QuotaExceededError
 from services.usage import check_feature_access
+from services.audit import audit_logger, log_connector_sync
 from services.web_crawl import queue_web_crawl
 from connectors.web import WebConnector
+from connectors.sftp import SFTPConnector
 from core.ingestion_utils import require_canonical_provider
 from connectors.registry import get_connector_manifest
+from connectors.base import ConnectorAuthError, ConnectorTransientError
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
@@ -84,6 +87,15 @@ class WebCrawlRequest(BaseModel):
     respect_robots: bool = Field(default=True)
     max_pages: int = Field(default=500, ge=1, le=10000)
     allow_subdomains: bool = Field(default=False)
+
+
+class SFTPConnectRequest(BaseModel):
+    host: str = Field(..., min_length=1, max_length=255)
+    port: int = Field(default=22, ge=1, le=65535)
+    username: str = Field(..., min_length=1, max_length=128)
+    password: Optional[str] = Field(default=None, max_length=4096)
+    private_key: Optional[str] = Field(default=None, max_length=16384)
+    root_path: str = Field(default="/", min_length=1, max_length=1024)
 
 
 async def _resolve_org_and_plan(user_id: str) -> tuple[str, str]:
@@ -285,7 +297,23 @@ async def exchange_google_token(
     #     logger.warning(f"🔐 [OAuth] Failed to schedule sync: {e}")
     
     integration_id = upsert_res.data[0]["id"]
+
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.connect",
+        resource_type="connector",
+        resource_id="notion",
+        details={"integration_id": integration_id, "workspace_id": workspace_id},
+    )
     logger.info(f"🔐 [OAuth] Connected Google Drive (integration: {integration_id}). User can now select files to ingest.")
+
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.connect",
+        resource_type="connector",
+        resource_id="google_drive",
+        details={"integration_id": integration_id},
+    )
 
     return {"status": "success", "provider": "google_drive", "integration_id": integration_id}
 
@@ -464,6 +492,13 @@ async def exchange_notion_token(
                     plan_code=plan_code,
                 )
                 logger.info(f"📥 [OAuth] Auto-ingestion started: {len(items)} pages, job {job_id}, task: {task.id}")
+                audit_logger.log_sync(
+                    user_id=user_id,
+                    action="ingest.queued",
+                    resource_type="ingestion_job",
+                    resource_id=str(job_id),
+                    details={"provider": "notion", "item_count": len(items), "task_id": task.id},
+                )
                 try:
                     increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(items)))
                 except Exception as exc:
@@ -487,6 +522,75 @@ async def exchange_notion_token(
 # Integration Management Endpoints
 # =============================================================================
 
+@router.post("/integrations/sftp/connect")
+@limiter.limit("10/minute")
+async def connect_sftp(
+    request: Request,
+    body: SFTPConnectRequest,
+    user_id: str = Depends(require_editor),
+):
+    """
+    Connect an SFTP server by storing encrypted credentials in user_integrations.
+    """
+    if not body.password and not body.private_key:
+        raise HTTPException(status_code=400, detail="Either password or private_key is required.")
+
+    supabase = get_supabase()
+    conn_def = supabase.table("connector_definitions").select("id").eq("type", "sftp").single().execute()
+    if not conn_def.data:
+        raise HTTPException(status_code=500, detail="sftp connector not found in definitions")
+
+    connector = SFTPConnector()
+    config = body.model_dump()
+
+    try:
+        connector.verify_connection(config)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ConnectorAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except ConnectorTransientError as exc:
+        raise HTTPException(status_code=503, detail=f"SFTP connection failed: {exc}") from exc
+
+    credentials = {
+        "host": body.host,
+        "port": body.port,
+        "username": body.username,
+        "password": encrypt_token(body.password) if body.password else None,
+        "private_key": encrypt_token(body.private_key) if body.private_key else None,
+        "root_path": body.root_path,
+    }
+
+    data = {
+        "user_id": user_id,
+        "connector_definition_id": conn_def.data["id"],
+        "credentials": credentials,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    upsert_res = supabase.table("user_integrations").upsert(
+        data,
+        on_conflict="user_id,connector_definition_id",
+    ).execute()
+
+    if not upsert_res.data:
+        raise HTTPException(status_code=500, detail="Failed to store SFTP credentials")
+
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.connect",
+        resource_type="connector",
+        resource_id="sftp",
+        details={"host": body.host, "port": body.port, "root_path": body.root_path},
+    )
+
+    return {
+        "status": "success",
+        "provider": "sftp",
+        "integration_id": upsert_res.data[0]["id"],
+    }
+
+
 @router.get("/integrations/{provider}/status")
 async def get_provider_status(
     provider: str,
@@ -503,6 +607,9 @@ async def get_provider_status(
             return {"connected": False, "error": "Unknown provider"}
         
         connector_def_id = def_res.data["id"]
+        deleted_docs = 0
+        deleted_jobs = 0
+        deleted_sync = 0
         
         # Check if user has this integration
         int_res = supabase.table("user_integrations").select("id").eq(
@@ -629,13 +736,25 @@ async def disconnect_provider(
         ).eq("connector_definition_id", connector_def_id).execute()
         
         logger.info(f"✅ [Disconnect] {provider} disconnected and all data cleaned for user {user_id}")
+
+        audit_logger.log_sync(
+            user_id=user_id,
+            action="connector.disconnect",
+            resource_type="connector",
+            resource_id=provider,
+            details={
+                "documents_deleted": deleted_docs,
+                "jobs_deleted": deleted_jobs,
+                "sync_deleted": deleted_sync,
+            },
+        )
         
         return {
             "status": "success", 
             "provider": provider,
             "cleanup": {
-                "documents_deleted": deleted_docs if 'deleted_docs' in dir() else 0,
-                "jobs_deleted": deleted_jobs if 'deleted_jobs' in dir() else 0
+                "documents_deleted": deleted_docs,
+                "jobs_deleted": deleted_jobs
             }
         }
     except HTTPException:
@@ -677,7 +796,13 @@ async def list_provider_items(
             name = data.get("name") or data.get("id") or "Untitled"
             item_type = "file"
             # Infer folder-like types
-            if mime in {"application/vnd.google-apps.folder", "application/vnd.notion.page", "application/vnd.notion.database"}:
+            if data.get("is_dir") or mime in {
+                "application/vnd.google-apps.folder",
+                "application/vnd.notion.page",
+                "application/vnd.notion.database",
+                "inode/directory",
+                "application/x-directory",
+            }:
                 item_type = "folder"
             item_id = data.get("id")
             if not item_id:
@@ -881,6 +1006,19 @@ async def ingest_provider_items(
             except Exception as exc:
                 logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
 
+            audit_logger.log_sync(
+                user_id=user_id,
+                action="ingest.queued",
+                resource_type="web_crawl",
+                resource_id=result.get("crawl_id"),
+                details={
+                    "provider": "web",
+                    "root_url": normalized_url,
+                    "job_id": result.get("job_id"),
+                    "task_id": result.get("task_id"),
+                },
+            )
+
             return {
                 "status": "queued",
                 "crawl_id": result["crawl_id"],
@@ -959,6 +1097,13 @@ async def ingest_provider_items(
             logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
         
         logger.info(f"📥 [Ingest] Queued task {task.id} for job {job_id}")
+        audit_logger.log_sync(
+            user_id=user_id,
+            action="ingest.queued",
+            resource_type="ingestion_job",
+            resource_id=str(job_id),
+            details={"provider": provider, "item_count": len(request.item_ids), "task_id": task.id},
+        )
         
         # 4. Return 202 Accepted with job info
         return {
@@ -992,6 +1137,13 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             "status": "processing",
             "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", job_id).execute()
+
+        log_connector_sync(
+            user_id=user_id,
+            connector_type=provider,
+            status="start",
+            details={"job_id": job_id},
+        )
         
         # 2. Get Connector
         from connectors import get_connector
@@ -1014,6 +1166,12 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }).eq("id", job_id).execute()
             logger.info(f"✅ [SyncJob] Completed {job_id}: no items to sync")
+            log_connector_sync(
+                user_id=user_id,
+                connector_type=provider,
+                status="success",
+                details={"job_id": job_id, "reason": "no_items"},
+            )
             return
 
         supabase.table("ingestion_jobs").update({
@@ -1042,6 +1200,12 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
                 "error_message": str(exc),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", job_id).execute()
+            log_connector_sync(
+                user_id=user_id,
+                connector_type=provider,
+                status="fail",
+                details={"job_id": job_id, "reason": str(exc)},
+            )
             return
 
         task = unified_ingest_task.delay(
@@ -1054,6 +1218,12 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
         )
 
         logger.info(f"✅ [SyncJob] Queued unified ingest {task.id} for job {job_id}")
+        log_connector_sync(
+            user_id=user_id,
+            connector_type=provider,
+            status="success",
+            details={"job_id": job_id, "task_id": task.id, "item_count": len(item_ids)},
+        )
         try:
             increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(item_ids)))
         except Exception as exc:
@@ -1076,6 +1246,12 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             "error_message": error_msg,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", job_id).execute()
+        log_connector_sync(
+            user_id=user_id,
+            connector_type=provider,
+            status="fail",
+            details={"job_id": job_id, "reason": error_msg},
+        )
 
 
 @router.post("/integrations/{integration_id}/sync")

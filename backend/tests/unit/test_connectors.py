@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from connectors.file_upload import FileUploadConnector
 from connectors.drive import DriveConnector
 from connectors.notion import NotionConnector
+from connectors.sftp import SFTPConnector
 from connectors.web import WebConnector
 from connectors.enhanced import ItemNotFoundError, SourceDocument, SourceType
 from connectors import get_connector
@@ -78,6 +79,7 @@ def test_get_connector_returns_instances():
     assert isinstance(get_connector("file_upload"), FileUploadConnector)
     assert isinstance(get_connector("google_drive"), DriveConnector)
     assert isinstance(get_connector("notion"), NotionConnector)
+    assert isinstance(get_connector("sftp"), SFTPConnector)
     assert isinstance(get_connector("web"), WebConnector)
 
 

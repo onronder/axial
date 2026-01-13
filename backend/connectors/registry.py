@@ -23,6 +23,12 @@ CONNECTOR_REGISTRY = {
         "capabilities": ["crawl", "sitemap"],
         "rate_limit_rpm": 120,
     },
+    "sftp": {
+        "id": "sftp",
+        "name": "SFTP",
+        "capabilities": ["binary_content", "incremental_sync"],
+        "rate_limit_rpm": 60,
+    },
 }
 
 
