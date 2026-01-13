@@ -533,9 +533,9 @@ async def exchange_microsoft_token(
     target_type = request.target_type
     logger.info(f"🔐 [OAuth] Starting Microsoft token exchange for user: {user_id} ({target_type})")
 
-    if not settings.MICROSOFT_CLIENT_ID or not settings.MICROSOFT_CLIENT_SECRET:
-        logger.error("🔐 [OAuth] Microsoft credentials not configured!")
-        raise HTTPException(status_code=500, detail="Microsoft credentials not configured")
+    if not settings.MICROSOFT_CLIENT_ID:
+        logger.error("🔐 [OAuth] Microsoft client ID not configured!")
+        raise HTTPException(status_code=500, detail="Microsoft client ID not configured")
 
     if not settings.MICROSOFT_REDIRECT_URI:
         logger.error("🔐 [OAuth] Microsoft redirect URI not configured!")
@@ -556,17 +556,21 @@ async def exchange_microsoft_token(
     # 2. Exchange code for tokens
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
+            token_payload = {
+                "client_id": settings.MICROSOFT_CLIENT_ID,
+                "grant_type": "authorization_code",
+                "code": request.code,
+                "redirect_uri": settings.MICROSOFT_REDIRECT_URI,
+                "scope": scope,
+            }
+            if request.code_verifier:
+                token_payload["code_verifier"] = request.code_verifier
+            if settings.MICROSOFT_CLIENT_SECRET and not request.code_verifier:
+                token_payload["client_secret"] = settings.MICROSOFT_CLIENT_SECRET
+
             response = await client.post(
                 token_url,
-                data={
-                    "client_id": settings.MICROSOFT_CLIENT_ID,
-                    "client_secret": settings.MICROSOFT_CLIENT_SECRET,
-                    "grant_type": "authorization_code",
-                    "code": request.code,
-                    "redirect_uri": settings.MICROSOFT_REDIRECT_URI,
-                    "scope": scope,
-                    **({"code_verifier": request.code_verifier} if request.code_verifier else {}),
-                },
+                data=token_payload,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
         if response.status_code != 200:

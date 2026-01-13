@@ -191,24 +191,41 @@ class OAuthTokenManager:
             if not OAuthTokenManager.is_token_expired(expires_at):
                 return decrypted_access, decrypted_refresh, expires_at
 
-            if not settings.MICROSOFT_CLIENT_ID or not settings.MICROSOFT_CLIENT_SECRET:
-                raise TokenRefreshError("Microsoft credentials not configured")
+            if not settings.MICROSOFT_CLIENT_ID:
+                raise TokenRefreshError("Microsoft client ID not configured")
 
             scopes = settings.MICROSOFT_SCOPES_SHAREPOINT if provider == "sharepoint" else settings.MICROSOFT_SCOPES_ONEDRIVE
             tenant = settings.MICROSOFT_TENANT_ID or "common"
             token_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 
+            token_payload = {
+                "client_id": settings.MICROSOFT_CLIENT_ID,
+                "grant_type": "refresh_token",
+                "refresh_token": decrypted_refresh,
+                "scope": scopes,
+            }
+            if settings.MICROSOFT_CLIENT_SECRET:
+                token_payload["client_secret"] = settings.MICROSOFT_CLIENT_SECRET
+
             response = requests.post(
                 token_url,
-                data={
-                    "client_id": settings.MICROSOFT_CLIENT_ID,
-                    "client_secret": settings.MICROSOFT_CLIENT_SECRET,
-                    "grant_type": "refresh_token",
-                    "refresh_token": decrypted_refresh,
-                    "scope": scopes,
-                },
+                data=token_payload,
                 timeout=30,
             )
+            if (
+                response.status_code != 200
+                and token_payload.get("client_secret")
+                and "AADSTS700025" in response.text
+            ):
+                logger.warning(
+                    "Microsoft refresh rejected client_secret; retrying as public client."
+                )
+                token_payload.pop("client_secret", None)
+                response = requests.post(
+                    token_url,
+                    data=token_payload,
+                    timeout=30,
+                )
             if response.status_code != 200:
                 raise TokenRefreshError(f"Token refresh failed: {response.text}")
 
