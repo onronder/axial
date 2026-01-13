@@ -82,9 +82,14 @@ def main() -> int:
     parser.add_argument("--since", help="ISO timestamp filter (e.g. 2026-01-12T00:00:00)")
     parser.add_argument("--list-limit", type=int, default=20, help="Max items to print")
     parser.add_argument("--download-first", action="store_true", help="Download first file")
+    parser.add_argument("--allow-private", action="store_true", help="Allow private/localhost hosts (testing only)")
 
     args = parser.parse_args()
     config = _build_config(args)
+    
+    # For local testing: bypass SSRF check if --allow-private is set
+    if args.allow_private:
+        config["_allow_private"] = True
 
     missing = [key for key in ("host", "username") if not config.get(key)]
     if missing:

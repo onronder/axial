@@ -6,6 +6,7 @@ Handles automatic refresh, expiry detection, and database persistence.
 """
 
 import logging
+import requests
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Tuple
 from functools import wraps
@@ -164,6 +165,75 @@ class OAuthTokenManager:
         
         decrypted_access = decrypt_token(access_token) if access_token else None
         return decrypted_access, expires_at
+
+    @staticmethod
+    def refresh_microsoft_token(
+        integration_id: str,
+        access_token: str,
+        refresh_token: str,
+        expires_at: Optional[str] = None,
+        provider: str = "onedrive",
+    ) -> tuple[str, str, Optional[str]]:
+        """
+        Refresh Microsoft Graph OAuth token for OneDrive/SharePoint.
+        """
+        try:
+            from core.security import decrypt_token, encrypt_token
+            from core.db import get_supabase
+            from core.config import settings
+
+            decrypted_access = decrypt_token(access_token) if access_token else None
+            decrypted_refresh = decrypt_token(refresh_token) if refresh_token else None
+
+            if not decrypted_refresh:
+                raise TokenRefreshError("No refresh token available")
+
+            if not OAuthTokenManager.is_token_expired(expires_at):
+                return decrypted_access, decrypted_refresh, expires_at
+
+            if not settings.MICROSOFT_CLIENT_ID or not settings.MICROSOFT_CLIENT_SECRET:
+                raise TokenRefreshError("Microsoft credentials not configured")
+
+            scopes = settings.MICROSOFT_SCOPES_SHAREPOINT if provider == "sharepoint" else settings.MICROSOFT_SCOPES_ONEDRIVE
+            tenant = settings.MICROSOFT_TENANT_ID or "common"
+            token_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+
+            response = requests.post(
+                token_url,
+                data={
+                    "client_id": settings.MICROSOFT_CLIENT_ID,
+                    "client_secret": settings.MICROSOFT_CLIENT_SECRET,
+                    "grant_type": "refresh_token",
+                    "refresh_token": decrypted_refresh,
+                    "scope": scopes,
+                },
+                timeout=30,
+            )
+            if response.status_code != 200:
+                raise TokenRefreshError(f"Token refresh failed: {response.text}")
+
+            payload = response.json()
+            new_access = payload.get("access_token")
+            new_refresh = payload.get("refresh_token") or decrypted_refresh
+            expires_in = payload.get("expires_in")
+            new_expires = None
+            if expires_in:
+                new_expires = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+
+            supabase = get_supabase()
+            supabase.table("user_integrations").update({
+                "access_token": encrypt_token(new_access),
+                "refresh_token": encrypt_token(new_refresh),
+                "expires_at": new_expires,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", integration_id).execute()
+
+            return new_access, new_refresh, new_expires
+        except TokenRefreshError:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Failed to refresh Microsoft token: {e}")
+            raise TokenRefreshError(f"Token refresh failed: {e}") from e
     
     @staticmethod
     def get_valid_credentials(
@@ -227,6 +297,21 @@ class OAuthTokenManager:
                 return {
                     'access_token': new_access,
                     'refresh_token': decrypt_token(refresh_token) if refresh_token else None,
+                    'expires_at': new_expires,
+                    'integration_id': integration_id
+                }
+
+            elif provider in {'onedrive', 'sharepoint'}:
+                new_access, new_refresh, new_expires = OAuthTokenManager.refresh_microsoft_token(
+                    integration_id,
+                    access_token,
+                    refresh_token,
+                    expires_at,
+                    provider=provider,
+                )
+                return {
+                    'access_token': new_access,
+                    'refresh_token': new_refresh,
                     'expires_at': new_expires,
                     'integration_id': integration_id
                 }

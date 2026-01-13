@@ -46,3 +46,22 @@ export function getNotionRedirectUri(): string | undefined {
 export function getNotionClientId(): string | undefined {
     return process.env.NEXT_PUBLIC_NOTION_CLIENT_ID;
 }
+
+/**
+ * Get the Microsoft OAuth redirect URI.
+ */
+export function getMicrosoftRedirectUri(): string | undefined {
+    if (typeof window === 'undefined') return undefined;
+
+    const envUri = process.env.NEXT_PUBLIC_MICROSOFT_REDIRECT_URI;
+    const autoUri = `${window.location.origin}/oauth/callback`;
+
+    return envUri || autoUri;
+}
+
+/**
+ * Get the Microsoft Client ID from environment.
+ */
+export function getMicrosoftClientId(): string | undefined {
+    return process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID;
+}

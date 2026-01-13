@@ -5,6 +5,7 @@ describe('sourceType', () => {
     it('normalizes aliases and casing', () => {
         expect(normalizeSourceType('Google Drive')).toBe('google_drive');
         expect(normalizeSourceType('one-drive')).toBe('onedrive');
+        expect(normalizeSourceType('SharePoint')).toBe('sharepoint');
     });
 
     it('returns undefined for empty values', () => {
@@ -15,6 +16,7 @@ describe('sourceType', () => {
     it('formats labels for known types', () => {
         expect(formatSourceTypeLabel('google_drive')).toBe('Google Drive');
         expect(formatSourceTypeLabel('one_drive')).toBe('OneDrive');
+        expect(formatSourceTypeLabel('sharepoint')).toBe('SharePoint');
     });
 
     it('returns fallback label for unknown types', () => {

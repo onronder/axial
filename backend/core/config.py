@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     NOTION_CLIENT_ID: Optional[str] = None
     NOTION_CLIENT_SECRET: Optional[str] = None
     NOTION_REDIRECT_URI: Optional[str] = None
+
+    # Microsoft OAuth (OneDrive / SharePoint)
+    MICROSOFT_CLIENT_ID: Optional[str] = None
+    MICROSOFT_CLIENT_SECRET: Optional[str] = None
+    MICROSOFT_REDIRECT_URI: Optional[str] = None
+    MICROSOFT_TENANT_ID: str = "common"
+    MICROSOFT_SCOPES_ONEDRIVE: str = "offline_access User.Read Files.Read.All"
+    MICROSOFT_SCOPES_SHAREPOINT: str = "offline_access User.Read Files.Read.All Sites.Read.All"
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -107,6 +115,8 @@ class Settings(BaseSettings):
     CONNECTOR_CONCURRENCY_GOOGLE_DRIVE: int = 2
     CONNECTOR_CONCURRENCY_NOTION: int = 1
     CONNECTOR_CONCURRENCY_WEB: int = 2
+    CONNECTOR_CONCURRENCY_ONEDRIVE: int = 2
+    CONNECTOR_CONCURRENCY_SHAREPOINT: int = 2
  
 
     # =========================================================================

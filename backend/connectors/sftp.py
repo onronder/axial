@@ -70,7 +70,9 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
         if not password and not private_key:
             return False
 
-        self._ensure_safe_host(host)
+        # Skip SSRF check if _allow_private is set (testing only)
+        if not config.get("_allow_private"):
+            self._ensure_safe_host(host)
         return True
 
     def list_files(self, config: dict, since: datetime | None = None) -> Iterator[RemoteFile]:
@@ -296,7 +298,9 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
         password = config.get("password")
         private_key = config.get("private_key")
 
-        self._ensure_safe_host(host)
+        # Skip SSRF check if _allow_private is set (testing only)
+        if not config.get("_allow_private"):
+            self._ensure_safe_host(host)
 
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())

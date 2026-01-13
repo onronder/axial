@@ -39,6 +39,12 @@ describe('DataSourceIcon Component', () => {
             expect(svg).toBeInTheDocument();
         });
 
+        it('renders SharePoint icon for sharepoint sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="sharepoint" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
         it('renders Dropbox icon for dropbox sourceId', () => {
             const { container } = render(<DataSourceIcon sourceId="dropbox" />);
             const svg = container.querySelector('svg');

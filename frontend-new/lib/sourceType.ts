@@ -5,6 +5,7 @@ export type CanonicalSourceType =
   | "notion"
   | "slack"
   | "onedrive"
+  | "sharepoint"
   | "dropbox"
   | "local";
 
@@ -18,6 +19,8 @@ const SOURCE_TYPE_ALIASES: Record<string, string> = {
   slack: "slack",
   onedrive: "onedrive",
   "one_drive": "onedrive",
+  sharepoint: "sharepoint",
+  "share_point": "sharepoint",
   dropbox: "dropbox",
   local: "local",
 };
@@ -35,6 +38,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   notion: "Notion",
   slack: "Slack",
   onedrive: "OneDrive",
+  sharepoint: "SharePoint",
   dropbox: "Dropbox",
   local: "Local",
 };

@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-type Provider = "google" | "notion";
+type Provider = "google" | "notion" | "onedrive" | "sharepoint";
 
 type ApiError = {
     response?: {
@@ -31,7 +31,14 @@ function OAuthCallbackContent() {
         const stateParam = searchParams.get("state");
 
         // Detect provider from state parameter (set during OAuth init)
-        const detectedProvider: Provider = stateParam === "notion" ? "notion" : "google";
+        const detectedProvider: Provider =
+            stateParam === "notion"
+                ? "notion"
+                : stateParam === "onedrive"
+                    ? "onedrive"
+                    : stateParam === "sharepoint"
+                        ? "sharepoint"
+                        : "google";
         setProvider(detectedProvider);
 
         console.log("🔐 [OAuth Callback] Starting...");
@@ -57,11 +64,17 @@ function OAuthCallbackContent() {
                 console.log(`🔐 [OAuth Callback] Sending code to backend for ${detectedProvider}...`);
 
                 // Call the appropriate endpoint based on provider
-                const endpoint = detectedProvider === "notion"
-                    ? "/integrations/notion/exchange"
-                    : "/integrations/google/exchange";
-
-                const response = await api.post(endpoint, { code });
+                let response;
+                if (detectedProvider === "notion") {
+                    response = await api.post("/integrations/notion/exchange", { code });
+                } else if (detectedProvider === "onedrive" || detectedProvider === "sharepoint") {
+                    response = await api.post("/integrations/microsoft/exchange", {
+                        code,
+                        target_type: detectedProvider,
+                    });
+                } else {
+                    response = await api.post("/integrations/google/exchange", { code });
+                }
                 console.log("🔐 [OAuth Callback] ✅ Success:", response.data);
                 setStatus("success");
 
@@ -73,7 +86,14 @@ function OAuthCallbackContent() {
                 const apiError = err as ApiError;
                 console.error("🔐 [OAuth Callback] ❌ Token exchange failed:", apiError.response?.data || apiError.message);
                 setStatus("error");
-                const providerName = detectedProvider === "notion" ? "Notion" : "Google Drive";
+                let providerName = "Google Drive";
+                if (detectedProvider === "notion") {
+                    providerName = "Notion";
+                } else if (detectedProvider === "onedrive") {
+                    providerName = "OneDrive";
+                } else if (detectedProvider === "sharepoint") {
+                    providerName = "SharePoint";
+                }
                 setError(apiError.response?.data?.detail || `Failed to connect ${providerName}`);
             }
         };
@@ -81,7 +101,14 @@ function OAuthCallbackContent() {
         exchangeCode();
     }, [searchParams, router]);
 
-    const providerName = provider === "notion" ? "Notion" : "Google Drive";
+    let providerName = "Google Drive";
+    if (provider === "notion") {
+        providerName = "Notion";
+    } else if (provider === "onedrive") {
+        providerName = "OneDrive";
+    } else if (provider === "sharepoint") {
+        providerName = "SharePoint";
+    }
 
     return (
         <div className="flex min-h-screen items-center justify-center p-4 bg-background">

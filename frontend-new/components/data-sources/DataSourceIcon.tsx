@@ -40,6 +40,16 @@ const OneDriveIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+// SharePoint Logo SVG
+const SharePointIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M5 4.5C3.62 4.5 2.5 5.62 2.5 7v10c0 1.38 1.12 2.5 2.5 2.5h5.5c1.38 0 2.5-1.12 2.5-2.5V7c0-1.38-1.12-2.5-2.5-2.5H5z" fill="#0364B8" />
+    <path d="M14 6h4.5A2.5 2.5 0 0 1 21 8.5v7A2.5 2.5 0 0 1 18.5 18H14V6z" fill="#0078D4" />
+    <circle cx="18.5" cy="8" r="2" fill="#28A8EA" />
+    <path d="M8.5 8.3c-1.66 0-2.9.8-2.9 2.02 0 1.26.9 1.8 2.1 2.08l.52.12c.9.2 1.22.36 1.22.78 0 .46-.52.78-1.3.78-.82 0-1.52-.22-2.08-.6l-.74 1.08c.72.54 1.78.86 2.9.86 1.8 0 3.02-.9 3.02-2.2 0-1.26-.82-1.82-2.06-2.1l-.54-.12c-.92-.2-1.26-.38-1.26-.78 0-.44.5-.7 1.2-.7.62 0 1.22.16 1.7.44l.72-1.06c-.64-.38-1.48-.6-2.4-.6z" fill="#FFFFFF" />
+  </svg>
+);
+
 // Dropbox Logo SVG
 const DropboxIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 256 218" xmlns="http://www.w3.org/2000/svg">
@@ -141,6 +151,7 @@ const customIconMap: Record<string, React.FC<{ className?: string }>> = {
   "notion": NotionIcon,
   "onedrive": OneDriveIcon,
   "one_drive": OneDriveIcon,
+  "sharepoint": SharePointIcon,
   "dropbox": DropboxIcon,
   "slack": SlackIcon,
   "teams": TeamsIcon,

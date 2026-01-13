@@ -403,3 +403,49 @@ class DriveConnector(EnhancedConnector, BaseConnector):
             size_bytes=file_size,
             parent_id=parent_id,
         )
+
+    def fetch_file_content(self, file_id: str, config: Dict[str, Any]) -> bytes:
+        """
+        Fetch raw file bytes for a given Drive file ID.
+        Required by BaseConnector interface.
+        """
+        user_id = config.get("user_id")
+        integration_id = config.get("integration_id")
+
+        # Resolve credentials
+        if integration_id:
+            supabase = get_supabase()
+            int_res = supabase.table("user_integrations").select("*").eq(
+                "id", integration_id
+            ).single().execute()
+            if not int_res.data:
+                raise ConnectorAuthError(f"Integration {integration_id} not found")
+
+            creds_data = OAuthTokenManager.get_valid_credentials(int_res.data, "google_drive")
+            creds = Credentials(
+                token=creds_data["access_token"],
+                refresh_token=creds_data["refresh_token"],
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=settings.GOOGLE_CLIENT_ID,
+                client_secret=settings.GOOGLE_CLIENT_SECRET,
+                scopes=["https://www.googleapis.com/auth/drive.readonly"],
+            )
+        elif user_id:
+            creds = self._get_credentials(user_id)
+        else:
+            raise ConnectorAuthError("No user_id or integration_id in config")
+
+        service = build("drive", "v3", credentials=creds)
+
+        # Get file metadata first
+        file_meta = self._drive_get(
+            service,
+            fileId=file_id,
+            fields="id, name, mimeType",
+        )
+
+        content_bytes, _, _ = self._download_file_content(service, file_meta)
+        if not content_bytes:
+            raise ConnectorTransientError(f"Failed to download file {file_id}")
+
+        return content_bytes

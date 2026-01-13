@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from connectors.file_upload import FileUploadConnector
 from connectors.drive import DriveConnector
 from connectors.notion import NotionConnector
+from connectors.microsoft import MicrosoftGraphConnector
 from connectors.sftp import SFTPConnector
 from connectors.web import WebConnector
 from connectors.enhanced import ItemNotFoundError, SourceDocument, SourceType
@@ -80,6 +81,8 @@ def test_get_connector_returns_instances():
     assert isinstance(get_connector("google_drive"), DriveConnector)
     assert isinstance(get_connector("notion"), NotionConnector)
     assert isinstance(get_connector("sftp"), SFTPConnector)
+    assert isinstance(get_connector("onedrive"), MicrosoftGraphConnector)
+    assert isinstance(get_connector("sharepoint"), MicrosoftGraphConnector)
     assert isinstance(get_connector("web"), WebConnector)
 
 
@@ -93,5 +96,5 @@ async def test_file_upload_connector_flags_and_auth():
     connector = FileUploadConnector()
     assert connector.connector_type == SourceType.FILE_UPLOAD
     assert await connector.authorize("user-1") is True
-    assert await connector.list_items("user-1") == []
+    assert list(connector.list_files({}, None)) == []
     assert connector.validate_credentials({"any": "value"}) is True

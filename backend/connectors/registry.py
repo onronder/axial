@@ -29,6 +29,22 @@ CONNECTOR_REGISTRY = {
         "capabilities": ["binary_content", "incremental_sync"],
         "rate_limit_rpm": 60,
     },
+    "onedrive": {
+        "id": "onedrive",
+        "name": "OneDrive",
+        "capabilities": ["binary_content", "incremental_sync"],
+        "rate_limit_rpm": 120,
+        "implementation": "microsoft",
+        "target_type": "onedrive",
+    },
+    "sharepoint": {
+        "id": "sharepoint",
+        "name": "SharePoint",
+        "capabilities": ["binary_content", "incremental_sync"],
+        "rate_limit_rpm": 120,
+        "implementation": "microsoft",
+        "target_type": "sharepoint",
+    },
 }
 
 

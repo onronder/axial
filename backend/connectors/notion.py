@@ -394,3 +394,41 @@ class NotionConnector(EnhancedConnector, BaseConnector):
             yield from ingest_page_recursive(page_id)
 
         logger.info("📥 [Notion] Completed fetch for %s initial item(s)", len(item_ids))
+
+    def validate_config(self, config: dict) -> bool:
+        """Validate connector-specific config."""
+        if not config:
+            return False
+        return bool(config.get("user_id") or config.get("integration_id"))
+
+    def fetch_file_content(self, file_id: str, config: dict) -> bytes:
+        """
+        Fetch raw content for a Notion page as markdown bytes.
+        Required by BaseConnector interface.
+        """
+        user_id = config.get("user_id")
+        integration_id = config.get("integration_id")
+
+        # Resolve access token
+        if integration_id:
+            supabase = get_supabase()
+            int_res = supabase.table("user_integrations").select("*").eq(
+                "id", integration_id
+            ).single().execute()
+            if not int_res.data:
+                raise ConnectorAuthError(f"Integration {integration_id} not found")
+            creds_data = OAuthTokenManager.get_valid_credentials(int_res.data, "notion")
+            access_token = creds_data["access_token"]
+        elif user_id:
+            access_token = self._get_access_token(user_id)
+        else:
+            raise ConnectorAuthError("No user_id or integration_id in config")
+
+        # Fetch page and blocks
+        try:
+            page = self._make_request("GET", f"pages/{file_id}", access_token)
+            blocks_res = self._make_request("GET", f"blocks/{file_id}/children", access_token)
+            content = self._extract_text_from_blocks(blocks_res.get("results", []))
+            return content.encode("utf-8")
+        except Exception as e:
+            raise ConnectorTransientError(f"Failed to fetch Notion page {file_id}: {e}") from e

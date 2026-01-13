@@ -5,7 +5,6 @@ import {
     Table2,
     ListChecks,
     LayoutGrid,
-    Cloud,
     Box,
     Package,
     Server,
@@ -61,14 +60,6 @@ const COMING_SOON_INTEGRATIONS: ComingSoonIntegration[] = [
         badge: "Coming Soon",
     },
     // Enterprise Storage
-    {
-        id: "onedrive",
-        name: "Microsoft OneDrive",
-        description: "Microsoft cloud storage",
-        icon: <Cloud className="h-6 w-6" />,
-        category: "Enterprise Storage",
-        badge: "Coming Soon",
-    },
     {
         id: "box",
         name: "Box",

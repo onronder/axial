@@ -21,6 +21,7 @@ class SourceType(str, Enum):
     SFTP = "sftp"
     DROPBOX = "dropbox"
     ONEDRIVE = "onedrive"
+    SHAREPOINT = "sharepoint"
     SLACK = "slack"
 
 

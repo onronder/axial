@@ -53,6 +53,16 @@ export const DATA_SOURCES: DataSource[] = [
         category: "cloud",
     },
     {
+        id: "sharepoint",
+        name: "SharePoint",
+        type: "sharepoint",
+        status: "disconnected",
+        lastSync: "-",
+        icon: "sharepoint",
+        description: "Connect Microsoft SharePoint sites",
+        category: "cloud",
+    },
+    {
         id: "dropbox",
         name: "Dropbox",
         type: "dropbox",

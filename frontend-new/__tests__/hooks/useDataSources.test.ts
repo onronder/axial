@@ -23,7 +23,7 @@ describe('useDataSources Hook Structures', () => {
         });
 
         it('should support all provider types', () => {
-            const providers = ['google_drive', 'onedrive', 'dropbox', 'notion'];
+            const providers = ['google_drive', 'onedrive', 'sharepoint', 'dropbox', 'notion'];
             providers.forEach(provider => {
                 expect(typeof provider).toBe('string');
             });

@@ -82,6 +82,70 @@ def test_refresh_google_token_raises_without_refresh_token():
             )
 
 
+def test_refresh_microsoft_token_skips_refresh_when_valid(monkeypatch):
+    monkeypatch.setattr(settings, "MICROSOFT_CLIENT_ID", "client-id")
+    monkeypatch.setattr(settings, "MICROSOFT_CLIENT_SECRET", "client-secret")
+
+    with patch("core.security.decrypt_token", side_effect=["access", "refresh"]), \
+         patch.object(OAuthTokenManager, "is_token_expired", return_value=False):
+        access, refresh, expires_at = OAuthTokenManager.refresh_microsoft_token(
+            integration_id="int-1",
+            access_token="enc-access",
+            refresh_token="enc-refresh",
+            expires_at="2030-01-01T00:00:00+00:00",
+            provider="onedrive",
+        )
+
+    assert access == "access"
+    assert refresh == "refresh"
+    assert expires_at == "2030-01-01T00:00:00+00:00"
+
+
+def test_refresh_microsoft_token_updates_db_on_refresh(monkeypatch):
+    monkeypatch.setattr(settings, "MICROSOFT_CLIENT_ID", "client-id")
+    monkeypatch.setattr(settings, "MICROSOFT_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr(settings, "MICROSOFT_TENANT_ID", "common")
+
+    supabase = MagicMock()
+    supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"id": "int-1"}])
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "new-token", "refresh_token": "new-refresh", "expires_in": 3600}
+
+    with patch("core.security.decrypt_token", side_effect=["access", "refresh"]), \
+         patch("core.security.encrypt_token", side_effect=lambda value: f"enc-{value}"), \
+         patch("core.db.get_supabase", return_value=supabase), \
+         patch("requests.post", return_value=FakeResponse()), \
+         patch.object(OAuthTokenManager, "is_token_expired", return_value=True):
+        access, refresh, expires_at = OAuthTokenManager.refresh_microsoft_token(
+            integration_id="int-1",
+            access_token="enc-access",
+            refresh_token="enc-refresh",
+            expires_at="2020-01-01T00:00:00+00:00",
+            provider="sharepoint",
+        )
+
+    assert access == "new-token"
+    assert refresh == "new-refresh"
+    assert expires_at is not None
+    supabase.table.assert_called_with("user_integrations")
+
+
+def test_refresh_microsoft_token_raises_without_refresh_token():
+    with patch("core.security.decrypt_token", return_value=None):
+        with pytest.raises(TokenRefreshError):
+            OAuthTokenManager.refresh_microsoft_token(
+                integration_id="int-1",
+                access_token="enc-access",
+                refresh_token=None,
+                expires_at=None,
+                provider="onedrive",
+            )
+
+
 def test_get_valid_credentials_google(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "client-id")
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "client-secret")
@@ -103,6 +167,17 @@ def test_get_valid_credentials_notion():
         creds = OAuthTokenManager.get_valid_credentials(
             {"id": "int-1", "access_token": "enc", "refresh_token": "enc"},
             "notion",
+        )
+
+    assert creds["access_token"] == "access"
+    assert creds["refresh_token"] == "refresh"
+
+
+def test_get_valid_credentials_onedrive():
+    with patch.object(OAuthTokenManager, "refresh_microsoft_token", return_value=("access", "refresh", "expires")):
+        creds = OAuthTokenManager.get_valid_credentials(
+            {"id": "int-1", "access_token": "enc", "refresh_token": "enc"},
+            "onedrive",
         )
 
     assert creds["access_token"] == "access"

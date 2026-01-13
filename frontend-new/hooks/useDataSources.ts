@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
-import { getGoogleRedirectUri, getGoogleClientId, getNotionRedirectUri, getNotionClientId } from "@/lib/utils";
+import {
+    getGoogleRedirectUri,
+    getGoogleClientId,
+    getNotionRedirectUri,
+    getNotionClientId,
+    getMicrosoftRedirectUri,
+    getMicrosoftClientId,
+} from "@/lib/utils";
 import type { ConnectorDefinition, UserIntegration, MergedDataSource } from "@/types";
 
 /**
@@ -150,6 +157,42 @@ export const useDataSources = () => {
             const authUrl = `https://api.notion.com/v1/oauth/authorize?${params.toString()}`;
             console.log('🔐 [useDataSources] Redirecting to Notion:', authUrl);
 
+            window.location.href = authUrl;
+        } else if (type === "onedrive" || type === "sharepoint") {
+            const clientId = getMicrosoftClientId();
+            const redirectUri = getMicrosoftRedirectUri();
+
+            console.log('🔐 [useDataSources] Microsoft Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
+            console.log('🔐 [useDataSources] Microsoft Redirect URI:', redirectUri);
+
+            if (!clientId) {
+                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_MICROSOFT_CLIENT_ID not configured');
+                alert('Microsoft OAuth not configured. Please check environment variables.');
+                return;
+            }
+
+            if (!redirectUri) {
+                console.error('📦 [useDataSources] ❌ Microsoft Redirect URI not available');
+                alert('OAuth redirect URI is not configured.');
+                return;
+            }
+
+            const scopes = type === "sharepoint"
+                ? "offline_access User.Read Files.Read.All Sites.Read.All"
+                : "offline_access User.Read Files.Read.All";
+
+            const params = new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: "code",
+                response_mode: "query",
+                scope: scopes,
+                prompt: "consent",
+                state: type,
+            });
+
+            const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
+            console.log('🔐 [useDataSources] Redirecting to Microsoft:', authUrl);
             window.location.href = authUrl;
         }
     }, []);

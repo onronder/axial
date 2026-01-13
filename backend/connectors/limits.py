@@ -32,6 +32,10 @@ def _get_limit(connector_type: str) -> int:
         return settings.CONNECTOR_CONCURRENCY_NOTION
     if normalized == "web":
         return settings.CONNECTOR_CONCURRENCY_WEB
+    if normalized == "onedrive":
+        return settings.CONNECTOR_CONCURRENCY_ONEDRIVE
+    if normalized == "sharepoint":
+        return settings.CONNECTOR_CONCURRENCY_SHAREPOINT
     if normalized == "file_upload":
         return 0
     return settings.CONNECTOR_CONCURRENCY_DEFAULT

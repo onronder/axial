@@ -24,7 +24,7 @@ from connectors.registry import get_connector_manifest
 from connectors.base import ConnectorAuthError, ConnectorTransientError
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Optional, List, Literal
 from uuid import UUID
 import logging
 import httpx
@@ -96,6 +96,12 @@ class SFTPConnectRequest(BaseModel):
     password: Optional[str] = Field(default=None, max_length=4096)
     private_key: Optional[str] = Field(default=None, max_length=16384)
     root_path: str = Field(default="/", min_length=1, max_length=1024)
+
+
+class MicrosoftExchangeRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=2048)
+    target_type: Literal["onedrive", "sharepoint"]
+    site_id: Optional[str] = Field(default=None, max_length=512)
 
 
 async def _resolve_org_and_plan(user_id: str) -> tuple[str, str]:
@@ -516,6 +522,140 @@ async def exchange_notion_token(
         "integration_id": integration_id,
         "workspace_name": workspace_name
     }
+
+
+# =============================================================================
+# Microsoft OAuth (OneDrive / SharePoint)
+# =============================================================================
+
+@router.post("/integrations/microsoft/exchange")
+async def exchange_microsoft_token(
+    request: MicrosoftExchangeRequest,
+    user_id: str = Depends(require_editor)
+):
+    """
+    Exchange Microsoft OAuth code for tokens and persist to user_integrations.
+    Supports OneDrive and SharePoint via Graph API.
+    """
+    target_type = request.target_type
+    logger.info(f"🔐 [OAuth] Starting Microsoft token exchange for user: {user_id} ({target_type})")
+
+    if not settings.MICROSOFT_CLIENT_ID or not settings.MICROSOFT_CLIENT_SECRET:
+        logger.error("🔐 [OAuth] Microsoft credentials not configured!")
+        raise HTTPException(status_code=500, detail="Microsoft credentials not configured")
+
+    if not settings.MICROSOFT_REDIRECT_URI:
+        logger.error("🔐 [OAuth] Microsoft redirect URI not configured!")
+        raise HTTPException(status_code=500, detail="Microsoft redirect URI not configured")
+
+    supabase = get_supabase()
+
+    # 1. Lookup connector definition ID
+    def_res = supabase.table("connector_definitions").select("id").eq("type", target_type).single().execute()
+    if not def_res.data:
+        raise HTTPException(status_code=500, detail=f"{target_type} connector not found in definitions")
+
+    connector_definition_id = def_res.data["id"]
+    tenant = settings.MICROSOFT_TENANT_ID or "common"
+    token_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+    scope = settings.MICROSOFT_SCOPES_SHAREPOINT if target_type == "sharepoint" else settings.MICROSOFT_SCOPES_ONEDRIVE
+
+    # 2. Exchange code for tokens
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(
+                token_url,
+                data={
+                    "client_id": settings.MICROSOFT_CLIENT_ID,
+                    "client_secret": settings.MICROSOFT_CLIENT_SECRET,
+                    "grant_type": "authorization_code",
+                    "code": request.code,
+                    "redirect_uri": settings.MICROSOFT_REDIRECT_URI,
+                    "scope": scope,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+        if response.status_code != 200:
+            logger.error(f"🔐 [OAuth] Microsoft token exchange failed: {response.text}")
+            raise HTTPException(status_code=400, detail="Microsoft token exchange failed")
+
+        token_data = response.json()
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"🔐 [OAuth] Microsoft token exchange failed: {e}")
+        raise HTTPException(status_code=400, detail="Microsoft token exchange failed") from e
+
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Microsoft token exchange returned no access token")
+
+    expires_at = None
+    if expires_in:
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+
+    # 3. Lightweight permission verification + optional drive/site IDs
+    credentials = {}
+    graph_headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        if target_type == "onedrive":
+            drive_res = await client.get("https://graph.microsoft.com/v1.0/me/drive", headers=graph_headers)
+            if drive_res.status_code != 200:
+                raise HTTPException(status_code=401, detail="Microsoft permissions invalid for OneDrive")
+            drive_data = drive_res.json()
+            if drive_data.get("id"):
+                credentials["drive_id"] = drive_data["id"]
+        else:
+            site_id = request.site_id
+            if not site_id:
+                site_res = await client.get("https://graph.microsoft.com/v1.0/sites/root", headers=graph_headers)
+                if site_res.status_code != 200:
+                    raise HTTPException(status_code=401, detail="Microsoft permissions invalid for SharePoint")
+                site_id = site_res.json().get("id")
+            if not site_id:
+                raise HTTPException(status_code=400, detail="SharePoint site_id could not be resolved")
+            credentials["site_id"] = site_id
+            drive_res = await client.get(
+                f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive",
+                headers=graph_headers,
+            )
+            if drive_res.status_code == 200:
+                drive_data = drive_res.json()
+                if drive_data.get("id"):
+                    credentials["drive_id"] = drive_data["id"]
+
+    # 4. Persist integration
+    data = {
+        "user_id": user_id,
+        "connector_definition_id": connector_definition_id,
+        "access_token": encrypt_token(access_token),
+        "refresh_token": encrypt_token(refresh_token) if refresh_token else None,
+        "expires_at": expires_at,
+        "credentials": credentials or None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    upsert_res = supabase.table("user_integrations").upsert(
+        data,
+        on_conflict="user_id,connector_definition_id",
+    ).execute()
+
+    if not upsert_res.data:
+        raise HTTPException(status_code=500, detail="Failed to store Microsoft credentials")
+
+    integration_id = upsert_res.data[0]["id"]
+
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.connect",
+        resource_type="connector",
+        resource_id=target_type,
+        details={"integration_id": integration_id},
+    )
+
+    return {"status": "success", "provider": target_type, "integration_id": integration_id}
 
 
 # =============================================================================
@@ -1046,7 +1186,7 @@ async def ingest_provider_items(
             integration = None
         
         # Prepare credentials based on connector type
-        if provider in ["google_drive", "notion"]:
+        if provider in ["google_drive", "notion", "onedrive", "sharepoint"]:
             # OAuth connectors: Pass integration_id for automatic token refresh
             if not integration or not integration.get('access_token'):
                 raise HTTPException(status_code=401, detail=f"Not connected to {provider}. Please reconnect.")
@@ -1182,7 +1322,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
         }).eq("id", job_id).execute()
 
         credentials = None
-        if provider in {"google_drive", "notion"}:
+        if provider in {"google_drive", "notion", "onedrive", "sharepoint"}:
             credentials = {"integration_id": integration_id}
 
         from worker.tasks import unified_ingest_task

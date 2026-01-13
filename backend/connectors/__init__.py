@@ -1,14 +1,17 @@
 from typing import Dict, Type
 from connectors.drive import DriveConnector
 from connectors.file_upload import FileUploadConnector
+from connectors.microsoft import MicrosoftGraphConnector
 from connectors.notion import NotionConnector
 from connectors.sftp import SFTPConnector
 from connectors.web import WebConnector
 
-# Connector registry - ALL 4 connectors migrated
+# Connector registry - unified connectors
 CONNECTORS: Dict[str, Type] = {
     "file_upload": FileUploadConnector,
     "google_drive": DriveConnector,
+    "onedrive": MicrosoftGraphConnector,
+    "sharepoint": MicrosoftGraphConnector,
     "notion": NotionConnector,
     "sftp": SFTPConnector,
     "web": WebConnector,
@@ -35,4 +38,6 @@ def get_connector(connector_type: str):
         )
     
     connector_class = CONNECTORS[connector_type]
+    if connector_type in {"onedrive", "sharepoint"}:
+        return connector_class(target_type=connector_type)
     return connector_class()

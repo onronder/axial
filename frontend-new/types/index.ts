@@ -124,6 +124,7 @@ export type DocumentSourceType =
   | 'notion'
   | 'slack'
   | 'onedrive'
+  | 'sharepoint'
   | 'dropbox'
   | 'local';
 export type DocumentStatus = 'indexed' | 'processing' | 'error';
