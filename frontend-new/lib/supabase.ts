@@ -20,7 +20,12 @@ if (!supabaseUrl || !supabaseKey) {
 
 // Create a singleton browser client instance
 // This client properly manages auth cookies for SSR compatibility
-export const supabase = createBrowserClient(supabaseUrl, supabaseKey);
+export const supabase = createBrowserClient(supabaseUrl, supabaseKey, {
+    auth: {
+        // Prevent Supabase from trying to exchange third-party OAuth codes (e.g. Microsoft) and clearing sessions.
+        detectSessionInUrl: false,
+    },
+});
 
 // Re-export the factory function for cases where a fresh client is needed
 export { createBrowserClient } from '@supabase/ssr';
