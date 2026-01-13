@@ -102,6 +102,7 @@ class MicrosoftExchangeRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=2048)
     target_type: Literal["onedrive", "sharepoint"]
     site_id: Optional[str] = Field(default=None, max_length=512)
+    code_verifier: Optional[str] = Field(default=None, max_length=256)
 
 
 async def _resolve_org_and_plan(user_id: str) -> tuple[str, str]:
@@ -564,6 +565,7 @@ async def exchange_microsoft_token(
                     "code": request.code,
                     "redirect_uri": settings.MICROSOFT_REDIRECT_URI,
                     "scope": scope,
+                    **({"code_verifier": request.code_verifier} if request.code_verifier else {}),
                 },
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )

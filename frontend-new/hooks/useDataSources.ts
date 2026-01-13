@@ -9,6 +9,8 @@ import {
     getNotionClientId,
     getMicrosoftRedirectUri,
     getMicrosoftClientId,
+    getMicrosoftTenantId,
+    generatePkcePair,
 } from "@/lib/utils";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 import type { ConnectorDefinition, UserIntegration, MergedDataSource } from "@/types";
@@ -119,7 +121,7 @@ export const useDataSources = () => {
     }, [fetchData]);
 
     // Connect a data source (OAuth redirect)
-    const connect = useCallback((type: string) => {
+    const connect = useCallback(async (type: string) => {
         console.log('📦 [useDataSources] Connecting:', type);
 
         if (type === "google_drive") {
@@ -191,9 +193,11 @@ export const useDataSources = () => {
         } else if (type === "onedrive" || type === "sharepoint") {
             const clientId = getMicrosoftClientId();
             const redirectUri = getMicrosoftRedirectUri();
+            const tenantId = getMicrosoftTenantId();
 
             console.log('🔐 [useDataSources] Microsoft Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
             console.log('🔐 [useDataSources] Microsoft Redirect URI:', redirectUri);
+            console.log('🔐 [useDataSources] Microsoft Tenant:', tenantId);
 
             if (!clientId) {
                 console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_MICROSOFT_CLIENT_ID not configured');
@@ -211,6 +215,16 @@ export const useDataSources = () => {
                 ? "offline_access User.Read Files.Read.All Sites.Read.All"
                 : "offline_access User.Read Files.Read.All";
 
+            let pkce;
+            try {
+                pkce = await generatePkcePair();
+                sessionStorage.setItem(`microsoft_pkce_${type}`, pkce.codeVerifier);
+            } catch (err) {
+                console.error('📦 [useDataSources] ❌ PKCE generation failed:', err);
+                alert('Unable to start Microsoft OAuth. Please refresh and try again.');
+                return;
+            }
+
             const params = new URLSearchParams({
                 client_id: clientId,
                 redirect_uri: redirectUri,
@@ -219,9 +233,11 @@ export const useDataSources = () => {
                 scope: scopes,
                 prompt: "consent",
                 state: type,
+                code_challenge: pkce.codeChallenge,
+                code_challenge_method: "S256",
             });
 
-            const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
+            const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params.toString()}`;
             console.log('🔐 [useDataSources] Redirecting to Microsoft:', authUrl);
             window.location.href = authUrl;
         }

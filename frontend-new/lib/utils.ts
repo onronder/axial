@@ -59,6 +59,41 @@ export function getMicrosoftRedirectUri(): string | undefined {
     return envUri || autoUri;
 }
 
+function base64UrlEncode(bytes: Uint8Array): string {
+    let binary = '';
+    bytes.forEach((byte) => {
+        binary += String.fromCharCode(byte);
+    });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function sha256(value: string): Promise<Uint8Array> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(value);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return new Uint8Array(hash);
+}
+
+export async function generatePkcePair(): Promise<{ codeVerifier: string; codeChallenge: string }> {
+    if (typeof window === 'undefined' || !window.crypto?.subtle) {
+        throw new Error('Crypto API not available for PKCE');
+    }
+    const randomBytes = new Uint8Array(32);
+    window.crypto.getRandomValues(randomBytes);
+    const codeVerifier = base64UrlEncode(randomBytes);
+    const challengeBytes = await sha256(codeVerifier);
+    const codeChallenge = base64UrlEncode(challengeBytes);
+    return { codeVerifier, codeChallenge };
+}
+
+/**
+ * Get the Microsoft tenant for OAuth authorization.
+ * Defaults to "common" for multi-tenant apps.
+ */
+export function getMicrosoftTenantId(): string {
+    return process.env.NEXT_PUBLIC_MICROSOFT_TENANT_ID || "common";
+}
+
 /**
  * Get the Microsoft Client ID from environment.
  */

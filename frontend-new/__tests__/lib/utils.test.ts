@@ -6,6 +6,7 @@ import {
     getNotionClientId,
     getMicrosoftRedirectUri,
     getMicrosoftClientId,
+    getMicrosoftTenantId,
 } from '@/lib/utils';
 
 describe('utils', () => {
@@ -17,6 +18,7 @@ describe('utils', () => {
     const originalNotionClient = process.env.NEXT_PUBLIC_NOTION_CLIENT_ID;
     const originalMicrosoftRedirect = process.env.NEXT_PUBLIC_MICROSOFT_REDIRECT_URI;
     const originalMicrosoftClient = process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID;
+    const originalMicrosoftTenant = process.env.NEXT_PUBLIC_MICROSOFT_TENANT_ID;
 
     beforeEach(() => {
         process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI = '';
@@ -25,6 +27,7 @@ describe('utils', () => {
         process.env.NEXT_PUBLIC_NOTION_CLIENT_ID = '';
         process.env.NEXT_PUBLIC_MICROSOFT_REDIRECT_URI = '';
         process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID = '';
+        process.env.NEXT_PUBLIC_MICROSOFT_TENANT_ID = '';
     });
 
     afterEach(() => {
@@ -35,6 +38,7 @@ describe('utils', () => {
         process.env.NEXT_PUBLIC_NOTION_CLIENT_ID = originalNotionClient;
         process.env.NEXT_PUBLIC_MICROSOFT_REDIRECT_URI = originalMicrosoftRedirect;
         process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID = originalMicrosoftClient;
+        process.env.NEXT_PUBLIC_MICROSOFT_TENANT_ID = originalMicrosoftTenant;
     });
 
     it('returns undefined when window is not available', () => {
@@ -80,5 +84,11 @@ describe('utils', () => {
         expect(getGoogleClientId()).toBe('google-client');
         expect(getNotionClientId()).toBe('notion-client');
         expect(getMicrosoftClientId()).toBe('microsoft-client');
+    });
+
+    it('returns microsoft tenant id from env or common', () => {
+        expect(getMicrosoftTenantId()).toBe('common');
+        process.env.NEXT_PUBLIC_MICROSOFT_TENANT_ID = 'tenant-123';
+        expect(getMicrosoftTenantId()).toBe('tenant-123');
     });
 });

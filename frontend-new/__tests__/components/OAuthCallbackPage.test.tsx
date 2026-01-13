@@ -34,6 +34,7 @@ describe("OAuthCallbackPage", () => {
         pushMock.mockClear();
         vi.mocked(api.post).mockClear();
         vi.mocked(api.post).mockResolvedValue({ data: {} });
+        sessionStorage.clear();
     });
 
     afterEach(() => {
@@ -42,6 +43,7 @@ describe("OAuthCallbackPage", () => {
 
     it("exchanges code with Microsoft endpoint for OneDrive", async () => {
         searchParams = new URLSearchParams("code=abc123&state=onedrive");
+        sessionStorage.setItem("microsoft_pkce_onedrive", "verifier-123");
 
         render(<OAuthCallbackPage />);
 
@@ -49,6 +51,7 @@ describe("OAuthCallbackPage", () => {
             expect(api.post).toHaveBeenCalledWith("/integrations/microsoft/exchange", {
                 code: "abc123",
                 target_type: "onedrive",
+                code_verifier: "verifier-123",
             });
         });
 
@@ -60,6 +63,7 @@ describe("OAuthCallbackPage", () => {
 
     it("exchanges code with Microsoft endpoint for SharePoint", async () => {
         searchParams = new URLSearchParams("code=share123&state=sharepoint");
+        sessionStorage.setItem("microsoft_pkce_sharepoint", "verifier-456");
 
         render(<OAuthCallbackPage />);
 
@@ -67,6 +71,7 @@ describe("OAuthCallbackPage", () => {
             expect(api.post).toHaveBeenCalledWith("/integrations/microsoft/exchange", {
                 code: "share123",
                 target_type: "sharepoint",
+                code_verifier: "verifier-456",
             });
         });
     });

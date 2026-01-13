@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
+import { getMicrosoftRedirectUri, getMicrosoftTenantId } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -18,16 +19,28 @@ type ApiError = {
     message?: string;
 };
 
+type DebugInfo = {
+    provider: Provider;
+    tenantId: string;
+    redirectUri: string;
+    pkcePresent: boolean;
+    pkceLength: number;
+};
+
 function OAuthCallbackContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
     const [error, setError] = useState<string | null>(null);
     const [provider, setProvider] = useState<Provider>("google");
+    const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+    const [showDebug, setShowDebug] = useState(false);
 
     useEffect(() => {
         const code = searchParams.get("code");
         const errorParam = searchParams.get("error");
+        const errorDescription = searchParams.get("error_description");
+        const errorCodes = searchParams.get("error_codes");
         const stateParam = searchParams.get("state");
 
         // Detect provider from state parameter (set during OAuth init)
@@ -41,14 +54,40 @@ function OAuthCallbackContent() {
                         : "google";
         setProvider(detectedProvider);
 
+        if (typeof window !== "undefined") {
+            const isMicrosoft = detectedProvider === "onedrive" || detectedProvider === "sharepoint";
+            const seenDebug = sessionStorage.getItem("oauth_debug_seen") === "1";
+            if (isMicrosoft && !seenDebug) {
+                const pkceKey = `microsoft_pkce_${detectedProvider}`;
+                const codeVerifier = sessionStorage.getItem(pkceKey);
+                const redirectUri = getMicrosoftRedirectUri() || "unknown";
+                const tenantId = getMicrosoftTenantId();
+                setDebugInfo({
+                    provider: detectedProvider,
+                    tenantId,
+                    redirectUri,
+                    pkcePresent: !!codeVerifier,
+                    pkceLength: codeVerifier?.length || 0,
+                });
+                setShowDebug(true);
+                sessionStorage.setItem("oauth_debug_seen", "1");
+            }
+        }
+
         console.log("🔐 [OAuth Callback] Starting...");
         console.log("🔐 [OAuth Callback] Provider:", detectedProvider);
         console.log("🔐 [OAuth Callback] Code:", code ? `${code.substring(0, 20)}...` : null);
         console.log("🔐 [OAuth Callback] Error:", errorParam);
+        console.log("🔐 [OAuth Callback] Error Description:", errorDescription);
+        console.log("🔐 [OAuth Callback] Error Codes:", errorCodes);
 
         if (errorParam) {
             setStatus("error");
-            setError(errorParam === "access_denied" ? "Access was denied" : errorParam);
+            const friendly =
+                errorParam === "access_denied"
+                    ? "Access was denied"
+                    : errorDescription || errorParam;
+            setError(friendly);
             return;
         }
 
@@ -68,10 +107,19 @@ function OAuthCallbackContent() {
                 if (detectedProvider === "notion") {
                     response = await api.post("/integrations/notion/exchange", { code });
                 } else if (detectedProvider === "onedrive" || detectedProvider === "sharepoint") {
+                    const pkceKey = `microsoft_pkce_${detectedProvider}`;
+                    const codeVerifier = sessionStorage.getItem(pkceKey);
+                    if (!codeVerifier) {
+                        setStatus("error");
+                        setError("Missing PKCE verifier. Please retry the connection.");
+                        return;
+                    }
                     response = await api.post("/integrations/microsoft/exchange", {
                         code,
                         target_type: detectedProvider,
+                        code_verifier: codeVerifier,
                     });
+                    sessionStorage.removeItem(pkceKey);
                 } else {
                     response = await api.post("/integrations/google/exchange", { code });
                 }
@@ -106,13 +154,44 @@ function OAuthCallbackContent() {
         providerName = "Notion";
     } else if (provider === "onedrive") {
         providerName = "OneDrive";
-    } else if (provider === "sharepoint") {
-        providerName = "SharePoint";
-    }
+        } else if (provider === "sharepoint") {
+            providerName = "SharePoint";
+        }
 
     return (
         <div className="flex min-h-screen items-center justify-center p-4 bg-background">
-            <Card className="w-full max-w-md">
+            <div className="w-full max-w-md space-y-4">
+                {showDebug && debugInfo && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold">OAuth Debug (One-Time)</span>
+                            <button
+                                className="text-xs font-medium underline underline-offset-2"
+                                onClick={() => setShowDebug(false)}
+                                type="button"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                        <div className="mt-2 space-y-1">
+                            <div>
+                                <span className="font-medium">Provider:</span> {debugInfo.provider}
+                            </div>
+                            <div>
+                                <span className="font-medium">Tenant:</span> {debugInfo.tenantId}
+                            </div>
+                            <div>
+                                <span className="font-medium">Redirect URI:</span> {debugInfo.redirectUri}
+                            </div>
+                            <div>
+                                <span className="font-medium">PKCE:</span>{" "}
+                                {debugInfo.pkcePresent ? "present" : "missing"} (len {debugInfo.pkceLength})
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <Card>
                 <CardHeader className="text-center">
                     <div className="mx-auto mb-4">
                         {status === "loading" && (
@@ -150,7 +229,8 @@ function OAuthCallbackContent() {
                         </Button>
                     </CardContent>
                 )}
-            </Card>
+                </Card>
+            </div>
         </div>
     );
 }
