@@ -7,7 +7,8 @@ export type CanonicalSourceType =
   | "onedrive"
   | "sharepoint"
   | "dropbox"
-  | "local";
+  | "local"
+  | "knowledge_base";
 
 const SOURCE_TYPE_ALIASES: Record<string, string> = {
   "file-upload": "file_upload",
@@ -23,6 +24,7 @@ const SOURCE_TYPE_ALIASES: Record<string, string> = {
   "share_point": "sharepoint",
   dropbox: "dropbox",
   local: "local",
+  knowledge_base: "knowledge_base",
 };
 
 export function normalizeSourceType(value?: string | null): string | undefined {
@@ -41,6 +43,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   sharepoint: "SharePoint",
   dropbox: "Dropbox",
   local: "Local",
+  knowledge_base: "Knowledge Base",
 };
 
 export function formatSourceTypeLabel(value?: string | null): string {
