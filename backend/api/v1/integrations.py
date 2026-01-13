@@ -565,17 +565,70 @@ async def exchange_microsoft_token(
             }
             if request.code_verifier:
                 token_payload["code_verifier"] = request.code_verifier
-            if settings.MICROSOFT_CLIENT_SECRET and not request.code_verifier:
+            if settings.MICROSOFT_CLIENT_SECRET:
                 token_payload["client_secret"] = settings.MICROSOFT_CLIENT_SECRET
+
+            client_id_suffix = (
+                settings.MICROSOFT_CLIENT_ID[-6:] if settings.MICROSOFT_CLIENT_ID else "missing"
+            )
+            secret_len = len(settings.MICROSOFT_CLIENT_SECRET or "")
+            verifier_len = len(request.code_verifier or "")
+            code_len = len(request.code or "")
+            logger.info(
+                "🔐 [OAuth] Microsoft token request config: tenant=%s redirect_uri=%s scope=%s "
+                "client_id_suffix=%s secret_present=%s secret_len=%s code_len=%s "
+                "code_verifier_present=%s code_verifier_len=%s payload_keys=%s",
+                tenant,
+                settings.MICROSOFT_REDIRECT_URI,
+                scope,
+                client_id_suffix,
+                bool(settings.MICROSOFT_CLIENT_SECRET),
+                secret_len,
+                code_len,
+                bool(request.code_verifier),
+                verifier_len,
+                sorted(token_payload.keys()),
+            )
 
             response = await client.post(
                 token_url,
                 data=token_payload,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
+            if (
+                response.status_code != 200
+                and token_payload.get("client_secret")
+                and "AADSTS700025" in response.text
+            ):
+                logger.warning(
+                    "🔐 [OAuth] Microsoft rejected client_secret; retrying as public client."
+                )
+                token_payload.pop("client_secret", None)
+                response = await client.post(
+                    token_url,
+                    data=token_payload,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
         if response.status_code != 200:
             logger.error(f"🔐 [OAuth] Microsoft token exchange failed: {response.text}")
-            raise HTTPException(status_code=400, detail="Microsoft token exchange failed")
+            error_detail = None
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = None
+            if isinstance(error_payload, dict):
+                error_detail = error_payload.get("error_description")
+                error_codes = error_payload.get("error_codes") or []
+                if "AADSTS9002327" in (error_detail or "") or 9002327 in error_codes:
+                    error_detail = (
+                        "AADSTS9002327: This Microsoft app is registered as SPA. "
+                        "Tokens must be redeemed via a browser cross-origin request. "
+                        "Move the redirect URI to the Web platform (or remove it from SPA), "
+                        "or exchange tokens in the frontend instead."
+                    )
+            if not error_detail:
+                error_detail = response.text or "Microsoft token exchange failed"
+            raise HTTPException(status_code=400, detail=error_detail)
 
         token_data = response.json()
         access_token = token_data.get("access_token")
