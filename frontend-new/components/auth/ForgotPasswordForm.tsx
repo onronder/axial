@@ -75,12 +75,12 @@ export function ForgotPasswordForm() {
       {isSubmitted ? (
         <div className="text-center space-y-6 py-4">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success/10 animate-scale-in">
-            <CheckCircle className="h-10 w-10 text-green-400" />
+            <CheckCircle className="h-10 w-10 text-green-500" />
           </div>
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-white">Check your <span className="gradient-text">email</span></h1>
-            <p className="text-white/60">
-              We've sent a password reset link to your email address.
+            <h1 className="text-2xl font-bold text-foreground">Check your <span className="text-gradient">email</span></h1>
+            <p className="text-muted-foreground">
+              We&apos;ve sent a password reset link to your email address.
             </p>
           </div>
           <button
@@ -94,11 +94,11 @@ export function ForgotPasswordForm() {
         <>
           {/* Header */}
           <div className="text-center">
-            <h1 className="text-2xl font-bold text-white">
-              Reset <span className="gradient-text">password</span>
+            <h1 className="text-2xl font-bold text-foreground">
+              Reset <span className="text-gradient">password</span>
             </h1>
-            <p className="mt-2 text-sm text-white/60">
-              We'll send you a link to reset your password
+            <p className="mt-2 text-sm text-muted-foreground">
+              We&apos;ll send you a link to reset your password
             </p>
           </div>
 
@@ -109,7 +109,7 @@ export function ForgotPasswordForm() {
                 name="email"
                 render={({ field }) => (
                   <FormItem className="space-y-2">
-                    <FormLabel className="text-sm font-medium text-white/80">Email</FormLabel>
+                    <FormLabel className="text-sm font-medium text-foreground/80">Email</FormLabel>
                     <FormControl>
                       <Input
                         className="input-glass w-full"
@@ -118,7 +118,7 @@ export function ForgotPasswordForm() {
                         {...field}
                       />
                     </FormControl>
-                    <FormMessage className="text-red-400 text-xs" />
+                    <FormMessage className="text-destructive text-xs" />
                   </FormItem>
                 )}
               />
@@ -135,9 +135,9 @@ export function ForgotPasswordForm() {
           </Form>
 
           {/* Footer Link */}
-          <p className="text-center text-sm text-white/60">
+          <p className="text-center text-sm text-muted-foreground">
             Remember your password?{" "}
-            <Link href="/login" className="text-accent-cyan hover:underline transition-colors">
+            <Link href="/login" className="text-primary hover:underline transition-colors">
               Sign in
             </Link>
           </p>

@@ -80,10 +80,10 @@ export function LoginForm() {
     <div className="glass-card p-8 space-y-8">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-white">
-          Welcome <span className="gradient-text">back</span>
+        <h1 className="text-2xl font-bold text-foreground">
+          Welcome <span className="text-gradient">back</span>
         </h1>
-        <p className="mt-2 text-sm text-white/60">
+        <p className="mt-2 text-sm text-muted-foreground">
           Sign in to your Axio Hub account
         </p>
       </div>
@@ -95,7 +95,7 @@ export function LoginForm() {
             name="email"
             render={({ field }) => (
               <FormItem className="space-y-2">
-                <FormLabel className="text-sm font-medium text-white/80">Email</FormLabel>
+                <FormLabel className="text-sm font-medium text-foreground/80">Email</FormLabel>
                 <FormControl>
                   <Input
                     className="input-glass w-full"
@@ -104,7 +104,7 @@ export function LoginForm() {
                     {...field}
                   />
                 </FormControl>
-                <FormMessage className="text-red-400 text-xs" />
+                <FormMessage className="text-destructive text-xs" />
               </FormItem>
             )}
           />
@@ -114,7 +114,7 @@ export function LoginForm() {
             name="password"
             render={({ field }) => (
               <FormItem className="space-y-2">
-                <FormLabel className="text-sm font-medium text-white/80">Password</FormLabel>
+                <FormLabel className="text-sm font-medium text-foreground/80">Password</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <Input
@@ -126,7 +126,7 @@ export function LoginForm() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/60 transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                       aria-label={showPassword ? "Hide password" : "Show password"}
                     >
                       {showPassword ? (
@@ -137,7 +137,7 @@ export function LoginForm() {
                     </button>
                   </div>
                 </FormControl>
-                <FormMessage className="text-red-400 text-xs" />
+                <FormMessage className="text-destructive text-xs" />
               </FormItem>
             )}
           />
@@ -148,14 +148,14 @@ export function LoginForm() {
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-2 focus:ring-primary focus:ring-offset-0"
+                className="h-4 w-4 rounded border-border bg-muted text-primary focus:ring-2 focus:ring-primary focus:ring-offset-0"
               />
-              <span className="text-sm text-white/80">Remember me</span>
+              <span className="text-sm text-foreground/80">Remember me</span>
             </label>
 
             <Link
               href="/forgot-password"
-              className="text-sm text-accent-violet hover:text-accent-violet/80 transition-colors"
+              className="text-sm text-primary hover:text-primary/80 transition-colors"
             >
               Forgot password?
             </Link>
@@ -174,10 +174,10 @@ export function LoginForm() {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-white/10" />
+          <div className="w-full border-t border-border" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-[#030712] px-2 text-white/40">
+          <span className="bg-background px-2 text-muted-foreground">
             Or continue with
           </span>
         </div>
@@ -209,9 +209,9 @@ export function LoginForm() {
       </button>
 
       {/* Footer Link */}
-      <p className="text-center text-sm text-white/60">
-        Don't have an account?{" "}
-        <Link href="/register" className="text-accent-cyan hover:underline">
+      <p className="text-center text-sm text-muted-foreground">
+        Don&apos;t have an account?{" "}
+        <Link href="/register" className="text-primary hover:underline">
           Sign up
         </Link>
       </p>

@@ -74,10 +74,10 @@ export function RegisterForm() {
     <div className="glass-card p-8 space-y-8">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-white">
-          Create an <span className="gradient-text">account</span>
+        <h1 className="text-2xl font-bold text-foreground">
+          Create an <span className="text-gradient">account</span>
         </h1>
-        <p className="mt-2 text-sm text-white/60">
+        <p className="mt-2 text-sm text-muted-foreground">
           Start your journey with Axio Hub
         </p>
       </div>
@@ -90,7 +90,7 @@ export function RegisterForm() {
               name="firstName"
               render={({ field }) => (
                 <FormItem className="space-y-2">
-                  <FormLabel className="text-sm font-medium text-white/80">First Name</FormLabel>
+                  <FormLabel className="text-sm font-medium text-foreground/80">First Name</FormLabel>
                   <FormControl>
                     <Input
                       className="input-glass w-full"
@@ -98,7 +98,7 @@ export function RegisterForm() {
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage className="text-red-400 text-xs" />
+                  <FormMessage className="text-destructive text-xs" />
                 </FormItem>
               )}
             />
@@ -107,7 +107,7 @@ export function RegisterForm() {
               name="lastName"
               render={({ field }) => (
                 <FormItem className="space-y-2">
-                  <FormLabel className="text-sm font-medium text-white/80">Last Name</FormLabel>
+                  <FormLabel className="text-sm font-medium text-foreground/80">Last Name</FormLabel>
                   <FormControl>
                     <Input
                       className="input-glass w-full"
@@ -115,7 +115,7 @@ export function RegisterForm() {
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage className="text-red-400 text-xs" />
+                  <FormMessage className="text-destructive text-xs" />
                 </FormItem>
               )}
             />
@@ -126,7 +126,7 @@ export function RegisterForm() {
             name="email"
             render={({ field }) => (
               <FormItem className="space-y-2">
-                <FormLabel className="text-sm font-medium text-white/80">Email</FormLabel>
+                <FormLabel className="text-sm font-medium text-foreground/80">Email</FormLabel>
                 <FormControl>
                   <Input
                     className="input-glass w-full"
@@ -135,7 +135,7 @@ export function RegisterForm() {
                     {...field}
                   />
                 </FormControl>
-                <FormMessage className="text-red-400 text-xs" />
+                <FormMessage className="text-destructive text-xs" />
               </FormItem>
             )}
           />
@@ -145,7 +145,7 @@ export function RegisterForm() {
             name="password"
             render={({ field }) => (
               <FormItem className="space-y-2">
-                <FormLabel className="text-sm font-medium text-white/80">Password</FormLabel>
+                <FormLabel className="text-sm font-medium text-foreground/80">Password</FormLabel>
                 <FormControl>
                   <Input
                     className="input-glass w-full"
@@ -154,7 +154,7 @@ export function RegisterForm() {
                     {...field}
                   />
                 </FormControl>
-                <FormMessage className="text-red-400 text-xs" />
+                <FormMessage className="text-destructive text-xs" />
               </FormItem>
             )}
           />
@@ -168,11 +168,11 @@ export function RegisterForm() {
                   <Checkbox
                     checked={field.value}
                     onCheckedChange={field.onChange}
-                    className="border-white/20 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                    className="border-border data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                   />
                 </FormControl>
                 <div className="space-y-1 leading-none">
-                  <FormLabel className="text-sm font-normal text-white/80">
+                  <FormLabel className="text-sm font-normal text-foreground/80">
                     I agree to the{" "}
                     <Link
                       href="/legal/terms"
@@ -190,7 +190,7 @@ export function RegisterForm() {
                       Privacy Policy
                     </Link>
                   </FormLabel>
-                  <FormMessage className="text-red-400 text-xs" />
+                  <FormMessage className="text-destructive text-xs" />
                 </div>
               </FormItem>
             )}
@@ -209,10 +209,10 @@ export function RegisterForm() {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-white/10" />
+          <div className="w-full border-t border-border" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-[#030712] px-2 text-white/40">
+          <span className="bg-background px-2 text-muted-foreground">
             Or continue with
           </span>
         </div>
@@ -244,9 +244,9 @@ export function RegisterForm() {
       </button>
 
       {/* Footer Link */}
-      <p className="text-center text-sm text-white/60">
+      <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link href="/login" className="text-accent-cyan hover:underline transition-colors">
+        <Link href="/login" className="text-primary hover:underline transition-colors">
           Sign in
         </Link>
       </p>
