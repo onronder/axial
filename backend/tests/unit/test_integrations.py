@@ -1020,6 +1020,89 @@ class TestListProviderItemsErrors:
                 await list_provider_items("google_drive", user_id="user-1")
 
 
+class TestSyncConnectorThreadOffloading:
+    """
+    Tests for the async/sync connector bridge pattern.
+    
+    Ensures that:
+    - Async connectors (Google Drive, Notion) are awaited directly
+    - Sync connectors (Dropbox, SFTP) are offloaded to threadpool
+    - Generator-based connectors work correctly
+    """
+    
+    @pytest.mark.asyncio
+    async def test_sync_generator_connector_uses_threadpool(self):
+        """
+        Dropbox/SFTP connectors return generators (sync).
+        These MUST be wrapped with run_in_threadpool to avoid blocking.
+        """
+        # Create a mock sync connector that returns a generator
+        def sync_generator_list_files(config):
+            yield {"id": "file-1", "name": "doc.pdf", "mime_type": "application/pdf"}
+            yield {"id": "file-2", "name": "image.png", "mime_type": "image/png"}
+        
+        connector = MagicMock()
+        connector.list_files = sync_generator_list_files  # NOT AsyncMock - a real sync function
+        
+        with patch("api.v1.integrations.get_connector", return_value=connector), \
+             patch("api.v1.integrations.run_in_threadpool") as mock_threadpool:
+            # Make run_in_threadpool call the lambda and return result
+            mock_threadpool.side_effect = lambda fn: fn()
+            
+            result = await list_provider_items("dropbox", user_id="user-1")
+        
+        # Verify run_in_threadpool was called (sync connector detection works)
+        mock_threadpool.assert_called_once()
+        
+        # Verify results are correct
+        assert len(result) == 2
+        assert result[0]["id"] == "file-1"
+        assert result[1]["id"] == "file-2"
+    
+    @pytest.mark.asyncio
+    async def test_async_connector_does_not_use_threadpool(self):
+        """
+        Async connectors (Google Drive, Notion) should NOT use threadpool.
+        They should be awaited directly for better performance.
+        """
+        connector = MagicMock()
+        connector.list_files = AsyncMock(return_value=[
+            {"id": "file-1", "name": "doc.pdf", "mime_type": "application/pdf"}
+        ])
+        
+        with patch("api.v1.integrations.get_connector", return_value=connector), \
+             patch("api.v1.integrations.run_in_threadpool") as mock_threadpool:
+            result = await list_provider_items("google_drive", user_id="user-1")
+        
+        # Verify run_in_threadpool was NOT called
+        mock_threadpool.assert_not_called()
+        
+        # Verify the async connector was awaited directly
+        connector.list_files.assert_awaited_once()
+        assert len(result) == 1
+    
+    @pytest.mark.asyncio
+    async def test_sync_connector_errors_propagate_correctly(self):
+        """
+        Errors from sync connectors must propagate through the threadpool wrapper.
+        """
+        from connectors.base import ConnectorAuthError
+        
+        def failing_sync_list_files(config):
+            raise ConnectorAuthError("Dropbox token expired")
+        
+        connector = MagicMock()
+        connector.list_files = failing_sync_list_files
+        
+        with patch("api.v1.integrations.get_connector", return_value=connector):
+            with pytest.raises(HTTPException) as exc:
+                await list_provider_items("dropbox", user_id="user-1")
+        
+        # Auth errors should return 401, not 500
+        assert exc.value.status_code == 401
+        assert "Authentication failed" in exc.value.detail
+
+
 class TestCrawlWebErrors:
     @pytest.mark.asyncio
     async def test_crawl_web_blocks_feature(self):

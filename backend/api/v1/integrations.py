@@ -5,6 +5,7 @@ Provides dynamic connector discovery, OAuth handling, and integration management
 """
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from core.security import get_current_user, encrypt_token, decrypt_token
 from core.db import get_supabase
@@ -26,6 +27,7 @@ from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Literal, Any
 from uuid import UUID
+import inspect
 import logging
 import httpx
 
@@ -1149,13 +1151,46 @@ async def list_provider_items(
     parent_id: Optional[str] = None,
     user_id: str = Depends(get_current_user)
 ):
-    """List items from a connected provider (folders, files, etc.)."""
+    """
+    List items from a connected provider (folders, files, etc.).
+    
+    Handles both async and sync connectors:
+    - Async connectors (Google Drive, Notion, OneDrive, SharePoint): awaited directly
+    - Sync connectors (Dropbox, SFTP): offloaded to threadpool to prevent blocking
+    
+    This prevents the main event loop from being blocked by sync I/O operations.
+    """
     try:
         provider = _require_provider(provider)
         connector = get_connector(provider)
         config = {"user_id": user_id, "parent_id": parent_id, "provider": provider}
-        raw_items = await connector.list_files(config)
-
+        
+        # =================================================================
+        # Async/Sync Bridge: Handle both coroutine and generator connectors
+        # =================================================================
+        list_files_method = connector.list_files
+        
+        if inspect.iscoroutinefunction(list_files_method):
+            # Async connector (e.g., Google Drive, Notion, OneDrive)
+            # Safe to await directly
+            raw_items = await list_files_method(config)
+        else:
+            # Sync connector (e.g., Dropbox, SFTP) - returns generator
+            # CRITICAL: Offload to threadpool to prevent blocking the event loop
+            # 
+            # Why this matters:
+            # - Dropbox uses synchronous `requests` library
+            # - Each API call blocks while waiting for network response
+            # - Without threadpool, ALL other users would freeze during this
+            # - run_in_threadpool executes in a separate thread, keeping event loop free
+            #
+            # The lambda consumes the generator into a list within the thread,
+            # ensuring all network I/O happens off the main event loop.
+            raw_items = await run_in_threadpool(lambda: list(list_files_method(config)))
+        
+        # =================================================================
+        # Item Mapping
+        # =================================================================
         def _map_item(item: Any) -> Optional[dict]:
             # Handle dataclass-like objects or dicts
             if hasattr(item, "__dict__"):
@@ -1193,7 +1228,16 @@ async def list_provider_items(
         items = [_map_item(it) for it in (raw_items or []) if it]
         items = [it for it in items if it]
         return items
+    except ConnectorAuthError as e:
+        # Auth errors should return 401, not 500
+        logger.warning(f"⚠️ [ListItems] Auth error for {provider}: {e}")
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+    except ConnectorTransientError as e:
+        # Transient errors (rate limits, network) - return 503
+        logger.warning(f"⚠️ [ListItems] Transient error for {provider}: {e}")
+        raise HTTPException(status_code=503, detail=f"Service temporarily unavailable: {str(e)}")
     except Exception as e:
+        logger.error(f"❌ [ListItems] Failed to list items for {provider}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
 
 
@@ -1535,7 +1579,16 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             raise
 
         # 3. Resolve root items to sync
-        root_items = await connector.list_files({"user_id": user_id, "parent_id": None, "provider": provider})
+        # Handle both async and sync connectors (same pattern as list_provider_items)
+        list_files_method = connector.list_files
+        sync_config = {"user_id": user_id, "parent_id": None, "provider": provider}
+        
+        if inspect.iscoroutinefunction(list_files_method):
+            root_items = await list_files_method(sync_config)
+        else:
+            # Sync connector - offload to threadpool
+            root_items = await run_in_threadpool(lambda: list(list_files_method(sync_config)))
+        
         item_ids = [getattr(item, "id", None) or item.get("id") for item in (root_items or []) if (getattr(item, "id", None) or (isinstance(item, dict) and item.get("id")))]
 
         if not item_ids:
