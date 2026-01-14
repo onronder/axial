@@ -44,7 +44,6 @@ StreamMaxLength 1000M
 MaxScanSize 1000M
 MaxFileSize 1000M
 ReadTimeout 300
-SendTimeout 300
 CommandReadTimeout 30
 EOF
 
