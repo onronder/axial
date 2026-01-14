@@ -787,42 +787,34 @@ def send_email_notification(
         total_files: Number of processed files
     """
     try:
-        # Fetch user name from profile (table does not have email)
+        # Fetch user name from profile (email is in auth.users, not user_profiles)
+        name = "there"  # Default
         try:
             user_response = supabase.table("user_profiles").select(
-                "display_name,full_name,email"
-            ).eq("user_id", user_id).single().execute()
+                "display_name,full_name"
+            ).eq("user_id", user_id).maybe_single().execute()
             user_data = user_response.data
-            if not isinstance(user_data, dict):
+            if isinstance(user_data, dict):
+                name = user_data.get("display_name") or user_data.get("full_name") or "there"
+            else:
+                # Try legacy profiles table
                 legacy_response = supabase.table("profiles").select(
-                    "display_name,full_name,email"
-                ).eq("user_id", user_id).single().execute()
-                user_data = legacy_response.data
-            if hasattr(user_data, "data") and isinstance(user_data.data, dict):
-                user_data = user_data.data
-            if not isinstance(user_data, dict):
-                logger.warning(f"📧 [Email] No profile found for user {user_id}")
-                return
-            name = user_data.get("display_name") or user_data.get("full_name") or "there"
-        except Exception:
-            logger.warning(f"📧 [Email] Failed to fetch profile for user {user_id}")
-            return
+                    "display_name,full_name"
+                ).eq("user_id", user_id).maybe_single().execute()
+                if legacy_response.data and isinstance(legacy_response.data, dict):
+                    name = legacy_response.data.get("display_name") or legacy_response.data.get("full_name") or "there"
+        except Exception as profile_error:
+            logger.warning(f"📧 [Email] Could not fetch profile (using default name): {profile_error}")
             
         # Fetch email from Auth Admin (requires Service Role key)
         email = None
-        if isinstance(user_data, dict) and "email" in user_data:
-            email = user_data.get("email")
-            if not email:
-                logger.warning(f"📧 [Email] No email in profile for user {user_id}")
-                return
-        else:
-            try:
-                # tasks.py uses the global supabase client which has SECRET_KEY (Admin)
-                auth_user = supabase.auth.admin.get_user_by_id(user_id)
-                if auth_user and auth_user.user:
-                    email = auth_user.user.email
-            except Exception as auth_error:
-                logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
+        try:
+            # tasks.py uses the global supabase client which has SECRET_KEY (Admin)
+            auth_user = supabase.auth.admin.get_user_by_id(user_id)
+            if auth_user and auth_user.user:
+                email = auth_user.user.email
+        except Exception as auth_error:
+            logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
             
         if not email:
             logger.warning(f"📧 [Email] No email found for user {user_id}")

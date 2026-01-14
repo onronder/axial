@@ -20,10 +20,12 @@ interface SourcePillProps extends HTMLAttributes<HTMLAnchorElement> {
     source: SourceMetadata;
     isHighlighted?: boolean;
     showExternalIcon?: boolean;
+    /** Optional badge showing citation count */
+    citationCount?: number;
 }
 
 export const SourcePill = forwardRef<HTMLAnchorElement, SourcePillProps>(
-    ({ source, isHighlighted = false, showExternalIcon = false, className, ...props }, ref) => {
+    ({ source, isHighlighted = false, showExternalIcon = false, citationCount, className, ...props }, ref) => {
         // Extract display information
         const rawType = source.type || source.source_type || source.source || "";
         const normalizedType = normalizeSourceType(rawType);
@@ -80,6 +82,15 @@ export const SourcePill = forwardRef<HTMLAnchorElement, SourcePillProps>(
                     {...props}
                 >
                     {pillContent}
+                    {/* Citation count badge */}
+                    {citationCount && citationCount > 1 && (
+                        <span 
+                            className="ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-secondary px-1 text-[10px] font-bold text-background"
+                            title={`Cited ${citationCount} times`}
+                        >
+                            {citationCount}
+                        </span>
+                    )}
                 </a>
             );
         }
@@ -91,6 +102,15 @@ export const SourcePill = forwardRef<HTMLAnchorElement, SourcePillProps>(
                 {...(props as HTMLAttributes<HTMLSpanElement>)}
             >
                 {pillContent}
+                {/* Citation count badge */}
+                {citationCount && citationCount > 1 && (
+                    <span 
+                        className="ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-secondary px-1 text-[10px] font-bold text-background"
+                        title={`Cited ${citationCount} times`}
+                    >
+                        {citationCount}
+                    </span>
+                )}
             </span>
         );
     }
@@ -102,10 +122,48 @@ SourcePill.displayName = "SourcePill";
  * SourcePillList - Horizontal list of source citation pills
  * 
  * Features:
- * - Responsive horizontal layout with wrapping
+ * - Deduplication by source name (no duplicate pills)
+ * - Max 5 visible sources with "+X more" overflow
+ * - Citation count badge for repeated sources
  * - Hover coordination with inline citations
  * - Accessible keyboard navigation
  */
+
+const MAX_VISIBLE_SOURCES = 5;
+
+interface DeduplicatedSource {
+    source: SourceMetadata;
+    count: number;
+    indices: number[];
+}
+
+/**
+ * Deduplicates sources by their label/title to avoid showing
+ * the same document multiple times as separate pills.
+ */
+function deduplicateSources(sources: SourceMetadata[]): DeduplicatedSource[] {
+    const sourceMap = new Map<string, DeduplicatedSource>();
+    
+    sources.forEach((source, idx) => {
+        // Create a unique key based on source identity
+        const key = (source.label || source.title || source.source || source.url || `source-${idx}`).toLowerCase().trim();
+        
+        if (sourceMap.has(key)) {
+            const existing = sourceMap.get(key)!;
+            existing.count++;
+            existing.indices.push(source.index || idx + 1);
+        } else {
+            sourceMap.set(key, {
+                source,
+                count: 1,
+                indices: [source.index || idx + 1],
+            });
+        }
+    });
+    
+    return Array.from(sourceMap.values());
+}
+
 interface SourcePillListProps {
     sources: SourceMetadata[];
     className?: string;
@@ -121,28 +179,43 @@ export function SourcePillList({
 }: SourcePillListProps) {
     if (!sources || sources.length === 0) return null;
 
+    // Deduplicate sources to avoid showing 10 identical pills
+    const deduplicated = deduplicateSources(sources);
+    const visibleSources = deduplicated.slice(0, MAX_VISIBLE_SOURCES);
+    const overflowCount = deduplicated.length - MAX_VISIBLE_SOURCES;
+
     return (
         <nav
             aria-label="Source citations"
             className={cn("flex flex-wrap items-center gap-2", className)}
         >
-            {sources.map((source, idx) => {
-                const sourceIndex = source.index || idx + 1;
-                const isHighlighted = highlightedIndex === sourceIndex;
+            {visibleSources.map((item, idx) => {
+                // Check if any of this source's indices are highlighted
+                const isHighlighted = item.indices.some(i => i === highlightedIndex);
 
                 return (
                     <SourcePill
                         key={`source-pill-${idx}`}
-                        source={source}
+                        source={item.source}
                         isHighlighted={isHighlighted}
-                        onMouseEnter={() => onSourceHover?.(sourceIndex)}
+                        citationCount={item.count}
+                        onMouseEnter={() => onSourceHover?.(item.indices[0])}
                         onMouseLeave={() => onSourceHover?.(null)}
-                        onFocus={() => onSourceHover?.(sourceIndex)}
+                        onFocus={() => onSourceHover?.(item.indices[0])}
                         onBlur={() => onSourceHover?.(null)}
                     />
                 );
             })}
+            
+            {/* Overflow indicator */}
+            {overflowCount > 0 && (
+                <span 
+                    className="px-3 py-1.5 text-sm text-muted-foreground border border-dashed border-muted-foreground/30 rounded-full"
+                    title={`${overflowCount} more sources not shown`}
+                >
+                    +{overflowCount} more
+                </span>
+            )}
         </nav>
     );
 }
-

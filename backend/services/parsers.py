@@ -15,6 +15,8 @@ import tempfile
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
 from typing import List, Dict, Any, Optional, Tuple
 
 # LangChain imports (text_splitter moved to langchain package in newer versions)
@@ -35,6 +37,105 @@ try:
 except Exception:
     pdf_scan_detection_total = None
     llamaparse_fallback_total = None
+
+
+# =============================================================================
+# CIRCUIT BREAKER FOR CLOUD SERVICES
+# =============================================================================
+
+class CircuitState(Enum):
+    """Circuit breaker states."""
+    CLOSED = "closed"       # Normal operation
+    OPEN = "open"           # Service blocked
+    HALF_OPEN = "half_open" # Testing recovery
+
+
+class CircuitBreaker:
+    """
+    Thread-safe circuit breaker for cloud API rate limiting.
+    
+    - CLOSED: Normal operation, calls go through
+    - OPEN: Service blocked, skip directly to fallback
+    - HALF_OPEN: After cooldown, try one request to test recovery
+    """
+    
+    def __init__(self, service_name: str, failure_threshold: int = 3, cooldown_seconds: int = 3600):
+        self.service_name = service_name
+        self.failure_threshold = failure_threshold
+        self.cooldown_seconds = cooldown_seconds
+        self._state = CircuitState.CLOSED
+        self._failure_count = 0
+        self._last_failure_time: Optional[datetime] = None
+        self._lock = threading.Lock()
+    
+    def can_execute(self) -> Tuple[bool, str]:
+        """Check if request can proceed. Returns (can_execute, reason)."""
+        with self._lock:
+            if self._state == CircuitState.CLOSED:
+                return True, "circuit_closed"
+            
+            if self._state == CircuitState.OPEN:
+                # Check if cooldown has passed
+                if self._last_failure_time:
+                    elapsed = datetime.utcnow() - self._last_failure_time
+                    if elapsed > timedelta(seconds=self.cooldown_seconds):
+                        self._state = CircuitState.HALF_OPEN
+                        logger.info(f"[CircuitBreaker] {self.service_name}: HALF_OPEN (testing recovery)")
+                        return True, "circuit_half_open_test"
+                
+                remaining = self.cooldown_seconds
+                if self._last_failure_time:
+                    remaining = max(0, self.cooldown_seconds - int((datetime.utcnow() - self._last_failure_time).total_seconds()))
+                return False, f"circuit_open_cooldown_{remaining}s"
+            
+            # HALF_OPEN - allow one test request
+            return True, "circuit_half_open_test"
+    
+    def record_success(self):
+        """Record successful call, reset circuit."""
+        with self._lock:
+            self._failure_count = 0
+            self._state = CircuitState.CLOSED
+            logger.info(f"[CircuitBreaker] {self.service_name}: CLOSED (success)")
+    
+    def record_failure(self, error_type: str = "unknown"):
+        """Record failed call, potentially open circuit."""
+        with self._lock:
+            self._failure_count += 1
+            self._last_failure_time = datetime.utcnow()
+            
+            # Quota errors immediately open the circuit
+            if error_type in ("402", "quota_exceeded", "payment_required"):
+                self._state = CircuitState.OPEN
+                logger.warning(
+                    f"[CircuitBreaker] {self.service_name}: OPEN (quota error, "
+                    f"blocking for {self.cooldown_seconds}s)"
+                )
+                return
+            
+            if self._failure_count >= self.failure_threshold:
+                self._state = CircuitState.OPEN
+                logger.warning(
+                    f"[CircuitBreaker] {self.service_name}: OPEN "
+                    f"({self._failure_count} failures, blocking for {self.cooldown_seconds}s)"
+                )
+
+
+# Global circuit breaker for LlamaParse (1 hour cooldown on quota errors)
+LLAMAPARSE_CIRCUIT = CircuitBreaker(
+    service_name="LlamaParse",
+    failure_threshold=3,
+    cooldown_seconds=3600
+)
+
+
+# =============================================================================
+# CUSTOM EXCEPTIONS
+# =============================================================================
+
+class OCRNotAvailableException(Exception):
+    """Raised when OCR dependencies are not installed."""
+    pass
 
 # Initialize tiktoken encoder (OpenAI's cl100k_base)
 try:
@@ -337,13 +438,16 @@ class MarkdownProcessor(BaseProcessor):
 
 class PDFProcessor(BaseProcessor):
     """
-    Processor for PDF documents.
+    Enterprise PDF Processor with 3-Tier Resilient Architecture.
     
-    Supports two parsing modes:
-    1. LlamaParse (Advanced): OCR-enabled, table extraction, premium parsing
-       - Activated when LLAMA_CLOUD_API_KEY is set
-    2. PyMuPDF (Standard): Fast, accurate text extraction
-       - Used as fallback or when no API key
+    Tier 1 (Premium Cloud): LlamaParse - OCR, tables, complex layouts
+    Tier 2 (Fast Local): PyMuPDF - Text layer extraction
+    Tier 3 (Smart Local): Tesseract OCR - Scanned document handling
+    
+    Features:
+    - Circuit breaker for cloud quota management
+    - Automatic scanned PDF detection
+    - Zero cloud dependency fallback
     """
     
     # Regex patterns for common headers/footers to remove
@@ -354,41 +458,101 @@ class PDFProcessor(BaseProcessor):
         r"^\s*©.*$",  # Copyright notices
     ]
     
+    # Thresholds for content validation
+    SCANNED_TEXT_THRESHOLD = 150      # chars - below this likely scanned
+    MIN_TOKENS_THRESHOLD = 50         # tokens - below this trigger OCR fallback
+    OCR_QUALITY_THRESHOLD = 100       # tokens - minimum acceptable OCR result
+    
     def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process PDF with quality-first routing and local fallback."""
+        """
+        Process PDF with 3-tier cascading fallback.
+        
+        Flow:
+        1. Check circuit breaker for LlamaParse
+        2. Try LlamaParse if available (handles 402 gracefully)
+        3. Try PyMuPDF for text extraction
+        4. If low content, try Tesseract OCR
+        """
         from core.config import settings
-
+        
+        # =====================================================================
+        # TIER 1: LlamaParse (Cloud Premium)
+        # =====================================================================
         if settings.LLAMA_CLOUD_API_KEY:
-            logger.info(f"[PDFProcessor] Quality-first LlamaParse for {filename}")
-            if llamaparse_fallback_total:
-                llamaparse_fallback_total.labels("pdf_quality_first").inc()
-            try:
-                result = self._process_with_llamaparse(content, filename)
-                if result and result.chunks:
-                    if pdf_scan_detection_total:
-                        pdf_scan_detection_total.labels("llamaparse_success").inc()
-                    return result
-                logger.warning(
-                    f"[PDFProcessor] LlamaParse returned no chunks for {filename}, falling back to PyMuPDF"
-                )
-                if pdf_scan_detection_total:
-                    pdf_scan_detection_total.labels("llamaparse_empty_fallback").inc()
-            except Exception as e:
-                logger.warning(
-                    f"[PDFProcessor] LlamaParse failed for {filename}: {e}, falling back to PyMuPDF"
-                )
-                if pdf_scan_detection_total:
-                    pdf_scan_detection_total.labels("llamaparse_error_fallback").inc()
+            can_execute, reason = LLAMAPARSE_CIRCUIT.can_execute()
+            
+            if can_execute:
+                logger.info(f"[PDFProcessor] Tier 1: Trying LlamaParse for {filename}")
+                try:
+                    result = self._process_with_llamaparse(content, filename)
+                    if result and result.chunks and result.total_tokens >= self.MIN_TOKENS_THRESHOLD:
+                        LLAMAPARSE_CIRCUIT.record_success()
+                        if pdf_scan_detection_total:
+                            pdf_scan_detection_total.labels("tier1_llamaparse_success").inc()
+                        return result
+                    
+                    logger.warning(
+                        f"[PDFProcessor] LlamaParse returned insufficient content "
+                        f"({result.total_tokens if result else 0} tokens)"
+                    )
+                    
+                except Exception as e:
+                    error_str = str(e).lower()
+                    # Check for quota/payment errors
+                    if "402" in error_str or "payment" in error_str or "quota" in error_str or "credits" in error_str:
+                        LLAMAPARSE_CIRCUIT.record_failure("402")
+                        logger.warning(f"[PDFProcessor] LlamaParse quota exceeded: {e}")
+                    else:
+                        LLAMAPARSE_CIRCUIT.record_failure("error")
+                        logger.warning(f"[PDFProcessor] LlamaParse failed: {e}")
+            else:
+                logger.info(f"[PDFProcessor] Skipping LlamaParse ({reason})")
+                if llamaparse_fallback_total:
+                    llamaparse_fallback_total.labels(reason).inc()
         else:
-            logger.info(
-                f"[PDFProcessor] No LLAMA_CLOUD_API_KEY configured, using PyMuPDF for {filename}"
-            )
+            logger.info(f"[PDFProcessor] No LLAMA_CLOUD_API_KEY, using local processing for {filename}")
             if pdf_scan_detection_total:
                 pdf_scan_detection_total.labels("local_no_api_key").inc()
-
-        return self._process_with_pymupdf(content, filename)
-
-    SCANNED_TEXT_THRESHOLD = 150
+        
+        # =====================================================================
+        # TIER 2: PyMuPDF (Fast Local)
+        # =====================================================================
+        logger.info(f"[PDFProcessor] Tier 2: Trying PyMuPDF for {filename}")
+        result = self._process_with_pymupdf(content, filename)
+        
+        if result and result.chunks and result.total_tokens >= self.MIN_TOKENS_THRESHOLD:
+            if pdf_scan_detection_total:
+                pdf_scan_detection_total.labels("tier2_pymupdf_success").inc()
+            return result
+        
+        logger.warning(
+            f"[PDFProcessor] PyMuPDF low content ({result.total_tokens if result else 0} tokens), "
+            f"likely scanned PDF - triggering OCR"
+        )
+        
+        # =====================================================================
+        # TIER 3: Tesseract OCR (Smart Local Fallback)
+        # =====================================================================
+        logger.info(f"[PDFProcessor] Tier 3: Trying Tesseract OCR for {filename}")
+        try:
+            ocr_result = self._process_with_ocr(content, filename)
+            if ocr_result and ocr_result.chunks and ocr_result.total_tokens >= self.OCR_QUALITY_THRESHOLD:
+                if pdf_scan_detection_total:
+                    pdf_scan_detection_total.labels("tier3_ocr_success").inc()
+                return ocr_result
+            
+            logger.warning(f"[PDFProcessor] OCR also returned low content for {filename}")
+            
+        except OCRNotAvailableException as e:
+            logger.warning(f"[PDFProcessor] OCR not available: {e}")
+        except Exception as e:
+            logger.error(f"[PDFProcessor] OCR failed: {e}")
+        
+        # Return best available result (even if low quality)
+        if pdf_scan_detection_total:
+            pdf_scan_detection_total.labels("all_tiers_low_content").inc()
+        
+        return result or ProcessedDocument(chunks=[], file_type="pdf")
 
     def _is_likely_scanned(self, text_length: int) -> bool:
         """Heuristic: very low extracted text likely indicates scanned PDF."""
@@ -608,6 +772,78 @@ class PDFProcessor(BaseProcessor):
             ))
         
         return ProcessedDocument(chunks=chunks, file_type="pdf", total_tokens=total_tokens)
+    
+    def _process_with_ocr(self, content: bytes, filename: str) -> ProcessedDocument:
+        """
+        Tier 3: Tesseract OCR for scanned PDFs.
+        
+        Converts PDF pages to images and runs OCR on each page.
+        Requires: tesseract-ocr, poppler-utils (system), pytesseract, pdf2image (Python)
+        """
+        try:
+            from pdf2image import convert_from_bytes
+            import pytesseract
+        except ImportError as e:
+            raise OCRNotAvailableException(f"OCR dependencies not installed: {e}")
+        
+        logger.info(f"[PDFProcessor] Running Tesseract OCR on {filename}")
+        
+        try:
+            # Convert PDF pages to images (300 DPI for good OCR quality)
+            images = convert_from_bytes(content, dpi=300, fmt='png')
+            
+            ocr_texts = []
+            for page_num, image in enumerate(images, start=1):
+                # Run OCR on each page
+                text = pytesseract.image_to_string(image, lang='eng')
+                if text.strip():
+                    cleaned = self._clean_text(text)
+                    if cleaned.strip():
+                        ocr_texts.append(f"[Page {page_num}]\n{cleaned}")
+            
+            if not ocr_texts:
+                return ProcessedDocument(chunks=[], file_type="pdf", total_tokens=0)
+            
+            full_text = "\n\n".join(ocr_texts)
+            logger.info(f"[PDFProcessor] OCR: {filename}: {len(full_text)} chars from {len(images)} pages")
+            
+            # Chunk the OCR text
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                separators=["\n\n", "\n", ". ", " ", ""]
+            )
+            raw_chunks = splitter.split_text(full_text)
+            
+            chunks = []
+            total_tokens = 0
+            for i, chunk_text in enumerate(raw_chunks):
+                contextualized = f"[File: {filename}]\n{chunk_text}"
+                token_count = self.count_tokens(contextualized)
+                total_tokens += token_count
+                
+                chunks.append(ProcessedChunk(
+                    content=contextualized,
+                    metadata={
+                        "file_type": "pdf",
+                        "parser": "tesseract_ocr",
+                        "filename": filename,
+                    },
+                    token_count=token_count,
+                    chunk_index=i
+                ))
+            
+            logger.info(f"[PDFProcessor] Tesseract OCR: {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+            return ProcessedDocument(
+                chunks=chunks,
+                file_type="pdf",
+                total_tokens=total_tokens,
+                metadata={"parser": "tesseract_ocr", "pages_ocr": len(images)}
+            )
+            
+        except Exception as e:
+            logger.error(f"[PDFProcessor] OCR processing failed: {e}")
+            raise
 
 
 # =============================================================================

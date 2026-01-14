@@ -1,13 +1,13 @@
 /**
- * Chat Area with Virtual Scrolling
+ * Chat Area - Production Grade Implementation
  * 
- * Optimized for large message histories using @tanstack/react-virtual.
+ * Clean, scrollable message list without virtualization complexity.
+ * Virtualization was causing layout bugs due to fixed height estimates.
  */
 
 "use client";
 
 import { useRef, useEffect } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { Message } from "@/hooks/useChatHistory";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
@@ -34,23 +34,13 @@ export function ChatArea({
   selectedModel,
   onModelSelect,
 }: ChatAreaProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const showEmptyState = messages.length === 0 && !isTyping && !streamingMessage;
 
-  // Virtual scrolling for performance with large message lists
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: messages.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 100, // Estimated message height
-    overscan: 5, // Render 5 extra items above/below viewport
-  });
-
-  // Auto-scroll to bottom when new messages arrive
+  // Smooth scroll to bottom when new messages arrive
   useEffect(() => {
-    if (parentRef.current) {
-      parentRef.current.scrollTop = parentRef.current.scrollHeight;
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, isTyping, streamingMessage]);
 
   const backgroundLayer = (
@@ -58,74 +48,6 @@ export function ChatArea({
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(139,92,246,0.12),transparent_45%),radial-gradient(circle_at_bottom,_rgba(6,182,212,0.1),transparent_40%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),transparent_30%,rgba(255,255,255,0.04))]" />
     </>
-  );
-
-  const messageStack = (
-    <div className="mx-auto w-full max-w-5xl space-y-2 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-glow p-3 sm:p-4">
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: "100%",
-          position: "relative",
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const message = messages[virtualItem.index];
-          return (
-            <div
-              key={virtualItem.key}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <div className="px-2 py-2 sm:px-3">
-                <MessageBubble
-                  message={{
-                    ...message,
-                    timestamp: message.created_at,
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {isTyping && (
-        <div className="px-2 py-2 sm:px-3">
-          <div className="flex items-start gap-3 animate-fade-in">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 border border-white/10">
-              <AxioLogo variant="icon" size="sm" />
-            </div>
-            <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {streamingMessage && (
-        <div className="px-2 py-2 sm:px-3">
-          <MessageBubble
-            message={{
-              id: "streaming",
-              role: "assistant",
-              content: streamingMessage,
-              timestamp: new Date().toISOString(),
-            }}
-            isStreaming
-          />
-        </div>
-      )}
-    </div>
   );
 
   if (showEmptyState) {
@@ -150,9 +72,57 @@ export function ChatArea({
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
       {backgroundLayer}
-      <div ref={parentRef} className="flex-1 overflow-y-auto px-3 py-6 sm:px-6">
-        {messageStack}
+      
+      {/* Scrollable message area - Natural flow layout */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-6 sm:px-6">
+        <div className="mx-auto w-full max-w-5xl rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-glow p-3 sm:p-4">
+          {/* Messages stack naturally with proper spacing */}
+          <div className="flex flex-col gap-4">
+            {messages.map((message) => (
+              <MessageBubble
+                key={message.id}
+                message={{
+                  ...message,
+                  timestamp: message.created_at,
+                }}
+              />
+            ))}
+
+            {/* Typing indicator */}
+            {isTyping && (
+              <div className="flex items-start gap-3 animate-fade-in">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 border border-white/10">
+                  <AxioLogo variant="icon" size="sm" />
+                </div>
+                <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Streaming message */}
+            {streamingMessage && (
+              <MessageBubble
+                message={{
+                  id: "streaming",
+                  role: "assistant",
+                  content: streamingMessage,
+                  timestamp: new Date().toISOString(),
+                }}
+                isStreaming
+              />
+            )}
+            
+            {/* Scroll anchor */}
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
       </div>
+
       <ChatInput
         onSend={onSendMessage}
         disabled={disabled}

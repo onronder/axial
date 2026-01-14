@@ -63,8 +63,13 @@ trafilatura
 ultimate-sitemap-parser
 youtube-transcript-api
 lxml
-clamd
+# Pin clamd to avoid pkg_resources deprecation warning
+clamd>=1.0.2,<2.0.0
 paramiko>=3.4.0,<4.0.0
+
+# --- OCR FALLBACK FOR SCANNED PDFs ---
+pytesseract>=0.3.10
+pdf2image>=1.16.0
 
 # --- SERVER MONITORING ---
 psutil>=5.9.0
