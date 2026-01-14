@@ -322,34 +322,32 @@ export function DLQDashboard() {
             )}
 
             {/* Stats Cards */}
-            {stats && (
-                <div className="grid gap-4 md:grid-cols-4">
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardDescription>Total Failed</CardDescription>
-                            <CardTitle className="text-2xl">{stats.total}</CardTitle>
-                        </CardHeader>
-                    </Card>
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardDescription>Pending Retry</CardDescription>
-                            <CardTitle className="text-2xl text-yellow-500">{stats.pending_retry}</CardTitle>
-                        </CardHeader>
-                    </Card>
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardDescription>Permanently Failed</CardDescription>
-                            <CardTitle className="text-2xl text-destructive">{stats.permanently_failed}</CardTitle>
-                        </CardHeader>
-                    </Card>
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardDescription>Resolved Today</CardDescription>
-                            <CardTitle className="text-2xl text-green-500">{stats.resolved_today}</CardTitle>
-                        </CardHeader>
-                    </Card>
-                </div>
-            )}
+            <div className="grid gap-4 md:grid-cols-4">
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardDescription>Total Failed</CardDescription>
+                        <CardTitle className="text-2xl">{stats?.total ?? 0}</CardTitle>
+                    </CardHeader>
+                </Card>
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardDescription>Pending Retry</CardDescription>
+                        <CardTitle className="text-2xl text-yellow-500">{stats?.pending_retry ?? 0}</CardTitle>
+                    </CardHeader>
+                </Card>
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardDescription>Permanently Failed</CardDescription>
+                        <CardTitle className="text-2xl text-destructive">{stats?.permanently_failed ?? 0}</CardTitle>
+                    </CardHeader>
+                </Card>
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardDescription>Resolved Today</CardDescription>
+                        <CardTitle className="text-2xl text-green-500">{stats?.resolved_today ?? 0}</CardTitle>
+                    </CardHeader>
+                </Card>
+            </div>
 
             {/* Filters */}
             <div className="flex items-center gap-4">

@@ -335,6 +335,17 @@
     box-shadow: 0 10px 40px rgba(139, 92, 246, 0.4);
   }
 
+  /* Ensure gradient buttons are always visible in light mode */
+  .light .bg-axio-gradient {
+    background: linear-gradient(to right, #8B5CF6, #06B6D4) !important;
+    box-shadow: 0 4px 14px 0 rgba(139, 92, 246, 0.35);
+  }
+  
+  .light .bg-axio-gradient:hover {
+    background: linear-gradient(to right, #7C3AED, #0891B2) !important;
+    box-shadow: 0 10px 30px -5px rgba(139, 92, 246, 0.5);
+  }
+
   /* Ghost button - dark mode */
   .btn-ghost-glass {
     @apply bg-transparent py-3 px-6 rounded-full transition-all duration-200;
