@@ -18,8 +18,33 @@ export type FileStatusType =
     | "completed"
     | "failed"
     | "skipped"
+    | "skipped_unsupported"
+    | "skipped_file_too_large"
+    | "skipped_unchanged"
     | "cancelled"
     | (string & {});
+
+const SKIPPED_STATUSES = [
+    "skipped",
+    "skipped_unsupported",
+    "skipped_file_too_large",
+    "skipped_unchanged",
+] as const;
+
+const TERMINAL_STATUSES = [
+    "completed",
+    "failed",
+    "cancelled",
+    "indexed",
+    ...SKIPPED_STATUSES,
+] as const;
+
+const TERMINAL_STATUS_SET = new Set<string>(TERMINAL_STATUSES);
+const TERMINAL_STATUS_SQL = `(${TERMINAL_STATUSES.map((status) => `"${status}"`).join(",")})`;
+
+function isTerminalStatus(status: FileStatusType): boolean {
+    return TERMINAL_STATUS_SET.has(status);
+}
 
 /**
  * Per-file ingestion status record
@@ -162,7 +187,7 @@ export function useAllActiveFiles(): UseFileStatusReturn {
             const { data, error: fetchError } = await supabase
                 .from("ingestion_file_status")
                 .select("*")
-                .not("status", "in", '("completed","failed","skipped","cancelled","indexed")')
+                .not("status", "in", TERMINAL_STATUS_SQL)
                 .order("created_at", { ascending: false })
                 .limit(20);
 
@@ -195,7 +220,7 @@ export function useAllActiveFiles(): UseFileStatusReturn {
 
                     if (payload.eventType === "INSERT") {
                         // Add new files that aren't completed
-                        if (!["completed", "failed", "skipped", "cancelled", "indexed"].includes(newFile.status)) {
+                        if (!isTerminalStatus(newFile.status)) {
                             setFiles((prev) => [newFile, ...prev].slice(0, 20));
                         }
                     }
@@ -203,7 +228,7 @@ export function useAllActiveFiles(): UseFileStatusReturn {
                     if (payload.eventType === "UPDATE") {
                         setFiles((prev) => {
                             // If completed/failed or equivalent, remove from active list
-                            if (["completed", "failed", "skipped", "cancelled", "indexed"].includes(newFile.status)) {
+                            if (isTerminalStatus(newFile.status)) {
                                 return prev.filter((f) => f.id !== newFile.id);
                             }
                             // Otherwise update in place
@@ -248,8 +273,14 @@ export function getStatusLabel(status: FileStatusType): string {
         completed: "Complete",
         failed: "Failed",
         skipped: "Skipped",
+        skipped_unsupported: "Unsupported",
+        skipped_file_too_large: "Too Large",
+        skipped_unchanged: "Unchanged",
         cancelled: "Cancelled",
     };
+    if (typeof status === "string" && status.startsWith("skipped") && !labels[status]) {
+        return "Skipped";
+    }
     return labels[status] || status;
 }
 
@@ -268,7 +299,13 @@ export function getStatusColor(status: FileStatusType): string {
         completed: "text-green-500",
         failed: "text-red-500",
         skipped: "text-amber-500",
+        skipped_unsupported: "text-orange-500",
+        skipped_file_too_large: "text-orange-500",
+        skipped_unchanged: "text-amber-500",
         cancelled: "text-amber-500",
     };
+    if (typeof status === "string" && status.startsWith("skipped") && !colors[status]) {
+        return "text-amber-500";
+    }
     return colors[status] || "text-muted-foreground";
 }

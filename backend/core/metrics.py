@@ -219,6 +219,24 @@ parser_rejections = Counter(
     ['reason', 'source_type']
 )
 
+pdf_scan_detection_total = Counter(
+    'pipeline_pdf_scan_detection_total',
+    'PDF scan detection results',
+    ['result']
+)
+
+llamaparse_fallback_total = Counter(
+    'pipeline_llamaparse_fallback_total',
+    'LlamaParse fallback attempts for local-first parsers',
+    ['file_type']
+)
+
+dedup_actions_total = Counter(
+    'pipeline_dedup_actions_total',
+    'Deduplication actions taken during ingestion',
+    ['action', 'source_type']
+)
+
 # =============================================================================
 # Dead Letter Queue Metrics
 # =============================================================================

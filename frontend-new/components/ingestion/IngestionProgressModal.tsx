@@ -40,14 +40,16 @@ export function IngestionProgressModal({
     const keyboardShortcuts = useRef<KeyboardShortcuts | null>(null);
     const focusTrap = useRef<FocusTrap | null>(null);
 
+    const isSkippedStatus = (status: string) => status.startsWith("skipped");
     const completedFiles = files.filter((f) => f.status === "completed" || f.status === "indexed").length;
     const failedFiles = files.filter((f) => f.status === "failed").length;
-    const skippedFiles = files.filter((f) => f.status === "skipped").length;
-    const processingFiles = files.filter(
-        (f) => !["completed", "indexed", "failed", "skipped", "cancelled"].includes(f.status)
-    ).length;
+    const skippedFiles = files.filter((f) => isSkippedStatus(f.status)).length;
+    const processingFiles = files.filter((f) => {
+        if (isSkippedStatus(f.status)) return false;
+        return !["completed", "indexed", "failed", "cancelled"].includes(f.status);
+    }).length;
 
-    const allComplete = completedFiles + failedFiles + skippedFiles === totalFiles;
+    const allComplete = totalFiles > 0 && completedFiles + failedFiles + skippedFiles === totalFiles;
 
     // Setup keyboard shortcuts and focus trap
     useEffect(() => {
@@ -202,10 +204,11 @@ type StageStatus = "pending" | "in_progress" | "complete" | "failed";
 function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const statusLabel = getStatusLabel(file.status);
-    const isProcessing = !["completed", "indexed", "failed", "skipped", "cancelled"].includes(file.status);
+    const isSkipped = file.status.startsWith("skipped");
+    const isProcessing = !["completed", "indexed", "failed", "cancelled"].includes(file.status) && !isSkipped;
     const isFailed = file.status === "failed";
     const isCompleted = file.status === "completed" || file.status === "indexed";
-    const isSkipped = file.status === "skipped";
+    const isUnsupported = file.status === "skipped_unsupported" || file.status === "skipped_file_too_large";
     const isCancelled = file.status === "cancelled";
     const hasChunks = file.chunks_total > 0;
     const hasError = !!file.error_message;
@@ -214,7 +217,8 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
         "text-[11px] font-semibold px-2 py-0.5 rounded-full border",
         isCompleted && "text-green-400 border-green-500/25 bg-green-500/10",
         isFailed && "text-red-400 border-red-500/25 bg-red-500/10",
-        isSkipped && "text-amber-400 border-amber-500/25 bg-amber-500/10",
+        isUnsupported && "text-orange-400 border-orange-500/25 bg-orange-500/10",
+        isSkipped && !isUnsupported && "text-amber-400 border-amber-500/25 bg-amber-500/10",
         isCancelled && "text-amber-400 border-amber-500/25 bg-amber-500/10",
         isProcessing && "text-primary border-primary/25 bg-primary/10"
     );
@@ -246,7 +250,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
             stages.chunking = 'complete';
             stages.embedding = 'complete';
             stages.indexing = 'in_progress';
-        } else if (file.status === 'completed' || file.status === 'indexed' || file.status === 'skipped') {
+        } else if (file.status === 'completed' || file.status === 'indexed' || isSkipped) {
             stages.uploading = 'complete';
             stages.parsing = 'complete';
             stages.chunking = 'complete';
@@ -281,7 +285,8 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
                 "p-4 transition-colors",
                 isCompleted && "bg-green-500/5",
                 isFailed && "bg-red-500/5",
-                isSkipped && "bg-amber-500/5",
+                isUnsupported && "bg-orange-500/5",
+                isSkipped && !isUnsupported && "bg-amber-500/5",
                 isCancelled && "bg-amber-500/5",
                 !isCompleted && !isFailed && !isSkipped && !isCancelled && "hover:bg-muted/40"
             )}
@@ -292,6 +297,8 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
                 <div className="mt-0.5">
                     {isCompleted ? (
                         <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : isUnsupported ? (
+                        <SkipForward className="h-4 w-4 text-orange-500" />
                     ) : isSkipped ? (
                         <SkipForward className="h-4 w-4 text-amber-500" />
                     ) : isFailed ? (
@@ -361,7 +368,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
                     {file.status_message && (!isExpanded || isSkipped || isFailed) && (
                         <p className={cn(
                             "text-xs line-clamp-2",
-                            isSkipped ? "text-amber-400" : "text-muted-foreground"
+                            isUnsupported ? "text-orange-400" : isSkipped ? "text-amber-400" : "text-muted-foreground"
                         )}>
                             {file.status_message}
                         </p>

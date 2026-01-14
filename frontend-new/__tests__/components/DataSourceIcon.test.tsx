@@ -29,20 +29,20 @@ describe('DataSourceIcon Component', () => {
 
         it('renders Notion icon for notion sourceId', () => {
             const { container } = render(<DataSourceIcon sourceId="notion" />);
-            const img = container.querySelector('img[alt="Notion"]');
-            expect(img).toBeInTheDocument();
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
         });
 
         it('renders OneDrive icon for onedrive sourceId', () => {
             const { container } = render(<DataSourceIcon sourceId="onedrive" />);
-            const img = container.querySelector('img[alt="OneDrive"]');
-            expect(img).toBeInTheDocument();
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
         });
 
         it('renders SharePoint icon for sharepoint sourceId', () => {
             const { container } = render(<DataSourceIcon sourceId="sharepoint" />);
-            const img = container.querySelector('img[alt="SharePoint"]');
-            expect(img).toBeInTheDocument();
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
         });
 
         it('renders Dropbox icon for dropbox sourceId', () => {

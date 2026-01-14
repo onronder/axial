@@ -11,6 +11,7 @@ import io
 import os
 import re
 import logging
+import tempfile
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -29,6 +30,11 @@ import tiktoken
 
 logger = logging.getLogger(__name__)
 LLAMAPARSE_LOCK = threading.Lock()
+try:
+    from core.metrics import pdf_scan_detection_total, llamaparse_fallback_total
+except Exception:
+    pdf_scan_detection_total = None
+    llamaparse_fallback_total = None
 
 # Initialize tiktoken encoder (OpenAI's cl100k_base)
 try:
@@ -349,20 +355,35 @@ class PDFProcessor(BaseProcessor):
     ]
     
     def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process PDF with LlamaParse (if available) or PyMuPDF fallback."""
+        """Process PDF locally first; fallback to LlamaParse for scanned PDFs."""
         from core.config import settings
         
-        # Try LlamaParse first if API key is configured
+        local_result = self._process_with_pymupdf(content, filename)
+
         if settings.LLAMA_CLOUD_API_KEY:
-            try:
-                result = self._process_with_llamaparse(content, filename)
-                if result and result.chunks:
-                    return result
-            except Exception as e:
-                logger.warning(f"[PDFProcessor] LlamaParse failed, falling back to PyMuPDF: {e}")
-        
-        # Fallback to PyMuPDF
-        return self._process_with_pymupdf(content, filename)
+            text_length = 0
+            if local_result and local_result.metadata:
+                text_length = int(local_result.metadata.get("text_length") or 0)
+            is_scanned = self._is_likely_scanned(text_length)
+            if pdf_scan_detection_total:
+                pdf_scan_detection_total.labels("scanned" if is_scanned else "text").inc()
+            if is_scanned:
+                if llamaparse_fallback_total:
+                    llamaparse_fallback_total.labels("pdf").inc()
+                try:
+                    result = self._process_with_llamaparse(content, filename)
+                    if result and result.chunks:
+                        return result
+                except Exception as e:
+                    logger.warning(f"[PDFProcessor] LlamaParse failed, falling back to PyMuPDF: {e}")
+
+        return local_result
+
+    SCANNED_TEXT_THRESHOLD = 150
+
+    def _is_likely_scanned(self, text_length: int) -> bool:
+        """Heuristic: very low extracted text likely indicates scanned PDF."""
+        return text_length < self.SCANNED_TEXT_THRESHOLD
     
     def _process_with_llamaparse(self, content: bytes, filename: str) -> ProcessedDocument:
         """
@@ -469,6 +490,7 @@ class PDFProcessor(BaseProcessor):
         
         # Extract text from PDF
         pages_text = []
+        total_chars = 0
         try:
             doc = fitz.open(stream=content, filetype="pdf")
             for page_num, page in enumerate(doc, start=1):
@@ -478,6 +500,7 @@ class PDFProcessor(BaseProcessor):
                     cleaned = self._clean_text(text)
                     if cleaned.strip():
                         pages_text.append((page_num, cleaned))
+                        total_chars += len(cleaned)
             doc.close()
         except Exception as e:
             logger.error(f"[PDFProcessor] PyMuPDF extraction failed: {e}")
@@ -523,7 +546,7 @@ class PDFProcessor(BaseProcessor):
             chunks=chunks,
             file_type="pdf",
             total_tokens=total_tokens,
-            metadata={"total_pages": len(pages_text), "parser": "pymupdf"}
+            metadata={"total_pages": len(pages_text), "parser": "pymupdf", "text_length": total_chars}
         )
     
     def _clean_text(self, text: str) -> str:
@@ -623,6 +646,600 @@ class DocxProcessor(BaseProcessor):
 
 
 # =============================================================================
+# HTML PROCESSOR
+# =============================================================================
+
+class HTMLProcessor(BaseProcessor):
+    """Processor for HTML files (strip tags, keep readable text)."""
+
+    def process(self, content: bytes, filename: str) -> ProcessedDocument:
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = content.decode("utf-8", errors="replace")
+
+        if not text.strip():
+            return ProcessedDocument(chunks=[], file_type="html")
+
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError as exc:
+            logger.error(f"[HTMLProcessor] Missing dependency: {exc}")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "missing_dependency"},
+            )
+
+        soup = BeautifulSoup(text, "html.parser")
+        extracted = soup.get_text(separator="\n")
+        extracted = re.sub(r"\n{3,}", "\n\n", extracted).strip()
+
+        if not extracted:
+            return ProcessedDocument(chunks=[], file_type="html")
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=150,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+        raw_chunks = splitter.split_text(extracted)
+
+        chunks = []
+        total_tokens = 0
+        for i, chunk_text in enumerate(raw_chunks):
+            token_count = self.count_tokens(chunk_text)
+            total_tokens += token_count
+            chunks.append(
+                ProcessedChunk(
+                    content=chunk_text,
+                    metadata={"file_type": "html", "filename": filename},
+                    token_count=token_count,
+                    chunk_index=i,
+                )
+            )
+
+        logger.info(f"[HTMLProcessor] {filename}: {len(chunks)} chunks")
+        return ProcessedDocument(chunks=chunks, file_type="html", total_tokens=total_tokens)
+
+
+# =============================================================================
+# CSV PROCESSOR
+# =============================================================================
+
+class CSVProcessor(BaseProcessor):
+    """Processor for CSV/TSV files with structured row output."""
+
+    CHUNK_SIZE = 500
+
+    def process(self, content: bytes, filename: str) -> ProcessedDocument:
+        from core.config import settings
+
+        if len(content) > settings.MAX_STRUCTURED_FILE_SIZE:
+            logger.warning(f"[CSVProcessor] File too large for CSV parsing: {filename}")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "file_too_large"},
+            )
+
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            logger.error(f"[CSVProcessor] Missing dependency: {exc}")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "missing_dependency"},
+            )
+
+        delimiter = "\t" if filename.lower().endswith(".tsv") else ","
+        chunks = []
+        total_tokens = 0
+
+        try:
+            df_iter = pd.read_csv(
+                io.BytesIO(content),
+                chunksize=self.CHUNK_SIZE,
+                encoding="utf-8",
+                on_bad_lines="skip",
+                sep=delimiter,
+            )
+
+            for chunk_idx, df_chunk in enumerate(df_iter):
+                text_rows = []
+                for _idx, row in df_chunk.iterrows():
+                    row_text = " | ".join(
+                        f"{col}: {val}"
+                        for col, val in row.items()
+                        if pd.notna(val)
+                    )
+                    if row_text:
+                        text_rows.append(row_text)
+
+                if not text_rows:
+                    continue
+
+                start_row = chunk_idx * self.CHUNK_SIZE + 1
+                end_row = start_row + len(df_chunk) - 1
+                chunk_text = (
+                    f"[File: {filename}] [Rows: {start_row}-{end_row}]\n"
+                    + "\n".join(text_rows)
+                )
+
+                token_count = self.count_tokens(chunk_text)
+                total_tokens += token_count
+                chunks.append(
+                    ProcessedChunk(
+                        content=chunk_text,
+                        metadata={
+                            "file_type": "csv",
+                            "row_range": f"{start_row}-{end_row}",
+                            "filename": filename,
+                        },
+                        token_count=token_count,
+                        chunk_index=len(chunks),
+                    )
+                )
+
+        except Exception as exc:
+            logger.error(f"[CSVProcessor] Failed to parse {filename}: {exc}")
+            return ProcessedDocument(chunks=[], file_type="csv")
+
+        logger.info(f"[CSVProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        return ProcessedDocument(chunks=chunks, file_type="csv", total_tokens=total_tokens)
+
+
+# =============================================================================
+# EXCEL PROCESSOR
+# =============================================================================
+
+class ExcelProcessor(BaseProcessor):
+    """Processor for XLSX files using streaming read_only mode."""
+
+    CHUNK_SIZE = 200
+
+    def process(self, content: bytes, filename: str) -> ProcessedDocument:
+        from core.config import settings
+
+        if len(content) > settings.MAX_STRUCTURED_FILE_SIZE:
+            logger.warning(f"[ExcelProcessor] File too large for XLSX parsing: {filename}")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "file_too_large"},
+            )
+
+        try:
+            import openpyxl
+        except ImportError as exc:
+            logger.error(f"[ExcelProcessor] Missing dependency: {exc}")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "missing_dependency"},
+            )
+
+        chunks = []
+        total_tokens = 0
+
+        try:
+            workbook = openpyxl.load_workbook(
+                io.BytesIO(content),
+                read_only=True,
+                data_only=True,
+            )
+        except Exception as exc:
+            logger.error(f"[ExcelProcessor] Failed to load workbook {filename}: {exc}")
+            return ProcessedDocument(chunks=[], file_type="xlsx")
+
+        try:
+            for sheet in workbook.worksheets:
+                row_iter = sheet.iter_rows(values_only=True)
+                header = None
+                buffer = []
+                start_row = 1
+                current_row = 0
+
+                for row in row_iter:
+                    current_row += 1
+                    if header is None:
+                        header = [
+                            (str(cell).strip() if cell is not None else f"Column {idx + 1}")
+                            for idx, cell in enumerate(row)
+                        ]
+                        start_row = current_row + 1
+                        continue
+
+                    values = []
+                    for idx, cell in enumerate(row):
+                        if cell is None:
+                            continue
+                        label = header[idx] if idx < len(header) else f"Column {idx + 1}"
+                        values.append(f"{label}: {cell}")
+
+                    if values:
+                        buffer.append(" | ".join(values))
+
+                    if len(buffer) >= self.CHUNK_SIZE:
+                        end_row = current_row
+                        chunk_text = (
+                            f"[File: {filename}] [Sheet: {sheet.title}] [Rows: {start_row}-{end_row}]\n"
+                            + "\n".join(buffer)
+                        )
+                        token_count = self.count_tokens(chunk_text)
+                        total_tokens += token_count
+                        chunks.append(
+                            ProcessedChunk(
+                                content=chunk_text,
+                                metadata={
+                                    "file_type": "xlsx",
+                                    "sheet": sheet.title,
+                                    "row_range": f"{start_row}-{end_row}",
+                                    "filename": filename,
+                                },
+                                token_count=token_count,
+                                chunk_index=len(chunks),
+                            )
+                        )
+                        buffer = []
+                        start_row = end_row + 1
+
+                if buffer:
+                    end_row = current_row
+                    chunk_text = (
+                        f"[File: {filename}] [Sheet: {sheet.title}] [Rows: {start_row}-{end_row}]\n"
+                        + "\n".join(buffer)
+                    )
+                    token_count = self.count_tokens(chunk_text)
+                    total_tokens += token_count
+                    chunks.append(
+                        ProcessedChunk(
+                            content=chunk_text,
+                            metadata={
+                                "file_type": "xlsx",
+                                "sheet": sheet.title,
+                                "row_range": f"{start_row}-{end_row}",
+                                "filename": filename,
+                            },
+                            token_count=token_count,
+                            chunk_index=len(chunks),
+                        )
+                    )
+
+        finally:
+            try:
+                workbook.close()
+            except Exception:
+                pass
+
+        logger.info(f"[ExcelProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        return ProcessedDocument(chunks=chunks, file_type="xlsx", total_tokens=total_tokens)
+
+
+# =============================================================================
+# PPTX PROCESSOR
+# =============================================================================
+
+class PPTXProcessor(BaseProcessor):
+    """Processor for PPTX files using python-pptx."""
+
+    def process(self, content: bytes, filename: str) -> ProcessedDocument:
+        try:
+            from pptx import Presentation
+        except ImportError as exc:
+            logger.error(f"[PPTXProcessor] Missing dependency: {exc}")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "missing_dependency"},
+            )
+
+        chunks = []
+        total_tokens = 0
+
+        try:
+            presentation = Presentation(io.BytesIO(content))
+        except Exception as exc:
+            logger.error(f"[PPTXProcessor] Failed to load {filename}: {exc}")
+            return ProcessedDocument(chunks=[], file_type="pptx")
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=150,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+
+        for slide_index, slide in enumerate(presentation.slides, start=1):
+            slide_texts = []
+            for shape in slide.shapes:
+                if getattr(shape, "has_text_frame", False):
+                    text = shape.text_frame.text or ""
+                    if text.strip():
+                        slide_texts.append(text.strip())
+
+            if getattr(slide, "has_notes_slide", False) and slide.notes_slide:
+                notes = slide.notes_slide.notes_text_frame.text or ""
+                if notes.strip():
+                    slide_texts.append(f"[Notes]\n{notes.strip()}")
+
+            if not slide_texts:
+                continue
+
+            slide_text = "\n".join(slide_texts)
+            for chunk_text in splitter.split_text(slide_text):
+                token_count = self.count_tokens(chunk_text)
+                total_tokens += token_count
+                chunks.append(
+                    ProcessedChunk(
+                        content=chunk_text,
+                        metadata={
+                            "file_type": "pptx",
+                            "slide_number": slide_index,
+                            "filename": filename,
+                        },
+                        token_count=token_count,
+                        chunk_index=len(chunks),
+                    )
+                )
+
+        if not chunks:
+            from core.config import settings
+
+            if settings.LLAMA_CLOUD_API_KEY:
+                if llamaparse_fallback_total:
+                    llamaparse_fallback_total.labels("pptx").inc()
+                return LlamaParseProcessor(file_type="pptx").process(content, filename)
+
+        logger.info(f"[PPTXProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        return ProcessedDocument(chunks=chunks, file_type="pptx", total_tokens=total_tokens)
+
+
+# =============================================================================
+# EMAIL PROCESSOR
+# =============================================================================
+
+class EmailProcessor(BaseProcessor):
+    """Processor for .eml and .msg email files."""
+
+    def process(self, content: bytes, filename: str) -> ProcessedDocument:
+        ext = os.path.splitext(filename)[1].lower()
+        text = ""
+
+        if ext == ".eml":
+            try:
+                from email import policy
+                from email.parser import BytesParser
+            except ImportError as exc:
+                logger.error(f"[EmailProcessor] Missing dependency: {exc}")
+                return ProcessedDocument(
+                    chunks=[],
+                    file_type="unsupported",
+                    metadata={"unsupported_reason": "missing_dependency"},
+                )
+
+            msg = BytesParser(policy=policy.default).parsebytes(content)
+            text = self._email_to_text(msg)
+        elif ext == ".msg":
+            try:
+                import extract_msg
+            except ImportError as exc:
+                logger.error(f"[EmailProcessor] Missing dependency: {exc}")
+                return ProcessedDocument(
+                    chunks=[],
+                    file_type="unsupported",
+                    metadata={"unsupported_reason": "missing_dependency"},
+                )
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".msg") as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+            try:
+                msg = extract_msg.Message(tmp_path)
+                msg.process()
+                text = self._msg_to_text(msg)
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+        else:
+            return ProcessedDocument(chunks=[], file_type="email")
+
+        if not text.strip():
+            from core.config import settings
+
+            if settings.LLAMA_CLOUD_API_KEY:
+                if llamaparse_fallback_total:
+                    llamaparse_fallback_total.labels("email").inc()
+                return LlamaParseProcessor(file_type="email").process(content, filename)
+            return ProcessedDocument(chunks=[], file_type="email")
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=150,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+
+        chunks = []
+        total_tokens = 0
+        for i, chunk_text in enumerate(splitter.split_text(text)):
+            token_count = self.count_tokens(chunk_text)
+            total_tokens += token_count
+            chunks.append(
+                ProcessedChunk(
+                    content=chunk_text,
+                    metadata={"file_type": "email", "filename": filename},
+                    token_count=token_count,
+                    chunk_index=i,
+                )
+            )
+
+        logger.info(f"[EmailProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        return ProcessedDocument(chunks=chunks, file_type="email", total_tokens=total_tokens)
+
+    def _email_to_text(self, msg) -> str:
+        parts = [
+            f"Subject: {msg.get('subject', '')}",
+            f"From: {msg.get('from', '')}",
+            f"To: {msg.get('to', '')}",
+            f"Date: {msg.get('date', '')}",
+        ]
+
+        body = ""
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                if content_type == "text/plain":
+                    body = part.get_content()
+                    break
+                if content_type == "text/html" and not body:
+                    body = part.get_content()
+        else:
+            body = msg.get_content()
+
+        if body:
+            body_text = body
+            if "<html" in body.lower():
+                try:
+                    from bs4 import BeautifulSoup
+                    body_text = BeautifulSoup(body, "html.parser").get_text(separator="\n")
+                except Exception:
+                    body_text = body
+            parts.append("Body:\n" + body_text.strip())
+
+        return "\n".join(p for p in parts if p)
+
+    def _msg_to_text(self, msg) -> str:
+        parts = [
+            f"Subject: {getattr(msg, 'subject', '')}",
+            f"From: {getattr(msg, 'sender', '')}",
+            f"To: {getattr(msg, 'to', '')}",
+            f"Date: {getattr(msg, 'date', '')}",
+        ]
+        body = getattr(msg, "body", "") or ""
+        if body:
+            parts.append("Body:\n" + body.strip())
+        return "\n".join(p for p in parts if p)
+
+
+# =============================================================================
+# LLAMAPARSE PROCESSOR
+# =============================================================================
+
+class LlamaParseProcessor(BaseProcessor):
+    """Generic LlamaParse processor for legacy, binary, or image files."""
+
+    def __init__(self, file_type: str = "llamaparse"):
+        self.file_type = file_type
+
+    def process(self, content: bytes, filename: str) -> ProcessedDocument:
+        from core.config import settings
+
+        if not settings.LLAMA_CLOUD_API_KEY:
+            logger.warning(f"[LlamaParseProcessor] LlamaParse not configured for {filename}")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "llamaparse_unavailable"},
+            )
+
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+            from llama_parse import LlamaParse
+        except ImportError as exc:
+            logger.error(f"[LlamaParseProcessor] Missing dependency: {exc}")
+            return ProcessedDocument(
+                chunks=[],
+                file_type="unsupported",
+                metadata={"unsupported_reason": "llamaparse_missing_dependency"},
+            )
+
+        suffix = os.path.splitext(filename)[1] or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tf:
+            tf.write(content)
+            tf_path = tf.name
+
+        try:
+            with LLAMAPARSE_LOCK:
+                parser = LlamaParse(
+                    api_key=settings.LLAMA_CLOUD_API_KEY,
+                    result_type="markdown",
+                    verbose=False,
+                )
+                documents = parser.load_data(tf_path)
+        finally:
+            try:
+                os.remove(tf_path)
+            except Exception:
+                pass
+
+        if not documents:
+            return ProcessedDocument(chunks=[], file_type=self.file_type)
+
+        full_text = "\n\n".join([doc.text for doc in documents if getattr(doc, "text", None)])
+        if not full_text.strip():
+            return ProcessedDocument(chunks=[], file_type=self.file_type)
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+        raw_chunks = splitter.split_text(full_text)
+
+        chunks = []
+        total_tokens = 0
+        for i, chunk_text in enumerate(raw_chunks):
+            contextualized = f"[File: {filename}]\n{chunk_text}"
+            token_count = self.count_tokens(contextualized)
+            total_tokens += token_count
+            chunks.append(
+                ProcessedChunk(
+                    content=contextualized,
+                    metadata={
+                        "file_type": self.file_type,
+                        "parser": "llama_parse",
+                        "filename": filename,
+                    },
+                    token_count=token_count,
+                    chunk_index=i,
+                )
+            )
+
+        return ProcessedDocument(
+            chunks=chunks,
+            file_type=self.file_type,
+            total_tokens=total_tokens,
+            metadata={"parser": "llama_parse"},
+        )
+
+
+# =============================================================================
+# LEGACY OFFICE PROCESSOR
+# =============================================================================
+
+class LegacyOfficeProcessor(BaseProcessor):
+    """Processor for legacy Office formats routed to LlamaParse."""
+
+    def process(self, content: bytes, filename: str) -> ProcessedDocument:
+        ext = os.path.splitext(filename)[1].lower().lstrip(".") or "legacy_office"
+        return LlamaParseProcessor(file_type=ext).process(content, filename)
+
+
+# =============================================================================
+# IMAGE PROCESSOR
+# =============================================================================
+
+class ImageProcessor(BaseProcessor):
+    """Processor for images routed to LlamaParse OCR."""
+
+    def process(self, content: bytes, filename: str) -> ProcessedDocument:
+        return LlamaParseProcessor(file_type="image").process(content, filename)
+
+
+# =============================================================================
 # PLAIN TEXT PROCESSOR
 # =============================================================================
 
@@ -702,7 +1319,12 @@ class DocumentProcessorFactory:
         ".yml": CodeProcessor,
         ".toml": CodeProcessor,
         ".xml": CodeProcessor,
-        ".html": CodeProcessor,
+        ".ini": CodeProcessor,
+        ".conf": CodeProcessor,
+        ".config": CodeProcessor,
+        ".sh": CodeProcessor,
+        ".dockerfile": CodeProcessor,
+        ".html": HTMLProcessor,
         ".css": CodeProcessor,
         ".sql": CodeProcessor,
         
@@ -715,11 +1337,32 @@ class DocumentProcessorFactory:
         
         # Word documents
         ".docx": DocxProcessor,
-        ".doc": DocxProcessor,
+        ".doc": LegacyOfficeProcessor,
+
+        # Spreadsheets
+        ".csv": CSVProcessor,
+        ".tsv": CSVProcessor,
+        ".xlsx": ExcelProcessor,
+        ".xls": LegacyOfficeProcessor,
+
+        # Presentations
+        ".pptx": PPTXProcessor,
+        ".ppt": LegacyOfficeProcessor,
+
+        # Rich text / email
+        ".rtf": LegacyOfficeProcessor,
+        ".msg": EmailProcessor,
+        ".eml": EmailProcessor,
+
+        # Images (OCR)
+        ".jpg": ImageProcessor,
+        ".jpeg": ImageProcessor,
+        ".png": ImageProcessor,
+        ".tiff": ImageProcessor,
+        ".bmp": ImageProcessor,
         
         # Plain text
         ".txt": PlainTextProcessor,
-        ".csv": PlainTextProcessor,
         ".log": PlainTextProcessor,
     }
     
@@ -727,17 +1370,30 @@ class DocumentProcessorFactory:
     MIME_MAP = {
         "application/pdf": PDFProcessor,
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocxProcessor,
-        "application/msword": DocxProcessor,
+        "application/msword": LegacyOfficeProcessor,
         "text/markdown": MarkdownProcessor,
         "text/plain": PlainTextProcessor,
-        "text/html": CodeProcessor,
+        "text/html": HTMLProcessor,
+        "text/csv": CSVProcessor,
         "application/json": CodeProcessor,
+        "application/xml": CodeProcessor,
+        "text/xml": CodeProcessor,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ExcelProcessor,
+        "application/vnd.ms-excel": LegacyOfficeProcessor,
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": PPTXProcessor,
+        "application/vnd.ms-powerpoint": LegacyOfficeProcessor,
+        "message/rfc822": EmailProcessor,
+        "application/vnd.ms-outlook": EmailProcessor,
+        "application/rtf": LegacyOfficeProcessor,
+        "image/jpeg": ImageProcessor,
+        "image/jpg": ImageProcessor,
+        "image/png": ImageProcessor,
+        "image/tiff": ImageProcessor,
+        "image/bmp": ImageProcessor,
     }
 
     # Explicitly unsupported (binary) extensions to avoid unsafe parsing
     UNSUPPORTED_EXTENSIONS = {
-        ".pptx",
-        ".xlsx",
         ".numbers",
         ".key",
     }
@@ -747,6 +1403,7 @@ class DocumentProcessorFactory:
         "text/markdown",
         "text/csv",
         "text/html",
+        "text/xml",
         "application/json",
         "application/xml",
         "application/xhtml+xml",
@@ -800,6 +1457,8 @@ class DocumentProcessorFactory:
         # Determine processor
         filename = filename or (os.path.basename(file_path) if file_path else "unknown")
         ext = os.path.splitext(filename)[1].lower()
+        if not ext and filename and filename.lower() == "dockerfile":
+            ext = ".dockerfile"
         
         processor_class = cls.PROCESSOR_MAP.get(ext)
         
@@ -865,6 +1524,20 @@ class DocumentProcessorFactory:
 
 
 # =============================================================================
+# ROUTING HELPERS
+# =============================================================================
+
+def route_file(file_size: int, extension: str) -> str:
+    """Route structured files based on size limits (no heavy queue yet)."""
+    from core.config import settings
+
+    if extension in {".csv", ".tsv", ".xlsx"}:
+        if file_size > settings.MAX_STRUCTURED_FILE_SIZE:
+            return "skipped_file_too_large"
+    return "queues.parsing"
+
+
+# =============================================================================
 # LEGACY COMPATIBILITY - DocumentParser
 # =============================================================================
 
@@ -879,11 +1552,20 @@ class DocumentParser:
     SUPPORTED_FORMATS = {
         'application/pdf': 'pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-        'application/msword': 'docx',
+        'application/msword': 'doc',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+        'application/vnd.ms-excel': 'xls',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+        'application/vnd.ms-powerpoint': 'ppt',
         'text/plain': 'text',
         'text/markdown': 'text',
         'text/csv': 'text',
         'text/html': 'text',
+        'application/xml': 'text',
+        'text/xml': 'text',
+        'message/rfc822': 'email',
+        'application/vnd.ms-outlook': 'email',
+        'application/rtf': 'rtf',
     }
     
     @staticmethod

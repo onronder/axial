@@ -10,6 +10,8 @@ from services.parsers import (
     CodeProcessor,
     MarkdownProcessor,
     PlainTextProcessor,
+    CSVProcessor,
+    HTMLProcessor,
     PDFProcessor,
     DocxProcessor,
     DocumentProcessorFactory,
@@ -142,20 +144,21 @@ def test_pdf_processor_uses_llamaparse_when_available(monkeypatch):
     processor = PDFProcessor()
     monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
     expected = SimpleNamespace(chunks=["chunk"], file_type="pdf")
+    local = SimpleNamespace(chunks=[], file_type="pdf", metadata={"text_length": 0})
 
     with patch.object(processor, "_process_with_llamaparse", return_value=expected) as mock_llama, \
-         patch.object(processor, "_process_with_pymupdf", return_value=SimpleNamespace(chunks=[], file_type="pdf")) as mock_pdf:
+         patch.object(processor, "_process_with_pymupdf", return_value=local) as mock_pdf:
         result = processor.process(b"%PDF", "file.pdf")
 
     assert result is expected
     mock_llama.assert_called_once()
-    mock_pdf.assert_not_called()
+    mock_pdf.assert_called_once()
 
 
 def test_pdf_processor_falls_back_on_llamaparse_error(monkeypatch):
     processor = PDFProcessor()
     monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
-    fallback = SimpleNamespace(chunks=["chunk"], file_type="pdf")
+    fallback = SimpleNamespace(chunks=["chunk"], file_type="pdf", metadata={"text_length": 0})
 
     with patch.object(processor, "_process_with_llamaparse", side_effect=Exception("boom")) as mock_llama, \
          patch.object(processor, "_process_with_pymupdf", return_value=fallback) as mock_pdf:
@@ -372,7 +375,7 @@ def test_plain_text_processor_returns_empty_on_blank_text():
 
 
 def test_factory_unsupported_extension():
-    result = DocumentProcessorFactory.process(content=b"data", filename="file.pptx")
+    result = DocumentProcessorFactory.process(content=b"data", filename="file.numbers")
     assert result.file_type == "unsupported"
     assert result.metadata["unsupported_reason"] == "unsupported_extension"
 
@@ -426,6 +429,22 @@ def test_plain_text_processor_strips_null_bytes():
     assert "\x00" not in result.chunks[0].content
 
 
+def test_csv_processor_structured_output():
+    processor = CSVProcessor()
+    result = processor.process(b"name,value\nAlice,100", "test.csv")
+    assert result.file_type == "csv"
+    assert result.chunks
+    assert "name:" in result.chunks[0].content.lower()
+
+
+def test_html_processor_strips_tags():
+    processor = HTMLProcessor()
+    result = processor.process(b"<html><body><h1>Title</h1></body></html>", "page.html")
+    assert result.file_type == "html"
+    assert result.chunks
+    assert "Title" in result.chunks[0].content
+
+
 def test_factory_looks_like_binary():
     assert DocumentProcessorFactory._looks_like_binary(b"") is False
 
@@ -456,7 +475,7 @@ def test_factory_returns_unknown_for_missing_content():
 
 def test_factory_uses_text_mime_type_when_unknown_extension():
     result = DocumentProcessorFactory.process(content=b"hello", filename="file.unknown", mime_type="text/csv")
-    assert result.file_type == "text"
+    assert result.file_type in {"text", "csv"}
 
 
 def test_factory_plain_text_when_not_binary():

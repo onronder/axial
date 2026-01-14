@@ -90,10 +90,18 @@ class FileUploadConnector(EnhancedConnector):
             "txt": "text/plain",
             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "doc": "application/msword",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xls": "application/vnd.ms-excel",
+            "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "ppt": "application/vnd.ms-powerpoint",
             "html": "text/html",
             "md": "text/markdown",
             "csv": "text/csv",
-            "json": "application/json"
+            "json": "application/json",
+            "xml": "application/xml",
+            "eml": "message/rfc822",
+            "msg": "application/vnd.ms-outlook",
+            "rtf": "application/rtf",
         }
         
         return mime_types.get(ext, "application/octet-stream")

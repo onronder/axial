@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     # Resource Limits & Memory Management
     # =========================================================================
     MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB per file
+    MAX_STRUCTURED_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB for CSV/XLSX parsing
     MALWARE_SCAN_MAX_BYTES: int = 1024 * 1024 * 1024  # Skip malware scan above 1GB
     MAX_CHUNK_BATCH_SIZE: int = 100  # Process 100 chunks at a time
     MEMORY_WARNING_THRESHOLD: float = 0.85  # Warn at 85% memory

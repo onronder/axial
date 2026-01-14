@@ -253,7 +253,7 @@ class TestIngestDocumentBatched:
         supabase = MagicMock()
         documents_table = _make_chain_table(
             execute_side_effect=[
-                MagicMock(data=[{"id": "doc-1"}]),
+                MagicMock(data=[{"id": "doc-1", "content_hash": "hash-1"}]),
                 MagicMock(data=[{"id": "doc-1"}]),
             ]
         )
@@ -281,8 +281,9 @@ class TestIngestDocumentBatched:
             )
 
         assert doc_id == "doc-1"
-        delete_rows.assert_called_once()
-        insert_rows.assert_called_once()
+        delete_rows.assert_not_called()
+        insert_rows.assert_not_called()
+        documents_table.update.assert_called()
 
     @pytest.mark.unit
     def test_ingest_document_batched_raises_on_missing_document(self):

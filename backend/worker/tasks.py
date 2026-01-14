@@ -50,6 +50,7 @@ try:
         job_counters_reconciled,
         job_counters_finalize,
         idempotency_hits,
+        dedup_actions_total,
         parser_rejections,
         timeout_total,
         status_updates_total,
@@ -59,6 +60,7 @@ except Exception:
     job_counters_reconciled = None
     job_counters_finalize = None
     idempotency_hits = None
+    dedup_actions_total = None
     parser_rejections = None
     timeout_total = None
     status_updates_total = None
@@ -299,7 +301,7 @@ def _get_ingestion_counts_from_db(supabase, job_id: str) -> Dict[str, int]:
                 counts["success"] += 1
             elif status == "failed":
                 counts["failed"] += 1
-            elif status == "skipped":
+            elif status and status.startswith("skipped"):
                 counts["skipped"] += 1
     except Exception as e:
         logger.warning(f"⚠️ [Job:{job_id}] Failed to load file status counts: {e}")
@@ -404,7 +406,8 @@ def ingest_document_batched(
     job_id: str = None,
     source_url: str = None,
     file_status_id: str = None,  # NEW: for per-file progress tracking
-    content_hash: str | None = None
+    content_hash: str | None = None,
+    source_id: str | None = None,
 ) -> str:
     """
     Insert document and chunks in batches to prevent DB timeouts.
@@ -428,6 +431,7 @@ def ingest_document_batched(
     """
     DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))  # Configurable batch size to prevent timeouts
     source_type = normalize_source_type(source_type) or source_type
+    metadata = metadata or {}
     
     # Step 1: Create parent document record FIRST
     # NOTE: Using actual column names from migrations:
@@ -444,18 +448,47 @@ def ingest_document_batched(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     
-    existing_doc_id = None
-    if content_hash:
+    resolved_source_id = source_id or (metadata or {}).get("source_id")
+    if resolved_source_id:
+        metadata.setdefault("source_id", resolved_source_id)
+        doc_data["source_id"] = resolved_source_id
+
+    existing_doc = None
+    if resolved_source_id:
+        existing = (
+            supabase.table("documents")
+            .select("id, content_hash")
+            .eq("user_id", user_id)
+            .eq("source_id", resolved_source_id)
+            .limit(1)
+            .execute()
+        )
+        existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
+        if existing_data:
+            existing_doc = existing_data[0]
+    elif content_hash:
         existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
             "title", doc_title
         ).eq("content_hash", content_hash).limit(1).execute()
         existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
         if existing_data:
-            existing_doc_id = existing_data[0]["id"]
+            existing_doc = {"id": existing_data[0]["id"], "content_hash": content_hash}
 
-    if existing_doc_id:
-        if idempotency_hits:
-            idempotency_hits.labels(source_type or "unknown").inc()
+    if existing_doc:
+        existing_doc_id = existing_doc["id"]
+        if content_hash and existing_doc.get("content_hash") == content_hash:
+            if idempotency_hits:
+                idempotency_hits.labels(source_type or "unknown").inc()
+            if dedup_actions_total:
+                dedup_actions_total.labels("skipped_unchanged", source_type or "unknown").inc()
+            update_data = {**doc_data, "updated_at": datetime.now(timezone.utc).isoformat()}
+            update_data.pop("created_at", None)
+            supabase.table("documents").update(update_data).eq("id", existing_doc_id).execute()
+            logger.info(f"⏭️ Skipping unchanged document {existing_doc_id} for {doc_title}")
+            return str(existing_doc_id)
+
+        if dedup_actions_total:
+            dedup_actions_total.labels("replaced", source_type or "unknown").inc()
         delete_rows_with_retry(
             supabase,
             "document_chunks",
@@ -467,7 +500,7 @@ def ingest_document_batched(
         update_data.pop("created_at", None)
         supabase.table("documents").update(update_data).eq("id", existing_doc_id).execute()
         doc_id = existing_doc_id
-        logger.info(f"♻️ Reusing document {doc_id} for {doc_title}")
+        logger.info(f"♻️ Replacing document {doc_id} for {doc_title}")
     else:
         doc_result = supabase.table("documents").insert(doc_data).execute()
         if not doc_result.data:
@@ -927,7 +960,8 @@ def process_document_pipeline(
     file_status_id: str,
     source_type: str,
     metadata: dict = None,
-    source_url: str = None
+    source_url: str = None,
+    source_id: str = None,
 ) -> ProcessResult:
     """
     Unified document processing pipeline.
@@ -962,6 +996,9 @@ def process_document_pipeline(
         else:
             content_bytes = content
 
+        ext = os.path.splitext(filename)[1].lower()
+        structured_exts = {".csv", ".tsv", ".xlsx"}
+
         if len(content_bytes) > settings.MAX_FILE_SIZE:
             if parser_rejections:
                 parser_rejections.labels("file_too_large", source_type or "unknown").inc()
@@ -973,6 +1010,46 @@ def process_document_pipeline(
             return ProcessResult(success=False, error="File too large")
 
         content_hash = compute_content_hash(content_bytes)
+        if not source_id and metadata:
+            source_id = metadata.get("source_id") or metadata.get("file_id")
+        if source_id:
+            metadata = metadata or {}
+            metadata.setdefault("source_id", source_id)
+
+        if ext in structured_exts and len(content_bytes) > settings.MAX_STRUCTURED_FILE_SIZE:
+            update_file_status(supabase, file_status_id, job_id, status="skipped_file_too_large",
+                progress=100,
+                message="File too large for structured parsing",
+                error="file_too_large",
+            )
+            return ProcessResult(success=True, chunks_count=0)
+
+        if source_id:
+            try:
+                existing = (
+                    supabase.table("documents")
+                    .select("id, content_hash")
+                    .eq("user_id", user_id)
+                    .eq("source_id", source_id)
+                    .limit(1)
+                    .execute()
+                )
+                existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
+                if existing_data and existing_data[0].get("content_hash") == content_hash:
+                    doc_id = existing_data[0]["id"]
+                    supabase.table("documents").update(
+                        {
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                            "metadata": metadata,
+                            "file_size_bytes": len(content_bytes),
+                        }
+                    ).eq("id", doc_id).execute()
+                    update_file_status(supabase, file_status_id, job_id, status="skipped_unchanged", progress=100, message="Skipped (unchanged since last sync)")
+                    if dedup_actions_total:
+                        dedup_actions_total.labels("skipped_unchanged", source_type or "unknown").inc()
+                    return ProcessResult(success=True, document_id=doc_id, chunks_count=0)
+            except Exception as exc:
+                logger.warning("⚠️ [Pipeline] Failed source_id lookup: %s", exc)
         parse_timeout = get_parse_timeout_seconds(filename, metadata.get("mime_type") if metadata else None)
         parse_start = time.time()
 
@@ -1001,9 +1078,18 @@ def process_document_pipeline(
             message = "Unsupported file type"
             if reason == "binary_content":
                 message = "Unsupported binary file"
+            elif reason == "llamaparse_unavailable":
+                message = "Requires LlamaParse (not configured)"
+            elif reason == "llamaparse_missing_dependency":
+                message = "LlamaParse dependency missing"
+            elif reason == "missing_dependency":
+                message = "Required parser dependency missing"
+            elif reason == "file_too_large":
+                message = "File too large for structured parsing"
             if parser_rejections:
                 parser_rejections.labels("unsupported", source_type or "unknown").inc()
-            update_file_status(supabase, file_status_id, job_id, status="skipped",
+            status_value = "skipped_unsupported" if reason == "llamaparse_unavailable" else "skipped"
+            update_file_status(supabase, file_status_id, job_id, status=status_value,
                 progress=100,
                 message=message,
                 chunks_total=0,
@@ -1067,7 +1153,8 @@ def process_document_pipeline(
             job_id=job_id,
             source_url=source_url,
             file_status_id=file_status_id,
-            content_hash=content_hash
+            content_hash=content_hash,
+            source_id=source_id,
         )
         
         # 5. Complete
@@ -1494,6 +1581,10 @@ def process_file_task(
         metadata = {}
     source_url = file_data.get("source_url") or metadata.get("source_url") or metadata.get("url")
     source_id = file_data.get("source_id") or metadata.get("source_id") or metadata.get("file_id")
+    if source_id:
+        metadata.setdefault("source_id", source_id)
+    if metadata.get("modified_at") and not metadata.get("last_modified"):
+        metadata["last_modified"] = metadata.get("modified_at")
     parent_id = file_data.get("parent_id") or metadata.get("parent_id")
     mime_type = file_data.get("mime_type") or metadata.get("mime_type")
     local_path = None
@@ -1504,6 +1595,38 @@ def process_file_task(
             progress=5,
             message="Preparing file..."
         )
+
+        ext = os.path.splitext(filename)[1].lower()
+        structured_exts = {".csv", ".tsv", ".xlsx"}
+        declared_size = (
+            file_data.get("size_bytes")
+            or metadata.get("file_size")
+            or metadata.get("size")
+            or metadata.get("file_size_bytes")
+        )
+        if declared_size is not None:
+            try:
+                declared_size = int(declared_size)
+            except (TypeError, ValueError):
+                declared_size = None
+        if ext in structured_exts and declared_size and declared_size > settings.MAX_STRUCTURED_FILE_SIZE:
+            update_file_status(
+                supabase,
+                file_status_id,
+                job_id,
+                status="skipped_file_too_large",
+                progress=100,
+                message="File too large for structured parsing",
+                error="file_too_large",
+            )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "skipped",
+            )
+            return {"status": "skipped", "filename": filename, "reason": "file_too_large"}
         
         # STEP 1: Download from storage (preferred) or decode base64 payload
         storage_path = file_data.get("storage_path")
@@ -1519,6 +1642,25 @@ def process_file_task(
 
         if isinstance(content, str):
             content = content.encode("utf-8")
+
+        if ext in structured_exts and len(content) > settings.MAX_STRUCTURED_FILE_SIZE:
+            update_file_status(
+                supabase,
+                file_status_id,
+                job_id,
+                status="skipped_file_too_large",
+                progress=100,
+                message="File too large for structured parsing",
+                error="file_too_large",
+            )
+            _record_ingest_outcome_and_maybe_finalize(
+                supabase,
+                user_id,
+                job_id,
+                file_status_id,
+                "skipped",
+            )
+            return {"status": "skipped", "filename": filename, "reason": "file_too_large"}
 
         # UX: indicate security scanning
         update_file_status(
@@ -1602,6 +1744,49 @@ def process_file_task(
             return {"status": "failed", "filename": filename, "error": "File too large"}
 
         content_hash = compute_content_hash(content)
+
+        if source_id:
+            try:
+                existing = (
+                    supabase.table("documents")
+                    .select("id, content_hash")
+                    .eq("user_id", user_id)
+                    .eq("source_id", source_id)
+                    .limit(1)
+                    .execute()
+                )
+                existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
+                if existing_data and existing_data[0].get("content_hash") == content_hash:
+                    doc_id = existing_data[0]["id"]
+                    supabase.table("documents").update(
+                        {
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                            "metadata": metadata,
+                            "file_size_bytes": file_data.get("size_bytes") or metadata.get("file_size") or metadata.get("size") or len(content),
+                        }
+                    ).eq("id", doc_id).execute()
+
+                    update_file_status(
+                        supabase,
+                        file_status_id,
+                        job_id,
+                        status="skipped_unchanged",
+                        progress=100,
+                        message="Skipped (unchanged since last sync)",
+                        document_id=doc_id,
+                    )
+                    if dedup_actions_total:
+                        dedup_actions_total.labels("skipped_unchanged", source_type or "unknown").inc()
+                    _record_ingest_outcome_and_maybe_finalize(
+                        supabase,
+                        user_id,
+                        job_id,
+                        file_status_id,
+                        "skipped",
+                    )
+                    return {"status": "skipped", "filename": filename, "reason": "unchanged"}
+            except Exception as exc:
+                logger.warning("[ProcessFile:%s] ⚠️ Failed source_id lookup: %s", task_id, exc)
         
         suffix = os.path.splitext(filename)[1] or ".bin"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -1646,9 +1831,18 @@ def process_file_task(
             message = "Unsupported file type"
             if reason == "binary_content":
                 message = "Unsupported binary file"
+            elif reason == "llamaparse_unavailable":
+                message = "Requires LlamaParse (not configured)"
+            elif reason == "llamaparse_missing_dependency":
+                message = "LlamaParse dependency missing"
+            elif reason == "missing_dependency":
+                message = "Required parser dependency missing"
+            elif reason == "file_too_large":
+                message = "File too large for structured parsing"
             if parser_rejections:
                 parser_rejections.labels("unsupported", source_type or "unknown").inc()
-            update_file_status(supabase, file_status_id, job_id, status="skipped",
+            status_value = "skipped_unsupported" if reason == "llamaparse_unavailable" else "skipped"
+            update_file_status(supabase, file_status_id, job_id, status=status_value,
                 progress=100,
                 message=message,
                 chunks_total=0,
@@ -1727,6 +1921,7 @@ def process_file_task(
             "title": filename,
             "source_type": source_type,
             "source_url": source_url,
+            "source_id": source_id,
             "file_size_bytes": file_data.get("size_bytes") or metadata.get("file_size") or metadata.get("size") or len(content),
             "content_hash": content_hash,
             "metadata": {
@@ -1943,6 +2138,7 @@ def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
             source_url=doc_payload.get("source_url"),
             file_status_id=file_status_id,
             content_hash=doc_payload.get("content_hash"),
+            source_id=doc_payload.get("source_id") or (doc_payload.get("metadata") or {}).get("source_id"),
         )
 
         total_chunks = len(chunk_records)
@@ -2686,6 +2882,7 @@ def process_page_task(
             "crawl_id": crawl_id,
             "total_tokens": result.total_tokens,
             "total_chunks": len(result.chunks),
+            "source_id": source_url,
         }
         
         content_bytes = page_content.encode("utf-8")
@@ -2723,6 +2920,7 @@ def process_page_task(
             file_size_bytes=content_size,
             source_url=source_url,
             content_hash=content_hash,
+            source_id=source_url,
         )
 
         if not doc_id:

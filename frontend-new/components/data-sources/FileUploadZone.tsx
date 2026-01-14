@@ -30,6 +30,19 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
   const { files: fileStatuses } = useFileStatus(currentJobId);
 
   const isOverLimit = filesUsed >= filesLimit;
+  const totalStatusCount = fileStatuses.length;
+  const completedStatusCount = fileStatuses.filter((file) => {
+    if (
+      file.status === "completed" ||
+      file.status === "indexed" ||
+      file.status === "failed" ||
+      file.status === "cancelled"
+    ) {
+      return true;
+    }
+    return file.status.startsWith("skipped");
+  }).length;
+  const overallProgress = totalStatusCount > 0 ? (completedStatusCount / totalStatusCount) * 100 : 0;
 
   /**
    * Direct-to-Storage Upload Flow:
@@ -148,9 +161,71 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
+      // Documents
       "application/pdf": [".pdf"],
-      "text/plain": [".txt"],
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+      "application/msword": [".doc"],
+      "application/rtf": [".rtf"],
+
+      // Spreadsheets
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+      "application/vnd.ms-excel": [".xls"],
+      "text/csv": [".csv"],
+      "text/tab-separated-values": [".tsv"],
+
+      // Presentations
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
+      "application/vnd.ms-powerpoint": [".ppt"],
+
+      // Email
+      "message/rfc822": [".eml"],
+      "application/vnd.ms-outlook": [".msg"],
+
+      // Text & Code
+      "text/plain": [
+        ".txt",
+        ".py",
+        ".js",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".java",
+        ".go",
+        ".cpp",
+        ".c",
+        ".cs",
+        ".rb",
+        ".php",
+        ".rs",
+        ".scala",
+        ".swift",
+        ".kt",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".ini",
+        ".conf",
+        ".config",
+        ".xml",
+        ".css",
+        ".sql",
+        ".env",
+        ".sh",
+        ".dockerfile",
+        ".log",
+      ],
+      "text/markdown": [".md", ".markdown"],
+      "text/html": [".html", ".htm"],
+      "application/json": [".json"],
+      "application/xml": [".xml"],
+      "text/xml": [".xml"],
+
+      // Images (OCR via LlamaParse)
+      "image/jpeg": [".jpg", ".jpeg"],
+      "image/png": [".png"],
+      "image/tiff": [".tiff", ".tif"],
+      "image/bmp": [".bmp"],
     },
     disabled: isUploading || isOverLimit || disabled,
   });
@@ -215,7 +290,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
           </div>
           <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <FileText className="h-3 w-3" />
-            PDF, TXT, DOCX
+            PDF, Office, CSV, Code, Images & more
           </div>
         </div>
       </div>
@@ -225,14 +300,8 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
         <IngestionProgressModal
           jobId={currentJobId}
           files={fileStatuses}
-          totalFiles={fileStatuses.length}
-          overallProgress={
-            fileStatuses.length > 0
-              ? (fileStatuses.filter((f) => f.status === "completed").length /
-                fileStatuses.length) *
-              100
-              : 0
-          }
+          totalFiles={totalStatusCount}
+          overallProgress={overallProgress}
           onClose={() => setCurrentJobId(null)}
         />
       )}
