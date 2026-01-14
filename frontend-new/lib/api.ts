@@ -263,19 +263,62 @@ export interface IngestReferenceResponse {
     job_id?: string;  // Optional: returned when file is queued for processing
 }
 
+// =============================================================================
+// DUPLICATE FILE DETECTION API
+// =============================================================================
+
+export interface ExistingDocument {
+    id: string;
+    title: string;
+    created_at: string;
+    file_size_bytes?: number;
+}
+
+export interface DuplicateCheckResponse {
+    is_duplicate: boolean;
+    existing_document?: ExistingDocument;
+    action_required: "none" | "confirm_overwrite";
+}
+
+/**
+ * Check if a file with the same content already exists
+ * POST /api/v1/uploads/check-duplicates
+ * 
+ * Call this BEFORE uploading to show user a confirmation modal if duplicate exists.
+ */
+export const checkDuplicates = async (
+    contentHash: string,
+    filename: string,
+    fileSize: number
+): Promise<DuplicateCheckResponse> => {
+    const response = await api.post<DuplicateCheckResponse>('/uploads/check-duplicates', {
+        content_hash: contentHash,
+        filename,
+        file_size: fileSize,
+    });
+    return response.data;
+};
+
 /**
  * Get a presigned URL for direct-to-storage file upload
  * POST /api/v1/uploads/upload-url
+ * 
+ * @param contentHash - Optional SHA-256 hash for stable path generation (enables dedup)
+ * @param forceOverwrite - Set to true if user confirmed overwrite of duplicate
  */
 export const getUploadUrl = async (
     filename: string,
     fileType: string,
-    fileSize: number
+    fileSize: number,
+    contentHash?: string,
+    forceOverwrite: boolean = false
 ): Promise<UploadUrlResponse> => {
     const response = await api.post<UploadUrlResponse>('/uploads/upload-url', {
         filename,
         file_type: fileType,
         file_size: fileSize,
+        content_hash: contentHash,
+        force_overwrite: forceOverwrite,
     });
     return response.data;
 };

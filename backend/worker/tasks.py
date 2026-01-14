@@ -804,7 +804,7 @@ def send_email_notification(
                 if legacy_response.data and isinstance(legacy_response.data, dict):
                     name = legacy_response.data.get("display_name") or legacy_response.data.get("full_name") or "there"
         except Exception as profile_error:
-            logger.warning(f"📧 [Email] Could not fetch profile (using default name): {profile_error}")
+            logger.debug(f"📧 [Email] Could not fetch profile (using default name): {profile_error}")
             
         # Fetch email from Auth Admin (requires Service Role key)
         email = None
@@ -824,16 +824,19 @@ def send_email_notification(
         # Default to True if no explicit setting exists - fail-safe approach
         email_enabled = True  # Default if no setting or on error
         try:
+            # Use execute() instead of maybe_single() to avoid 406 errors
             settings_response = supabase.table("user_notification_settings") \
                 .select("enabled") \
                 .eq("user_id", user_id) \
                 .eq("setting_key", "email_on_ingestion_complete") \
-                .maybe_single().execute()
+                .execute()
             
-            if settings_response and settings_response.data:
-                email_enabled = settings_response.data.get("enabled", True)
+            # Check if we got data (list of rows)
+            if settings_response.data and len(settings_response.data) > 0:
+                email_enabled = settings_response.data[0].get("enabled", True)
         except Exception as settings_error:
-            logger.warning(f"📧 [Email] Could not fetch settings (defaulting to enabled): {settings_error}")
+            # 406/204 errors are expected when no setting exists - default to enabled
+            logger.debug(f"📧 [Email] No notification settings found (defaulting to enabled): {settings_error}")
         
         if not email_enabled:
             logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
@@ -869,13 +872,17 @@ def send_failure_email_notification(
         error_message: Error details
     """
     try:
-        # Fetch user name from profile (table does not have email)
+        # Fetch user name from profile (email is in auth.users, not user_profiles)
+        name = "there"  # Default
         try:
-            user_response = supabase.table("user_profiles").select("display_name,full_name").eq("user_id", user_id).single().execute()
-            user_data = user_response.data or {}
-            name = user_data.get("display_name") or user_data.get("full_name") or "there"
-        except Exception:
-            name = "there"
+            user_response = supabase.table("user_profiles").select(
+                "display_name,full_name"
+            ).eq("user_id", user_id).maybe_single().execute()
+            user_data = user_response.data
+            if isinstance(user_data, dict):
+                name = user_data.get("display_name") or user_data.get("full_name") or "there"
+        except Exception as profile_error:
+            logger.debug(f"📧 [Email] Could not fetch profile (using default name): {profile_error}")
             
         # Fetch email from Auth Admin (requires Service Role key)
         email = None
@@ -894,16 +901,19 @@ def send_failure_email_notification(
         # Check user preference (respect opt-out for error emails too) - fail-safe
         email_enabled = True  # Default if no setting or on error
         try:
+            # Use execute() instead of maybe_single() to avoid 406 errors
             settings_response = supabase.table("user_notification_settings") \
                 .select("enabled") \
                 .eq("user_id", user_id) \
                 .eq("setting_key", "email_on_ingestion_complete") \
-                .maybe_single().execute()
+                .execute()
             
-            if settings_response and settings_response.data:
-                email_enabled = settings_response.data.get("enabled", True)
+            # Check if we got data (list of rows)
+            if settings_response.data and len(settings_response.data) > 0:
+                email_enabled = settings_response.data[0].get("enabled", True)
         except Exception as settings_error:
-            logger.warning(f"📧 [Email] Could not fetch settings (defaulting to enabled): {settings_error}")
+            # 406/204 errors are expected when no setting exists - default to enabled
+            logger.debug(f"📧 [Email] No notification settings found (defaulting to enabled): {settings_error}")
         
         if not email_enabled:
             logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
@@ -1016,7 +1026,10 @@ def process_document_pipeline(
             )
             return ProcessResult(success=True, chunks_count=0)
 
-        if source_id:
+        # Check for force_overwrite flag (user confirmed overwrite via UI)
+        force_overwrite = (metadata or {}).get("force_overwrite", False)
+        
+        if source_id and not force_overwrite:
             try:
                 existing = (
                     supabase.table("documents")
@@ -1042,6 +1055,9 @@ def process_document_pipeline(
                     return ProcessResult(success=True, document_id=doc_id, chunks_count=0)
             except Exception as exc:
                 logger.warning("⚠️ [Pipeline] Failed source_id lookup: %s", exc)
+        elif force_overwrite:
+            logger.info("🔄 [Pipeline] Force overwrite enabled for %s - skipping dedup check", filename)
+        
         parse_timeout = get_parse_timeout_seconds(filename, metadata.get("mime_type") if metadata else None)
         parse_start = time.time()
 
@@ -1736,8 +1752,11 @@ def process_file_task(
             return {"status": "failed", "filename": filename, "error": "File too large"}
 
         content_hash = compute_content_hash(content)
+        
+        # Check for force_overwrite flag (user confirmed overwrite via UI)
+        force_overwrite = metadata.get("force_overwrite", False)
 
-        if source_id:
+        if source_id and not force_overwrite:
             try:
                 existing = (
                     supabase.table("documents")
@@ -1779,6 +1798,8 @@ def process_file_task(
                     return {"status": "skipped", "filename": filename, "reason": "unchanged"}
             except Exception as exc:
                 logger.warning("[ProcessFile:%s] ⚠️ Failed source_id lookup: %s", task_id, exc)
+        elif force_overwrite:
+            logger.info("[ProcessFile:%s] 🔄 Force overwrite enabled - skipping dedup check", task_id)
         
         suffix = os.path.splitext(filename)[1] or ".bin"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:

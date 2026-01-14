@@ -125,6 +125,8 @@ class UploadUrlRequest(BaseModel):
     filename: str
     file_type: str  # MIME type
     file_size: int  # Size in bytes for quota check
+    content_hash: Optional[str] = None  # SHA-256 hex for stable path & dedup
+    force_overwrite: bool = False  # User confirmed overwrite of duplicate
 
 
 class UploadUrlResponse(BaseModel):
@@ -140,6 +142,106 @@ class FileReferenceRequest(BaseModel):
     filename: str
     file_size: int
     metadata: dict = Field(default_factory=dict)
+
+
+# =============================================================================
+# DUPLICATE FILE DETECTION
+# =============================================================================
+
+from typing import Literal
+
+class DuplicateCheckRequest(BaseModel):
+    """Request for pre-flight duplicate check."""
+    content_hash: str = Field(..., min_length=64, max_length=64, description="SHA-256 hex digest")
+    filename: str = Field(..., min_length=1, description="Original filename for display")
+    file_size: int = Field(..., gt=0, description="File size in bytes")
+
+
+class ExistingDocument(BaseModel):
+    """Information about an existing duplicate document."""
+    id: str
+    title: str
+    created_at: str
+    file_size_bytes: Optional[int] = None
+
+
+class DuplicateCheckResponse(BaseModel):
+    """Response indicating whether file is a duplicate."""
+    is_duplicate: bool
+    existing_document: Optional[ExistingDocument] = None
+    action_required: Literal["none", "confirm_overwrite"]
+
+
+@router.post("/check-duplicates", response_model=DuplicateCheckResponse)
+@limiter.limit("30/minute")
+async def check_duplicates(
+    request: Request,
+    body: DuplicateCheckRequest,
+    user_id: str = Depends(require_editor)
+):
+    """
+    Pre-flight duplicate check using content hash (SHA-256).
+    
+    Call this endpoint BEFORE uploading to detect if file already exists.
+    If is_duplicate=True, show user a confirmation modal before proceeding.
+    
+    Security:
+    - Validates hash format (64 hex chars)
+    - Only checks within user's own documents
+    - Rate-limited to prevent enumeration attacks
+    """
+    supabase = get_supabase()
+    
+    # Validate hash format (should be 64 hex characters)
+    if not body.content_hash or len(body.content_hash) != 64:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid content_hash: must be 64-character SHA-256 hex digest"
+        )
+    
+    try:
+        int(body.content_hash, 16)  # Validate hex
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid content_hash: must be valid hexadecimal"
+        )
+    
+    # Check for existing document with same hash belonging to this user
+    try:
+        existing = supabase.table("documents").select(
+            "id, title, created_at, file_size_bytes"
+        ).eq("user_id", user_id).eq("content_hash", body.content_hash).limit(1).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            doc = existing.data[0]
+            logger.info(f"[DupCheck] Found duplicate for hash {body.content_hash[:12]}... → doc {doc['id']}")
+            return DuplicateCheckResponse(
+                is_duplicate=True,
+                existing_document=ExistingDocument(
+                    id=doc["id"],
+                    title=doc.get("title", body.filename),
+                    created_at=doc.get("created_at", ""),
+                    file_size_bytes=doc.get("file_size_bytes")
+                ),
+                action_required="confirm_overwrite"
+            )
+        
+        logger.debug(f"[DupCheck] No duplicate found for hash {body.content_hash[:12]}...")
+        return DuplicateCheckResponse(
+            is_duplicate=False,
+            existing_document=None,
+            action_required="none"
+        )
+        
+    except Exception as e:
+        logger.error(f"[DupCheck] Database error: {e}")
+        # Fail open - allow upload if check fails
+        return DuplicateCheckResponse(
+            is_duplicate=False,
+            existing_document=None,
+            action_required="none"
+        )
 
 
 @router.post("/upload-url", response_model=UploadUrlResponse)
@@ -190,10 +292,20 @@ async def generate_upload_url(
         )
         raise HTTPException(status_code=403, detail=str(exc))
     
-    # 3. Generate unique storage path (SECURITY: sanitize filename to prevent path traversal)
-    unique_id = str(uuid.uuid4())
+    # 3. Generate storage path (SECURITY: sanitize filename to prevent path traversal)
     safe_filename = sanitize_filename(body.filename)
-    storage_path = f"uploads/{user_id}/{unique_id}/{safe_filename}"
+    
+    # Use content hash for STABLE path (enables deduplication) or fallback to UUID
+    if body.content_hash and len(body.content_hash) >= 12:
+        # Use first 12 chars of content hash - stable for same file content
+        path_segment = body.content_hash[:12]
+        logger.info(f"[Upload] Using content-hash path segment: {path_segment}")
+    else:
+        # Fallback: random UUID (legacy behavior for clients without hash support)
+        path_segment = str(uuid.uuid4())
+        logger.debug(f"[Upload] Using UUID path segment (no content_hash provided)")
+    
+    storage_path = f"uploads/{user_id}/{path_segment}/{safe_filename}"
     
     # 4. Generate signed upload URL (valid for 1 hour)
     try:

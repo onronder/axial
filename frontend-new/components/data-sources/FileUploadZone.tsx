@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, Loader2, AlertCircle } from "lucide-react";
@@ -10,12 +10,22 @@ import { cn } from "@/lib/utils";
 import { useUsage } from "@/hooks/useUsage";
 import { useFileStatus } from "@/hooks/useFileStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { getUploadUrl, uploadToStorage, ingestFileReference } from "@/lib/api";
+import { getUploadUrl, uploadToStorage, ingestFileReference, checkDuplicates } from "@/lib/api";
+import type { ExistingDocument } from "@/lib/api";
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
+import { DuplicateFileModal, type DuplicateAction } from "./DuplicateFileModal";
+import { calculateSHA256 } from "@/lib/hash";
 
 interface FileUploadZoneProps {
   source: DataSource;
   disabled?: boolean;
+}
+
+// Type for pending duplicate resolution
+interface PendingDuplicate {
+  file: File;
+  contentHash: string;
+  existingDocument?: ExistingDocument;
 }
 
 export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps) {
@@ -29,6 +39,12 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
 
   // Track file-level progress
   const { files: fileStatuses } = useFileStatus(currentJobId);
+
+  // Duplicate detection state
+  const [pendingDuplicate, setPendingDuplicate] = useState<PendingDuplicate | null>(null);
+  const [hashProgress, setHashProgress] = useState<number>(0);
+  const pendingFilesRef = useRef<File[]>([]);
+  const uploadResultsRef = useRef<{ success: number; fail: number }>({ success: 0, fail: 0 });
 
   /**
    * Called when all files in the ingestion job have finished processing.
@@ -63,12 +79,19 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
   const overallProgress = totalStatusCount > 0 ? (completedStatusCount / totalStatusCount) * 100 : 0;
 
   /**
-   * Direct-to-Storage Upload Flow:
-   * 1. Get presigned URL from our backend
-   * 2. Upload file directly to Supabase Storage
-   * 3. Trigger ingestion via our backend
+   * Direct-to-Storage Upload Flow with Duplicate Detection:
+   * 1. Calculate SHA-256 hash of file (shows progress for large files)
+   * 2. Check for duplicate via API
+   * 3. If duplicate, pause and ask user (modal)
+   * 4. Get presigned URL from our backend
+   * 5. Upload file directly to Supabase Storage
+   * 6. Trigger ingestion via our backend
    */
-  const uploadFile = useCallback(async (file: File): Promise<boolean> => {
+  const uploadFile = useCallback(async (
+    file: File,
+    contentHash?: string,
+    forceOverwrite: boolean = false
+  ): Promise<boolean> => {
     if (disabled) {
       toast({
         title: "View only",
@@ -79,15 +102,44 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
     }
 
     try {
-      // Step 1: Get presigned upload URL
+      // Step 1: Calculate content hash if not provided (for duplicate detection)
+      let hash = contentHash;
+      if (!hash) {
+        setUploadStage("Calculating checksum...");
+        hash = await calculateSHA256(file, (progress) => {
+          setHashProgress(progress);
+        });
+        console.log(`📊 [Upload] Hash for ${file.name}: ${hash.slice(0, 12)}...`);
+      }
+
+      // Step 2: Check for duplicates (skip if forceOverwrite)
+      if (!forceOverwrite) {
+        setUploadStage("Checking for duplicates...");
+        const dupCheck = await checkDuplicates(hash, file.name, file.size);
+        
+        if (dupCheck.is_duplicate && dupCheck.action_required === "confirm_overwrite") {
+          console.log(`⚠️ [Upload] Duplicate detected for ${file.name}`);
+          // Pause and show modal - user will decide
+          setPendingDuplicate({
+            file,
+            contentHash: hash,
+            existingDocument: dupCheck.existing_document,
+          });
+          return false; // Return false to indicate upload didn't complete yet
+        }
+      }
+
+      // Step 3: Get presigned upload URL (with content hash for stable path)
       setUploadStage("Getting upload URL...");
       const urlResponse = await getUploadUrl(
         file.name,
         file.type || "application/octet-stream",
-        file.size
+        file.size,
+        hash,
+        forceOverwrite
       );
 
-      // Step 2: Upload directly to storage (bypasses our API server)
+      // Step 4: Upload directly to storage (bypasses our API server)
       setUploadStage("Uploading to storage...");
       const uploadSuccess = await uploadToStorage(urlResponse.upload_url, file);
 
@@ -95,7 +147,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
         throw new Error("Failed to upload file to storage");
       }
 
-      // Step 3: Trigger ingestion and capture job ID
+      // Step 5: Trigger ingestion and capture job ID
       setUploadStage("Processing file...");
       const ingestionResponse = await ingestFileReference(
         urlResponse.storage_path,
@@ -105,6 +157,8 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
           filename: file.name,
           size: file.size,
           type: file.type,
+          content_hash: hash,
+          force_overwrite: forceOverwrite,
         }
       );
 
@@ -121,6 +175,90 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
     }
   }, [disabled, toast]);
 
+  /**
+   * Handle user's decision on duplicate file modal
+   */
+  const handleDuplicateAction = useCallback(async (action: DuplicateAction) => {
+    if (!pendingDuplicate) return;
+
+    const { file, contentHash } = pendingDuplicate;
+    setPendingDuplicate(null);
+
+    if (action === "overwrite") {
+      // User chose to overwrite - proceed with upload
+      console.log(`✅ [Upload] User confirmed overwrite for ${file.name}`);
+      const success = await uploadFile(file, contentHash, true);
+      
+      if (success) {
+        uploadResultsRef.current.success++;
+        setUploadedCount((c) => c + 1);
+      } else {
+        uploadResultsRef.current.fail++;
+      }
+    } else {
+      // User cancelled - skip this file
+      console.log(`❌ [Upload] User cancelled upload for ${file.name}`);
+      toast({
+        title: "Upload Cancelled",
+        description: `Skipped ${file.name} (duplicate).`,
+      });
+    }
+
+    // Continue with remaining files
+    processNextFile();
+  }, [pendingDuplicate, uploadFile, toast]);
+
+  /**
+   * Process the next file in the queue
+   */
+  const processNextFile = useCallback(async () => {
+    const pendingFiles = pendingFilesRef.current;
+    
+    if (pendingFiles.length === 0) {
+      // All files processed - show final toast
+      setIsUploading(false);
+      const { success, fail } = uploadResultsRef.current;
+      
+      if (success > 0 && fail === 0) {
+        refresh();
+        toast({
+          title: "Files Uploaded",
+          description: `${success} file(s) added to your knowledge base.`,
+        });
+      } else if (success > 0 && fail > 0) {
+        toast({
+          title: "Partial Upload",
+          description: `${success} succeeded, ${fail} failed.`,
+          variant: "destructive",
+        });
+      } else if (fail > 0) {
+        toast({
+          title: "Upload Failed",
+          description: "Could not upload files. Please try again.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
+    const file = pendingFiles.shift()!;
+    const success = await uploadFile(file);
+    
+    // If duplicate was detected, uploadFile returns false and shows modal
+    // We'll continue after user responds to modal
+    if (success) {
+      uploadResultsRef.current.success++;
+      setUploadedCount((c) => c + 1);
+      // Continue with next file immediately
+      processNextFile();
+    } else if (!pendingDuplicate) {
+      // Upload failed (not a duplicate pause)
+      uploadResultsRef.current.fail++;
+      processNextFile();
+    }
+    // If pendingDuplicate is set, wait for user action via handleDuplicateAction
+  }, [uploadFile, refresh, toast, pendingDuplicate]);
+
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
       if (disabled) {
@@ -134,46 +272,19 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
 
       if (acceptedFiles.length === 0) return;
 
+      // Initialize upload state
       setIsUploading(true);
       setUploadedCount(0);
-
-      let successCount = 0;
-      let failCount = 0;
-
-      // Upload files sequentially to avoid overwhelming the server
-      for (const file of acceptedFiles) {
-        const success = await uploadFile(file);
-        if (success) {
-          successCount++;
-          setUploadedCount(successCount);
-        } else {
-          failCount++;
-        }
-      }
-
-      setIsUploading(false);
-
-      if (successCount > 0 && failCount === 0) {
-        refresh(); // Update usage stats
-        toast({
-          title: "Files Uploaded",
-          description: `${successCount} file(s) added to your knowledge base.`,
-        });
-      } else if (successCount > 0 && failCount > 0) {
-        toast({
-          title: "Partial Upload",
-          description: `${successCount} succeeded, ${failCount} failed.`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Upload Failed",
-          description: "Could not upload files. Please try again.",
-          variant: "destructive",
-        });
-      }
+      setHashProgress(0);
+      uploadResultsRef.current = { success: 0, fail: 0 };
+      
+      // Queue files for sequential processing (allows pausing for duplicate modal)
+      pendingFilesRef.current = [...acceptedFiles];
+      
+      // Start processing the queue
+      processNextFile();
     },
-    [toast, refresh, uploadFile, disabled]
+    [toast, disabled, processNextFile]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -300,7 +411,9 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
             <h3 className="font-medium text-foreground">{source.name}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {isUploading
-                ? uploadStage || `Uploading... (${uploadedCount} uploaded)`
+                ? uploadStage === "Calculating checksum..." 
+                  ? `Calculating checksum... ${hashProgress}%`
+                  : uploadStage || `Uploading... (${uploadedCount} uploaded)`
                 : isDragActive
                   ? "Drop files here..."
                   : source.description}
@@ -324,6 +437,14 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
           onComplete={handleIngestionComplete}
         />
       )}
+
+      {/* Duplicate File Confirmation Modal */}
+      <DuplicateFileModal
+        open={pendingDuplicate !== null}
+        filename={pendingDuplicate?.file.name || ""}
+        existingDocument={pendingDuplicate?.existingDocument}
+        onAction={handleDuplicateAction}
+      />
     </div>
   );
 }
