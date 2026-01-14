@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Globe, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
+import { useUsage } from "@/hooks/useUsage";
 import { api } from "@/lib/api";
 import { useFileStatus } from "@/hooks/useFileStatus";
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
@@ -27,12 +29,29 @@ type ApiError = {
 
 export function URLCrawlerInput({ source, disabled = false, disabledReason }: URLCrawlerInputProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { refresh } = useUsage();
   const [url, setUrl] = useState("");
   const [depth, setDepth] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   const { files: fileStatuses } = useFileStatus(currentJobId);
+
+  /**
+   * Called when all URLs in the crawl job have finished processing.
+   * Refreshes usage stats and invalidates document cache to update UI.
+   */
+  const handleIngestionComplete = useCallback(() => {
+    console.log("📊 [URLCrawler] Ingestion complete - refreshing data...");
+    
+    // Refresh usage stats (file count, storage) in sidebar
+    refresh(true);
+    
+    // Invalidate documents cache so Knowledge Base table updates
+    queryClient.invalidateQueries({ queryKey: ["documents"] });
+    queryClient.invalidateQueries({ queryKey: ["documentCount"] });
+  }, [refresh, queryClient]);
 
   const handleCrawl = async () => {
     if (disabled) {
@@ -177,6 +196,7 @@ export function URLCrawlerInput({ source, disabled = false, disabledReason }: UR
               : 0
           }
           onClose={() => setCurrentJobId(null)}
+          onComplete={handleIngestionComplete}
         />
       )}
     </div>

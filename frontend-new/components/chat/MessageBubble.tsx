@@ -6,7 +6,8 @@ import { Message as MockMessage } from "@/lib/mockData";
 import { Source } from "@/types";
 import { cn } from "@/lib/utils";
 import { AxioLogo } from "@/components/branding/AxioLogo";
-import { SourceCardGrid, SourceMetadata } from "./SourceCard";
+import { SourceMetadata } from "./SourceCard";
+import { SourcePillList } from "./SourcePill";
 
 interface MessageBubbleProps {
   message: MockMessage & { sources?: SourceMetadata[] | Source[] };
@@ -148,7 +149,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
           isUser
             ? "bg-axio-gradient shadow-brand"
-            : "bg-muted"
+            : "bg-white/10 border border-white/10"
         )}
       >
         {isUser ? (
@@ -163,7 +164,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
             "rounded-2xl px-4 py-3",
             isUser
               ? "bg-axio-gradient text-white shadow-brand"
-              : "bg-muted text-foreground"
+              : "bg-white/5 border border-white/10 text-foreground backdrop-blur-sm shadow-lg"
           )}
         >
           <div className={cn("prose prose-sm max-w-none", isUser ? "prose-invert" : "dark:prose-invert")}>
@@ -176,11 +177,11 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           </div>
         </div>
 
-        {/* Source Citations with hover highlighting */}
+        {/* Source Citations - Inline pills matching marketing design */}
         {!isUser && normalizedSources.length > 0 && (
-          <SourceCardGrid
+          <SourcePillList
             sources={normalizedSources}
-            className="mt-2"
+            className="mt-3"
             highlightedIndex={highlightedCitationIndex}
             onSourceHover={setHighlightedCitationIndex}
           />

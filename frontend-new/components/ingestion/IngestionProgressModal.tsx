@@ -26,6 +26,8 @@ interface IngestionProgressModalProps {
     totalFiles: number;
     overallProgress: number;
     onClose: () => void;
+    /** Called once when all files reach a terminal state (completed/failed/skipped) */
+    onComplete?: () => void;
 }
 
 export function IngestionProgressModal({
@@ -34,11 +36,13 @@ export function IngestionProgressModal({
     totalFiles,
     overallProgress,
     onClose,
+    onComplete,
 }: IngestionProgressModalProps) {
     const [isExpanded, setIsExpanded] = useState(true);
     const modalRef = useRef<HTMLDivElement>(null);
     const keyboardShortcuts = useRef<KeyboardShortcuts | null>(null);
     const focusTrap = useRef<FocusTrap | null>(null);
+    const hasCalledComplete = useRef(false);
 
     const isSkippedStatus = (status: string) => status.startsWith("skipped");
     const completedFiles = files.filter((f) => f.status === "completed" || f.status === "indexed").length;
@@ -76,15 +80,25 @@ export function IngestionProgressModal({
         };
     }, [onClose]);
 
-    // Announce progress updates
+    // Announce progress updates and trigger completion callback
     useEffect(() => {
         if (allComplete) {
             announceToScreenReader(
                 `Processing complete. ${completedFiles} files completed${failedFiles > 0 ? `, ${failedFiles} failed` : ''}`,
                 'assertive'
             );
+            
+            // Trigger onComplete callback once when all files finish processing
+            // This is used to refresh usage stats and document lists
+            if (!hasCalledComplete.current && onComplete) {
+                hasCalledComplete.current = true;
+                // Small delay to ensure backend has committed all changes
+                setTimeout(() => {
+                    onComplete();
+                }, 500);
+            }
         }
-    }, [allComplete, completedFiles, failedFiles]);
+    }, [allComplete, completedFiles, failedFiles, onComplete]);
 
     return (
         <div

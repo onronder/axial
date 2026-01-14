@@ -2,14 +2,14 @@
 
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileText, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Upload, FileText, Loader2, AlertCircle } from "lucide-react";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useUsage } from "@/hooks/useUsage";
 import { useFileStatus } from "@/hooks/useFileStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
 import { getUploadUrl, uploadToStorage, ingestFileReference } from "@/lib/api";
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 
@@ -20,6 +20,7 @@ interface FileUploadZoneProps {
 
 export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { filesUsed, filesLimit, refresh } = useUsage();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
@@ -28,6 +29,23 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
 
   // Track file-level progress
   const { files: fileStatuses } = useFileStatus(currentJobId);
+
+  /**
+   * Called when all files in the ingestion job have finished processing.
+   * Refreshes usage stats and invalidates document cache to update UI.
+   */
+  const handleIngestionComplete = useCallback(() => {
+    console.log("📊 [FileUpload] Ingestion complete - refreshing data...");
+    
+    // Refresh usage stats (file count, storage) in sidebar
+    refresh(true);
+    
+    // Invalidate documents cache so Knowledge Base table updates
+    queryClient.invalidateQueries({ queryKey: ["documents"] });
+    
+    // Also invalidate document count for any dependent components
+    queryClient.invalidateQueries({ queryKey: ["documentCount"] });
+  }, [refresh, queryClient]);
 
   const isOverLimit = filesUsed >= filesLimit;
   const totalStatusCount = fileStatuses.length;
@@ -303,6 +321,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
           totalFiles={totalStatusCount}
           overallProgress={overallProgress}
           onClose={() => setCurrentJobId(null)}
+          onComplete={handleIngestionComplete}
         />
       )}
     </div>

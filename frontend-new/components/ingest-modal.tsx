@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { BookOpen, CheckCircle, Globe, Loader2, Upload, X } from "lucide-react"
 
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal"
@@ -26,6 +27,7 @@ interface IngestModalProps {
 }
 
 export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModalProps) {
+    const queryClient = useQueryClient()
     const [activeTab, setActiveTab] = useState<TabType>(initialTab)
     const [file, setFile] = useState<File | null>(null)
     const [url, setUrl] = useState<string>("")
@@ -38,7 +40,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
     const isNotionConnected = isConnected('notion')
     const { toast } = useToast()
     const { profile } = useProfile()
-    const { canWebCrawl } = useUsage()
+    const { canWebCrawl, refresh } = useUsage()
     const isWebCrawlLocked = !canWebCrawl
     const isViewer = profile?.role === "viewer"
 
@@ -47,6 +49,21 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
     // Track job status for unified ingestion progress
     const { files: fileStatuses } = useFileStatus(currentJobId)
+
+    /**
+     * Called when all files in the ingestion job have finished processing.
+     * Refreshes usage stats and invalidates document cache to update UI.
+     */
+    const handleIngestionComplete = useCallback(() => {
+        console.log("📊 [IngestModal] Ingestion complete - refreshing data...")
+        
+        // Refresh usage stats (file count, storage) in sidebar
+        refresh(true)
+        
+        // Invalidate documents cache so Knowledge Base table updates
+        queryClient.invalidateQueries({ queryKey: ["documents"] })
+        queryClient.invalidateQueries({ queryKey: ["documentCount"] })
+    }, [refresh, queryClient])
 
     // Sync activeTab when initialTab changes
     useEffect(() => {
@@ -324,6 +341,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                             : 0
                     }
                     onClose={() => setCurrentJobId(null)}
+                    onComplete={handleIngestionComplete}
                 />
             )}
         </div>

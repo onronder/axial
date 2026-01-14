@@ -7,8 +7,9 @@
  * No more polling - updates arrive via WebSocket!
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     CheckCircle2,
     Loader2,
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useUsage } from "@/hooks/useUsage";
 import { useFileStatus } from "@/hooks/useFileStatus";
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
@@ -56,12 +58,29 @@ const providerIcons: Record<string, typeof FileText> = {
 export function GlobalProgress() {
     const { user } = useAuth();
     const { toast } = useToast();
+    const queryClient = useQueryClient();
+    const { refresh } = useUsage();
     const [jobs, setJobs] = useState<IngestionJob[]>([]);
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [activeJob, setActiveJob] = useState<IngestionJob | null>(null);
     const activeJobIdRef = useRef<string | null>(null);
     const { files: activeFiles } = useFileStatus(activeJobId);
+
+    /**
+     * Called when all files in the active job have finished processing.
+     * Refreshes usage stats and invalidates document cache to update UI.
+     */
+    const handleIngestionComplete = useCallback(() => {
+        console.log("📊 [GlobalProgress] Ingestion complete - refreshing data...");
+        
+        // Refresh usage stats (file count, storage) in sidebar
+        refresh(true);
+        
+        // Invalidate documents cache so Knowledge Base table updates
+        queryClient.invalidateQueries({ queryKey: ["documents"] });
+        queryClient.invalidateQueries({ queryKey: ["documentCount"] });
+    }, [refresh, queryClient]);
 
     // Setup realtime subscription
     useEffect(() => {
@@ -212,6 +231,7 @@ export function GlobalProgress() {
                             : 0)
                     }
                     onClose={handleCloseDetails}
+                    onComplete={handleIngestionComplete}
                 />
             )}
             <AnimatePresence mode="popLayout">

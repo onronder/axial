@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { authFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import { useUsage } from "@/hooks/useUsage"
 import { Loader2, Folder, FileText, ChevronRight, Home, Upload, CheckSquare, Square } from "lucide-react"
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal"
 import { useFileStatus } from "@/hooks/useFileStatus"
@@ -18,6 +20,8 @@ type ConnectorItem = {
 }
 
 export function DriveExplorer() {
+    const queryClient = useQueryClient()
+    const { refresh } = useUsage()
     const [isLoading, setIsLoading] = useState(true)
     const [items, setItems] = useState<ConnectorItem[]>([])
     const [currentPath, setCurrentPath] = useState<{ id: string | null, name: string }[]>([{ id: null, name: 'Google Drive' }])
@@ -29,6 +33,21 @@ export function DriveExplorer() {
 
     // Real-time file status subscription
     const { files: fileStatuses } = useFileStatus(currentJobId)
+
+    /**
+     * Called when all Google Drive files have finished processing.
+     * Refreshes usage stats and invalidates document cache to update UI.
+     */
+    const handleIngestionComplete = useCallback(() => {
+        console.log("📊 [DriveExplorer] Ingestion complete - refreshing data...")
+        
+        // Refresh usage stats (file count, storage) in sidebar
+        refresh(true)
+        
+        // Invalidate documents cache so Knowledge Base table updates
+        queryClient.invalidateQueries({ queryKey: ["documents"] })
+        queryClient.invalidateQueries({ queryKey: ["documentCount"] })
+    }, [refresh, queryClient])
 
     // Load Items for Current Folder
     useEffect(() => {
@@ -270,6 +289,7 @@ export function DriveExplorer() {
                             : 0
                     }
                     onClose={() => setCurrentJobId(null)}
+                    onComplete={handleIngestionComplete}
                 />
             )}
         </div>

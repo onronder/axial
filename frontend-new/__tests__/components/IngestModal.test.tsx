@@ -1,6 +1,7 @@
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { IngestModal } from '@/components/ingest-modal'
 import { UsageProvider } from '@/hooks/useUsage'
@@ -95,12 +96,24 @@ vi.mock('@/lib/api', () => ({
     getEffectivePlan: () => Promise.resolve({ plan: 'pro', inherited: false, team_id: null, team_name: null }),
 }))
 
-const renderWithProviders = (ui: React.ReactElement) =>
-    render(
-        <UsageProvider>
-            <ProfileProvider>{ui}</ProfileProvider>
-        </UsageProvider>
+const createTestQueryClient = () =>
+    new QueryClient({
+        defaultOptions: {
+            queries: { retry: false },
+            mutations: { retry: false },
+        },
+    });
+
+const renderWithProviders = (ui: React.ReactElement) => {
+    const queryClient = createTestQueryClient();
+    return render(
+        <QueryClientProvider client={queryClient}>
+            <UsageProvider>
+                <ProfileProvider>{ui}</ProfileProvider>
+            </UsageProvider>
+        </QueryClientProvider>
     );
+};
 
 const renderModal = (props: React.ComponentProps<typeof IngestModal>) =>
     renderWithProviders(<IngestModal {...props} />);

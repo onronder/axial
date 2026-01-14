@@ -355,29 +355,38 @@ class PDFProcessor(BaseProcessor):
     ]
     
     def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process PDF locally first; fallback to LlamaParse for scanned PDFs."""
+        """Process PDF with quality-first routing and local fallback."""
         from core.config import settings
-        
-        local_result = self._process_with_pymupdf(content, filename)
 
         if settings.LLAMA_CLOUD_API_KEY:
-            text_length = 0
-            if local_result and local_result.metadata:
-                text_length = int(local_result.metadata.get("text_length") or 0)
-            is_scanned = self._is_likely_scanned(text_length)
+            logger.info(f"[PDFProcessor] Quality-first LlamaParse for {filename}")
+            if llamaparse_fallback_total:
+                llamaparse_fallback_total.labels("pdf_quality_first").inc()
+            try:
+                result = self._process_with_llamaparse(content, filename)
+                if result and result.chunks:
+                    if pdf_scan_detection_total:
+                        pdf_scan_detection_total.labels("llamaparse_success").inc()
+                    return result
+                logger.warning(
+                    f"[PDFProcessor] LlamaParse returned no chunks for {filename}, falling back to PyMuPDF"
+                )
+                if pdf_scan_detection_total:
+                    pdf_scan_detection_total.labels("llamaparse_empty_fallback").inc()
+            except Exception as e:
+                logger.warning(
+                    f"[PDFProcessor] LlamaParse failed for {filename}: {e}, falling back to PyMuPDF"
+                )
+                if pdf_scan_detection_total:
+                    pdf_scan_detection_total.labels("llamaparse_error_fallback").inc()
+        else:
+            logger.info(
+                f"[PDFProcessor] No LLAMA_CLOUD_API_KEY configured, using PyMuPDF for {filename}"
+            )
             if pdf_scan_detection_total:
-                pdf_scan_detection_total.labels("scanned" if is_scanned else "text").inc()
-            if is_scanned:
-                if llamaparse_fallback_total:
-                    llamaparse_fallback_total.labels("pdf").inc()
-                try:
-                    result = self._process_with_llamaparse(content, filename)
-                    if result and result.chunks:
-                        return result
-                except Exception as e:
-                    logger.warning(f"[PDFProcessor] LlamaParse failed, falling back to PyMuPDF: {e}")
+                pdf_scan_detection_total.labels("local_no_api_key").inc()
 
-        return local_result
+        return self._process_with_pymupdf(content, filename)
 
     SCANNED_TEXT_THRESHOLD = 150
 

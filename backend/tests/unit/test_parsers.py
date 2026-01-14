@@ -144,15 +144,14 @@ def test_pdf_processor_uses_llamaparse_when_available(monkeypatch):
     processor = PDFProcessor()
     monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
     expected = SimpleNamespace(chunks=["chunk"], file_type="pdf")
-    local = SimpleNamespace(chunks=[], file_type="pdf", metadata={"text_length": 0})
 
     with patch.object(processor, "_process_with_llamaparse", return_value=expected) as mock_llama, \
-         patch.object(processor, "_process_with_pymupdf", return_value=local) as mock_pdf:
+         patch.object(processor, "_process_with_pymupdf") as mock_pdf:
         result = processor.process(b"%PDF", "file.pdf")
 
     assert result is expected
     mock_llama.assert_called_once()
-    mock_pdf.assert_called_once()
+    mock_pdf.assert_not_called()
 
 
 def test_pdf_processor_falls_back_on_llamaparse_error(monkeypatch):
@@ -161,6 +160,35 @@ def test_pdf_processor_falls_back_on_llamaparse_error(monkeypatch):
     fallback = SimpleNamespace(chunks=["chunk"], file_type="pdf", metadata={"text_length": 0})
 
     with patch.object(processor, "_process_with_llamaparse", side_effect=Exception("boom")) as mock_llama, \
+         patch.object(processor, "_process_with_pymupdf", return_value=fallback) as mock_pdf:
+        result = processor.process(b"%PDF", "file.pdf")
+
+    assert result is fallback
+    mock_llama.assert_called_once()
+    mock_pdf.assert_called_once()
+
+
+def test_pdf_processor_falls_back_when_no_api_key(monkeypatch):
+    processor = PDFProcessor()
+    monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", None)
+    fallback = SimpleNamespace(chunks=["chunk"], file_type="pdf", metadata={"text_length": 0})
+
+    with patch.object(processor, "_process_with_llamaparse") as mock_llama, \
+         patch.object(processor, "_process_with_pymupdf", return_value=fallback) as mock_pdf:
+        result = processor.process(b"%PDF", "file.pdf")
+
+    assert result is fallback
+    mock_llama.assert_not_called()
+    mock_pdf.assert_called_once()
+
+
+def test_pdf_processor_falls_back_when_llamaparse_empty(monkeypatch):
+    processor = PDFProcessor()
+    monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
+    empty = SimpleNamespace(chunks=[], file_type="pdf")
+    fallback = SimpleNamespace(chunks=["chunk"], file_type="pdf", metadata={"text_length": 0})
+
+    with patch.object(processor, "_process_with_llamaparse", return_value=empty) as mock_llama, \
          patch.object(processor, "_process_with_pymupdf", return_value=fallback) as mock_pdf:
         result = processor.process(b"%PDF", "file.pdf")
 
