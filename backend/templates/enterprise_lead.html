@@ -1,132 +1,326 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Enterprise Inquiry - Axio Hub</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>New Enterprise Lead - Axio Hub</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+        /* Reset */
+        body, table, td, p, a, li { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+        
+        body {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #0a0a0f;
+            color: #ffffff;
+        }
+        
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #030712 0%, #0f172a 50%, #030712 100%);
+            padding: 32px;
+            border-bottom: 1px solid rgba(251, 191, 36, 0.3);
+        }
+        
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(251, 191, 36, 0.1) 100%);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            border-radius: 6px;
+            padding: 6px 12px;
+        }
+        
+        .header-badge span {
+            color: #fbbf24;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        
+        .header-logo img {
+            height: 32px;
+            width: auto;
+            opacity: 0.7;
+        }
+        
+        /* Alert Banner */
+        .alert-banner {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%);
+            border-bottom: 1px solid rgba(251, 191, 36, 0.2);
+            padding: 20px 32px;
+            text-align: center;
+        }
+        
+        .alert-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #fbbf24;
+            margin: 0;
+        }
+        
+        .alert-subtitle {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.5);
+            margin: 4px 0 0;
+        }
+        
+        /* Lead Details Section */
+        .details-section {
+            padding: 32px;
+            background-color: #030712;
+        }
+        
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #8b5cf6;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0 0 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .details-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .details-table tr {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .details-table tr:last-child {
+            border-bottom: none;
+        }
+        
+        .details-table td {
+            padding: 14px 0;
+            vertical-align: top;
+        }
+        
+        .detail-label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            width: 100px;
+        }
+        
+        .detail-value {
+            font-size: 15px;
+            color: #ffffff;
+            font-weight: 500;
+        }
+        
+        .detail-value a {
+            color: #06b6d4;
+            text-decoration: none;
+        }
+        
+        .detail-value.mono {
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .team-size-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(6, 182, 212, 0.1) 100%);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 6px;
+            padding: 4px 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #8b5cf6;
+        }
+        
+        /* Message Section */
+        .message-section {
+            padding: 0 32px 32px;
+            background-color: #030712;
+        }
+        
+        .message-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-left: 3px solid #8b5cf6;
+            border-radius: 0 12px 12px 0;
+            padding: 24px;
+        }
+        
+        .message-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0 0 12px;
+        }
+        
+        .message-text {
+            font-size: 15px;
+            color: rgba(255, 255, 255, 0.8);
+            line-height: 1.7;
+            font-style: italic;
+            margin: 0;
+        }
+        
+        /* CTA Section */
+        .cta-section {
+            padding: 24px 32px 40px;
+            background-color: #030712;
+            text-align: center;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+            color: #ffffff !important;
+            font-weight: 600;
+            font-size: 15px;
+            padding: 16px 40px;
+            border-radius: 12px;
+            text-decoration: none;
+            box-shadow: 0 8px 32px rgba(139, 92, 246, 0.3);
+        }
+        
+        /* Footer */
+        .footer {
+            background: linear-gradient(180deg, #030712 0%, #0a0a0f 100%);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 24px 32px;
+            text-align: center;
+        }
+        
+        .footer-meta {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.3);
+            line-height: 1.6;
+        }
+        
+        /* Mobile responsive */
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                width: 100% !important;
+            }
+            .header, .alert-banner, .details-section, .message-section, .cta-section, .footer {
+                padding-left: 24px !important;
+                padding-right: 24px !important;
+            }
+            .detail-label {
+                width: 80px !important;
+            }
+        }
+    </style>
 </head>
-
-<body
-    style="background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="min-width: 100%;">
-        <tr>
-            <td align="center" style="padding: 40px 20px;">
-                <table width="600" cellpadding="0" cellspacing="0"
-                    style="max-width: 600px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); overflow: hidden;">
-                    <!-- Dark Header -->
-                    <tr>
-                        <td style="padding: 20px 30px; background-color: #111827;">
-                            <table width="100%" cellpadding="0" cellspacing="0">
+<body>
+    <center>
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #0a0a0f;">
+            <tr>
+                <td>
+                    <div class="email-container">
+                        <!-- Header -->
+                        <div class="header">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                                 <tr>
                                     <td>
-                                        <p
-                                            style="margin: 0; color: #9ca3af; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;">
-                                            🏢 New Lead Notification
-                                        </p>
+                                        <div class="header-badge">
+                                            <span>🏢 Enterprise Lead</span>
+                                        </div>
                                     </td>
-                                    <td align="right">
-                                        <img src="{{ logo_url }}" alt="Axio Hub" width="100"
-                                            style="display: block; max-width: 100px; height: auto; filter: brightness(0) invert(1);">
+                                    <td align="right" class="header-logo">
+                                        <img src="{{ app_url }}/assets/axio-hub-logo.png" alt="Axio" height="32">
                                     </td>
                                 </tr>
                             </table>
-                        </td>
-                    </tr>
-
-                    <!-- Main Content -->
-                    <tr>
-                        <td style="padding: 40px 30px;">
-                            <h1 style="color: #111827; font-size: 24px; font-weight: 700; margin: 0 0 30px 0;">
-                                Enterprise Inquiry Received
-                            </h1>
-
-                            <!-- Lead Details Table -->
-                            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 30px;">
+                        </div>
+                        
+                        <!-- Alert Banner -->
+                        <div class="alert-banner">
+                            <h1 class="alert-title">New Enterprise Inquiry</h1>
+                            <p class="alert-subtitle">A potential enterprise customer wants to connect</p>
+                        </div>
+                        
+                        <!-- Lead Details -->
+                        <div class="details-section">
+                            <div class="section-title">Contact Information</div>
+                            <table class="details-table" role="presentation" cellspacing="0" cellpadding="0" border="0">
                                 <tr>
-                                    <td
-                                        style="padding: 12px 0; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; width: 100px;">
-                                        Name</td>
-                                    <td
-                                        style="padding: 12px 0; border-bottom: 1px solid #e5e7eb; color: #111827; font-weight: 600; font-size: 15px;">
-                                        {{ name }}</td>
+                                    <td class="detail-label">Name</td>
+                                    <td class="detail-value">{{ name }}</td>
                                 </tr>
                                 <tr>
-                                    <td
-                                        style="padding: 12px 0; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;">
-                                        Email</td>
-                                    <td style="padding: 12px 0; border-bottom: 1px solid #e5e7eb;">
-                                        <a href="mailto:{{ user_email }}"
-                                            style="color: #2563eb; text-decoration: none; font-weight: 600; font-size: 15px;">{{
-                                            user_email }}</a>
-                                    </td>
+                                    <td class="detail-label">Email</td>
+                                    <td class="detail-value"><a href="mailto:{{ user_email }}">{{ user_email }}</a></td>
                                 </tr>
                                 <tr>
-                                    <td
-                                        style="padding: 12px 0; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;">
-                                        Company</td>
-                                    <td
-                                        style="padding: 12px 0; border-bottom: 1px solid #e5e7eb; color: #111827; font-weight: 600; font-size: 15px;">
-                                        {{ company_name }}</td>
+                                    <td class="detail-label">Company</td>
+                                    <td class="detail-value">{{ company_name }}</td>
                                 </tr>
                                 <tr>
-                                    <td
-                                        style="padding: 12px 0; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;">
-                                        Team Size</td>
-                                    <td
-                                        style="padding: 12px 0; border-bottom: 1px solid #e5e7eb; color: #111827; font-size: 15px;">
-                                        {{ team_size }}</td>
+                                    <td class="detail-label">Team Size</td>
+                                    <td class="detail-value"><span class="team-size-badge">{{ team_size }}</span></td>
                                 </tr>
                                 <tr>
-                                    <td style="padding: 12px 0; color: #6b7280; font-size: 14px;">User ID</td>
-                                    <td
-                                        style="padding: 12px 0; color: #6b7280; font-family: monospace; font-size: 13px;">
-                                        {{ user_id }}</td>
+                                    <td class="detail-label">User ID</td>
+                                    <td class="detail-value mono">{{ user_id }}</td>
                                 </tr>
                             </table>
-
-                            <!-- Message Box -->
-                            <p
-                                style="margin: 0 0 10px 0; color: #4b5563; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
-                                Message
-                            </p>
-                            <div
-                                style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
-                                <p
-                                    style="margin: 0; color: #374151; font-size: 15px; line-height: 1.6; font-style: italic;">
-                                    "{{ message }}"
-                                </p>
+                        </div>
+                        
+                        <!-- Message -->
+                        <div class="message-section">
+                            <div class="message-card">
+                                <div class="message-label">Their Message</div>
+                                <p class="message-text">"{{ message }}"</p>
                             </div>
-
-                            <!-- CTA Button -->
-                            <table cellpadding="0" cellspacing="0">
-                                <tr>
-                                    <td align="center"
-                                        style="background: linear-gradient(135deg, #2563eb, #4f46e5); border-radius: 8px;">
-                                        <a href="mailto:{{ user_email }}?subject=Re: Your Enterprise Inquiry at Axio Hub"
-                                            style="display: inline-block; padding: 14px 28px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px;">
-                                            Reply to {{ name }} →
-                                        </a>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-
-                    <!-- Footer -->
-                    <tr>
-                        <td align="center"
-                            style="padding: 20px 30px; background-color: #f9fafb; border-top: 1px solid #e5e7eb;">
-                            <p style="margin: 0; color: #9ca3af; font-size: 12px;">
-                                Lead captured from {{ company_name }} Enterprise Contact Form<br>
+                        </div>
+                        
+                        <!-- CTA -->
+                        <div class="cta-section">
+                            <a href="mailto:{{ user_email }}?subject=Re: Your Enterprise Inquiry at Axio Hub" class="cta-button">
+                                Reply to {{ name }} →
+                            </a>
+                        </div>
+                        
+                        <!-- Footer -->
+                        <div class="footer">
+                            <div class="footer-meta">
+                                Lead captured from Enterprise Contact Form<br>
                                 Submitted: {{ submitted_at }}
-                            </p>
-                        </td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </center>
 </body>
-
 </html>

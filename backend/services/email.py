@@ -130,7 +130,7 @@ class EmailService:
             params = {
                 "from": f"Axio Hub <{self.from_email}>",
                 "to": [to_email],
-                "subject": "🚀 Your Knowledge Base is Ready!",
+                "subject": "✨ Your AI Assistant Just Got Smarter",
                 "html": html_content,
             }
             
@@ -414,7 +414,7 @@ class EmailService:
             params = {
                 "from": f"Axio Hub <{self.from_email}>",
                 "to": [to_email],
-                "subject": f"Invitation to join {team_name}",
+                "subject": f"🤝 You've been invited to join {team_name}",
                 "html": html_content,
             }
             

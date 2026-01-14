@@ -57,7 +57,10 @@ const mockSource: DataSource = {
   name: 'File Upload',
   description: 'Upload files from your computer',
   icon: 'file',
-  status: 'available',
+  status: 'active',
+  type: 'file_upload',
+  lastSync: '',
+  category: 'files',
 };
 
 function renderWithProviders(ui: React.ReactElement) {
