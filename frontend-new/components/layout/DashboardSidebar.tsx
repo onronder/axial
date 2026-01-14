@@ -56,11 +56,11 @@ export function DashboardSidebar() {
     const isSettingsActive = pathname?.startsWith("/dashboard/settings");
 
     return (
-        <div className="flex h-full flex-col bg-sidebar/80 backdrop-blur-xl text-sidebar-foreground border-r border-white/10 shadow-glow px-4 py-3 gap-3">
+        <div className="flex h-full flex-col bg-sidebar/80 backdrop-blur-xl text-sidebar-foreground border-r border-sidebar-border px-4 py-3 gap-3">
             {/* Header */}
             <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
-                    <AxioLogo variant="icon" size="md" forceDark />
+                    <AxioLogo variant="icon" size="md" />
                     <span className="font-display text-lg font-semibold text-gradient">Axio Hub</span>
                 </div>
                 <NotificationCenter />
@@ -96,8 +96,8 @@ export function DashboardSidebar() {
                 <Link
                     href="/dashboard/settings"
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border border-transparent ${isSettingsActive
-                        ? 'bg-sidebar-accent bg-white/10 text-white shadow-glow'
-                        : 'hover:bg-white/5 hover:border-white/10'
+                        ? 'bg-primary/10 text-sidebar-foreground shadow-sm border-primary/20'
+                        : 'hover:bg-sidebar-accent hover:border-sidebar-border'
                         }`}
                 >
                     <Settings className="h-4 w-4" />
@@ -109,10 +109,10 @@ export function DashboardSidebar() {
             <HelpModal />
 
             {/* User Menu */}
-            <div className="pt-2 border-t border-white/10">
+            <div className="pt-2 border-t border-sidebar-border">
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <button className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-white/5 transition-colors group focus:outline-none focus:ring-2 focus:ring-primary/40">
+                        <button className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-sidebar-accent transition-colors group focus:outline-none focus:ring-2 focus:ring-primary/40">
                             <DeterministicAvatar name={displayName} className="h-8 w-8 text-xs" />
                             <div className="flex flex-1 flex-col items-start text-left text-sm overflow-hidden">
                                 <span className="font-medium truncate w-full">{displayName}</span>
@@ -124,7 +124,7 @@ export function DashboardSidebar() {
                                 >
                                     <Badge
                                         variant="secondary"
-                                        className="h-4 px-1.5 text-[10px] bg-white/10 hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer border border-transparent hover:border-primary/30"
+                                        className="h-4 px-1.5 text-[10px] bg-sidebar-accent hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer border border-transparent hover:border-primary/30"
                                     >
                                         {effectivePlan
                                             ? effectivePlan.charAt(0).toUpperCase() + effectivePlan.slice(1)
@@ -135,7 +135,7 @@ export function DashboardSidebar() {
                             <ChevronUp className="h-4 w-4 text-sidebar-muted group-hover:text-sidebar-foreground transition-colors" />
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent side="top" align="start" className="w-56 z-[100] bg-sidebar/90 backdrop-blur-xl border border-white/10">
+                    <DropdownMenuContent side="top" align="start" className="w-56 z-[100] bg-popover/95 backdrop-blur-xl border border-border">
                         <DropdownMenuItem onClick={() => router.push("/dashboard/settings/general")}>
                             <User className="mr-2 h-4 w-4" />
                             Profile

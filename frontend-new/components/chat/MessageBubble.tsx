@@ -149,7 +149,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
           isUser
             ? "bg-axio-gradient shadow-brand"
-            : "bg-white/10 border border-white/10"
+            : "bg-muted border border-border"
         )}
       >
         {isUser ? (
@@ -164,7 +164,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
             "rounded-2xl px-4 py-3",
             isUser
               ? "bg-axio-gradient text-white shadow-brand"
-              : "bg-white/5 border border-white/10 text-foreground backdrop-blur-sm shadow-lg"
+              : "bg-muted/50 border border-border text-foreground backdrop-blur-sm shadow-md"
           )}
         >
           <div className={cn("prose prose-sm max-w-none", isUser ? "prose-invert" : "dark:prose-invert")}>

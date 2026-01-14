@@ -31,6 +31,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   database: "Databases",
   productivity: "Productivity Tools",
   apps: "Applications",
+  knowledge_base: "Knowledge Base",
   other: "Other",
 };
 const CATEGORY_ORDER = ["cloud", "files", "productivity", "web", "database", "apps", "other"];

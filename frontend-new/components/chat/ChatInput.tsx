@@ -52,7 +52,7 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
   const activeModelName = validModels.find(m => m.id === selectedModel)?.name || 'Axio Fast';
 
   return (
-    <div className="border-t border-white/10 bg-white/5 backdrop-blur-xl p-4">
+    <div className="border-t border-border bg-muted/30 backdrop-blur-xl p-4">
       <div className="mx-auto max-w-4xl">
         {/* Model Selector Pill */}
         <div className="mb-2 flex justify-center">
@@ -61,7 +61,7 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5 rounded-full border-white/20 bg-white/10 px-4 text-xs font-medium text-foreground shadow-glow hover:bg-white/20 hover:text-white transition-all"
+                className="h-8 gap-1.5 rounded-full border-border bg-muted/50 px-4 text-xs font-medium text-foreground hover:bg-accent hover:text-accent-foreground transition-all"
               >
                 {activeModelName}
                 <ChevronDown className="h-3 w-3 opacity-50" />
@@ -85,11 +85,11 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
         {/* Premium input container with glow effect */}
         <div
           className={`
-            relative flex items-end gap-2 rounded-2xl border border-white/10 bg-white/5 p-2 
+            relative flex items-end gap-2 rounded-2xl border border-border bg-muted/30 p-2 
             transition-all duration-300
             ${isFocused
               ? 'border-primary/50 shadow-glow ring-2 ring-primary/40'
-              : 'shadow-sm hover:border-white/20 hover:shadow-lg'
+              : 'shadow-sm hover:border-primary/30 hover:shadow-lg'
             }
           `}
         >
@@ -102,7 +102,7 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
           <Button
             variant="ghost"
             size="icon"
-            className="shrink-0 h-9 w-9 text-muted-foreground hover:text-primary hover:bg-white/10 transition-colors"
+            className="shrink-0 h-9 w-9 text-muted-foreground hover:text-primary hover:bg-accent transition-colors"
             disabled={disabled}
           >
             <Paperclip className="h-5 w-5" />

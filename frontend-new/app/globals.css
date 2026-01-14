@@ -203,6 +203,14 @@
     background-size: 200% auto;
   }
 
+  /* Theme-aware gradient text for branding */
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
   /* Shine effect overlay */
   .shine {
     position: relative;

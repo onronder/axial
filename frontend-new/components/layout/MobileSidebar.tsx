@@ -56,7 +56,7 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
             {/* Sidebar */}
             <aside
                 className={cn(
-                    "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar/90 backdrop-blur-xl border-r border-white/10 shadow-2xl lg:hidden",
+                    "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar/95 backdrop-blur-xl border-r border-sidebar-border shadow-2xl lg:hidden",
                     "transform transition-transform duration-300 ease-in-out",
                     isOpen ? "translate-x-0" : "-translate-x-full"
                 )}
@@ -65,7 +65,7 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
                 {/* Close button */}
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 p-2 rounded-md hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="absolute top-4 right-4 p-2 rounded-md hover:bg-sidebar-accent transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
                     aria-label="Close menu"
                 >
                     <X className="h-5 w-5" />

@@ -176,7 +176,7 @@ describe('DashboardSidebar Component', () => {
             render(<DashboardSidebar />);
 
             const link = screen.getByText('Settings').closest('a');
-            expect(link?.className).toContain('bg-sidebar-accent');
+            expect(link?.className).toContain('bg-primary/10');
         });
     });
 

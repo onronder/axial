@@ -45,8 +45,8 @@ export function ChatArea({
 
   const backgroundLayer = (
     <>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(139,92,246,0.12),transparent_45%),radial-gradient(circle_at_bottom,_rgba(6,182,212,0.1),transparent_40%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.04),transparent_30%,rgba(255,255,255,0.04))]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(139,92,246,0.08),transparent_45%),radial-gradient(circle_at_bottom,_rgba(6,182,212,0.06),transparent_40%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,hsl(var(--muted)/0.3),transparent_30%,hsl(var(--muted)/0.3))]" />
     </>
   );
 
@@ -75,7 +75,7 @@ export function ChatArea({
       
       {/* Scrollable message area - Natural flow layout */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-6 sm:px-6">
-        <div className="mx-auto w-full max-w-5xl rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-glow p-3 sm:p-4">
+        <div className="mx-auto w-full max-w-5xl rounded-2xl border border-border bg-card/50 backdrop-blur-xl shadow-lg p-3 sm:p-4">
           {/* Messages stack naturally with proper spacing */}
           <div className="flex flex-col gap-4">
             {messages.map((message) => (
@@ -91,10 +91,10 @@ export function ChatArea({
             {/* Typing indicator */}
             {isTyping && (
               <div className="flex items-start gap-3 animate-fade-in">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 border border-white/10">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted border border-border">
                   <AxioLogo variant="icon" size="sm" />
                 </div>
-                <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
+                <div className="rounded-2xl bg-muted border border-border px-4 py-3">
                   <div className="flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
                     <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
