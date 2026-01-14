@@ -715,6 +715,181 @@ async def exchange_microsoft_token(
 
 
 # =============================================================================
+# Dropbox OAuth (Personal & Business/Team accounts)
+# =============================================================================
+
+class DropboxExchangeRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=2048)
+    root_path: Optional[str] = Field(default="", max_length=1024)
+
+
+@router.post("/integrations/dropbox/exchange")
+async def exchange_dropbox_token(
+    request: DropboxExchangeRequest,
+    user_id: str = Depends(require_editor)
+):
+    """
+    Exchange Dropbox OAuth code for tokens and persist to user_integrations.
+    
+    Supports both Personal and Business/Team accounts:
+    - Detects Team accounts via root_info.root_namespace_id
+    - Stores namespace_id for Dropbox-API-Path-Root header injection
+    """
+    logger.info(f"🔐 [OAuth] Starting Dropbox token exchange for user: {user_id}")
+
+    if not settings.DROPBOX_CLIENT_ID or not settings.DROPBOX_CLIENT_SECRET:
+        logger.error("🔐 [OAuth] Dropbox credentials not configured!")
+        raise HTTPException(status_code=500, detail="Dropbox credentials not configured")
+
+    if not settings.DROPBOX_REDIRECT_URI:
+        logger.error("🔐 [OAuth] Dropbox redirect URI not configured!")
+        raise HTTPException(status_code=500, detail="Dropbox redirect URI not configured")
+
+    supabase = get_supabase()
+
+    # 1. Lookup connector definition ID
+    def_res = supabase.table("connector_definitions").select("id").eq("type", "dropbox").single().execute()
+    if not def_res.data:
+        raise HTTPException(status_code=500, detail="dropbox connector not found in definitions")
+
+    connector_definition_id = def_res.data["id"]
+
+    # 2. Exchange code for tokens
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            token_payload = {
+                "code": request.code,
+                "grant_type": "authorization_code",
+                "client_id": settings.DROPBOX_CLIENT_ID,
+                "client_secret": settings.DROPBOX_CLIENT_SECRET,
+                "redirect_uri": settings.DROPBOX_REDIRECT_URI,
+            }
+
+            response = await client.post(
+                "https://api.dropboxapi.com/oauth2/token",
+                data=token_payload,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+        if response.status_code != 200:
+            logger.error(f"🔐 [OAuth] Dropbox token exchange failed: {response.text}")
+            error_detail = response.text or "Dropbox token exchange failed"
+            raise HTTPException(status_code=400, detail=error_detail)
+
+        token_data = response.json()
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in")
+        account_id = token_data.get("account_id")
+        uid = token_data.get("uid")
+
+        logger.info(f"🔐 [OAuth] ✅ Got Dropbox tokens. Account: {account_id}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"🔐 [OAuth] Dropbox token exchange failed: {e}")
+        raise HTTPException(status_code=400, detail="Dropbox token exchange failed") from e
+
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Dropbox token exchange returned no access token")
+
+    expires_at = None
+    if expires_in:
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+
+    # 3. Get account info to detect Team accounts and extract namespace_id
+    credentials = {
+        "account_id": account_id,
+        "uid": uid,
+        "root_path": request.root_path or "",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            account_response = await client.post(
+                "https://api.dropboxapi.com/2/users/get_current_account",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                content="null",
+            )
+
+            if account_response.status_code == 200:
+                account_info = account_response.json()
+                
+                # Extract Team namespace if present
+                root_info = account_info.get("root_info", {})
+                namespace_id = root_info.get("root_namespace_id")
+                
+                if namespace_id:
+                    credentials["namespace_id"] = namespace_id
+                    logger.info(f"🏢 [OAuth] Dropbox Team account detected, namespace: {namespace_id}")
+                    
+                    # Also store team info if available
+                    team = account_info.get("team", {})
+                    if team:
+                        credentials["team_name"] = team.get("name")
+                        credentials["team_id"] = team.get("id")
+                else:
+                    logger.info(f"👤 [OAuth] Dropbox Personal account")
+                
+                # Store display name for UI
+                name = account_info.get("name", {})
+                credentials["display_name"] = name.get("display_name")
+                credentials["email"] = account_info.get("email")
+            else:
+                logger.warning(f"⚠️ [OAuth] Failed to get Dropbox account info: {account_response.text}")
+
+    except Exception as e:
+        logger.warning(f"⚠️ [OAuth] Failed to get Dropbox account info: {e}")
+        # Non-fatal - continue without namespace
+
+    # 4. Persist integration
+    data = {
+        "user_id": user_id,
+        "connector_definition_id": connector_definition_id,
+        "access_token": encrypt_token(access_token),
+        "refresh_token": encrypt_token(refresh_token) if refresh_token else None,
+        "expires_at": expires_at,
+        "credentials": credentials,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    upsert_res = supabase.table("user_integrations").upsert(
+        data,
+        on_conflict="user_id,connector_definition_id",
+    ).execute()
+
+    if not upsert_res.data:
+        raise HTTPException(status_code=500, detail="Failed to store Dropbox credentials")
+
+    integration_id = upsert_res.data[0]["id"]
+
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.connect",
+        resource_type="connector",
+        resource_id="dropbox",
+        details={
+            "integration_id": integration_id,
+            "is_team_account": bool(credentials.get("namespace_id")),
+        },
+    )
+
+    logger.info(f"🔐 [OAuth] ✅ Dropbox connected (integration: {integration_id})")
+
+    return {
+        "status": "success",
+        "provider": "dropbox",
+        "integration_id": integration_id,
+        "is_team_account": bool(credentials.get("namespace_id")),
+        "display_name": credentials.get("display_name"),
+    }
+
+
+# =============================================================================
 # Integration Management Endpoints
 # =============================================================================
 
@@ -1244,7 +1419,7 @@ async def ingest_provider_items(
             integration = None
         
         # Prepare credentials based on connector type
-        if provider in ["google_drive", "notion", "onedrive", "sharepoint"]:
+        if provider in ["google_drive", "notion", "onedrive", "sharepoint", "dropbox"]:
             # OAuth connectors: Pass integration_id for automatic token refresh
             if not integration or not integration.get('access_token'):
                 raise HTTPException(status_code=401, detail=f"Not connected to {provider}. Please reconnect.")
@@ -1388,7 +1563,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
         }).eq("id", job_id).execute()
 
         credentials = None
-        if provider in {"google_drive", "notion", "onedrive", "sharepoint"}:
+        if provider in {"google_drive", "notion", "onedrive", "sharepoint", "dropbox"}:
             credentials = {"integration_id": integration_id}
 
         from worker.tasks import unified_ingest_task

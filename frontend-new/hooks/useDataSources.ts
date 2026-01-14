@@ -10,6 +10,8 @@ import {
     getMicrosoftRedirectUri,
     getMicrosoftClientId,
     getMicrosoftTenantId,
+    getDropboxClientId,
+    getDropboxRedirectUri,
     generatePkcePair,
 } from "@/lib/utils";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
@@ -239,6 +241,41 @@ export const useDataSources = () => {
 
             const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params.toString()}`;
             console.log('🔐 [useDataSources] Redirecting to Microsoft:', authUrl);
+            window.location.href = authUrl;
+        } else if (type === "dropbox") {
+            const clientId = getDropboxClientId();
+            const redirectUri = getDropboxRedirectUri();
+
+            console.log('🔐 [useDataSources] Dropbox Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
+            console.log('🔐 [useDataSources] Dropbox Redirect URI:', redirectUri);
+
+            if (!clientId) {
+                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_DROPBOX_CLIENT_ID not configured');
+                alert('Dropbox OAuth not configured. Please check environment variables.');
+                return;
+            }
+
+            if (!redirectUri) {
+                console.error('📦 [useDataSources] ❌ Dropbox Redirect URI not available');
+                alert('OAuth redirect URI is not configured.');
+                return;
+            }
+
+            // Dropbox OAuth scopes for file access
+            // files.metadata.read - read file/folder metadata
+            // files.content.read - download files
+            // account_info.read - get account details (for Team namespace detection)
+            const params = new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                token_access_type: 'offline', // Get refresh token
+                state: 'dropbox', // Used to identify provider in callback
+            });
+
+            const authUrl = `https://www.dropbox.com/oauth2/authorize?${params.toString()}`;
+            console.log('🔐 [useDataSources] Redirecting to Dropbox:', authUrl);
+
             window.location.href = authUrl;
         }
     }, []);

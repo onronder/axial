@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     MICROSOFT_SCOPES_ONEDRIVE: str = "offline_access User.Read Files.Read.All"
     MICROSOFT_SCOPES_SHAREPOINT: str = "offline_access User.Read Files.Read.All Sites.Read.All"
     
+    # Dropbox OAuth (Supports Personal & Business/Team accounts)
+    DROPBOX_CLIENT_ID: Optional[str] = None
+    DROPBOX_CLIENT_SECRET: Optional[str] = None
+    DROPBOX_REDIRECT_URI: Optional[str] = None
+    
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_JOB_COUNTER_TTL_SECONDS: int = 86400  # 24 hours
@@ -119,6 +124,7 @@ class Settings(BaseSettings):
     CONNECTOR_CONCURRENCY_WEB: int = 2
     CONNECTOR_CONCURRENCY_ONEDRIVE: int = 2
     CONNECTOR_CONCURRENCY_SHAREPOINT: int = 2
+    CONNECTOR_CONCURRENCY_DROPBOX: int = 2
  
 
     # =========================================================================

@@ -8,7 +8,7 @@ import { getMicrosoftRedirectUri, getMicrosoftTenantId } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-type Provider = "google" | "notion" | "onedrive" | "sharepoint";
+type Provider = "google" | "notion" | "onedrive" | "sharepoint" | "dropbox";
 
 type ApiError = {
     response?: {
@@ -51,7 +51,9 @@ function OAuthCallbackContent() {
                     ? "onedrive"
                     : stateParam === "sharepoint"
                         ? "sharepoint"
-                        : "google";
+                        : stateParam === "dropbox"
+                            ? "dropbox"
+                            : "google";
         setProvider(detectedProvider);
 
         if (typeof window !== "undefined") {
@@ -120,6 +122,8 @@ function OAuthCallbackContent() {
                         code_verifier: codeVerifier,
                     });
                     sessionStorage.removeItem(pkceKey);
+                } else if (detectedProvider === "dropbox") {
+                    response = await api.post("/integrations/dropbox/exchange", { code });
                 } else {
                     response = await api.post("/integrations/google/exchange", { code });
                 }
@@ -141,6 +145,8 @@ function OAuthCallbackContent() {
                     providerName = "OneDrive";
                 } else if (detectedProvider === "sharepoint") {
                     providerName = "SharePoint";
+                } else if (detectedProvider === "dropbox") {
+                    providerName = "Dropbox";
                 }
                 setError(apiError.response?.data?.detail || `Failed to connect ${providerName}`);
             }
@@ -154,9 +160,11 @@ function OAuthCallbackContent() {
         providerName = "Notion";
     } else if (provider === "onedrive") {
         providerName = "OneDrive";
-        } else if (provider === "sharepoint") {
-            providerName = "SharePoint";
-        }
+    } else if (provider === "sharepoint") {
+        providerName = "SharePoint";
+    } else if (provider === "dropbox") {
+        providerName = "Dropbox";
+    }
 
     return (
         <div className="flex min-h-screen items-center justify-center p-4 bg-background">

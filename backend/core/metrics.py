@@ -231,6 +231,18 @@ llamaparse_fallback_total = Counter(
     ['file_type']
 )
 
+docx_ocr_fallback_total = Counter(
+    'pipeline_docx_ocr_fallback_total',
+    'DOCX OCR fallback results (tier1=docx2txt, tier2=tesseract, tier3=llamaparse)',
+    ['result']
+)
+
+image_ocr_total = Counter(
+    'pipeline_image_ocr_total',
+    'Image OCR processing results (tier1=tesseract, tier2=llamaparse)',
+    ['result']
+)
+
 dedup_actions_total = Counter(
     'pipeline_dedup_actions_total',
     'Deduplication actions taken during ingestion',

@@ -251,6 +251,105 @@ class OAuthTokenManager:
         except Exception as e:
             logger.error(f"❌ Failed to refresh Microsoft token: {e}")
             raise TokenRefreshError(f"Token refresh failed: {e}") from e
+
+    @staticmethod
+    def refresh_dropbox_token(
+        integration_id: str,
+        access_token: str,
+        refresh_token: str,
+        expires_at: Optional[str] = None,
+    ) -> tuple[str, str, Optional[str]]:
+        """
+        Refresh Dropbox OAuth token.
+        
+        Dropbox tokens expire after ~4 hours and require refresh using
+        the offline refresh token.
+        
+        Args:
+            integration_id: Database ID of user_integration
+            access_token: Current access token (encrypted or plain)
+            refresh_token: Refresh token (encrypted or plain)
+            expires_at: Current expiry timestamp
+            
+        Returns:
+            Tuple of (new_access_token, new_refresh_token, new_expires_at)
+            
+        Raises:
+            TokenRefreshError: If refresh fails
+        """
+        try:
+            from core.security import decrypt_token, encrypt_token
+            from core.db import get_supabase
+            from core.config import settings
+
+            decrypted_access = decrypt_token(access_token) if access_token else None
+            decrypted_refresh = decrypt_token(refresh_token) if refresh_token else None
+
+            if not decrypted_refresh:
+                raise TokenRefreshError("No Dropbox refresh token available")
+
+            # Check if refresh is needed
+            if not OAuthTokenManager.is_token_expired(expires_at):
+                logger.debug(f"Dropbox token for integration {integration_id} is still valid")
+                return decrypted_access, decrypted_refresh, expires_at
+
+            if not settings.DROPBOX_CLIENT_ID or not settings.DROPBOX_CLIENT_SECRET:
+                raise TokenRefreshError("Dropbox client credentials not configured")
+
+            logger.info(f"🔄 Refreshing Dropbox token for integration {integration_id}")
+
+            # Dropbox token refresh endpoint
+            token_url = "https://api.dropboxapi.com/oauth2/token"
+            token_payload = {
+                "grant_type": "refresh_token",
+                "refresh_token": decrypted_refresh,
+                "client_id": settings.DROPBOX_CLIENT_ID,
+                "client_secret": settings.DROPBOX_CLIENT_SECRET,
+            }
+
+            response = requests.post(
+                token_url,
+                data=token_payload,
+                timeout=30,
+            )
+
+            if response.status_code != 200:
+                error_detail = response.text[:500] if response.text else "Unknown error"
+                logger.error(f"❌ Dropbox token refresh failed: {error_detail}")
+                raise TokenRefreshError(f"Dropbox token refresh failed: {error_detail}")
+
+            payload = response.json()
+            new_access = payload.get("access_token")
+            # Dropbox may not return a new refresh token; keep the old one
+            new_refresh = payload.get("refresh_token") or decrypted_refresh
+            expires_in = payload.get("expires_in")
+            
+            new_expires = None
+            if expires_in:
+                new_expires = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+
+            # Persist to database
+            supabase = get_supabase()
+            update_data = {
+                "access_token": encrypt_token(new_access),
+                "expires_at": new_expires,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            # Only update refresh_token if we got a new one
+            if payload.get("refresh_token"):
+                update_data["refresh_token"] = encrypt_token(new_refresh)
+            
+            supabase.table("user_integrations").update(update_data).eq("id", integration_id).execute()
+
+            logger.info(f"✅ Dropbox token refreshed for integration {integration_id}")
+
+            return new_access, new_refresh, new_expires
+
+        except TokenRefreshError:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Failed to refresh Dropbox token: {e}")
+            raise TokenRefreshError(f"Dropbox token refresh failed: {e}") from e
     
     @staticmethod
     def get_valid_credentials(
@@ -325,6 +424,20 @@ class OAuthTokenManager:
                     refresh_token,
                     expires_at,
                     provider=provider,
+                )
+                return {
+                    'access_token': new_access,
+                    'refresh_token': new_refresh,
+                    'expires_at': new_expires,
+                    'integration_id': integration_id
+                }
+
+            elif provider == 'dropbox':
+                new_access, new_refresh, new_expires = OAuthTokenManager.refresh_dropbox_token(
+                    integration_id,
+                    access_token,
+                    refresh_token,
+                    expires_at,
                 )
                 return {
                     'access_token': new_access,

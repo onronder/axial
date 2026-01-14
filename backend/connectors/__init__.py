@@ -1,5 +1,6 @@
 from typing import Dict, Type
 from connectors.drive import DriveConnector
+from connectors.dropbox import DropboxConnector
 from connectors.file_upload import FileUploadConnector
 from connectors.microsoft import MicrosoftGraphConnector
 from connectors.notion import NotionConnector
@@ -10,6 +11,7 @@ from connectors.web import WebConnector
 CONNECTORS: Dict[str, Type] = {
     "file_upload": FileUploadConnector,
     "google_drive": DriveConnector,
+    "dropbox": DropboxConnector,
     "onedrive": MicrosoftGraphConnector,
     "sharepoint": MicrosoftGraphConnector,
     "notion": NotionConnector,

@@ -67,9 +67,10 @@ lxml
 clamd>=1.0.2,<2.0.0
 paramiko>=3.4.0,<4.0.0
 
-# --- OCR FALLBACK FOR SCANNED PDFs ---
+# --- OCR FALLBACK FOR SCANNED PDFs & IMAGES ---
 pytesseract>=0.3.10
 pdf2image>=1.16.0
+Pillow>=10.0.0
 
 # --- SERVER MONITORING ---
 psutil>=5.9.0

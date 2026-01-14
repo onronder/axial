@@ -52,7 +52,7 @@ const isDataSourceCategory = (value: string | null | undefined): value is DataSo
 
 const LOCAL_UPLOAD_TYPES = new Set(["file_upload", "file-upload", "local"]);
 const CATEGORY_SOURCE_ORDER: Record<string, string[]> = {
-  cloud: ["google_drive", "onedrive", "sharepoint"],
+  cloud: ["google_drive", "dropbox", "onedrive", "sharepoint"],
   files: ["sftp", "file_upload", "file-upload", "local"],
 };
 

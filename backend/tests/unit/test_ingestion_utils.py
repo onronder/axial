@@ -17,5 +17,5 @@ def test_require_canonical_provider_rejects_deprecated():
 
 def test_require_canonical_provider_rejects_unsupported():
     with pytest.raises(ValueError) as exc:
-        require_canonical_provider("dropbox")
+        require_canonical_provider("box")  # Box.com - not yet supported
     assert "Unsupported provider value" in str(exc.value)

@@ -13,6 +13,7 @@ import re
 import logging
 import tempfile
 import threading
+import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -33,10 +34,12 @@ import tiktoken
 logger = logging.getLogger(__name__)
 LLAMAPARSE_LOCK = threading.Lock()
 try:
-    from core.metrics import pdf_scan_detection_total, llamaparse_fallback_total
+    from core.metrics import pdf_scan_detection_total, llamaparse_fallback_total, docx_ocr_fallback_total, image_ocr_total
 except Exception:
     pdf_scan_detection_total = None
     llamaparse_fallback_total = None
+    docx_ocr_fallback_total = None
+    image_ocr_total = None
 
 
 # =============================================================================
@@ -847,25 +850,250 @@ class PDFProcessor(BaseProcessor):
 
 
 # =============================================================================
-# DOCX PROCESSOR
+# DOCX PROCESSOR (ENHANCED WITH OCR FALLBACK)
 # =============================================================================
 
 class DocxProcessor(BaseProcessor):
-    """Processor for Word documents."""
+    """
+    Processor for Word documents with 3-Tier Resilient Architecture.
+    
+    Tier 1 (Fast Local): docx2txt - Text layer extraction
+    Tier 2 (OCR Fallback): Extract embedded images from DOCX and run Tesseract
+    Tier 3 (Cloud Premium): LlamaParse - Advanced OCR with table detection
+    
+    DOCX files are actually ZIP archives containing:
+    - word/document.xml - main content
+    - word/media/ - embedded images (image1.png, image2.jpeg, etc.)
+    
+    This handles scanned contracts, signed documents, and image-heavy DOCXs.
+    """
+    
+    MIN_TOKENS_THRESHOLD = 50   # Below this, trigger OCR fallback
+    OCR_QUALITY_THRESHOLD = 30  # Minimum acceptable OCR result
+    
+    # Supported image extensions in DOCX media folder
+    IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.emf', '.wmf'}
     
     def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process DOCX with paragraph chunking."""
+        """
+        Process DOCX with 3-tier cascading fallback.
+        
+        Flow:
+        1. Try docx2txt for text extraction
+        2. If low content, extract embedded images and OCR them
+        3. If still low, try LlamaParse (if configured)
+        """
+        
+        # =====================================================================
+        # TIER 1: docx2txt (Fast Local)
+        # =====================================================================
+        logger.info(f"[DocxProcessor] Tier 1: Trying docx2txt for {filename}")
+        text = ""
         try:
             import docx2txt
-            text = docx2txt.process(io.BytesIO(content))
+            text = docx2txt.process(io.BytesIO(content)) or ""
         except Exception as e:
-            logger.error(f"[DocxProcessor] Extraction failed: {e}")
-            return ProcessedDocument(chunks=[], file_type="docx")
+            logger.warning(f"[DocxProcessor] docx2txt extraction failed: {e}")
         
-        if not text or not text.strip():
-            return ProcessedDocument(chunks=[], file_type="docx")
+        # Check if we have sufficient content
+        if text.strip():
+            token_count = self.count_tokens(text)
+            if token_count >= self.MIN_TOKENS_THRESHOLD:
+                logger.info(f"[DocxProcessor] Tier 1 success: {token_count} tokens extracted from {filename}")
+                if docx_ocr_fallback_total:
+                    docx_ocr_fallback_total.labels("tier1_docx2txt_success").inc()
+                return self._chunk_text(text, filename, parser="docx2txt")
+            else:
+                logger.warning(
+                    f"[DocxProcessor] Low content ({token_count} tokens) in {filename}, "
+                    f"likely scanned DOCX - triggering OCR"
+                )
+        else:
+            logger.warning(f"[DocxProcessor] No text extracted from {filename}, likely scanned DOCX - triggering OCR")
         
-        # Chunk with context
+        # =====================================================================
+        # TIER 2: Extract embedded images and OCR them
+        # =====================================================================
+        logger.info(f"[DocxProcessor] Tier 2: Trying image extraction + OCR for {filename}")
+        try:
+            ocr_result = self._process_with_embedded_image_ocr(content, filename)
+            if ocr_result and ocr_result.chunks and ocr_result.total_tokens >= self.OCR_QUALITY_THRESHOLD:
+                logger.info(f"[DocxProcessor] Tier 2 OCR success: {ocr_result.total_tokens} tokens from {filename}")
+                if docx_ocr_fallback_total:
+                    docx_ocr_fallback_total.labels("tier2_tesseract_success").inc()
+                return ocr_result
+            logger.warning(f"[DocxProcessor] OCR returned low content ({ocr_result.total_tokens if ocr_result else 0} tokens) for {filename}")
+        except OCRNotAvailableException as e:
+            logger.warning(f"[DocxProcessor] OCR not available: {e}")
+        except Exception as e:
+            logger.error(f"[DocxProcessor] OCR failed for {filename}: {e}")
+        
+        # =====================================================================
+        # TIER 3: LlamaParse (Cloud Premium Fallback)
+        # =====================================================================
+        from core.config import settings
+        if settings.LLAMA_CLOUD_API_KEY:
+            can_execute, reason = LLAMAPARSE_CIRCUIT.can_execute()
+            if can_execute:
+                logger.info(f"[DocxProcessor] Tier 3: Trying LlamaParse for {filename}")
+                try:
+                    result = LlamaParseProcessor(file_type="docx").process(content, filename)
+                    if result and result.chunks and result.total_tokens >= self.OCR_QUALITY_THRESHOLD:
+                        LLAMAPARSE_CIRCUIT.record_success()
+                        if docx_ocr_fallback_total:
+                            docx_ocr_fallback_total.labels("tier3_llamaparse_success").inc()
+                        logger.info(f"[DocxProcessor] Tier 3 LlamaParse success: {result.total_tokens} tokens from {filename}")
+                        return result
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "402" in error_str or "quota" in error_str or "payment" in error_str or "credits" in error_str:
+                        LLAMAPARSE_CIRCUIT.record_failure("402")
+                        logger.warning(f"[DocxProcessor] LlamaParse quota exceeded: {e}")
+                    else:
+                        LLAMAPARSE_CIRCUIT.record_failure("error")
+                        logger.warning(f"[DocxProcessor] LlamaParse failed: {e}")
+            else:
+                logger.info(f"[DocxProcessor] Skipping LlamaParse ({reason}) for {filename}")
+                if llamaparse_fallback_total:
+                    llamaparse_fallback_total.labels(f"docx_{reason}").inc()
+        
+        # Return best available result (even if low quality)
+        if docx_ocr_fallback_total:
+            docx_ocr_fallback_total.labels("all_tiers_low_content").inc()
+        
+        if text.strip():
+            logger.warning(f"[DocxProcessor] Returning low-content result for {filename}")
+            return self._chunk_text(text, filename, parser="docx2txt_low_content")
+        
+        logger.error(f"[DocxProcessor] All tiers failed for {filename}, returning empty result")
+        return ProcessedDocument(chunks=[], file_type="docx")
+        
+    def _process_with_embedded_image_ocr(self, content: bytes, filename: str) -> ProcessedDocument:
+        """
+        Extract embedded images from DOCX (which is a ZIP file) and OCR them.
+        
+        DOCX structure:
+        - word/media/image1.png
+        - word/media/image2.jpeg
+        - etc.
+        
+        Returns:
+            ProcessedDocument with OCR'd text from embedded images
+        """
+        try:
+            import pytesseract
+            from PIL import Image
+        except ImportError as e:
+            raise OCRNotAvailableException(f"OCR dependencies not installed: {e}")
+        
+        ocr_texts = []
+        images_processed = 0
+        images_failed = 0
+        
+        try:
+            with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
+                # Find all image files in word/media/
+                image_files = [
+                    name for name in zf.namelist()
+                    if name.startswith('word/media/') and 
+                    os.path.splitext(name)[1].lower() in self.IMAGE_EXTENSIONS
+                ]
+                
+                if not image_files:
+                    logger.info(f"[DocxProcessor] No embedded images found in {filename}")
+                    return ProcessedDocument(chunks=[], file_type="docx", total_tokens=0)
+                
+                logger.info(f"[DocxProcessor] Found {len(image_files)} embedded images in {filename}")
+                
+                # Sort to maintain order (image1, image2, etc.)
+                image_files.sort()
+                
+                for idx, img_path in enumerate(image_files, start=1):
+                    try:
+                        # Extract image from ZIP
+                        img_data = zf.read(img_path)
+                        image = Image.open(io.BytesIO(img_data))
+                        
+                        # Skip very small images (likely icons/bullets)
+                        if image.width < 50 or image.height < 50:
+                            logger.debug(f"[DocxProcessor] Skipping small image {img_path} ({image.width}x{image.height})")
+                            continue
+                        
+                        # Convert to RGB if necessary (for RGBA/palette/grayscale images)
+                        if image.mode in ('RGBA', 'P', 'LA', 'L'):
+                            # Create white background for transparent images
+                            if image.mode in ('RGBA', 'LA', 'P'):
+                                background = Image.new('RGB', image.size, (255, 255, 255))
+                                if image.mode == 'P':
+                                    image = image.convert('RGBA')
+                                background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+                                image = background
+                            else:
+                                image = image.convert('RGB')
+                        
+                        # Run OCR with language detection hint
+                        # Use multiple languages for better accuracy
+                        try:
+                            text = pytesseract.image_to_string(image, lang='eng+tur')
+                        except Exception:
+                            # Fallback to English only if multi-lang fails
+                            text = pytesseract.image_to_string(image, lang='eng')
+                        
+                        if text.strip():
+                            # Clean up OCR artifacts
+                            cleaned_text = self._clean_ocr_text(text)
+                            if cleaned_text.strip():
+                                ocr_texts.append(f"[Embedded Image {idx}]\n{cleaned_text.strip()}")
+                                images_processed += 1
+                                
+                    except Exception as e:
+                        images_failed += 1
+                        logger.warning(f"[DocxProcessor] Failed to OCR image {img_path}: {e}")
+                        continue
+                        
+        except zipfile.BadZipFile:
+            logger.error(f"[DocxProcessor] Invalid DOCX (not a valid ZIP): {filename}")
+            raise OCRNotAvailableException("Invalid DOCX format - not a valid ZIP archive")
+        except Exception as e:
+            logger.error(f"[DocxProcessor] Failed to process DOCX as ZIP: {e}")
+            raise OCRNotAvailableException(f"Failed to extract images from DOCX: {e}")
+        
+        if not ocr_texts:
+            logger.info(f"[DocxProcessor] No text extracted from {len(image_files)} images in {filename}")
+            return ProcessedDocument(chunks=[], file_type="docx", total_tokens=0)
+        
+        full_text = "\n\n".join(ocr_texts)
+        logger.info(
+            f"[DocxProcessor] OCR extracted {len(full_text)} chars from "
+            f"{images_processed}/{len(image_files)} images in {filename} "
+            f"({images_failed} failed)"
+        )
+        
+        return self._chunk_text(full_text, filename, parser="tesseract_ocr")
+    
+    def _clean_ocr_text(self, text: str) -> str:
+        """Clean up common OCR artifacts and noise."""
+        # Remove excessive whitespace
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r' {2,}', ' ', text)
+        
+        # Remove common OCR noise patterns
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip lines that are just noise (single characters, numbers only, etc.)
+            if len(line) <= 2 and not line.isalnum():
+                continue
+            # Skip lines that are mostly special characters
+            if line and sum(1 for c in line if c.isalnum()) / len(line) < 0.3:
+                continue
+            cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
+    
+    def _chunk_text(self, text: str, filename: str, parser: str = "docx2txt") -> ProcessedDocument:
+        """Chunk extracted text into ProcessedChunks with context injection."""
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
@@ -881,13 +1109,22 @@ class DocxProcessor(BaseProcessor):
             total_tokens += token_count
             chunks.append(ProcessedChunk(
                 content=contextualized,
-                metadata={"file_type": "docx", "filename": filename},
+                metadata={
+                    "file_type": "docx",
+                    "parser": parser,
+                    "filename": filename
+                },
                 token_count=token_count,
                 chunk_index=i
             ))
         
-        logger.info(f"[DocxProcessor] {filename}: {len(chunks)} chunks")
-        return ProcessedDocument(chunks=chunks, file_type="docx", total_tokens=total_tokens)
+        logger.info(f"[DocxProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens (parser={parser})")
+        return ProcessedDocument(
+            chunks=chunks,
+            file_type="docx",
+            total_tokens=total_tokens,
+            metadata={"parser": parser}
+        )
 
 
 # =============================================================================
@@ -1474,14 +1711,216 @@ class LegacyOfficeProcessor(BaseProcessor):
 
 
 # =============================================================================
-# IMAGE PROCESSOR
+# IMAGE PROCESSOR (ENHANCED WITH LOCAL TESSERACT)
 # =============================================================================
 
 class ImageProcessor(BaseProcessor):
-    """Processor for images routed to LlamaParse OCR."""
+    """
+    Processor for images with 2-Tier OCR Architecture.
+    
+    Tier 1 (Fast Local): Tesseract OCR - Direct image-to-text
+    Tier 2 (Cloud Premium): LlamaParse - Better quality for complex layouts
+    
+    Handles: JPG, JPEG, PNG, TIFF, BMP, GIF
+    
+    This ensures images can be processed even without cloud API access,
+    with graceful fallback to LlamaParse for better quality when available.
+    """
+    
+    MIN_TOKENS_THRESHOLD = 20  # Below this, try cloud fallback
 
     def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        return LlamaParseProcessor(file_type="image").process(content, filename)
+        """
+        Process image with 2-tier cascading fallback.
+        
+        Flow:
+        1. Try Tesseract OCR locally
+        2. If low content or failed, try LlamaParse (if configured)
+        """
+        
+        # =====================================================================
+        # TIER 1: Tesseract OCR (Fast Local)
+        # =====================================================================
+        logger.info(f"[ImageProcessor] Tier 1: Trying Tesseract OCR for {filename}")
+        try:
+            result = self._process_with_tesseract(content, filename)
+            if result and result.chunks and result.total_tokens >= self.MIN_TOKENS_THRESHOLD:
+                logger.info(f"[ImageProcessor] Tier 1 success: {result.total_tokens} tokens from {filename}")
+                if image_ocr_total:
+                    image_ocr_total.labels("tier1_tesseract_success").inc()
+                return result
+            logger.warning(
+                f"[ImageProcessor] Tesseract returned low content "
+                f"({result.total_tokens if result else 0} tokens) for {filename}"
+            )
+        except OCRNotAvailableException as e:
+            logger.warning(f"[ImageProcessor] Tesseract not available: {e}")
+        except Exception as e:
+            logger.error(f"[ImageProcessor] Tesseract failed for {filename}: {e}")
+        
+        # =====================================================================
+        # TIER 2: LlamaParse (Cloud Premium Fallback)
+        # =====================================================================
+        from core.config import settings
+        if settings.LLAMA_CLOUD_API_KEY:
+            can_execute, reason = LLAMAPARSE_CIRCUIT.can_execute()
+            if can_execute:
+                logger.info(f"[ImageProcessor] Tier 2: Trying LlamaParse for {filename}")
+                try:
+                    result = LlamaParseProcessor(file_type="image").process(content, filename)
+                    if result and result.chunks:
+                        LLAMAPARSE_CIRCUIT.record_success()
+                        if image_ocr_total:
+                            image_ocr_total.labels("tier2_llamaparse_success").inc()
+                        logger.info(f"[ImageProcessor] Tier 2 LlamaParse success: {result.total_tokens} tokens from {filename}")
+                        return result
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "402" in error_str or "quota" in error_str or "payment" in error_str or "credits" in error_str:
+                        LLAMAPARSE_CIRCUIT.record_failure("402")
+                        logger.warning(f"[ImageProcessor] LlamaParse quota exceeded: {e}")
+                    else:
+                        LLAMAPARSE_CIRCUIT.record_failure("error")
+                        logger.warning(f"[ImageProcessor] LlamaParse failed: {e}")
+            else:
+                logger.info(f"[ImageProcessor] Skipping LlamaParse ({reason}) for {filename}")
+                if llamaparse_fallback_total:
+                    llamaparse_fallback_total.labels(f"image_{reason}").inc()
+        
+        # Return empty if nothing worked
+        if image_ocr_total:
+            image_ocr_total.labels("all_tiers_failed").inc()
+        logger.warning(f"[ImageProcessor] All tiers failed for {filename}")
+        return ProcessedDocument(chunks=[], file_type="image")
+    
+    def _process_with_tesseract(self, content: bytes, filename: str) -> ProcessedDocument:
+        """
+        Run Tesseract OCR directly on image.
+        
+        Includes preprocessing for better OCR accuracy:
+        - Color mode conversion
+        - Image enhancement for low-quality images
+        
+        Returns:
+            ProcessedDocument with OCR'd text
+        """
+        try:
+            import pytesseract
+            from PIL import Image, ImageEnhance, ImageFilter
+        except ImportError as e:
+            raise OCRNotAvailableException(f"OCR dependencies not installed: {e}")
+        
+        # Load image
+        try:
+            image = Image.open(io.BytesIO(content))
+            
+            # Get original dimensions for logging
+            original_size = f"{image.width}x{image.height}"
+            
+            # Convert to RGB if necessary (handles RGBA, P, LA, L modes)
+            if image.mode in ('RGBA', 'P', 'LA'):
+                # Create white background for transparent images
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                if image.mode == 'P':
+                    image = image.convert('RGBA')
+                if image.mode in ('RGBA', 'LA'):
+                    background.paste(image, mask=image.split()[-1])
+                else:
+                    background.paste(image)
+                image = background
+            elif image.mode == 'L':
+                image = image.convert('RGB')
+            elif image.mode not in ('RGB',):
+                image = image.convert('RGB')
+            
+            # Apply light preprocessing for better OCR
+            # Sharpen slightly to improve text clarity
+            image = image.filter(ImageFilter.SHARPEN)
+            
+            # Enhance contrast slightly
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.2)
+            
+            # Run OCR with language detection
+            # Try multiple languages for better accuracy
+            try:
+                text = pytesseract.image_to_string(image, lang='eng+tur')
+            except Exception:
+                # Fallback to English only if multi-lang fails
+                text = pytesseract.image_to_string(image, lang='eng')
+            
+            logger.debug(f"[ImageProcessor] Processed {filename} ({original_size}), extracted {len(text)} chars")
+            
+        except Exception as e:
+            logger.error(f"[ImageProcessor] Failed to process image {filename}: {e}")
+            raise
+        
+        if not text.strip():
+            return ProcessedDocument(chunks=[], file_type="image", total_tokens=0)
+        
+        # Clean up OCR text
+        text = self._clean_ocr_text(text)
+        
+        if not text.strip():
+            return ProcessedDocument(chunks=[], file_type="image", total_tokens=0)
+        
+        # Chunk the OCR text
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ". ", " ", ""]
+        )
+        raw_chunks = splitter.split_text(text)
+        
+        chunks = []
+        total_tokens = 0
+        for i, chunk_text in enumerate(raw_chunks):
+            contextualized = f"[File: {filename}]\n{chunk_text}"
+            token_count = self.count_tokens(contextualized)
+            total_tokens += token_count
+            
+            chunks.append(ProcessedChunk(
+                content=contextualized,
+                metadata={
+                    "file_type": "image",
+                    "parser": "tesseract_ocr",
+                    "filename": filename,
+                },
+                token_count=token_count,
+                chunk_index=i
+            ))
+        
+        logger.info(f"[ImageProcessor] Tesseract: {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        return ProcessedDocument(
+            chunks=chunks,
+            file_type="image",
+            total_tokens=total_tokens,
+            metadata={"parser": "tesseract_ocr"}
+        )
+    
+    def _clean_ocr_text(self, text: str) -> str:
+        """Clean up common OCR artifacts and noise."""
+        # Remove excessive whitespace
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r' {2,}', ' ', text)
+        
+        # Remove common OCR noise patterns
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines at the start
+            if not cleaned_lines and not line:
+                continue
+            # Skip lines that are just noise (single characters, numbers only, etc.)
+            if len(line) <= 2 and not line.isalnum():
+                continue
+            # Skip lines that are mostly special characters
+            if line and sum(1 for c in line if c.isalnum()) / len(line) < 0.3:
+                continue
+            cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
 
 
 # =============================================================================

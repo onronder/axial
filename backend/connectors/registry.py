@@ -45,6 +45,12 @@ CONNECTOR_REGISTRY = {
         "implementation": "microsoft",
         "target_type": "sharepoint",
     },
+    "dropbox": {
+        "id": "dropbox",
+        "name": "Dropbox",
+        "capabilities": ["binary_content", "incremental_sync", "team_spaces"],
+        "rate_limit_rpm": 720,  # Dropbox allows ~12 calls/sec baseline
+    },
 }
 
 
