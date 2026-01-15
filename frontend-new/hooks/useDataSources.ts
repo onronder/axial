@@ -14,6 +14,8 @@ import {
     getDropboxRedirectUri,
     getGitHubClientId,
     getGitHubRedirectUri,
+    getBoxClientId,
+    getBoxRedirectUri,
     generatePkcePair,
 } from "@/lib/utils";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
@@ -310,6 +312,37 @@ export const useDataSources = () => {
 
             const authUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
             console.log('🔐 [useDataSources] Redirecting to GitHub:', authUrl);
+
+            window.location.href = authUrl;
+        } else if (type === "box") {
+            const clientId = getBoxClientId();
+            const redirectUri = getBoxRedirectUri();
+
+            console.log('🔐 [useDataSources] Box Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
+            console.log('🔐 [useDataSources] Box Redirect URI:', redirectUri);
+
+            if (!clientId) {
+                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_BOX_CLIENT_ID not configured');
+                alert('Box OAuth not configured. Please check environment variables.');
+                return;
+            }
+
+            if (!redirectUri) {
+                console.error('📦 [useDataSources] ❌ Box Redirect URI not available');
+                alert('OAuth redirect URI is not configured.');
+                return;
+            }
+
+            // Box OAuth - root_readonly scope for read-only file access
+            const params = new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                state: 'box', // Used to identify provider in callback
+            });
+
+            const authUrl = `https://account.box.com/api/oauth2/authorize?${params.toString()}`;
+            console.log('🔐 [useDataSources] Redirecting to Box:', authUrl);
 
             window.location.href = authUrl;
         }

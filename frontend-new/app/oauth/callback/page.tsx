@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { GitHubRepoSelector } from "@/components/data-sources/GitHubRepoSelector";
 
-type Provider = "google" | "notion" | "onedrive" | "sharepoint" | "dropbox" | "github";
+type Provider = "google" | "notion" | "onedrive" | "sharepoint" | "dropbox" | "github" | "box";
 
 type ApiError = {
     response?: {
@@ -57,7 +57,9 @@ function OAuthCallbackContent() {
                             ? "dropbox"
                             : stateParam === "github"
                                 ? "github"
-                                : "google";
+                                : stateParam === "box"
+                                    ? "box"
+                                    : "google";
         setProvider(detectedProvider);
 
         if (typeof window !== "undefined") {
@@ -130,6 +132,8 @@ function OAuthCallbackContent() {
                     response = await api.post("/integrations/dropbox/exchange", { code });
                 } else if (detectedProvider === "github") {
                     response = await api.post("/integrations/github/exchange", { code });
+                } else if (detectedProvider === "box") {
+                    response = await api.post("/integrations/box/exchange", { code });
                 } else {
                     response = await api.post("/integrations/google/exchange", { code });
                 }
@@ -164,6 +168,8 @@ function OAuthCallbackContent() {
                     providerName = "Dropbox";
                 } else if (detectedProvider === "github") {
                     providerName = "GitHub";
+                } else if (detectedProvider === "box") {
+                    providerName = "Box";
                 }
                 setError(apiError.response?.data?.detail || `Failed to connect ${providerName}`);
             }
@@ -183,6 +189,8 @@ function OAuthCallbackContent() {
         providerName = "Dropbox";
     } else if (provider === "github") {
         providerName = "GitHub";
+    } else if (provider === "box") {
+        providerName = "Box";
     }
 
     return (

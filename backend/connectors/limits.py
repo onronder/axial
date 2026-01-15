@@ -40,6 +40,8 @@ def _get_limit(connector_type: str) -> int:
         return settings.CONNECTOR_CONCURRENCY_DROPBOX
     if normalized == "github":
         return settings.CONNECTOR_CONCURRENCY_GITHUB
+    if normalized == "box":
+        return settings.CONNECTOR_CONCURRENCY_BOX
     if normalized == "file_upload":
         return 0
     return settings.CONNECTOR_CONCURRENCY_DEFAULT

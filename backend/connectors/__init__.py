@@ -1,4 +1,5 @@
 from typing import Dict, Type
+from connectors.box import BoxConnector
 from connectors.drive import DriveConnector
 from connectors.dropbox import DropboxConnector
 from connectors.file_upload import FileUploadConnector
@@ -12,6 +13,7 @@ from connectors.web import WebConnector
 CONNECTORS: Dict[str, Type] = {
     "file_upload": FileUploadConnector,
     "google_drive": DriveConnector,
+    "box": BoxConnector,
     "dropbox": DropboxConnector,
     "github": GitHubConnector,
     "onedrive": MicrosoftGraphConnector,

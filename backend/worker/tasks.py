@@ -1474,6 +1474,7 @@ def unified_ingest_task(
                 "dropbox": "No supported files found in the selected folder.",
                 "onedrive": "No supported documents found in the selected items.",
                 "sharepoint": "No supported documents found in the selected items.",
+                "box": "No supported files found in the selected Box folder.",
             }
             message = no_docs_messages.get(connector_type, "No documents to process")
             
@@ -1544,6 +1545,7 @@ def unified_ingest_task(
             "dropbox": "Dropbox connection expired. Please reconnect in Data Sources.",
             "onedrive": "OneDrive connection expired. Please reconnect in Data Sources.",
             "sharepoint": "SharePoint connection expired. Please reconnect in Data Sources.",
+            "box": "Box connection expired. Please reconnect your Box account in Data Sources.",
         }
         user_message = auth_messages.get(
             connector_type,

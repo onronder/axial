@@ -57,6 +57,12 @@ CONNECTOR_REGISTRY = {
         "capabilities": ["code_aware", "incremental_sync", "text_content"],
         "rate_limit_rpm": 80,  # 5000/hour = 83/min, use 80 for safety margin
     },
+    "box": {
+        "id": "box",
+        "name": "Box",
+        "capabilities": ["binary_content", "incremental_sync", "enterprise"],
+        "rate_limit_rpm": 600,  # Business accounts: 1000/min, use 600 for safety
+    },
 }
 
 

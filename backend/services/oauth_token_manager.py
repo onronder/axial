@@ -411,6 +411,125 @@ class OAuthTokenManager:
             raise TokenRefreshError(f"GitHub token validation failed: {e}") from e
     
     @staticmethod
+    def refresh_box_token(
+        integration_id: str,
+        access_token: str,
+        refresh_token: str,
+        expires_at: Optional[str] = None,
+    ) -> tuple[str, str, Optional[str]]:
+        """
+        Refresh Box OAuth token.
+        
+        CRITICAL: Box refresh tokens are SINGLE-USE and rotate on each refresh.
+        Each refresh returns a NEW refresh token that invalidates the previous one.
+        We must atomically update BOTH access_token AND refresh_token.
+        
+        Box Token Lifecycle:
+        - Access tokens expire after 60 minutes
+        - Refresh tokens expire after 60 days (but rotate on each use)
+        
+        Args:
+            integration_id: Database ID of user_integration
+            access_token: Current access token (encrypted or plain)
+            refresh_token: Refresh token (encrypted or plain) - WILL BE ROTATED
+            expires_at: Current expiry timestamp
+            
+        Returns:
+            Tuple of (new_access_token, new_refresh_token, new_expires_at)
+            
+        Raises:
+            TokenRefreshError: If refresh fails
+        """
+        try:
+            from core.security import decrypt_token, encrypt_token
+            from core.db import get_supabase
+            from core.config import settings
+
+            decrypted_access = decrypt_token(access_token) if access_token else None
+            decrypted_refresh = decrypt_token(refresh_token) if refresh_token else None
+
+            if not decrypted_refresh:
+                raise TokenRefreshError("No Box refresh token available")
+
+            # Check if refresh is needed
+            if not OAuthTokenManager.is_token_expired(expires_at):
+                logger.debug(f"Box token for integration {integration_id} is still valid")
+                return decrypted_access, decrypted_refresh, expires_at
+
+            if not settings.BOX_CLIENT_ID or not settings.BOX_CLIENT_SECRET:
+                raise TokenRefreshError("Box client credentials not configured")
+
+            logger.info(f"🔄 Refreshing Box token for integration {integration_id}")
+
+            # Box token refresh endpoint
+            token_url = "https://api.box.com/oauth2/token"
+            token_payload = {
+                "grant_type": "refresh_token",
+                "refresh_token": decrypted_refresh,
+                "client_id": settings.BOX_CLIENT_ID,
+                "client_secret": settings.BOX_CLIENT_SECRET,
+            }
+
+            response = requests.post(
+                token_url,
+                data=token_payload,
+                timeout=30,
+            )
+
+            if response.status_code != 200:
+                error_detail = response.text[:500] if response.text else "Unknown error"
+                logger.error(f"❌ Box token refresh failed: {error_detail}")
+                
+                # Check for specific Box errors
+                try:
+                    error_json = response.json()
+                    error_code = error_json.get("error", "")
+                    if error_code == "invalid_grant":
+                        raise TokenRefreshError(
+                            "Box refresh token has expired or been revoked. Please reconnect your Box account."
+                        )
+                except Exception:
+                    pass
+                    
+                raise TokenRefreshError(f"Box token refresh failed: {error_detail}")
+
+            payload = response.json()
+            new_access = payload.get("access_token")
+            # CRITICAL: Box ALWAYS returns a new refresh token - we MUST save it
+            new_refresh = payload.get("refresh_token")
+            
+            if not new_refresh:
+                logger.warning("⚠️ [Box] No new refresh token returned - using existing")
+                new_refresh = decrypted_refresh
+            
+            expires_in = payload.get("expires_in")
+            
+            new_expires = None
+            if expires_in:
+                new_expires = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+
+            # ATOMIC UPDATE: Must update both tokens together
+            supabase = get_supabase()
+            update_data = {
+                "access_token": encrypt_token(new_access),
+                "refresh_token": encrypt_token(new_refresh),  # ALWAYS update refresh token
+                "expires_at": new_expires,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            
+            supabase.table("user_integrations").update(update_data).eq("id", integration_id).execute()
+
+            logger.info(f"✅ Box token refreshed for integration {integration_id}")
+
+            return new_access, new_refresh, new_expires
+
+        except TokenRefreshError:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Failed to refresh Box token: {e}")
+            raise TokenRefreshError(f"Box token refresh failed: {e}") from e
+    
+    @staticmethod
     def get_valid_credentials(
         integration: Dict[str, Any],
         provider: str
@@ -516,6 +635,21 @@ class OAuthTokenManager:
                     'access_token': new_access,
                     'refresh_token': None,  # GitHub doesn't use refresh tokens
                     'expires_at': None,
+                    'integration_id': integration_id
+                }
+            
+            elif provider == 'box':
+                # Box tokens expire after 60 minutes, refresh tokens rotate
+                new_access, new_refresh, new_expires = OAuthTokenManager.refresh_box_token(
+                    integration_id,
+                    access_token,
+                    refresh_token,
+                    expires_at,
+                )
+                return {
+                    'access_token': new_access,
+                    'refresh_token': new_refresh,
+                    'expires_at': new_expires,
                     'integration_id': integration_id
                 }
             

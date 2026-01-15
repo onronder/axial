@@ -174,10 +174,19 @@ const DiscordIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-// Box Logo
+// Box Logo (official blue box)
 const BoxIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 256 135" xmlns="http://www.w3.org/2000/svg">
-    <path d="M50.408 0C33.727 0 20.6 13.127 20.6 29.808v61.07c0 16.681 13.127 29.808 29.808 29.808h155.184c16.681 0 29.808-13.127 29.808-29.808v-61.07C235.4 13.127 222.273 0 205.592 0H50.408z" fill="#0061D5" />
+  <svg className={className} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="boxGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#0061D5" />
+        <stop offset="100%" stopColor="#0052B4" />
+      </linearGradient>
+    </defs>
+    <rect x="4" y="8" width="40" height="32" rx="4" fill="url(#boxGradient)" />
+    <path d="M19 18v12h2v-5.5l4 5.5h2.5l-4.5-6 4.5-6H25l-4 5.5V18h-2z" fill="white"/>
+    <circle cx="32" cy="24" r="2.5" fill="white"/>
+    <path d="M14 18c-1.5 0-2.5 1-2.5 2.5v7c0 1.5 1 2.5 2.5 2.5s2.5-1 2.5-2.5v-7c0-1.5-1-2.5-2.5-2.5z" fill="white"/>
   </svg>
 );
 

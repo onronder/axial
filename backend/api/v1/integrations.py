@@ -1165,6 +1165,163 @@ async def select_github_repos(
 
 
 # =============================================================================
+# Box OAuth
+# =============================================================================
+
+class BoxExchangeRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=2048)
+
+
+@router.post("/integrations/box/exchange")
+async def exchange_box_token(
+    request: BoxExchangeRequest,
+    user_id: str = Depends(require_editor)
+):
+    """
+    Exchange Box OAuth code for tokens and persist to user_integrations.
+    
+    CRITICAL: Box refresh tokens are SINGLE-USE and rotate on each refresh.
+    Both access_token AND refresh_token must be stored and updated atomically.
+    """
+    logger.info(f"🔐 [OAuth] Starting Box token exchange for user: {user_id}")
+
+    if not settings.BOX_CLIENT_ID or not settings.BOX_CLIENT_SECRET:
+        logger.error("🔐 [OAuth] Box credentials not configured!")
+        raise HTTPException(status_code=500, detail="Box credentials not configured")
+
+    supabase = get_supabase()
+
+    # 1. Lookup connector definition ID
+    def_res = supabase.table("connector_definitions").select("id").eq("type", "box").single().execute()
+    if not def_res.data:
+        raise HTTPException(status_code=500, detail="box connector not found in definitions")
+
+    connector_definition_id = def_res.data["id"]
+
+    # 2. Exchange code for tokens
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            token_payload = {
+                "grant_type": "authorization_code",
+                "client_id": settings.BOX_CLIENT_ID,
+                "client_secret": settings.BOX_CLIENT_SECRET,
+                "code": request.code,
+            }
+            if settings.BOX_REDIRECT_URI:
+                token_payload["redirect_uri"] = settings.BOX_REDIRECT_URI
+
+            response = await client.post(
+                "https://api.box.com/oauth2/token",
+                data=token_payload,
+            )
+
+        if response.status_code != 200:
+            logger.error(f"🔐 [OAuth] Box token exchange failed: {response.text}")
+            raise HTTPException(status_code=400, detail="Box token exchange failed")
+
+        token_data = response.json()
+        
+        if "error" in token_data:
+            error_desc = token_data.get("error_description", token_data.get("error"))
+            logger.error(f"🔐 [OAuth] Box OAuth error: {error_desc}")
+            raise HTTPException(status_code=400, detail=f"Box OAuth error: {error_desc}")
+        
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")  # CRITICAL: Box tokens rotate
+        expires_in = token_data.get("expires_in")
+
+        logger.info(f"🔐 [OAuth] ✅ Got Box tokens. Expires in: {expires_in}s")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"🔐 [OAuth] Box token exchange failed: {e}")
+        raise HTTPException(status_code=400, detail="Box token exchange failed") from e
+
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Box token exchange returned no access token")
+    
+    if not refresh_token:
+        logger.warning("⚠️ [OAuth] Box did not return refresh token - may have issues with token refresh")
+
+    # 3. Get user info to validate token and get Box user ID
+    credentials = {}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            user_response = await client.get(
+                "https://api.box.com/2.0/users/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+
+            if user_response.status_code == 200:
+                user_info = user_response.json()
+                credentials["box_user_id"] = user_info.get("id")
+                credentials["box_login"] = user_info.get("login")
+                credentials["box_name"] = user_info.get("name")
+                credentials["box_avatar_url"] = user_info.get("avatar_url")
+                # Check if enterprise account
+                enterprise = user_info.get("enterprise")
+                if enterprise:
+                    credentials["box_enterprise_id"] = enterprise.get("id")
+                    credentials["box_enterprise_name"] = enterprise.get("name")
+                logger.info(f"🔐 [OAuth] Box user: {user_info.get('login')}")
+            else:
+                logger.warning(f"⚠️ [OAuth] Failed to get Box user info: {user_response.text}")
+
+    except Exception as e:
+        logger.warning(f"⚠️ [OAuth] Failed to get Box user info: {e}")
+
+    # 4. Calculate expiration time
+    expires_at = None
+    if expires_in:
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+
+    # 5. Persist integration (BOTH tokens - Box refresh tokens rotate!)
+    data = {
+        "user_id": user_id,
+        "connector_definition_id": connector_definition_id,
+        "access_token": encrypt_token(access_token),
+        "refresh_token": encrypt_token(refresh_token) if refresh_token else None,
+        "expires_at": expires_at,
+        "credentials": credentials,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    upsert_res = supabase.table("user_integrations").upsert(
+        data,
+        on_conflict="user_id,connector_definition_id",
+    ).execute()
+
+    if not upsert_res.data:
+        raise HTTPException(status_code=500, detail="Failed to store Box credentials")
+
+    integration_id = upsert_res.data[0]["id"]
+
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.connect",
+        resource_type="connector",
+        resource_id="box",
+        details={
+            "integration_id": integration_id,
+            "box_login": credentials.get("box_login"),
+            "is_enterprise": "box_enterprise_id" in credentials,
+        },
+    )
+
+    logger.info(f"🔐 [OAuth] ✅ Box connected (integration: {integration_id})")
+
+    return {
+        "status": "success",
+        "provider": "box",
+        "integration_id": integration_id,
+        "box_login": credentials.get("box_login"),
+        "box_name": credentials.get("box_name"),
+        "is_enterprise": "box_enterprise_id" in credentials,
+    }
+
+
+# =============================================================================
 # Integration Management Endpoints
 # =============================================================================
 
@@ -1738,7 +1895,7 @@ async def ingest_provider_items(
             integration = None
         
         # Prepare credentials based on connector type
-        if provider in ["google_drive", "notion", "onedrive", "sharepoint", "dropbox", "github"]:
+        if provider in ["google_drive", "notion", "onedrive", "sharepoint", "dropbox", "github", "box"]:
             # OAuth connectors: Pass integration_id for automatic token refresh
             if not integration or not integration.get('access_token'):
                 raise HTTPException(status_code=401, detail=f"Not connected to {provider}. Please reconnect.")

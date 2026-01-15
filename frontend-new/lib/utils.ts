@@ -132,3 +132,19 @@ export function getGitHubRedirectUri(): string | undefined {
     if (typeof window === "undefined") return undefined;
     return `${window.location.origin}/oauth/callback`;
 }
+
+/**
+ * Get the Box Client ID from environment.
+ */
+export function getBoxClientId(): string | undefined {
+    return process.env.NEXT_PUBLIC_BOX_CLIENT_ID;
+}
+
+/**
+ * Get the Box OAuth redirect URI.
+ * Uses the same OAuth callback page as other providers.
+ */
+export function getBoxRedirectUri(): string | undefined {
+    if (typeof window === "undefined") return undefined;
+    return `${window.location.origin}/oauth/callback`;
+}

@@ -7,6 +7,7 @@ export type CanonicalSourceType =
   | "onedrive"
   | "sharepoint"
   | "dropbox"
+  | "box"
   | "local"
   | "knowledge_base";
 
@@ -23,6 +24,7 @@ const SOURCE_TYPE_ALIASES: Record<string, string> = {
   sharepoint: "sharepoint",
   "share_point": "sharepoint",
   dropbox: "dropbox",
+  box: "box",
   local: "local",
   knowledge_base: "knowledge_base",
 };
@@ -42,6 +44,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   onedrive: "OneDrive",
   sharepoint: "SharePoint",
   dropbox: "Dropbox",
+  box: "Box",
   local: "Local",
   knowledge_base: "Knowledge Base",
 };
