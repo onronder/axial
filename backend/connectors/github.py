@@ -1026,8 +1026,12 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
     ) -> Iterator[SourceDocument]:
         """Fetch documents from GitHub for ingestion pipeline.
         
+        Handles both file IDs and folder IDs:
+        - File ID format: "repo:sha:path" (3 parts) - fetches single file
+        - Folder ID format: "repo:path" (2 parts) or "repo" (1 part) - expands to all files
+        
         Args:
-            item_ids: List of file IDs in format "repo:sha:path"
+            item_ids: List of item IDs (files or folders)
             credentials: Optional credentials dict with access_token
             **kwargs: Additional params including user_id, integration_id
         """
@@ -1040,36 +1044,191 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         
         logger.info(f"📥 [GitHubConnector] Fetching {len(item_ids)} item(s)")
         
+        # Track processed files to avoid duplicates when folders overlap
+        processed_file_ids: Set[str] = set()
+        
         for item_id in item_ids:
             try:
-                # Parse file_id: repo:sha:path
+                # Determine if this is a file ID or folder ID by counting colons
+                # File ID: "owner/repo:sha:path" -> 3 parts
+                # Folder ID: "owner/repo:path" -> 2 parts, or "owner/repo" -> 1 part
                 parts = item_id.split(":", 2)
-                if len(parts) != 3:
-                    logger.warning(f"⚠️ [GitHub] Invalid file ID: {item_id}")
+                
+                if len(parts) == 3:
+                    # This is a file ID - process directly
+                    yield from self._fetch_single_file(
+                        resolved, item_id, parts, processed_file_ids
+                    )
+                elif len(parts) <= 2:
+                    # This is a folder ID - expand to all files within
+                    logger.info(f"📂 [GitHub] Expanding folder: {item_id}")
+                    yield from self._expand_folder_to_documents(
+                        resolved, item_id, parts, processed_file_ids
+                    )
+                else:
+                    logger.warning(f"⚠️ [GitHub] Invalid item ID format: {item_id}")
                     continue
+                    
+            except ConnectorAuthError:
+                # Re-raise auth errors to fail the job properly
+                raise
+            except ItemNotFoundError:
+                logger.warning(f"⚠️ [GitHub] Not found: {item_id}")
+                continue
+            except Exception as e:
+                logger.error(f"❌ [GitHub] Failed to process {item_id}: {e}")
+                continue
+        
+        logger.info(f"📥 [GitHubConnector] Fetch completed. Processed {len(processed_file_ids)} files")
+    
+    def _fetch_single_file(
+        self,
+        config: dict,
+        item_id: str,
+        parts: List[str],
+        processed_ids: Set[str],
+    ) -> Iterator[SourceDocument]:
+        """Fetch a single file by its ID.
+        
+        Args:
+            config: Resolved config with access_token
+            item_id: Full file ID "repo:sha:path"
+            parts: Pre-split parts of item_id
+            processed_ids: Set of already processed file IDs (for dedup)
+        """
+        if item_id in processed_ids:
+            logger.debug(f"⏭️ [GitHub] Skipping duplicate: {item_id}")
+            return
+        
+        repo, sha, path = parts
+        
+        # Fetch raw content
+        content = self._fetch_blob_raw(config, repo, sha)
+        
+        # Binary detection
+        if self._is_binary(content):
+            logger.debug(f"⏭️ [GitHub] Skipping binary file: {path}")
+            return
+        
+        processed_ids.add(item_id)
+        filename = path.rsplit("/", 1)[-1]
+        
+        yield SourceDocument(
+            content=content,
+            metadata={
+                "source": "github",
+                "repository": repo,
+                "path": path,
+                "git_blob_sha": sha,
+            },
+            source_type=SourceType.GITHUB,
+            source_id=item_id,
+            filename=filename,
+            mime_type=self._guess_mime_type(filename),
+            size_bytes=len(content),
+            parent_id=repo,
+        )
+    
+    def _expand_folder_to_documents(
+        self,
+        config: dict,
+        folder_id: str,
+        parts: List[str],
+        processed_ids: Set[str],
+    ) -> Iterator[SourceDocument]:
+        """Expand a folder ID to all files within and fetch their contents.
+        
+        Folder ID formats:
+        - "owner/repo" -> entire repository root
+        - "owner/repo:path/to/folder" -> specific subfolder
+        
+        Args:
+            config: Resolved config with access_token
+            folder_id: Folder ID to expand
+            parts: Pre-split parts of folder_id
+            processed_ids: Set of already processed file IDs (for dedup)
+        """
+        # Parse folder ID
+        if len(parts) == 1:
+            # Format: "owner/repo" - entire repo
+            repo = parts[0]
+            target_path = None
+        else:
+            # Format: "owner/repo:path/to/folder"
+            repo, target_path = parts
+        
+        # Validate repo format (must contain owner/repo)
+        if "/" not in repo:
+            logger.warning(f"⚠️ [GitHub] Invalid repo format in folder ID: {folder_id}")
+            return
+        
+        # Get branch for this repo
+        branch = self._get_repo_branch(config, repo)
+        
+        # Get branch SHA
+        try:
+            branch_sha = self._get_branch_sha(config, repo, branch)
+        except Exception as e:
+            logger.error(f"❌ [GitHub] Failed to get branch SHA for {repo}/{branch}: {e}")
+            return
+        
+        # Fetch the tree
+        try:
+            tree_items = list(self._fetch_tree(config, repo, branch_sha))
+        except Exception as e:
+            logger.error(f"❌ [GitHub] Failed to fetch tree for {repo}: {e}")
+            return
+        
+        # Build prefix for path filtering
+        prefix = f"{target_path}/" if target_path else ""
+        file_count = 0
+        
+        for item in tree_items:
+            item_path = item.get("path", "")
+            item_type = item.get("type", "")
+            item_sha = item.get("sha", "")
+            
+            # Only process blobs (files)
+            if item_type != "blob":
+                continue
+            
+            # Filter to items under target path
+            if prefix and not item_path.startswith(prefix):
+                continue
+            
+            # Apply content filter (code/docs only, skip binaries/artifacts)
+            if not self._filter.should_include(item_path, item.get("size")):
+                continue
+            
+            # Build file ID
+            file_id = f"{repo}:{item_sha}:{item_path}"
+            
+            if file_id in processed_ids:
+                continue
+            
+            # Fetch and yield the file
+            try:
+                content = self._fetch_blob_raw(config, repo, item_sha)
                 
-                repo, sha, path = parts
-                
-                # Fetch raw content
-                content = self._fetch_blob_raw(resolved, repo, sha)
-                
-                # Binary detection
                 if self._is_binary(content):
-                    logger.debug(f"⏭️ [GitHub] Skipping binary file: {path}")
+                    logger.debug(f"⏭️ [GitHub] Skipping binary: {item_path}")
                     continue
                 
-                filename = path.rsplit("/", 1)[-1]
+                processed_ids.add(file_id)
+                filename = item_path.rsplit("/", 1)[-1]
+                file_count += 1
                 
                 yield SourceDocument(
                     content=content,
                     metadata={
                         "source": "github",
                         "repository": repo,
-                        "path": path,
-                        "git_blob_sha": sha,
+                        "path": item_path,
+                        "git_blob_sha": item_sha,
+                        "folder_id": folder_id,  # Track originating folder
                     },
                     source_type=SourceType.GITHUB,
-                    source_id=item_id,
+                    source_id=file_id,
                     filename=filename,
                     mime_type=self._guess_mime_type(filename),
                     size_bytes=len(content),
@@ -1077,13 +1236,44 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
                 )
                 
             except ItemNotFoundError:
-                logger.warning(f"⚠️ [GitHub] Not found: {item_id}")
+                logger.warning(f"⚠️ [GitHub] Blob not found: {file_id}")
                 continue
             except Exception as e:
-                logger.error(f"❌ [GitHub] Failed to fetch {item_id}: {e}")
+                logger.error(f"❌ [GitHub] Failed to fetch blob {item_sha}: {e}")
                 continue
         
-        logger.info("📥 [GitHubConnector] Fetch stream ended")
+        logger.info(
+            f"📂 [GitHub] Expanded folder '{folder_id}' to {file_count} files"
+        )
+    
+    def _get_repo_branch(self, config: dict, repo: str) -> str:
+        """Get the configured branch for a repository, or fetch default.
+        
+        Args:
+            config: Resolved config with credentials
+            repo: Repository full name (owner/repo)
+            
+        Returns:
+            Branch name to use
+        """
+        # Check if branch is configured in selected repos
+        credentials = config.get("credentials", {})
+        selected_repos = credentials.get("selected_repositories", [])
+        
+        for repo_config in selected_repos:
+            if repo_config.get("full_name") == repo:
+                branch = repo_config.get("branch")
+                if branch:
+                    return branch
+        
+        # Fetch default branch from API
+        try:
+            url = f"{GITHUB_API_BASE}/repos/{repo}"
+            repo_info = self._request(config, url)
+            return repo_info.get("default_branch", "main")
+        except Exception as e:
+            logger.warning(f"⚠️ [GitHub] Failed to get default branch for {repo}: {e}")
+            return "main"
     
     # =========================================================================
     # Configuration Resolution

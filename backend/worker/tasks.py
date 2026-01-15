@@ -40,6 +40,7 @@ from core.job_counters import (
 from services.parsers import DocumentProcessorFactory
 from services.email import email_service
 from connectors import get_connector
+from connectors.base import ConnectorAuthError
 from connectors.limits import connector_fetch_limit
 from services.embeddings import generate_embeddings_batch_sync
 from services.malware import scan_content, MalwareScanException
@@ -1465,15 +1466,36 @@ def unified_ingest_task(
                     _flush_batch()
 
         if total_files == 0:
+            # Provide connector-specific helpful messages
+            no_docs_messages = {
+                "github": "No code files found. The selected folder may be empty, contain only binary files, or be filtered out (e.g., node_modules, build artifacts).",
+                "google_drive": "No supported documents found in the selected items.",
+                "notion": "No pages found to process. Check if the selected pages have content.",
+                "dropbox": "No supported files found in the selected folder.",
+                "onedrive": "No supported documents found in the selected items.",
+                "sharepoint": "No supported documents found in the selected items.",
+            }
+            message = no_docs_messages.get(connector_type, "No documents to process")
+            
             update_job_status(
                 supabase,
                 job_id,
                 "completed",
                 processed_files=0,
-                message="No documents to process",
+                message=message,
                 progress=100,
             )
-            return {"status": "completed", "message": "No documents"}
+            
+            # Create info notification for empty result
+            create_notification(
+                supabase, user_id,
+                "Ingestion Complete",
+                message,
+                "info",
+                {"job_id": job_id, "connector": connector_type}
+            )
+            
+            return {"status": "completed", "message": message}
 
         if file_tasks:
             _flush_batch()
@@ -1509,6 +1531,42 @@ def unified_ingest_task(
             "total_files": total_files,
             "group_id": last_group_id,
         }
+    
+    except ConnectorAuthError as e:
+        # Authentication error - user needs to reconnect
+        logger.warning(f"[UnifiedIngest:{task_id}] Auth error: {e}")
+        
+        # Format user-friendly message based on connector
+        auth_messages = {
+            "github": "GitHub connection expired. Please reconnect your GitHub account in Data Sources.",
+            "google_drive": "Google Drive connection expired. Please reconnect in Data Sources.",
+            "notion": "Notion connection expired. Please reconnect in Data Sources.",
+            "dropbox": "Dropbox connection expired. Please reconnect in Data Sources.",
+            "onedrive": "OneDrive connection expired. Please reconnect in Data Sources.",
+            "sharepoint": "SharePoint connection expired. Please reconnect in Data Sources.",
+        }
+        user_message = auth_messages.get(
+            connector_type,
+            f"Authentication failed for {connector_type}. Please reconnect in Data Sources."
+        )
+        
+        update_job_status(
+            supabase,
+            job_id,
+            "failed",
+            error_message=user_message,
+            message=user_message,
+            progress=0,
+        )
+        
+        create_notification(
+            supabase, user_id,
+            "Authentication Required",
+            user_message,
+            "error",
+            {"job_id": job_id, "connector": connector_type, "requires_reconnect": True}
+        )
+        raise
         
     except Exception as e:
         logger.error(f"[UnifiedIngest:{task_id}] Failed: {e}")
