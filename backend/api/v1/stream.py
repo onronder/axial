@@ -19,6 +19,7 @@ from api.v1.dependencies import validate_team_access
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
+from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access)])
@@ -72,6 +73,7 @@ async def stream_generator(
     - error: Error occurred
     """
     supabase = get_supabase()
+    organization_id = await team_service.get_organization_id(user_id)
     
     try:
         # 1. Embed the query
@@ -87,7 +89,7 @@ async def stream_generator(
                 "query_text": query,
                 "query_embedding": query_vector,
                 "match_count": 5,
-                "filter_user_id": user_id,
+                "filter_org_id": organization_id,
                 "vector_weight": 0.7,
                 "keyword_weight": 0.3,
                 "similarity_threshold": 0.3
@@ -99,7 +101,7 @@ async def stream_generator(
                 "query_embedding": query_vector,
                 "match_threshold": 0.3,
                 "match_count": 5,
-                "filter_user_id": user_id
+                "filter_org_id": organization_id
             }).execute()
             docs = response.data or []
         

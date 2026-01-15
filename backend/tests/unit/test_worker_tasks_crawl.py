@@ -394,32 +394,52 @@ class TestScheduledCrawls:
     def test_check_scheduled_crawls_triggers(self):
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
-        table = _make_chain_table(
-            execute_side_effect=[
-                MagicMock(
-                    data=[
-                        {
-                            "id": "crawl-1",
-                            "user_id": "user-1",
-                            "root_url": "https://example.com",
-                            "crawl_type": "single",
-                            "max_depth": 1,
-                            "max_pages": 10,
-                            "allow_subdomains": False,
-                            "respect_robots_txt": True,
-                            "refresh_interval": "daily",
-                        }
-                    ]
-                ),
-                MagicMock(data=[]),
-                MagicMock(data=[]),
-            ]
-        )
-        supabase.table.return_value = table
-
+        
+        # Create a more flexible mock that handles all table operations
+        def make_table_mock():
+            table = MagicMock()
+            # Default: return empty data for any execute call
+            table.select.return_value = table
+            table.eq.return_value = table
+            table.neq.return_value = table
+            table.lte.return_value = table
+            table.update.return_value = table
+            table.insert.return_value = table
+            table.upsert.return_value = table
+            table.limit.return_value = table
+            table.single.return_value = table
+            table.execute.return_value = MagicMock(data=[])
+            return table
+        
+        crawl_configs_table = make_table_mock()
+        # First call to web_crawl_configs returns crawl data
+        crawl_configs_table.execute.side_effect = [
+            MagicMock(data=[{
+                "id": "crawl-1",
+                "user_id": "user-1",
+                "root_url": "https://example.com",
+                "crawl_type": "single",
+                "max_depth": 1,
+                "max_pages": 10,
+                "allow_subdomains": False,
+                "respect_robots_txt": True,
+                "refresh_interval": "daily",
+            }]),
+            MagicMock(data=[]),  # update status
+            MagicMock(data=[]),  # update next_crawl_at
+        ]
+        
+        def table_dispatch(name):
+            if name == "web_crawl_configs":
+                return crawl_configs_table
+            return make_table_mock()
+        
+        supabase.table.side_effect = table_dispatch
+        
         mock_task = SimpleNamespace(id="task-123")
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
+             patch("worker.tasks._resolve_org_scope", return_value={"team_id": "org-1"}), \
              patch("worker.tasks.crawl_discovery_task.delay", return_value=mock_task):
             result = tasks.check_scheduled_crawls.run.__func__(task)
 

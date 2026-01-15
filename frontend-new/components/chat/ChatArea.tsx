@@ -2,7 +2,7 @@
  * Chat Area - Production Grade Implementation
  * 
  * Clean, scrollable message list without virtualization complexity.
- * Virtualization was causing layout bugs due to fixed height estimates.
+ * Includes Universal Context support for scope clarification.
  */
 
 "use client";
@@ -12,27 +12,34 @@ import { Message } from "@/hooks/useChatHistory";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
+import { ClarificationCard } from "./ClarificationCard";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { ModelId } from "@/lib/types";
 
 interface ChatAreaProps {
   messages: Message[];
   onSendMessage: (content: string) => void;
+  /** Handler for scope selection from clarification card */
+  onSelectScope?: (scopeId: string, originalQuery: string) => void;
   isTyping?: boolean;
   streamingMessage?: string | null;
   disabled?: boolean;
   selectedModel: ModelId;
   onModelSelect: (model: ModelId) => void;
+  /** True when re-sending with scope selection */
+  isResending?: boolean;
 }
 
 export function ChatArea({
   messages,
   onSendMessage,
+  onSelectScope,
   isTyping = false,
   streamingMessage = null,
   disabled = false,
   selectedModel,
   onModelSelect,
+  isResending = false,
 }: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -78,15 +85,35 @@ export function ChatArea({
         <div className="mx-auto w-full max-w-5xl rounded-2xl border border-border bg-card/50 backdrop-blur-xl shadow-lg p-3 sm:p-4">
           {/* Messages stack naturally with proper spacing */}
           <div className="flex flex-col gap-4">
-            {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={{
-                  ...message,
-                  timestamp: message.created_at,
-                }}
-              />
-            ))}
+            {messages.map((message) => {
+              // Handle clarification messages specially
+              if (message.role === 'clarification' && message.candidates) {
+                return (
+                  <ClarificationCard
+                    key={message.id}
+                    message={message.content}
+                    candidates={message.candidates}
+                    onSelectScope={(scopeId) => {
+                      if (onSelectScope && message.original_query) {
+                        onSelectScope(scopeId, message.original_query);
+                      }
+                    }}
+                    isLoading={isResending}
+                  />
+                );
+              }
+              
+              // Regular message bubble
+              return (
+                <MessageBubble
+                  key={message.id}
+                  message={{
+                    ...message,
+                    timestamp: message.created_at,
+                  }}
+                />
+              );
+            })}
 
             {/* Typing indicator */}
             {isTyping && (

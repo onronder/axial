@@ -14,6 +14,14 @@ from fastapi.testclient import TestClient
 # In a real test environment, you'd use TestClient with the FastAPI app
 
 
+@pytest.fixture(autouse=True)
+def disable_rate_limiting():
+    """Disable rate limiting for all tests in this module."""
+    # Patch the limiter's check method to skip rate limit checks
+    with patch("slowapi.extension.Limiter._check_request_limit", return_value=None):
+        yield
+
+
 class TestS3EnterpriseGate:
     """Test S3 Enterprise Gate enforcement."""
 
@@ -42,8 +50,13 @@ class TestS3EnterpriseGate:
     async def test_connect_s3_blocks_free_plan(self):
         """Free plan users should be blocked with 403."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
+        from starlette.requests import Request
+        from starlette.datastructures import Headers
         
-        request = Mock()
+        # Create a proper mock request
+        scope = {"type": "http", "headers": Headers().raw, "method": "POST", "path": "/"}
+        request = Request(scope)
+        
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,
@@ -69,8 +82,12 @@ class TestS3EnterpriseGate:
     async def test_connect_s3_blocks_starter_plan(self):
         """Starter plan users should be blocked with 403."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
+        from starlette.requests import Request
+        from starlette.datastructures import Headers
         
-        request = Mock()
+        scope = {"type": "http", "headers": Headers().raw, "method": "POST", "path": "/"}
+        request = Request(scope)
+        
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,
@@ -95,8 +112,11 @@ class TestS3EnterpriseGate:
     async def test_connect_s3_blocks_pro_plan(self):
         """Pro plan users should be blocked with 403."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
+        from starlette.requests import Request
+        from starlette.datastructures import Headers
         
-        request = Mock()
+        scope = {"type": "http", "headers": Headers().raw, "method": "POST", "path": "/"}
+        request = Request(scope)
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,
@@ -122,8 +142,12 @@ class TestS3EnterpriseGate:
         """Enterprise plan users should be allowed."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
         from connectors.s3 import S3Connector
+        from starlette.requests import Request
+        from starlette.datastructures import Headers
         
-        request = Mock()
+        scope = {"type": "http", "headers": Headers().raw, "method": "POST", "path": "/", "state": {}}
+        request = Request(scope)
+        request.state.view_rate_limit = None  # Initialize for slowapi
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,
@@ -164,8 +188,12 @@ class TestS3EnterpriseGate:
     async def test_connect_s3_allows_enterprise_medium_plan(self):
         """Enterprise medium plan users should be allowed."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
+        from starlette.requests import Request
+        from starlette.datastructures import Headers
         
-        request = Mock()
+        scope = {"type": "http", "headers": Headers().raw, "method": "POST", "path": "/", "state": {}}
+        request = Request(scope)
+        request.state.view_rate_limit = None  # Initialize for slowapi
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,
@@ -284,14 +312,26 @@ class TestS3ConnectRequestValidation:
 class TestS3ConnectErrorHandling:
     """Test S3 connect endpoint error handling."""
 
+    @pytest.fixture
+    def make_request(self):
+        """Helper to create a proper Starlette Request object with slowapi state."""
+        from starlette.requests import Request
+        from starlette.datastructures import Headers
+        def _make():
+            scope = {"type": "http", "headers": Headers().raw, "method": "POST", "path": "/", "state": {}}
+            request = Request(scope)
+            request.state.view_rate_limit = None  # Initialize for slowapi
+            return request
+        return _make
+
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_connect_s3_handles_auth_error(self):
+    async def test_connect_s3_handles_auth_error(self, make_request):
         """Should return 401 for authentication errors."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
         from connectors.base import ConnectorAuthError
         
-        request = Mock()
+        request = make_request()
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,
@@ -322,12 +362,12 @@ class TestS3ConnectErrorHandling:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_connect_s3_handles_transient_error(self):
+    async def test_connect_s3_handles_transient_error(self, make_request):
         """Should return 503 for transient errors."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
         from connectors.base import ConnectorTransientError
         
-        request = Mock()
+        request = make_request()
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,
@@ -358,11 +398,11 @@ class TestS3ConnectErrorHandling:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_connect_s3_handles_missing_connector_definition(self):
+    async def test_connect_s3_handles_missing_connector_definition(self, make_request):
         """Should return 500 if S3 connector not configured."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
         
-        request = Mock()
+        request = make_request()
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,
@@ -392,13 +432,25 @@ class TestS3ConnectErrorHandling:
 class TestS3ConnectCredentialStorage:
     """Test credential encryption and storage."""
 
+    @pytest.fixture
+    def make_request(self):
+        """Helper to create a proper Starlette Request object with slowapi state."""
+        from starlette.requests import Request
+        from starlette.datastructures import Headers
+        def _make():
+            scope = {"type": "http", "headers": Headers().raw, "method": "POST", "path": "/", "state": {}}
+            request = Request(scope)
+            request.state.view_rate_limit = None  # Initialize for slowapi
+            return request
+        return _make
+
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_credentials_are_encrypted(self):
+    async def test_credentials_are_encrypted(self, make_request):
         """Credentials should be encrypted before storage."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
         
-        request = Mock()
+        request = make_request()
         body = S3ConnectRequest(
             access_key_id="AKIAIOSFODNN7EXAMPLE",
             secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
@@ -441,11 +493,11 @@ class TestS3ConnectCredentialStorage:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_non_sensitive_fields_not_encrypted(self):
+    async def test_non_sensitive_fields_not_encrypted(self, make_request):
         """Region, bucket, prefix should NOT be encrypted."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
         
-        request = Mock()
+        request = make_request()
         body = S3ConnectRequest(
             access_key_id="A" * 20,
             secret_access_key="B" * 40,

@@ -6,6 +6,7 @@ This service orchestrates deletion from: Vector DB, Storage, Database, and Auth.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -14,6 +15,10 @@ from core.db import get_supabase
 from core.ingestion_utils import normalize_source_type
 
 logger = logging.getLogger(__name__)
+
+
+class ActiveIngestionError(RuntimeError):
+    """Raised when org deletion is blocked due to active ingestion."""
 
 
 class AccountCleanupService:
@@ -85,6 +90,98 @@ class AccountCleanupService:
         except Exception as e:
             logger.error(f"❌ [AccountCleanup] Deletion failed for user {user_id}: {e}")
             raise
+
+    async def execute_org_deletion(self, organization_id: str) -> dict:
+        """
+        Execute irreversible deletion of all org-scoped data.
+
+        Deletes vectors, documents, scope identities, and ingestion jobs
+        associated with the organization.
+        """
+        logger.info("🗑️ [AccountCleanup] Starting org deletion for %s", organization_id)
+
+        try:
+            response = self.supabase.rpc(
+                "purge_organization",
+                {"p_org_id": organization_id},
+            ).execute()
+            payload = response.data or {}
+        except Exception as e:
+            error_text = str(e)
+            if "active_ingestion_jobs" in error_text:
+                logger.warning("⛔ [OrgCleanup] Active ingestion blocks purge for %s", organization_id)
+                raise ActiveIngestionError(
+                    "Organization has active ingestion jobs; aborting purge."
+                ) from e
+            logger.error("❌ [OrgCleanup] Org purge failed: %s", e)
+            raise
+
+        results = {
+            "organization_id": organization_id,
+            "vector_store": {"deleted": int(payload.get("deleted_chunks") or 0), "status": "success"},
+            "documents": {"deleted": int(payload.get("deleted_documents") or 0), "status": "success"},
+            "scope_identities": {"deleted": int(payload.get("deleted_scopes") or 0), "status": "success"},
+            "ingestion_jobs": {"deleted": int(payload.get("deleted_jobs") or 0), "status": "success"},
+            "org_usage": {"status": "success"},
+        }
+
+        logger.info("✅ [AccountCleanup] Org deletion finished for %s", organization_id)
+        return results
+
+    async def anonymize_user_data(self, user_id: str) -> dict:
+        """
+        Anonymize user data while preserving system integrity.
+        """
+        results = {"user_id": user_id, "profile": "pending", "team_members": "pending", "integrations": "pending"}
+
+        try:
+            self.supabase.table("user_profiles").update(
+                {
+                    "first_name": None,
+                    "last_name": None,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).eq("user_id", user_id).execute()
+            results["profile"] = "success"
+        except Exception as e:
+            logger.error("❌ [Anonymize] Failed to anonymize profile: %s", e)
+            results["profile"] = f"error: {e}"
+
+        try:
+            anonymized_email = f"anonymized+{user_id}@example.com"
+            self.supabase.table("team_members").update(
+                {
+                    "email": anonymized_email,
+                    "name": "Deleted User",
+                }
+            ).eq("member_user_id", user_id).execute()
+            self.supabase.table("team_members").update(
+                {
+                    "email": anonymized_email,
+                    "name": "Deleted User",
+                }
+            ).eq("owner_user_id", user_id).execute()
+            results["team_members"] = "success"
+        except Exception as e:
+            logger.warning("⚠️ [Anonymize] Failed to anonymize team members: %s", e)
+            results["team_members"] = f"error: {e}"
+
+        try:
+            self.supabase.table("user_integrations").delete().eq("user_id", user_id).execute()
+            results["integrations"] = "success"
+        except Exception as e:
+            logger.warning("⚠️ [Anonymize] Failed to delete integrations: %s", e)
+            results["integrations"] = f"error: {e}"
+
+        try:
+            self.supabase.auth.admin.update_user_by_id(
+                user_id,
+                {"email": f"anonymized+{user_id}@example.com", "user_metadata": {}},
+            )
+        except Exception as e:
+            logger.warning("⚠️ [Anonymize] Failed to anonymize auth user: %s", e)
+
+        return results
     async def delete_single_document(self, doc_id: str, user_id: str) -> dict:
         """
         Delete a single document atomically (Vectors -> Storage -> DB).

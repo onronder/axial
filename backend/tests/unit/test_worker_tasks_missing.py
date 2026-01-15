@@ -177,6 +177,7 @@ def test_ingest_document_batched_no_chunks():
     doc_id = tasks.ingest_document_batched(
         supabase=supabase,
         user_id="user-1",
+        organization_id="org-1",
         doc_title="Doc",
         source_type="file_upload",
         metadata={},
@@ -197,6 +198,7 @@ def test_ingest_document_batched_insert_error(monkeypatch):
     doc_id = tasks.ingest_document_batched(
         supabase=supabase,
         user_id="user-1",
+        organization_id="org-1",
         doc_title="Doc",
         source_type="file_upload",
         metadata={},
@@ -377,7 +379,7 @@ def test_process_document_pipeline_handles_string_content(monkeypatch):
         job_id="job-1",
         file_status_id="status-1",
         source_type="file_upload",
-        metadata={},
+        metadata={"organization_id": "org-1", "scope_id": "file_upload://file.bin"},
     )
 
     assert outcome.success is True
@@ -407,7 +409,7 @@ def test_process_document_pipeline_skips_none_embeddings(monkeypatch):
         job_id="job-1",
         file_status_id="status-1",
         source_type="file_upload",
-        metadata={},
+        metadata={"organization_id": "org-1", "scope_id": "file_upload://file.txt"},
     )
 
     assert outcome.success is True
@@ -436,7 +438,7 @@ def test_unified_ingest_task_base64_fallback(monkeypatch):
             content="notbase64",
             size_bytes=1,
             mime_type="application/octet-stream",
-            metadata={},
+            metadata={"storage_path": "uploads/file.bin", "scope_id": "file_upload://uploads/file.bin"},
             source_type="file_upload",
             source_id="src-1",
             parent_id=None,
@@ -459,6 +461,9 @@ def test_unified_ingest_task_base64_fallback(monkeypatch):
     monkeypatch.setattr(tasks, "get_connector", lambda *_args, **_kwargs: connector)
     monkeypatch.setattr(tasks, "connector_fetch_limit", lambda *_args, **_kwargs: DummyContext())
     monkeypatch.setattr(tasks, "init_ingest_job_counters", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(tasks, "store_celery_task_id", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tasks, "check_job_cancelled", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(tasks, "update_job_status", lambda *_args, **_kwargs: None)
 
     with patch("celery.group", return_value=FakeGroup()):
         result = tasks.unified_ingest_task.run("user-1", "job-1", "file_upload", ["item"], {})
@@ -488,6 +493,7 @@ def test_process_file_task_handles_string_content(monkeypatch):
             "job-1",
             {
                 "filename": "file.txt",
+                "organization_id": "org-1",
                 "storage_path": "uploads/x",
                 "size_bytes": 1,
                 "mime_type": "text/plain",
@@ -495,6 +501,7 @@ def test_process_file_task_handles_string_content(monkeypatch):
             },
             "status-1",
             "file_upload",
+            "file_upload://uploads/x",
         )
 
 

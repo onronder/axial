@@ -4,14 +4,20 @@ import { createContext, useContext, useCallback, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { Source } from '@/types';
+import { Source, ScopeContext, ScopeCandidate } from '@/types';
 
 export interface Message {
     id: string;
-    role: 'user' | 'assistant' | 'system';
+    role: 'user' | 'assistant' | 'system' | 'clarification';
     content: string;
     sources?: Array<Source | string | Record<string, unknown>>;
     created_at: string;
+    /** Scope context when response is from a specific scope */
+    scope_context?: ScopeContext;
+    /** Clarification candidates when role is 'clarification' */
+    candidates?: ScopeCandidate[];
+    /** Original query for clarification messages */
+    original_query?: string;
 }
 
 export interface ChatConversation {

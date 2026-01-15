@@ -16,6 +16,7 @@ from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
 from core.exceptions import QuotaExceededError
 from api.v1.dependencies import validate_team_access, require_editor
+from api.v1.error_utils import raise_http_error
 from services.audit import audit_logger
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -273,7 +274,12 @@ async def generate_upload_url(
     # 2. Check quota before generating URL
     quota_check = await check_can_upload(user_id, body.file_size)
     if not quota_check["allowed"]:
-        raise HTTPException(status_code=403, detail=quota_check["reason"])
+        raise_http_error(
+            status.HTTP_403_FORBIDDEN,
+            "PLAN_LIMIT_EXCEEDED",
+            quota_check["reason"],
+            {"limits": quota_check.get("limits"), "usage": quota_check.get("usage")},
+        )
     try:
         check_admission(
             org_id=org_id,
@@ -290,7 +296,12 @@ async def generate_upload_url(
             resource_id=org_id,
             details={"reason": str(exc), "plan": plan_code, "file_size": body.file_size},
         )
-        raise HTTPException(status_code=403, detail=str(exc))
+        raise_http_error(
+            status.HTTP_403_FORBIDDEN,
+            "PLAN_LIMIT_EXCEEDED",
+            str(exc),
+            exc.details if isinstance(exc, QuotaExceededError) else None,
+        )
     
     # 3. Generate storage path (SECURITY: sanitize filename to prevent path traversal)
     safe_filename = sanitize_filename(body.filename)
@@ -376,7 +387,12 @@ async def ingest_file_reference(
             supabase.storage.from_(STAGING_BUCKET).remove([body.storage_path])
         except Exception:
             pass
-        raise HTTPException(status_code=403, detail=quota_check["reason"])
+        raise_http_error(
+            status.HTTP_403_FORBIDDEN,
+            "PLAN_LIMIT_EXCEEDED",
+            quota_check["reason"],
+            {"limits": quota_check.get("limits"), "usage": quota_check.get("usage")},
+        )
     try:
         check_admission(
             org_id=org_id,
@@ -386,7 +402,12 @@ async def ingest_file_reference(
         )
     except QuotaExceededError as exc:
         logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
-        raise HTTPException(status_code=403, detail=str(exc))
+        raise_http_error(
+            status.HTTP_403_FORBIDDEN,
+            "PLAN_LIMIT_EXCEEDED",
+            str(exc),
+            exc.details if isinstance(exc, QuotaExceededError) else None,
+        )
     
     if idempotency_key:
         existing_job = find_existing_ingestion_job(supabase, user_id, "file_upload", idempotency_key)
@@ -397,6 +418,7 @@ async def ingest_file_reference(
     provider = "file_upload"
     job_data = {
         "user_id": user_id,
+        "organization_id": org_id,
         "provider": provider,
         "total_files": 1,
         "processed_files": 0,

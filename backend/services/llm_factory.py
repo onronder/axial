@@ -52,6 +52,7 @@ class LLMFactory:
         temperature: float = 0,
         streaming: bool = False,
         max_tokens: Optional[int] = None,
+        allow_override: bool = False,
     ) -> tuple[BaseChatModel, dict]:
         """
         Smart Router: Returns (LLM, Metadata)
@@ -90,30 +91,36 @@ class LLMFactory:
         
         final_provider = provider
         final_model = model_name
-        
-        if target_tier == settings.MODEL_ALIAS_FAST:
-            final_provider = settings.SECONDARY_MODEL_PROVIDER
-            final_model = settings.SECONDARY_MODEL_NAME
-        elif target_tier == settings.MODEL_ALIAS_SMART:
-            final_provider = settings.PRIMARY_MODEL_PROVIDER
-            final_model = settings.PRIMARY_MODEL_NAME
-        else:
-            # Fallback if specific model requested directly (Legacy support)
-            if not final_provider or not final_model:
-                # Default to Fast if unknown
-                final_provider = settings.SECONDARY_MODEL_PROVIDER 
+        explicit_override = allow_override and final_provider and final_model
+
+        if not explicit_override:
+            if target_tier == settings.MODEL_ALIAS_FAST:
+                final_provider = settings.SECONDARY_MODEL_PROVIDER
                 final_model = settings.SECONDARY_MODEL_NAME
+            elif target_tier == settings.MODEL_ALIAS_SMART:
+                final_provider = settings.PRIMARY_MODEL_PROVIDER
+                final_model = settings.PRIMARY_MODEL_NAME
+            else:
+                # Fallback if specific model requested directly (Legacy support)
+                if not final_provider or not final_model:
+                    # Default to Fast if unknown
+                    final_provider = settings.SECONDARY_MODEL_PROVIDER 
+                    final_model = settings.SECONDARY_MODEL_NAME
 
         # --- 3. INSTANTIATE ---
         
         try:
             if final_provider == "openai":
                 llm = LLMFactory._create_openai(final_model, temperature, streaming, max_tokens)
+            elif final_provider == "grok":
+                llm = LLMFactory._create_grok(final_model, temperature, streaming, max_tokens)
             elif final_provider == "groq":
                 llm = LLMFactory._create_groq(final_model, temperature, streaming, max_tokens)
             else:
                 raise ValueError(f"Unsupported LLM provider: {final_provider}")
-                
+
+            metadata["provider"] = final_provider
+            metadata["model"] = final_model
             return llm, metadata
 
         except Exception as e:
@@ -125,6 +132,21 @@ class LLMFactory:
     def _create_openai(model_name, temperature, streaming, max_tokens) -> ChatOpenAI:
         kwargs = {"model": model_name, "temperature": temperature, "streaming": streaming, "api_key": settings.OPENAI_API_KEY}
         if max_tokens: kwargs["max_tokens"] = max_tokens
+        return ChatOpenAI(**kwargs)
+
+    @staticmethod
+    def _create_grok(model_name, temperature, streaming, max_tokens) -> ChatOpenAI:
+        if not settings.GROK_API_KEY:
+            raise ValueError("GROK_API_KEY not configured.")
+        kwargs = {
+            "model": model_name,
+            "temperature": temperature,
+            "streaming": streaming,
+            "api_key": settings.GROK_API_KEY,
+            "base_url": settings.GROK_BASE_URL,
+        }
+        if max_tokens:
+            kwargs["max_tokens"] = max_tokens
         return ChatOpenAI(**kwargs)
 
     @staticmethod

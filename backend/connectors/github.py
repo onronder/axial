@@ -49,6 +49,7 @@ from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, I
 from connectors.limits import connector_fetch_limit
 from core.db import get_supabase
 from core.config import settings
+from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
@@ -1101,6 +1102,7 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
             return
         
         repo, sha, path = parts
+        branch = self._get_repo_branch(config, repo)
         
         # Fetch raw content
         content = self._fetch_blob_raw(config, repo, sha)
@@ -1113,14 +1115,18 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         processed_ids.add(item_id)
         filename = path.rsplit("/", 1)[-1]
         
+        metadata = {
+            "source": "github",
+            "repository": repo,
+            "branch": branch,
+            "path": path,
+            "git_blob_sha": sha,
+        }
+        metadata["scope_id"] = build_scope_uri("github", metadata)
+
         yield SourceDocument(
             content=content,
-            metadata={
-                "source": "github",
-                "repository": repo,
-                "path": path,
-                "git_blob_sha": sha,
-            },
+            metadata=metadata,
             source_type=SourceType.GITHUB,
             source_id=item_id,
             filename=filename,
@@ -1218,15 +1224,19 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
                 filename = item_path.rsplit("/", 1)[-1]
                 file_count += 1
                 
+                metadata = {
+                    "source": "github",
+                    "repository": repo,
+                    "branch": branch,
+                    "path": item_path,
+                    "git_blob_sha": item_sha,
+                    "folder_id": folder_id,  # Track originating folder
+                }
+                metadata["scope_id"] = build_scope_uri("github", metadata)
+
                 yield SourceDocument(
                     content=content,
-                    metadata={
-                        "source": "github",
-                        "repository": repo,
-                        "path": item_path,
-                        "git_blob_sha": item_sha,
-                        "folder_id": folder_id,  # Track originating folder
-                    },
+                    metadata=metadata,
                     source_type=SourceType.GITHUB,
                     source_id=file_id,
                     filename=filename,
@@ -1432,4 +1442,3 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
 def get_github_connector() -> GitHubConnector:
     """Factory function to get a GitHubConnector instance."""
     return GitHubConnector()
-

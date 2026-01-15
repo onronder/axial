@@ -4,7 +4,7 @@ Team Management API Router
 Endpoints for managing teams and team members.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Query
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from api.v1.dependencies import validate_team_access, require_admin
@@ -183,7 +183,10 @@ async def update_team(
 
 
 @router.delete("/team")
-async def delete_team(user_id: str = Depends(get_current_user)):
+async def delete_team(
+    purge_data: bool = Query(default=True),
+    user_id: str = Depends(get_current_user),
+):
     """
     Delete the entire team.
     
@@ -192,7 +195,7 @@ async def delete_team(user_id: str = Depends(get_current_user)):
     - Revoke all member access
     
     Only team owners can delete teams.
-    The owner's data (documents, etc.) is NOT deleted - only team associations.
+    By default, org-scoped data is purged before deleting the team.
     """
     supabase = get_supabase()
     
@@ -210,6 +213,16 @@ async def delete_team(user_id: str = Depends(get_current_user)):
             )
         
         team_id = team["id"]
+
+        if purge_data:
+            from services.cleanup import cleanup_service, ActiveIngestionError
+            try:
+                await cleanup_service.execute_org_deletion(team_id)
+            except ActiveIngestionError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(exc),
+                ) from exc
         
         # Delete all team members first (respects FK constraints)
         supabase.table("team_members")\

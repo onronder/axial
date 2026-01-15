@@ -30,13 +30,55 @@ export interface Source {
     section?: string;
 }
 
+/**
+ * Scope context metadata returned by the backend
+ * Indicates which scope the response was based on
+ */
+export interface ScopeContext {
+    scope_id: string;
+    scope_name?: string;
+    scope_type?: string;
+    dominance_ratio: number;
+    classification: 'dominant' | 'contested' | 'explicit' | string;
+}
+
+/**
+ * Scope candidate for clarification response
+ * Backend returns these when context is ambiguous (HTTP 300)
+ */
+export interface ScopeCandidate {
+    id: string;
+    summary?: string;
+    type: string;
+}
+
+/**
+ * Clarification response from backend (HTTP 300)
+ * Indicates the user needs to select a scope
+ */
+export interface ClarificationResponse {
+    action: 'clarify_scope';
+    message: string;
+    candidates: ScopeCandidate[];
+    query: string;
+}
+
+/**
+ * Extended message type with scope awareness
+ */
 export interface Message {
     id: string;
-    role: 'user' | 'assistant' | 'system';
+    role: 'user' | 'assistant' | 'system' | 'clarification';
     content: string;
     timestamp?: string;
     created_at?: string;
     sources?: Array<Source | string | Record<string, unknown>>;  // Structured RAG sources
+    /** Scope context when response is from a specific scope */
+    scope_context?: ScopeContext;
+    /** Clarification candidates when role is 'clarification' */
+    candidates?: ScopeCandidate[];
+    /** Original query for clarification messages */
+    original_query?: string;
 }
 
 export interface ChatConversation {
@@ -45,6 +87,8 @@ export interface ChatConversation {
     created_at: string;
     updated_at?: string;
     metadata?: Record<string, unknown>;
+    /** Sticky scope - preferred scope for this conversation */
+    preferred_scope_id?: string;
 }
 
 // =============================================================================

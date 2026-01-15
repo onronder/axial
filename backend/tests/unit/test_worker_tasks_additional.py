@@ -51,7 +51,7 @@ def test_process_document_pipeline_handles_exception():
             job_id="job-1",
             file_status_id="status-1",
             source_type="file_upload",
-            metadata={"mime_type": "text/plain"},
+            metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://file.txt"},
         )
 
     assert result.success is False
@@ -104,7 +104,7 @@ def test_unified_ingest_task_dispatches_group_for_docs(monkeypatch):
             content="hello",
             size_bytes=5,
             mime_type="text/plain",
-            metadata={},
+            metadata={"storage_path": "uploads/a.txt", "scope_id": "file_upload://uploads/a.txt"},
             source_type="file_upload",
             source_id="src-a",
             parent_id=None,
@@ -114,7 +114,7 @@ def test_unified_ingest_task_dispatches_group_for_docs(monkeypatch):
             content=base64.b64encode(b"bin").decode("utf-8"),
             size_bytes=3,
             mime_type="application/octet-stream",
-            metadata={},
+            metadata={"storage_path": "uploads/b.bin", "scope_id": "file_upload://uploads/b.bin"},
             source_type="file_upload",
             source_id="src-b",
             parent_id=None,
@@ -184,7 +184,7 @@ def test_unified_ingest_task_handles_invalid_content(monkeypatch):
                 content=["not", "bytes"],
                 size_bytes=2,
                 mime_type="application/octet-stream",
-                metadata={},
+                metadata={"storage_path": "uploads/bad.bin", "scope_id": "file_upload://uploads/bad.bin"},
                 source_type="file_upload",
                 source_id="src-bad",
                 parent_id=None,
@@ -230,10 +230,12 @@ def test_process_file_task_skips_empty_pdf(monkeypatch):
 
     file_data = {
         "filename": "empty.pdf",
+        "organization_id": "org-1",
         "content_b64": base64.b64encode(b"content").decode("utf-8"),
         "size_bytes": 7,
         "mime_type": "application/pdf",
     }
+    scope_id = "file_upload://empty.pdf"
 
     parse_result = _make_parse_result(file_type="pdf", chunks=[])
 
@@ -248,6 +250,7 @@ def test_process_file_task_skips_empty_pdf(monkeypatch):
             file_data,
             "status-1",
             "file_upload",
+            scope_id,
         )
 
     assert result["status"] == "skipped"
@@ -277,10 +280,12 @@ def test_process_file_task_reuses_existing_document(monkeypatch):
 
     file_data = {
         "filename": "file.txt",
+        "organization_id": "org-1",
         "content_b64": base64.b64encode(b"content").decode("utf-8"),
         "size_bytes": 7,
         "mime_type": "text/plain",
     }
+    scope_id = "file_upload://file.txt"
 
     parse_result = _make_parse_result(file_type="txt", chunks=[_make_chunk()], total_tokens=1)
 
@@ -295,6 +300,7 @@ def test_process_file_task_reuses_existing_document(monkeypatch):
             file_data,
             "status-1",
             "file_upload",
+            scope_id,
         )
 
     # With async embedding pipeline, success returns "queued_embedding"
@@ -311,10 +317,12 @@ def test_process_file_task_dispatches_embedding_task(monkeypatch):
 
     file_data = {
         "filename": "file.txt",
+        "organization_id": "org-1",
         "content_b64": base64.b64encode(b"content").decode("utf-8"),
         "size_bytes": 7,
         "mime_type": "text/plain",
     }
+    scope_id = "file_upload://file.txt"
 
     parse_result = _make_parse_result(file_type="txt", chunks=[_make_chunk()], total_tokens=1)
 
@@ -329,6 +337,7 @@ def test_process_file_task_dispatches_embedding_task(monkeypatch):
             file_data,
             "status-1",
             "file_upload",
+            scope_id,
         )
 
     # With async embedding pipeline, returns "queued_embedding"
@@ -344,10 +353,12 @@ def test_process_file_task_handles_exception():
 
     file_data = {
         "filename": "file.txt",
+        "organization_id": "org-1",
         "content_b64": base64.b64encode(b"content").decode("utf-8"),
         "size_bytes": 7,
         "mime_type": "text/plain",
     }
+    scope_id = "file_upload://file.txt"
 
     # Simulate parsing failure
     with patch("worker.tasks.get_supabase", return_value=supabase), \
@@ -361,6 +372,7 @@ def test_process_file_task_handles_exception():
             file_data,
             "status-1",
             "file_upload",
+            scope_id,
         )
 
     assert result["status"] == "failed"

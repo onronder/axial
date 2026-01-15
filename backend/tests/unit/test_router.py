@@ -2,7 +2,7 @@
 Test Suite for LLM Router Service
 
 Production-grade tests for model tier enforcement:
-- BASIC tier users ALWAYS get Llama-3 (no GPT-4o leaks)
+- BASIC tier users ALWAYS get GPT-4o-mini (no GPT-4o leaks)
 - HYBRID tier users get smart routing based on complexity
 - PREMIUM tier users get GPT-4o priority
 
@@ -13,6 +13,7 @@ import pytest
 from unittest.mock import patch, Mock
 
 from services.router import LLMRouter, llm_router, ModelSelection
+from core.config import settings
 from core.quotas import QUOTA_LIMITS
 
 
@@ -35,11 +36,11 @@ class TestModelTierEnforcement:
     
     @pytest.mark.unit
     def test_basic_tier_always_returns_speed_model_for_simple_query(self, router):
-        """BASIC tier must use Llama-3 even for simple queries."""
+        """BASIC tier must use GPT-4o-mini even for simple queries."""
         result = router.select_model(plan="free", complexity="SIMPLE")
         
-        assert result.provider == "groq"
-        assert "llama" in result.model.lower()
+        assert result.provider == "openai"
+        assert "gpt-4o-mini" in result.model.lower()
         assert "Standard tier" in result.reason
     
     @pytest.mark.unit
@@ -50,21 +51,20 @@ class TestModelTierEnforcement:
         """
         result = router.select_model(plan="free", complexity="COMPLEX")
         
-        # Must NOT be GPT-4o
-        assert result.provider != "openai"
-        assert "gpt" not in result.model.lower()
+        # Must NOT be GPT-4o (the intelligence model)
+        assert "gpt-4o-mini" in result.model.lower(), f"Got {result.model} instead of gpt-4o-mini"
+        assert result.model.lower() != "gpt-4o", "BASIC tier should not get GPT-4o"
         
-        # Must be Llama-3
-        assert result.provider == "groq"
-        assert "llama" in result.model.lower()
+        # Must be GPT-4o-mini (the speed model)
+        assert result.provider == "openai"
     
     @pytest.mark.unit
     def test_starter_plan_uses_basic_tier(self, router):
-        """Starter plan should be on BASIC tier (Llama-3 only)."""
+        """Starter plan should be on BASIC tier (GPT-4o-mini only)."""
         result = router.select_model(plan="starter", complexity="COMPLEX")
         
-        assert result.provider == "groq"
-        assert "llama" in result.model.lower()
+        assert result.provider == "openai"
+        assert "gpt-4o-mini" in result.model.lower()
     
     @pytest.mark.unit
     def test_free_plan_complex_query_no_intelligence_leak(self, router):
@@ -77,7 +77,7 @@ class TestModelTierEnforcement:
             result = router.select_model(plan="free", complexity=complexity)
             
             # Should always be speed model
-            assert result.provider == "groq", f"Leaked to {result.provider} with complexity={complexity}"
+            assert result.provider == "openai", f"Leaked to {result.provider} with complexity={complexity}"
     
     # =========================================================================
     # HYBRID TIER TESTS (Pro plan - smart routing)
@@ -85,11 +85,11 @@ class TestModelTierEnforcement:
     
     @pytest.mark.unit
     def test_hybrid_tier_routes_simple_to_speed_model(self, router):
-        """HYBRID tier should use Llama-3 for simple queries (cost efficiency)."""
+        """HYBRID tier should use GPT-4o-mini for simple queries (cost efficiency)."""
         result = router.select_model(plan="pro", complexity="SIMPLE")
         
-        assert result.provider == "groq"
-        assert "llama" in result.model.lower()
+        assert result.provider == "openai"
+        assert "gpt-4o-mini" in result.model.lower()
         assert "speed" in result.reason.lower() or "simple" in result.reason.lower()
     
     @pytest.mark.unit
@@ -99,6 +99,17 @@ class TestModelTierEnforcement:
         
         assert result.provider == "openai"
         assert "gpt" in result.model.lower()
+
+    @pytest.mark.unit
+    def test_intent_keywords_force_smart_routing(self, router):
+        """Intent keywords should force smart routing on premium plans."""
+        result = router.select_model(
+            plan="pro",
+            complexity="SIMPLE",
+            query_text="Please refactor this module",
+        )
+        assert result.provider == "openai"
+        assert settings.PRIMARY_MODEL_NAME.lower() in result.model.lower()
     
     @pytest.mark.unit
     def test_hybrid_tier_complexity_classification_matters(self, router):
@@ -106,9 +117,12 @@ class TestModelTierEnforcement:
         simple_result = router.select_model(plan="pro", complexity="SIMPLE")
         complex_result = router.select_model(plan="pro", complexity="COMPLEX")
         
-        # Should be different models
-        assert simple_result.provider != complex_result.provider
-        assert simple_result.model != complex_result.model
+        # Should be different models (both from OpenAI but different model names)
+        assert simple_result.model != complex_result.model, \
+            f"Expected different models, got {simple_result.model} and {complex_result.model}"
+        # Simple should use speed model, complex should use intelligence model
+        assert "gpt-4o-mini" in simple_result.model.lower()
+        assert "gpt-4o" in complex_result.model.lower()
     
     # =========================================================================
     # PREMIUM TIER TESTS (Enterprise plan - best quality)
@@ -119,8 +133,8 @@ class TestModelTierEnforcement:
         """PREMIUM tier should use Hybrid routing (Speed for Simple, Intelligence for Complex)."""
         # Simple -> Speed
         result_simple = router.select_model(plan="enterprise", complexity="SIMPLE")
-        assert result_simple.provider == "groq"
-        assert "llama" in result_simple.model.lower()
+        assert result_simple.provider == "openai"
+        assert "gpt-4o-mini" in result_simple.model.lower()
         
         # Complex -> Intelligence
         result_complex = router.select_model(plan="enterprise", complexity="COMPLEX")
@@ -145,36 +159,47 @@ class TestModelTierEnforcement:
         result = router.select_model(plan="unknown_plan", complexity="COMPLEX")
         
         # Should NOT give premium access
-        assert result.provider == "groq"
-        assert "llama" in result.model.lower()
+        assert result.provider == "openai"
+        assert "gpt-4o-mini" in result.model.lower()
+
+    @pytest.mark.unit
+    def test_intent_keywords_respect_standard_tier(self, router):
+        """Keyword forcing should not bypass standard tier gates."""
+        result = router.select_model(
+            plan="free",
+            complexity="SIMPLE",
+            query_text="optimize the architecture",
+        )
+        assert result.provider == "openai"
+        assert "gpt-4o-mini" in result.model.lower()
 
     @pytest.mark.unit
     def test_unknown_plan_logs_and_defaults_when_limits_raise(self, monkeypatch, router):
         monkeypatch.setattr("services.router.get_plan_limits", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad plan")))
         result = router.select_model(plan="mystery", complexity="SIMPLE")
-        assert result.provider == "groq"
+        assert result.provider == "openai"
     
     @pytest.mark.unit
     def test_none_plan_defaults_to_basic_tier(self, router):
         """None plan should default to BASIC for security."""
         result = router.select_model(plan=None, complexity="COMPLEX")
         
-        assert result.provider == "groq"
-        assert "llama" in result.model.lower()
+        assert result.provider == "openai"
+        assert "gpt-4o-mini" in result.model.lower()
     
     @pytest.mark.unit
     def test_empty_plan_defaults_to_basic_tier(self, router):
         """Empty string plan should default to BASIC for security."""
         result = router.select_model(plan="", complexity="COMPLEX")
         
-        assert result.provider == "groq"
-        assert "llama" in result.model.lower()
+        assert result.provider == "openai"
+        assert "gpt-4o-mini" in result.model.lower()
 
     @pytest.mark.unit
     def test_get_model_for_plan_handles_limits_error(self, monkeypatch, router):
         monkeypatch.setattr("services.router.get_plan_limits", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad plan")))
         result = router.get_model_for_plan("unknown")
-        assert result.provider == "groq"
+        assert result.provider == "openai"
     
     @pytest.mark.unit
     def test_case_insensitive_plan_handling(self, router):
@@ -206,7 +231,7 @@ class TestModelTierEnforcement:
         result = router.select_model(plan="pro", complexity=None)
         
         # For HYBRID tier with SIMPLE, should use speed model
-        assert result.provider == "groq"
+        assert result.provider == "openai"
     
     # =========================================================================
     # MODEL SELECTION RESPONSE STRUCTURE
@@ -240,8 +265,8 @@ class TestGetModelForPlan:
         """get_model_for_plan defaults to speed model for efficiency."""
         result = router.get_model_for_plan("enterprise")
         
-        assert result.provider == "groq"
-        assert "llama" in result.model.lower()
+        assert result.provider == "openai"
+        assert "gpt-4o-mini" in result.model.lower()
     
     @pytest.mark.unit
     def test_non_premium_plan_gets_speed_model(self, router):
@@ -249,7 +274,7 @@ class TestGetModelForPlan:
         for plan in ["free", "starter", "pro"]:
             result = router.get_model_for_plan(plan)
             
-            assert result.provider == "groq", f"Plan {plan} got wrong provider"
+            assert result.provider == "openai", f"Plan {plan} got wrong provider"
 
 
 
@@ -300,3 +325,21 @@ class TestSingletonInstance:
         assert "model" in llm_router.SPEED_MODEL
         assert "provider" in llm_router.INTELLIGENCE_MODEL
         assert "model" in llm_router.INTELLIGENCE_MODEL
+
+
+class TestFallbackModels:
+    @pytest.fixture
+    def router(self):
+        return LLMRouter()
+
+    @pytest.mark.unit
+    def test_fallbacks_include_configured_providers(self, monkeypatch, router):
+        monkeypatch.setattr(settings, "GROK_API_KEY", "test-key")
+        monkeypatch.setattr(settings, "GROK_MODEL_NAME", "grok-test")
+        monkeypatch.setattr(settings, "GROQ_API_KEY", "test-key")
+        monkeypatch.setattr(settings, "GROQ_CHAT_MODEL_NAME", "llama-test")
+
+        fallbacks = router.get_fallback_models()
+        providers = {fallback.provider for fallback in fallbacks}
+        assert "grok" in providers
+        assert "groq" in providers

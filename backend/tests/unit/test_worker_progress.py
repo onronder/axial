@@ -139,10 +139,12 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://test.txt"
 
         dummy_result = MagicMock()
         dummy_result.file_type = "txt"
@@ -156,7 +158,7 @@ class TestIngestFileTaskProgress:
              patch("worker.tasks.insert_rows_with_retry"), \
              patch("worker.tasks.update_file_status", update_file_status), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload")
+            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload", scope_id)
 
         first_call = update_file_status.call_args_list[0][1]
         assert first_call["status"] == "uploading"
@@ -181,10 +183,12 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://test.txt"
 
         dummy_result = MagicMock()
         dummy_result.file_type = "txt"
@@ -201,7 +205,7 @@ class TestIngestFileTaskProgress:
              patch("worker.tasks.insert_rows_with_retry"), \
              patch("worker.tasks.update_file_status", update_file_status), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload")
+            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload", scope_id)
 
         assert any("chunks_processed" in call.kwargs for call in update_file_status.call_args_list)
     
@@ -224,10 +228,12 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://test.txt"
 
         dummy_result = MagicMock()
         dummy_result.file_type = "txt"
@@ -244,7 +250,7 @@ class TestIngestFileTaskProgress:
              patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
              patch("worker.tasks.update_file_status", update_file_status), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload")
+            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload", scope_id)
 
         # With async embedding pipeline, completion status is "embedding" (queued for embedding)
         assert any(call.kwargs.get("status") in ("completed", "embedding", "indexing") for call in update_file_status.call_args_list)
@@ -262,10 +268,12 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://test.txt"
 
         update_file_status = MagicMock()
 
@@ -273,7 +281,7 @@ class TestIngestFileTaskProgress:
              patch("services.parsers.DocumentProcessorFactory.process", side_effect=Exception("boom")), \
              patch("worker.tasks.update_file_status", update_file_status), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload")
+            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload", scope_id)
 
         assert any(call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list)
     
@@ -290,10 +298,12 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://test.txt"
 
         update_file_status = MagicMock()
 
@@ -301,7 +311,7 @@ class TestIngestFileTaskProgress:
              patch("services.parsers.DocumentProcessorFactory.process", side_effect=Exception("boom")), \
              patch("worker.tasks.update_file_status", update_file_status), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload")
+            process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload", scope_id)
 
         failure_calls = [call for call in update_file_status.call_args_list if call.kwargs.get("status") == "failed"]
         assert failure_calls
@@ -326,10 +336,12 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://test.txt"
 
         dummy_result = MagicMock()
         dummy_result.file_type = "txt"
@@ -344,7 +356,7 @@ class TestIngestFileTaskProgress:
              patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
              patch("worker.tasks.update_file_status"), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            result = process_file_task._orig_run.__func__(task, "user-1", None, file_data, "file-1", "file_upload")
+            result = process_file_task._orig_run.__func__(task, "user-1", None, file_data, "file-1", "file_upload", scope_id)
 
         # With async embedding pipeline, success returns "queued_embedding"
         assert result["status"] in ("success", "queued_embedding")
@@ -369,10 +381,12 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://test.txt"
 
         dummy_result = MagicMock()
         dummy_result.file_type = "txt"
@@ -387,7 +401,7 @@ class TestIngestFileTaskProgress:
              patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
              patch("worker.tasks.update_file_status"), \
              patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            result = process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload")
+            result = process_file_task._orig_run.__func__(task, "user-1", "job-1", file_data, "file-1", "file_upload", scope_id)
 
         # With async embedding pipeline, success returns "queued_embedding"
         assert result["status"] in ("success", "queued_embedding")

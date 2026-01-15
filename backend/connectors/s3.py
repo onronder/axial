@@ -66,6 +66,7 @@ from connectors.enhanced import (
 )
 from core.db import get_supabase
 from core.security import decrypt_token
+from core.scopes import build_scope_uri
 
 logger = logging.getLogger(__name__)
 
@@ -175,8 +176,8 @@ class S3Connector(EnhancedConnector, BaseConnector):
         Validate S3 configuration.
         
         Validation Steps:
-        1. Check required fields (access_key, secret, region, bucket, prefix)
-        2. Validate prefix is non-empty (COST PROTECTION)
+        1. Check required fields (access_key, secret, region, bucket)
+        2. Validate prefix is non-empty (COST PROTECTION - raises ValueError)
         3. Attempt HEAD bucket to verify credentials and bucket access
         
         Cost: 1 HEAD request (essentially free)
@@ -187,14 +188,14 @@ class S3Connector(EnhancedConnector, BaseConnector):
         if not isinstance(config, dict):
             return False
 
-        # Required fields
-        required = ["access_key_id", "secret_access_key", "region", "bucket_name", "prefix"]
+        # Required fields (excluding prefix, handled separately with ValueError)
+        required = ["access_key_id", "secret_access_key", "region", "bucket_name"]
         for field in required:
             if not config.get(field):
                 logger.warning(f"❌ [S3] Missing required field: {field}")
                 return False
 
-        # COST PROTECTION: Prefix is mandatory
+        # COST PROTECTION: Prefix is mandatory - this MUST raise to prevent full bucket scans
         prefix = config.get("prefix", "").strip()
         if not prefix:
             raise ValueError(
@@ -562,6 +563,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
         client = self._get_s3_client(resolved)
 
         bucket = resolved["bucket_name"]
+        prefix = self._normalize_prefix(resolved["prefix"])
 
         logger.info(f"📥 [S3Connector] Fetching {len(item_ids)} object(s)")
 
@@ -613,18 +615,22 @@ class S3Connector(EnhancedConnector, BaseConnector):
                 )
                 
                 # Build source document with deterministic ID
+                metadata = {
+                    "source": "s3",
+                    "bucket": bucket,
+                    "prefix": prefix,
+                    "key": key,
+                    "region": resolved.get("region", DEFAULT_REGION),
+                    "storage_class": storage_class,
+                    "last_modified": last_modified.isoformat() if last_modified else None,
+                    "etag": etag,
+                    "content_type": content_type,
+                }
+                metadata["scope_id"] = build_scope_uri("s3", metadata)
+
                 yield SourceDocument(
                     content=content,
-                    metadata={
-                        "source": "s3",
-                        "bucket": bucket,
-                        "key": key,
-                        "region": resolved.get("region", DEFAULT_REGION),
-                        "storage_class": storage_class,
-                        "last_modified": last_modified.isoformat() if last_modified else None,
-                        "etag": etag,
-                        "content_type": content_type,
-                    },
+                    metadata=metadata,
                     source_type=SourceType.S3,
                     source_id=self._build_canonical_source_id(bucket, key),
                     filename=os.path.basename(key),

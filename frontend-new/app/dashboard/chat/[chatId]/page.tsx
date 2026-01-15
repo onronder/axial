@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useChatHistory, Message } from "@/hooks/useChatHistory";
 import { useDocumentCount } from "@/hooks/useDocumentCount";
@@ -8,9 +8,10 @@ import { useProfile } from "@/hooks/useProfile";
 import { ChatArea } from "@/components/chat/ChatArea";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { Loader2 } from "lucide-react";
-import { generateSmartTitle, streamChatResponse } from "@/lib/chat-utils";
+import { generateSmartTitle, streamChatResponse, isChatApiError } from "@/lib/chat-utils";
 import { ModelId } from "@/lib/types";
-import { Source } from "@/types";
+import { Source, ScopeContext } from "@/types";
+import { useToast } from "@/hooks/use-toast";
 
 /**
  * Unified ChatPage handles both:
@@ -27,6 +28,7 @@ export default function ChatPage() {
     const { getMessagesById, createNewChat } = useChatHistory();
     const { isEmpty: hasNoDocuments, isLoading: docCountLoading } = useDocumentCount();
     const { profile, isLoading: profileLoading } = useProfile();
+    const { toast } = useToast();
 
     // State
     const [messages, setMessages] = useState<Message[]>([]);
@@ -35,6 +37,40 @@ export default function ChatPage() {
     const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [selectedModel, setSelectedModel] = useState<ModelId>('fast'); // Default to Fast
+    
+    // Universal Context state
+    const [isResending, setIsResending] = useState(false);
+    const [currentScopeId, setCurrentScopeId] = useState<string | null>(null);
+
+    const getChatErrorDisplay = (code?: string, fallback?: string) => {
+        switch (code) {
+            case 'LLM_TIMEOUT':
+                return {
+                    title: 'Model timeout',
+                    description: 'The model took too long to respond. Please try again.',
+                };
+            case 'PLAN_LIMIT_EXCEEDED':
+                return {
+                    title: 'Plan limit reached',
+                    description: 'You have reached your current plan limit. Upgrade to continue.',
+                };
+            case 'INTEGRATION_AUTH_FAILED':
+                return {
+                    title: 'Integration expired',
+                    description: 'Your integration needs to be reconnected to continue.',
+                };
+            case 'CONNECTOR_UNAVAILABLE':
+                return {
+                    title: 'Service unavailable',
+                    description: 'The connector is temporarily unavailable. Please retry shortly.',
+                };
+            default:
+                return {
+                    title: 'Chat error',
+                    description: fallback || 'Something went wrong. Please try again.',
+                };
+        }
+    };
 
     const normalizeSources = (rawSources: unknown): Source[] => {
         if (!Array.isArray(rawSources)) return [];
@@ -100,8 +136,8 @@ export default function ChatPage() {
 
 
 
-    // Handle sending a message
-    const handleSendMessage = async (content: string) => {
+    // Handle sending a message (with optional scope selection)
+    const handleSendMessage = async (content: string, scopeId?: string) => {
         let conversationId = isNewChat ? null : chatId;
 
         // For new chats, create the conversation first
@@ -120,34 +156,41 @@ export default function ChatPage() {
             }
         }
 
-        // Add user message to UI immediately
-        const userMessage: Message = {
-            id: Date.now().toString(),
-            role: "user",
-            content,
-            created_at: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, userMessage]);
+        // Add user message to UI immediately (only if not re-sending)
+        if (!scopeId) {
+            const userMessage: Message = {
+                id: Date.now().toString(),
+                role: "user",
+                content,
+                created_at: new Date().toISOString(),
+            };
+            setMessages(prev => [...prev, userMessage]);
+        }
+        
         setIsTyping(true);
 
         // Prepare placeholder for AI response
         const aiMessageId = (Date.now() + 1).toString();
         let aiContent = "";
         let aiSources: Source[] = [];
+        let aiScopeContext: ScopeContext | undefined;
 
         // Only set streaming message if NOT using simulateStreaming (which we are deleting)
         setStreamingMessage("");
 
         try {
             // Stream the response
+            const resolvedScopeId =
+                scopeId === '__all__' ? '__all__' : scopeId || currentScopeId || undefined;
             const generator = streamChatResponse({
                 query: content,
                 conversation_id: conversationId,
                 history: messages.slice(-10).map(m => ({
-                    role: m.role,
+                    role: m.role === 'clarification' ? 'system' : m.role,
                     content: m.content
                 })),
-                model: selectedModel
+                model: selectedModel,
+                scope_id: resolvedScopeId,
             });
 
             for await (const event of generator) {
@@ -156,8 +199,46 @@ export default function ChatPage() {
                     setStreamingMessage(aiContent);
                 } else if (event.type === 'sources') {
                     aiSources = normalizeSources(event.sources);
+                } else if (event.type === 'scope_context') {
+                    aiScopeContext = event.scope_context;
+                    // Set sticky scope for conversation
+                    if (event.scope_context.scope_id) {
+                        setCurrentScopeId(event.scope_context.scope_id);
+                    }
+                } else if (event.type === 'clarification') {
+                    // Handle HTTP 300 clarification request
+                    console.log('🔍 [ChatPage] Clarification needed:', event.data.candidates.length, 'scopes');
+                    setIsTyping(false);
+                    setStreamingMessage(null);
+                    
+                    // Add clarification message to chat
+                    const clarificationMessage: Message = {
+                        id: (Date.now() + 1).toString(),
+                        role: "clarification",
+                        content: event.data.message,
+                        created_at: new Date().toISOString(),
+                        candidates: event.data.candidates,
+                        original_query: content,
+                    };
+                    setMessages(prev => [...prev, clarificationMessage]);
+                    return; // Exit early - don't add assistant message
                 } else if (event.type === 'error') {
-                    throw new Error(event.message);
+                    const display = getChatErrorDisplay(event.error, event.message);
+                    toast({
+                        title: display.title,
+                        description: display.description,
+                        variant: 'destructive',
+                    });
+                    setIsTyping(false);
+                    setStreamingMessage(null);
+                    const errorMessage: Message = {
+                        id: (Date.now() + 1).toString(),
+                        role: "assistant",
+                        content: display.description,
+                        created_at: new Date().toISOString(),
+                    };
+                    setMessages(prev => [...prev, errorMessage]);
+                    return;
                 }
             }
 
@@ -166,29 +247,69 @@ export default function ChatPage() {
             setStreamingMessage(null);
 
             // Add final AI message to state
-        const aiMessage: Message = {
-            id: aiMessageId,
-            role: "assistant",
-            content: aiContent,
-            created_at: new Date().toISOString(),
-            sources: aiSources
-        };
-        setMessages(prev => [...prev, aiMessage]);
+            const aiMessage: Message = {
+                id: aiMessageId,
+                role: "assistant",
+                content: aiContent,
+                created_at: new Date().toISOString(),
+                sources: aiSources,
+                scope_context: aiScopeContext,
+            };
+            setMessages(prev => [...prev, aiMessage]);
 
         } catch (error) {
             console.error('💬 [ChatPage] Chat API error:', error);
             setIsTyping(false);
             setStreamingMessage(null);
 
+            const display = isChatApiError(error)
+                ? getChatErrorDisplay(error.code, error.message)
+                : getChatErrorDisplay(undefined, error instanceof Error ? error.message : undefined);
+
+            toast({
+                title: display.title,
+                description: display.description,
+                variant: 'destructive',
+            });
+
             const errorMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: "assistant",
-                content: "Sorry, I encountered an error. Please try again.",
+                content: display.description,
                 created_at: new Date().toISOString(),
             };
             setMessages(prev => [...prev, errorMessage]);
         }
     };
+
+    /**
+     * Handle scope selection from clarification card.
+     * Re-sends the original query with the selected scope.
+     */
+    const handleSelectScope = useCallback(async (scopeId: string, originalQuery: string) => {
+        console.log('🎯 [ChatPage] Scope selected:', scopeId);
+        setIsResending(true);
+        
+        // Remove the clarification message from the UI
+        setMessages(prev => prev.filter(m => m.role !== 'clarification'));
+        
+        // Handle "search all" option
+        const effectiveScopeId = scopeId === '__all__' ? '__all__' : scopeId;
+        
+        // Set sticky scope
+        if (scopeId === '__all__') {
+            setCurrentScopeId(null);
+        } else if (effectiveScopeId) {
+            setCurrentScopeId(effectiveScopeId);
+        }
+        
+        try {
+            // Re-send the query with the selected scope
+            await handleSendMessage(originalQuery, effectiveScopeId);
+        } finally {
+            setIsResending(false);
+        }
+    }, [handleSendMessage]);
 
     // Loading state for existing chats
     if (isLoading) {
@@ -199,18 +320,20 @@ export default function ChatPage() {
         );
     }
 
-    const isDisabled = isTyping || streamingMessage !== null;
+    const isDisabled = isTyping || streamingMessage !== null || isResending;
 
     return (
         <div className="flex h-full flex-col">
             <ChatArea
                 messages={messages}
                 onSendMessage={handleSendMessage}
+                onSelectScope={handleSelectScope}
                 isTyping={isTyping}
                 streamingMessage={streamingMessage}
                 disabled={isDisabled}
                 selectedModel={selectedModel}
                 onModelSelect={setSelectedModel}
+                isResending={isResending}
             />
 
             {/* Onboarding Modal for new users */}

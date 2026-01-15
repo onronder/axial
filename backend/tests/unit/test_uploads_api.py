@@ -411,20 +411,19 @@ class TestDuplicateDetection:
     
     @pytest.mark.asyncio
     async def test_check_duplicates_invalid_hash_length(self):
-        """Hash with wrong length raises HTTPException."""
-        request = make_request()
-        body = uploads_module.DuplicateCheckRequest(
-            content_hash="abc",  # Too short, will fail validation
-            filename="report.pdf",
-            file_size=1234567,
-        )
+        """Hash with wrong length raises ValidationError at Pydantic level."""
+        from pydantic import ValidationError
         
-        with patch("api.v1.uploads.get_supabase", return_value=MagicMock()):
-            with pytest.raises(HTTPException) as exc:
-                await uploads_module.check_duplicates(request, body, user_id=TEST_USER_ID)
+        # Pydantic validates at model instantiation time, not at API boundary
+        with pytest.raises(ValidationError) as exc:
+            uploads_module.DuplicateCheckRequest(
+                content_hash="abc",  # Too short, will fail validation
+                filename="report.pdf",
+                file_size=1234567,
+            )
         
-        assert exc.value.status_code == 400
-        assert "64-character" in exc.value.detail
+        # Verify the error mentions string length
+        assert "64 characters" in str(exc.value) or "string_too_short" in str(exc.value)
     
     @pytest.mark.asyncio
     async def test_check_duplicates_invalid_hash_hex(self):

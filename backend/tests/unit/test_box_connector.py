@@ -391,7 +391,8 @@ class TestMimeTypeGuessing:
         """Should fallback to octet-stream for unknown."""
         connector = BoxConnector()
         
-        assert connector._guess_mime_type("file.xyz") == "application/octet-stream"
+        # Use truly unknown extensions that aren't in mimetypes database
+        assert connector._guess_mime_type("file.unknownext12345") == "application/octet-stream"
         assert connector._guess_mime_type(None) == "application/octet-stream"
 
 

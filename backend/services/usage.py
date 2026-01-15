@@ -7,11 +7,13 @@ vs. what they have consumed.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel
 
 from core.db import get_supabase
+from core.exceptions import QuotaExceededError
 from core.quotas import PlanLimits, get_plan_limits, format_bytes
 
 logger = logging.getLogger(__name__)
@@ -239,13 +241,158 @@ async def check_can_upload(
             "usage": usage.model_dump(),
             "limits": limits.model_dump()
         }
-    
+
     return {
         "allowed": True,
         "reason": None,
         "usage": usage.model_dump(),
-        "limits": limits.model_dump()
+        "limits": limits.model_dump(),
     }
+
+
+async def _get_org_llm_usage(supabase, org_id: str) -> int:
+    try:
+        res = (
+            supabase.table("org_usage")
+            .select("llm_tokens_used")
+            .eq("org_id", org_id)
+            .limit(1)
+            .execute()
+        )
+        row = (res.data or [{}])[0]
+        return int(row.get("llm_tokens_used") or 0)
+    except Exception as exc:
+        logger.error("❌ [Usage] Failed to fetch LLM usage for %s: %s", org_id, exc)
+        raise
+
+
+async def _get_org_llm_balance_override(supabase, org_id: str) -> Optional[int]:
+    try:
+        res = (
+            supabase.table("teams")
+            .select("llm_token_balance")
+            .eq("id", org_id)
+            .limit(1)
+            .execute()
+        )
+        row = (res.data or [{}])[0]
+        balance = row.get("llm_token_balance")
+        if balance is None:
+            return None
+        return int(balance)
+    except Exception as exc:
+        logger.error("❌ [Usage] Failed to fetch LLM balance for %s: %s", org_id, exc)
+        raise
+
+
+async def get_org_llm_balance(org_id: str, plan_code: Optional[str]) -> dict:
+    """
+    Return remaining LLM tokens for an org.
+
+    If teams.llm_token_balance is set, treat it as the remaining balance.
+    Otherwise compute from plan limit - org_usage.llm_tokens_used.
+    """
+    supabase = get_supabase()
+    balance_override = await _get_org_llm_balance_override(supabase, org_id)
+    tokens_used = await _get_org_llm_usage(supabase, org_id)
+    limits = get_plan_limits(plan_code or "free")
+    plan_limit = int(limits.max_llm_tokens or 0)
+
+    if balance_override is not None:
+        remaining = max(0, balance_override)
+        return {
+            "org_id": org_id,
+            "balance": remaining,
+            "tokens_used": tokens_used,
+            "limit": None,
+            "source": "balance_override",
+        }
+
+    remaining = max(0, plan_limit - tokens_used)
+    return {
+        "org_id": org_id,
+        "balance": remaining,
+        "tokens_used": tokens_used,
+        "limit": plan_limit,
+        "source": "plan_limit",
+    }
+
+
+async def check_llm_quota(
+    org_id: str,
+    plan_code: Optional[str],
+    required_tokens: Optional[int] = None,
+) -> dict:
+    """
+    Ensure the org has remaining LLM token balance before calling any model.
+    """
+    usage = await get_org_llm_balance(org_id, plan_code)
+    balance = int(usage.get("balance") or 0)
+    required = max(0, int(required_tokens or 0))
+
+    if balance <= 0 or (required and balance < required):
+        raise QuotaExceededError(
+            "LLM token quota exceeded.",
+            {
+                "balance": balance,
+                "required": required,
+                "limit": usage.get("limit"),
+                "used": usage.get("tokens_used"),
+                "plan": plan_code,
+                "organization_id": org_id,
+            },
+        )
+    return usage
+
+
+async def record_llm_usage(
+    org_id: str,
+    tokens_used: int,
+    plan_code: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> None:
+    """
+    Increment LLM token usage for the org and decrement balance overrides.
+    """
+    if tokens_used <= 0:
+        return
+    supabase = get_supabase()
+    tokens_used = int(tokens_used)
+
+    current_used = await _get_org_llm_usage(supabase, org_id)
+    next_used = current_used + tokens_used
+
+    try:
+        supabase.table("org_usage").upsert(
+            {
+                "org_id": org_id,
+                "llm_tokens_used": next_used,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="org_id",
+        ).execute()
+        logger.info(
+            "✅ [Usage] LLM usage org=%s tokens+=%s provider=%s model=%s",
+            org_id,
+            tokens_used,
+            provider or "unknown",
+            model or "unknown",
+        )
+    except Exception as exc:
+        logger.error("❌ [Usage] Failed to update LLM usage for %s: %s", org_id, exc)
+        raise
+
+    try:
+        balance_override = await _get_org_llm_balance_override(supabase, org_id)
+        if balance_override is not None:
+            next_balance = max(0, int(balance_override) - tokens_used)
+            supabase.table("teams").update(
+                {"llm_token_balance": next_balance}
+            ).eq("id", org_id).execute()
+    except Exception as exc:
+        logger.error("❌ [Usage] Failed to decrement LLM balance for %s: %s", org_id, exc)
+        raise
 
 
 async def check_feature_access(user_id: UUID, feature: str) -> dict:

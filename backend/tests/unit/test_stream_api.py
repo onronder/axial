@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch, AsyncMock
 
 import pytest
 
@@ -10,6 +10,16 @@ from api.v1.stream import (
     stream_chat,
     stream_generator,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_org_id():
+    with patch(
+        "api.v1.stream.team_service.get_organization_id",
+        new_callable=AsyncMock,
+        return_value="org-1",
+    ):
+        yield
 
 
 @pytest.mark.asyncio

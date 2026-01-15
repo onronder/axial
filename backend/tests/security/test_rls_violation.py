@@ -64,6 +64,7 @@ def test_authenticated_user_cannot_insert_documents_directly():
     # 4. Attempt to Insert a Fake Record
     fake_document = {
         "user_id": user_id,  # Trying to insert for themselves
+        "organization_id": user_id,
         "title": "HACKED DOCUMENT",
         "source_type": "file_upload",
         "metadata": {"origin": "security_test"},

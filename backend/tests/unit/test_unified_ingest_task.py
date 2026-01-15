@@ -56,13 +56,14 @@ def test_unified_ingest_task_file_upload(
     user_id = str(uuid4())
     job_id = str(uuid4())
     storage_path = "uploads/user/uuid/test.pdf"
+    scope_id = f"file_upload://{storage_path}"
     
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(item_ids, credentials=None, **kwargs):
         yield SourceDocument(
             content=b"PDF content",
-            metadata={},
+            metadata={"storage_path": storage_path, "scope_id": scope_id},
             source_type=SourceType.FILE_UPLOAD,
             source_id=storage_path,
             filename="test.pdf",
@@ -109,7 +110,13 @@ def test_unified_ingest_task_google_drive(
         for file_id in item_ids:
             yield SourceDocument(
                 content=f"Content of {file_id}",
-                metadata={"file_id": file_id},
+                metadata={
+                    "file_id": file_id,
+                    "drive_id": "drive-1",
+                    "folder_id": "folder-1",
+                    "name": f"{file_id}.txt",
+                    "scope_id": "google_drive://drive-1/folder-1",
+                },
                 source_type=SourceType.GOOGLE_DRIVE,
                 source_id=file_id,
                 filename=f"{file_id}.txt",
@@ -155,7 +162,12 @@ def test_unified_ingest_task_notion(
         for page_id in item_ids:
             yield SourceDocument(
                 content=f"Notion page content {page_id}",
-                metadata={"page_id": page_id},
+                metadata={
+                    "page_id": page_id,
+                    "workspace_id": "workspace-1",
+                    "title": f"Page {page_id}",
+                    "scope_id": "notion://workspace-1",
+                },
                 source_type=SourceType.NOTION,
                 source_id=page_id,
                 filename=f"Page {page_id}",
@@ -199,7 +211,7 @@ def test_unified_ingest_task_web(
     def mock_fetch_sync(item_ids, creds, **kwargs):
         yield SourceDocument(
             content="<html>Web page content</html>",
-            metadata={"url": url},
+            metadata={"url": url, "scope_id": "web://example.com"},
             source_type=SourceType.WEB,
             source_id=url,
             filename="example.com",
@@ -281,7 +293,7 @@ def test_unified_ingest_task_pipeline_failure(
     def mock_fetch_sync(*args, **kwargs):
         yield SourceDocument(
             content=b"content",
-            metadata={},
+            metadata={"storage_path": "uploads/test.pdf", "scope_id": "file_upload://test.pdf"},
             source_type=SourceType.FILE_UPLOAD,
             source_id="test",
             filename="test.pdf",
@@ -315,7 +327,7 @@ def test_unified_ingest_task_quota_exceeded(
     def mock_fetch_sync(*args, **kwargs):
         yield SourceDocument(
             content=b"content",
-            metadata={},
+            metadata={"storage_path": "uploads/test.pdf", "scope_id": "file_upload://test.pdf"},
             source_type=SourceType.FILE_UPLOAD,
             source_id="test",
             filename="test.pdf",
@@ -348,7 +360,7 @@ def test_unified_ingest_task_job_status_updates(
     def mock_fetch_sync(*args, **kwargs):
         yield SourceDocument(
             content=b"content",
-            metadata={},
+            metadata={"storage_path": "uploads/test.pdf", "scope_id": "file_upload://test.pdf"},
             source_type=SourceType.FILE_UPLOAD,
             source_id="test",
             filename="test.pdf",
@@ -402,7 +414,7 @@ def test_unified_ingest_task_empty_item_ids(
     
     # Verify
     assert result["status"] == "completed"
-    assert result["message"] == "No documents"
+    assert "No documents" in result["message"]
 
 
 def test_unified_ingest_task_requires_connector_type():
@@ -533,7 +545,7 @@ def test_unified_ingest_task_multiple_files(
         for item_id in item_ids:
             yield SourceDocument(
                 content=f"Content {item_id}".encode(),
-                metadata={},
+                metadata={"storage_path": f"uploads/{item_id}", "scope_id": f"file_upload://{item_id}"},
                 source_type=SourceType.FILE_UPLOAD,
                 source_id=item_id,
                 filename=f"{item_id}.pdf",

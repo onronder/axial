@@ -84,14 +84,20 @@ class Settings(BaseSettings):
     PRIMARY_MODEL_PROVIDER: str = "openai"
     PRIMARY_MODEL_NAME: str = "gpt-4o"
     
-    SECONDARY_MODEL_PROVIDER: str = "groq"
-    SECONDARY_MODEL_NAME: str = "llama-3.3-70b-versatile"
+    SECONDARY_MODEL_PROVIDER: str = "openai"
+    SECONDARY_MODEL_NAME: str = "gpt-4o-mini"
     
     GUARDRAIL_MODEL_PROVIDER: str = "groq"
     GUARDRAIL_MODEL_NAME: str = "llama-3.1-8b-instant"
     
     # Groq API Key
     GROQ_API_KEY: Optional[str] = None
+
+    # Grok (xAI) OpenAI-compatible API
+    GROK_API_KEY: Optional[str] = None
+    GROK_BASE_URL: str = "https://api.x.ai/v1"
+    GROK_MODEL_NAME: Optional[str] = None
+    GROQ_CHAT_MODEL_NAME: str = "llama-3.3-70b-versatile"
     
     RAG_SIMILARITY_THRESHOLD: float = 0.50 
     
@@ -148,12 +154,21 @@ class Settings(BaseSettings):
     
     LIMITS_STARTER_FILES: int = 50
     LIMITS_PRO_FILES: int = 2000
+    LIMITS_STARTER_SCOPES: int = 5
+    LIMITS_PRO_SCOPES: int = 100
+    LIMITS_ENTERPRISE_SCOPES: int = 1000
     
     LIMITS_STARTER_MB: int = 100
     LIMITS_PRO_MB: int = 10240 
+    LIMITS_STARTER_LLM_TOKENS: int = 1000000
+    LIMITS_PRO_LLM_TOKENS: int = 10000000
+    LIMITS_ENTERPRISE_LLM_TOKENS: int = 100000000
     
     MSG_UPSELL_SMART: str = "⚡ This answer used 'Axio Fast'. Upgrade to Pro for 'Axio Pro' intelligence."
     MSG_UPSELL_FILES: str = "🔒 You have reached your file limit. Upgrade to Pro for 10GB storage."
+
+    # Optional load balancing across LLM providers
+    LLM_LOAD_BALANCE: bool = False
     
     # =========================================================================
     # Payment Integration (Polar.sh)

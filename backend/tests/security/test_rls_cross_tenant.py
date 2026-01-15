@@ -59,12 +59,14 @@ def test_rls_blocks_cross_tenant_document_reads():
     service_client = create_client(supabase_url, supabase_service_key)
     user_a_id = str(uuid.uuid4())
     user_b_id = str(uuid.uuid4())
+    organization_id = user_a_id
 
     doc_id = None
     try:
         insert_result = service_client.table("documents").insert(
             {
                 "user_id": user_a_id,
+                "organization_id": organization_id,
                 "title": "RLS cross-tenant test",
                 "source_type": "file_upload",
                 "metadata": {"origin": "security_test"},

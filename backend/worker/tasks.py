@@ -6,6 +6,7 @@ These run in a separate worker process to avoid blocking the FastAPI server.
 """
 
 import logging
+import asyncio
 import inspect
 import json
 import base64
@@ -18,6 +19,7 @@ from core.celery_app import celery_app
 from core.db import get_supabase
 from core.db_utils import insert_rows_with_retry, delete_rows_with_retry
 from core.config import settings
+from core.exceptions import QuotaExceededError
 from core.hashing import compute_content_hash
 from core.ingestion_utils import normalize_provider, normalize_source_type
 from core.job_counters import (
@@ -41,10 +43,13 @@ from services.parsers import DocumentProcessorFactory
 from services.email import email_service
 from connectors import get_connector
 from connectors.base import ConnectorAuthError
+from connectors.enhanced import SourceDocument
 from connectors.limits import connector_fetch_limit
 from services.embeddings import generate_embeddings_batch_sync
 from services.malware import scan_content, MalwareScanException
+from services.scope_identity import synthesize_and_save_identity
 from services.audit import audit_logger
+from services.team_service import team_service
 try:
     from core.metrics import (
         job_counters_missing,
@@ -399,6 +404,7 @@ def _record_crawl_outcome_and_maybe_finalize(
 def ingest_document_batched(
     supabase,
     user_id: str,
+    organization_id: str,
     doc_title: str,
     source_type: str,
     metadata: dict,
@@ -433,6 +439,7 @@ def ingest_document_batched(
     DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))  # Configurable batch size to prevent timeouts
     source_type = normalize_source_type(source_type) or source_type
     metadata = metadata or {}
+    scope_id = metadata.get("scope_id")
     
     # Step 1: Create parent document record FIRST
     # NOTE: Using actual column names from migrations:
@@ -440,10 +447,13 @@ def ingest_document_batched(
     # - chunk_count doesn't exist in schema
     doc_data = {
         "user_id": user_id,
+        "organization_id": organization_id,
+        "team_id": organization_id,
         "title": doc_title,
         "source_type": source_type,
         "source_url": source_url,
         "metadata": metadata,
+        "scope_id": scope_id,
         "file_size_bytes": file_size_bytes,
         "content_hash": content_hash,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1151,9 +1161,15 @@ def process_document_pipeline(
             **(result.metadata or {}),
         }
         
+        # Extract organization_id from metadata
+        organization_id = (metadata or {}).get("organization_id")
+        if not organization_id:
+            raise ValueError("organization_id is required in metadata for ingestion")
+        
         doc_id = ingest_document_batched(
             supabase=supabase,
             user_id=user_id,
+            organization_id=organization_id,
             doc_title=filename,
             source_type=source_type,
             metadata=doc_metadata,
@@ -1210,6 +1226,7 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
         # Extract user_id and job_id from kwargs
         user_id = kwargs.get('user_id')
         job_id = kwargs.get('job_id')
+        supabase = get_supabase()
         
         # Log to DLQ with full context
         log_task_failure(
@@ -1224,6 +1241,16 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
         )
         
         logger.info(f"📥 [DLQ] Logged failed task {task_id} to dead letter queue")
+
+        if user_id and job_id:
+            create_notification(
+                supabase,
+                user_id,
+                "Ingestion Failed",
+                "Ingestion failed after multiple retries. Please review the job details.",
+                "error",
+                {"job_id": job_id, "task_id": task_id, "error": str(exc)[:300]},
+            )
         
     except Exception as e:
         logger.error(f"❌ [DLQ] Failed to log task failure to DLQ: {e}")
@@ -1300,6 +1327,10 @@ def unified_ingest_task(
     logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}, Plan: {plan_code or 'starter'}")
     
     supabase = get_supabase()
+    org_scope = _resolve_org_scope(supabase, user_id)
+    organization_id = org_scope.get("team_id") or user_id
+    if not org_scope.get("team_id"):
+        logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id")
     
     try:
         # Store Celery task ID for cancellation support
@@ -1312,6 +1343,12 @@ def unified_ingest_task(
         
         # Update job status
         update_job_status(supabase, job_id, "processing")
+        try:
+            supabase.table("ingestion_jobs").update({
+                "organization_id": organization_id,
+            }).eq("id", job_id).execute()
+        except Exception as exc:
+            logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Failed to set organization_id: {exc}")
 
         if raw_connector_type and raw_connector_type != connector_type:
             try:
@@ -1436,6 +1473,10 @@ def unified_ingest_task(
                 source_url = doc_metadata.get("source_url") or doc_metadata.get("url")
                 doc_source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
                 size_bytes = doc.size_bytes or doc_metadata.get("file_size") or doc_metadata.get("size") or 0
+                scope_id = doc_metadata.get("scope_id")
+                if not scope_id:
+                    raise ValueError("scope_id is required for ingestion")
+                scope_id = str(scope_id)
 
                 file_data = {
                     "filename": doc.filename,
@@ -1444,6 +1485,8 @@ def unified_ingest_task(
                     "mime_type": doc.mime_type,
                     "storage_path": storage_path,
                     "source_id": doc.source_id,
+                    "scope_id": scope_id,
+                    "organization_id": organization_id,
                     "parent_id": doc.parent_id,
                     "source_url": source_url,
                     "source_type": doc_source_type,
@@ -1458,6 +1501,7 @@ def unified_ingest_task(
                         file_data=file_data,
                         file_status_id=file_status_id,
                         connector_type=connector_type,
+                        scope_id=scope_id,
                         plan_code=plan_code,
                     )
                 )
@@ -1617,6 +1661,7 @@ def process_file_task(
     file_data: Dict[str, Any],
     file_status_id: str,
     connector_type: str,
+    scope_id: str,
     plan_code: Optional[str] = None,
 ):
     """
@@ -1631,6 +1676,7 @@ def process_file_task(
         file_data: Serialized file data (filename, content_b64, size, mime_type)
         file_status_id: ID of the file status record for progress tracking
         connector_type: Source type for metadata
+        scope_id: Canonical scope URI for the file
     """
     import base64
     import tempfile
@@ -1647,6 +1693,13 @@ def process_file_task(
     metadata = file_data.get("metadata") or {}
     if not isinstance(metadata, dict):
         metadata = {}
+    if not scope_id:
+        raise ValueError("scope_id is required for ingestion")
+    metadata["scope_id"] = scope_id
+    organization_id = file_data.get("organization_id") or metadata.get("organization_id")
+    if not organization_id:
+        raise ValueError("organization_id is required for ingestion")
+    metadata["organization_id"] = organization_id
     source_url = file_data.get("source_url") or metadata.get("source_url") or metadata.get("url")
     source_id = file_data.get("source_id") or metadata.get("source_id") or metadata.get("file_id")
     if source_id:
@@ -1991,6 +2044,7 @@ def process_file_task(
 
         doc_payload = {
             "user_id": user_id,
+            "organization_id": organization_id,
             "title": filename,
             "source_type": source_type,
             "source_url": source_url,
@@ -1999,6 +2053,7 @@ def process_file_task(
             "content_hash": content_hash,
             "metadata": {
                 **metadata,
+                "organization_id": organization_id,
                 "job_id": job_id,
                 "mime_type": mime_type or "application/octet-stream",
                 "source_id": source_id,
@@ -2087,6 +2142,9 @@ def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_
     job_id = doc_payload.get("job_id")
     file_status_id = doc_payload.get("file_status_id")
     user_id = doc_payload.get("user_id")
+    organization_id = doc_payload.get("organization_id") or (doc_payload.get("metadata") or {}).get("organization_id")
+    if not organization_id:
+        raise ValueError("organization_id is required for ingestion")
     filename = doc_payload.get("filename", "unknown")
     plan_label = plan_code or doc_payload.get("plan_code") or settings.PLAN_STARTER
 
@@ -2202,6 +2260,7 @@ def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
         doc_id = ingest_document_batched(
             supabase=supabase,
             user_id=user_id,
+            organization_id=organization_id,
             doc_title=doc_payload.get("title") or filename,
             source_type=doc_payload.get("source_type") or "unknown",
             metadata=doc_payload.get("metadata") or {},
@@ -2270,7 +2329,7 @@ def finalize_job_task(self, user_id: str, job_id: str):
 
     supabase = get_supabase()
 
-    job_res = supabase.table("ingestion_jobs").select("status,total_files").eq("id", job_id).single().execute()
+    job_res = supabase.table("ingestion_jobs").select("status,total_files,organization_id").eq("id", job_id).single().execute()
     if not job_res.data:
         logger.warning(f"[FinalizeJob:{task_id}] Job {job_id} not found")
         return
@@ -2281,6 +2340,16 @@ def finalize_job_task(self, user_id: str, job_id: str):
         return
 
     total_files = job_res.data.get("total_files") or 0
+    job_org_id = job_res.data.get("organization_id")
+    if not job_org_id:
+        org_scope = _resolve_org_scope(supabase, user_id)
+        job_org_id = org_scope.get("team_id") or user_id
+        try:
+            supabase.table("ingestion_jobs").update({
+                "organization_id": job_org_id,
+            }).eq("id", job_id).execute()
+        except Exception as exc:
+            logger.warning(f"[FinalizeJob:{task_id}] ⚠️ Failed to backfill organization_id: {exc}")
     counters = get_ingest_job_counters(job_id)
     counts_source = "redis"
 
@@ -2345,6 +2414,97 @@ def finalize_job_task(self, user_id: str, job_id: str):
         if failed_count:
             status_parts.append(f"{failed_count} failed")
         status_msg = ", ".join(status_parts)
+
+    if final_status == "completed" and success_count > 0:
+        try:
+            file_rows = (
+                supabase.table("ingestion_file_status")
+                .select("document_id,filename,file_size_bytes")
+                .eq("job_id", job_id)
+                .eq("status", "completed")
+                .execute()
+            )
+            doc_ids = [
+                row.get("document_id")
+                for row in (file_rows.data or [])
+                if row.get("document_id")
+            ]
+            if doc_ids:
+                docs_res = (
+                    supabase.table("documents")
+                    .select("id,title,metadata,file_size_bytes,source_type,scope_id")
+                    .in_("id", doc_ids)
+                    .execute()
+                )
+                docs_by_scope: Dict[str, List[SourceDocument]] = {}
+                for row in docs_res.data or []:
+                    metadata = row.get("metadata") or {}
+                    scope_id = row.get("scope_id") or metadata.get("scope_id")
+                    if not scope_id:
+                        continue
+                    docs_by_scope.setdefault(scope_id, []).append(
+                        SourceDocument(
+                            content=b"",
+                            metadata=metadata,
+                            source_type=row.get("source_type") or "unknown",
+                            source_id=str(row.get("id") or ""),
+                            filename=row.get("title") or "unknown",
+                            mime_type=metadata.get("mime_type") or "application/octet-stream",
+                            size_bytes=row.get("file_size_bytes") or 0,
+                            parent_id=None,
+                        )
+                    )
+
+                quota_failures: List[Dict[str, str]] = []
+
+                async def _run_identity_updates() -> None:
+                    try:
+                        plan_code = await team_service.get_effective_plan(user_id)
+                    except Exception:
+                        plan_code = "free"
+                    for scope_id, docs in docs_by_scope.items():
+                        try:
+                            await synthesize_and_save_identity(
+                                scope_id,
+                                docs,
+                                organization_id=job_org_id,
+                                user_id=user_id,
+                                plan_code=plan_code,
+                            )
+                        except QuotaExceededError as exc:
+                            quota_failures.append(
+                                {"scope_id": scope_id, "reason": str(exc)[:300]}
+                            )
+                            continue
+                        except Exception as exc:
+                            raise RuntimeError(f"scope_id={scope_id}") from exc
+
+                if docs_by_scope:
+                    asyncio.run(_run_identity_updates())
+
+                if quota_failures:
+                    logger.warning(
+                        "⚠️ [FinalizeJob:%s] Scope limit reached for job %s (skipped %s identities)",
+                        task_id,
+                        job_id,
+                        len(quota_failures),
+                    )
+                    create_notification(
+                        supabase,
+                        user_id,
+                        "Scope limit reached",
+                        "Some scope identities were skipped because your plan scope limit was reached.",
+                        "warning",
+                        {"job_id": job_id, "skipped_scopes": quota_failures},
+                    )
+        except Exception as exc:
+            logger.critical(
+                "❌ [FinalizeJob:%s] CRITICAL identity synthesis failure for job %s: %s",
+                task_id,
+                job_id,
+                exc,
+            )
+            raise self.retry(exc=exc, countdown=60, max_retries=3)
 
     supabase.table("ingestion_jobs").update({
         "status": final_status,
@@ -2962,6 +3122,10 @@ def process_page_task(
         content_size = len(content_bytes)
         content_hash = compute_content_hash(content_bytes)
         org_scope = _resolve_org_scope(supabase, user_id)
+        organization_id = org_scope.get("team_id") or user_id
+        if not org_scope.get("team_id"):
+            logger.warning(f"[Page:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id")
+        doc_metadata["organization_id"] = organization_id
         if _is_duplicate_document(supabase, content_hash, org_scope, user_id):
             # Treat as skipped/duplicate; do not parse/embed
             update_file_status(
@@ -2986,6 +3150,7 @@ def process_page_task(
         doc_id = ingest_document_batched(
             supabase=supabase,
             user_id=user_id,
+            organization_id=organization_id,
             doc_title=page_title,
             source_type="web",
             metadata=doc_metadata,
@@ -3248,9 +3413,12 @@ def check_scheduled_crawls(self):
                 }).eq("id", crawl_id).execute()
 
                 try:
+                    org_scope = _resolve_org_scope(supabase, user_id)
+                    organization_id = org_scope.get("team_id") or user_id
                     supabase.table("ingestion_jobs").upsert({
                         "id": crawl_id,
                         "user_id": user_id,
+                        "organization_id": organization_id,
                         "provider": "web",
                         "status": "pending",
                         "total_files": 0,
@@ -3265,6 +3433,7 @@ def check_scheduled_crawls(self):
                         supabase.table("ingestion_jobs").insert({
                             "id": crawl_id,
                             "user_id": user_id,
+                            "organization_id": organization_id,
                             "provider": "web",
                             "status": "pending",
                             "total_files": 0,

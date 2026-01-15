@@ -4,7 +4,7 @@ Integrations API Endpoints
 Provides dynamic connector discovery, OAuth handling, and integration management.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from core.security import get_current_user, encrypt_token, decrypt_token
@@ -12,6 +12,7 @@ from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
 from api.v1.dependencies import validate_team_access, require_editor, get_effective_plan
+from api.v1.error_utils import raise_http_error
 from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
 from core.exceptions import QuotaExceededError
@@ -508,10 +509,16 @@ async def exchange_notion_token(
                 )
             except QuotaExceededError as exc:
                 logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
-                raise HTTPException(status_code=403, detail=str(exc))
+                raise_http_error(
+                    status.HTTP_403_FORBIDDEN,
+                    "PLAN_LIMIT_EXCEEDED",
+                    str(exc),
+                    exc.details if isinstance(exc, QuotaExceededError) else None,
+                )
             # Create ingestion job
             job_data = {
                 "user_id": user_id,
+                "organization_id": org_id,
                 "provider": "notion",
                 "total_files": len(items),
                 "processed_files": 0,
@@ -1126,10 +1133,20 @@ async def list_github_repos(
         }
     except ConnectorAuthError as e:
         logger.warning(f"⚠️ [GitHub] Auth error listing repos: {e}")
-        raise HTTPException(status_code=401, detail=f"GitHub authentication failed: {e}")
+        raise_http_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "INTEGRATION_AUTH_FAILED",
+            "GitHub authentication failed. Please reconnect your integration.",
+            {"provider": "github", "reason": str(e)},
+        )
     except Exception as e:
         logger.error(f"❌ [GitHub] Failed to list repos: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list GitHub repositories: {e}")
+        raise_http_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "CONNECTOR_FAILED",
+            "Failed to list GitHub repositories.",
+            {"provider": "github", "reason": str(e)},
+        )
 
 
 @router.post("/integrations/github/repos/select")
@@ -1387,11 +1404,26 @@ async def connect_sftp(
     try:
         connector.verify_connection(config)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise_http_error(
+            status.HTTP_400_BAD_REQUEST,
+            "CONNECTOR_VALIDATION_FAILED",
+            str(exc),
+            {"provider": "sftp"},
+        )
     except ConnectorAuthError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        raise_http_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "INTEGRATION_AUTH_FAILED",
+            "SFTP authentication failed. Please verify your credentials.",
+            {"provider": "sftp", "reason": str(exc)},
+        )
     except ConnectorTransientError as exc:
-        raise HTTPException(status_code=503, detail=f"SFTP connection failed: {exc}") from exc
+        raise_http_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "CONNECTOR_UNAVAILABLE",
+            f"SFTP connection failed: {exc}",
+            {"provider": "sftp"},
+        )
 
     credentials = {
         "host": body.host,
@@ -1530,14 +1562,26 @@ async def connect_s3(
         connector._verify_access(config)
     except ValueError as exc:
         # Prefix validation error
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise_http_error(
+            status.HTTP_400_BAD_REQUEST,
+            "CONNECTOR_VALIDATION_FAILED",
+            str(exc),
+            {"provider": "s3"},
+        )
     except ConnectorAuthError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        raise_http_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "INTEGRATION_AUTH_FAILED",
+            "S3 authentication failed. Please verify your credentials.",
+            {"provider": "s3", "reason": str(exc)},
+        )
     except ConnectorTransientError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"S3 connection failed: {exc}"
-        ) from exc
+        raise_http_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "CONNECTOR_UNAVAILABLE",
+            f"S3 connection failed: {exc}",
+            {"provider": "s3"},
+        )
 
     # =================================================================
     # Store Encrypted Credentials
@@ -1862,14 +1906,29 @@ async def list_provider_items(
     except ConnectorAuthError as e:
         # Auth errors should return 401, not 500
         logger.warning(f"⚠️ [ListItems] Auth error for {provider}: {e}")
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+        raise_http_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "INTEGRATION_AUTH_FAILED",
+            "Authentication failed. Please reconnect your integration.",
+            {"provider": provider, "reason": str(e)},
+        )
     except ConnectorTransientError as e:
         # Transient errors (rate limits, network) - return 503
         logger.warning(f"⚠️ [ListItems] Transient error for {provider}: {e}")
-        raise HTTPException(status_code=503, detail=f"Service temporarily unavailable: {str(e)}")
+        raise_http_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "CONNECTOR_UNAVAILABLE",
+            "Service temporarily unavailable. Please retry shortly.",
+            {"provider": provider, "reason": str(e)},
+        )
     except Exception as e:
         logger.error(f"❌ [ListItems] Failed to list items for {provider}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
+        raise_http_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "CONNECTOR_FAILED",
+            "Failed to list items.",
+            {"provider": provider, "reason": str(e)},
+        )
 
 
 @router.post("/integrations/web/crawl", status_code=202)
@@ -1902,8 +1961,10 @@ async def crawl_web(
             max_pages = 1
 
         try:
+            organization_id = await team_service.get_organization_id(user_id)
             result = queue_web_crawl(
                 user_id=user_id,
+                organization_id=organization_id,
                 root_url=normalized_url,
                 crawl_type=crawl_type,
                 max_depth=max_depth,
@@ -2018,7 +2079,12 @@ async def ingest_provider_items(
             )
         except QuotaExceededError as exc:
             logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
-            raise HTTPException(status_code=403, detail=str(exc))
+            raise_http_error(
+                status.HTTP_403_FORBIDDEN,
+                "PLAN_LIMIT_EXCEEDED",
+                str(exc),
+                exc.details if isinstance(exc, QuotaExceededError) else None,
+            )
 
         if provider == "web":
             if len(request.item_ids) != 1:
@@ -2040,6 +2106,7 @@ async def ingest_provider_items(
 
             result = queue_web_crawl(
                 user_id=user_id,
+                organization_id=org_id,
                 root_url=normalized_url,
                 crawl_type="single",
                 max_depth=1,
@@ -2113,6 +2180,7 @@ async def ingest_provider_items(
         from datetime import datetime
         job_data = {
             "user_id": user_id,
+            "organization_id": org_id,
             "provider": provider,
             "total_files": len(request.item_ids),
             "processed_files": 0,
@@ -2342,6 +2410,7 @@ async def sync_integration(
             raise HTTPException(status_code=404, detail="Integration not found")
         
         provider = int_res.data["connector_definitions"]["type"]
+        org_id, _ = await _resolve_org_and_plan(user_id)
         
         # 2. Rate limit check (simple check for pending jobs)
         existing_jobs = supabase.table("ingestion_jobs").select("id").eq(
@@ -2356,6 +2425,7 @@ async def sync_integration(
         # 3. Create ingestion job
         job_data = {
             "user_id": user_id,
+            "organization_id": org_id,
             "provider": provider,
             "total_files": 0,
             "processed_files": 0,

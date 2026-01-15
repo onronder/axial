@@ -19,21 +19,52 @@ class TestSendEmailNotification:
     
     @pytest.fixture
     def mock_supabase(self):
-        """Create a mock Supabase client."""
+        """Create a mock Supabase client with proper auth structure."""
         mock = Mock()
+        # Setup auth admin mock structure
+        mock.auth = Mock()
+        mock.auth.admin = Mock()
         return mock
+    
+    def _setup_profile_mock(self, mock_supabase, display_name=None, full_name=None):
+        """Helper to setup user_profiles table mock."""
+        profile_data = {"display_name": display_name, "full_name": full_name}
+        profile_mock = Mock()
+        profile_mock.data = profile_data
+        return profile_mock
+
+    def _setup_auth_user(self, mock_supabase, email):
+        """Helper to setup auth.admin.get_user_by_id mock."""
+        auth_user = Mock()
+        auth_user.user = Mock()
+        auth_user.user.email = email
+        mock_supabase.auth.admin.get_user_by_id.return_value = auth_user
+    
+    def _setup_settings_mock(self, enabled):
+        """Helper to setup notification settings mock (returns list)."""
+        settings_mock = Mock()
+        settings_mock.data = [{"enabled": enabled}] if enabled is not None else []
+        return settings_mock
     
     def test_sends_email_when_preference_enabled(self, mock_supabase):
         """Should send email when user has enabled email notifications."""
-        # Setup mock responses
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"email": "user@example.com", "display_name": "John Doe"}
-        )
+        # Setup auth user with email
+        self._setup_auth_user(mock_supabase, "user@example.com")
         
-        # Settings query
-        settings_mock = Mock()
-        settings_mock.data = {"enabled": True}
-        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
+        # Setup table mocks
+        def table_side_effect(table_name):
+            table_mock = Mock()
+            if table_name == "user_profiles":
+                profile_mock = Mock()
+                profile_mock.data = {"display_name": "John Doe", "full_name": None}
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
+            elif table_name == "user_notification_settings":
+                settings_mock = Mock()
+                settings_mock.data = [{"enabled": True}]
+                table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
+            return table_mock
+        
+        mock_supabase.table.side_effect = table_side_effect
         
         with patch('worker.tasks.email_service') as mock_email:
             mock_email.send_ingestion_complete.return_value = True
@@ -45,15 +76,22 @@ class TestSendEmailNotification:
     
     def test_skips_email_when_preference_disabled(self, mock_supabase):
         """Should not send email when user has disabled email notifications."""
-        # Setup mock responses
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"email": "user@example.com", "display_name": "John Doe"}
-        )
+        # Setup auth user with email
+        self._setup_auth_user(mock_supabase, "user@example.com")
         
-        # Settings query - disabled
-        settings_mock = Mock()
-        settings_mock.data = {"enabled": False}
-        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
+        def table_side_effect(table_name):
+            table_mock = Mock()
+            if table_name == "user_profiles":
+                profile_mock = Mock()
+                profile_mock.data = {"display_name": "John Doe", "full_name": None}
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
+            elif table_name == "user_notification_settings":
+                settings_mock = Mock()
+                settings_mock.data = [{"enabled": False}]  # Disabled
+                table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
+            return table_mock
+        
+        mock_supabase.table.side_effect = table_side_effect
         
         with patch('worker.tasks.email_service') as mock_email:
             from worker.tasks import send_email_notification
@@ -63,21 +101,19 @@ class TestSendEmailNotification:
     
     def test_defaults_to_enabled_when_no_setting_exists(self, mock_supabase):
         """Should default to sending email when no explicit setting exists."""
-        # Profile query
-        profile_mock = Mock()
-        profile_mock.data = {"email": "user@example.com", "display_name": "John"}
+        # Setup auth user with email
+        self._setup_auth_user(mock_supabase, "user@example.com")
         
-        # Settings query - no data (setting doesn't exist)
-        settings_mock = Mock()
-        settings_mock.data = None
-        
-        # Configure mock chain
         def table_side_effect(table_name):
             table_mock = Mock()
-            if table_name == "profiles":
-                table_mock.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
+            if table_name == "user_profiles":
+                profile_mock = Mock()
+                profile_mock.data = {"display_name": "John", "full_name": None}
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
             elif table_name == "user_notification_settings":
-                table_mock.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
+                settings_mock = Mock()
+                settings_mock.data = []  # No settings - should default to enabled
+                table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
             return table_mock
         
         mock_supabase.table.side_effect = table_side_effect
@@ -92,25 +128,57 @@ class TestSendEmailNotification:
             mock_email.send_ingestion_complete.assert_called_once()
     
     def test_handles_missing_user_profile(self, mock_supabase):
-        """Should handle missing user profile gracefully."""
-        # Profile query returns no data
-        profile_mock = Mock()
-        profile_mock.data = None
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
+        """Should handle missing user profile gracefully - still sends email using auth email."""
+        # Setup auth user with email (email comes from auth, not profile)
+        self._setup_auth_user(mock_supabase, "user@example.com")
+        
+        def table_side_effect(table_name):
+            table_mock = Mock()
+            if table_name == "user_profiles":
+                profile_mock = Mock()
+                profile_mock.data = None  # No profile
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
+            elif table_name == "profiles":
+                # Legacy table also empty
+                profile_mock = Mock()
+                profile_mock.data = None
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
+            elif table_name == "user_notification_settings":
+                settings_mock = Mock()
+                settings_mock.data = [{"enabled": True}]
+                table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
+            return table_mock
+        
+        mock_supabase.table.side_effect = table_side_effect
         
         with patch('worker.tasks.email_service') as mock_email:
+            mock_email.send_ingestion_complete.return_value = True
+            
             from worker.tasks import send_email_notification
             send_email_notification(mock_supabase, "nonexistent-user", 5)
             
-            # Should not send email
-            mock_email.send_ingestion_complete.assert_not_called()
+            # Should still send email (uses default name "there")
+            mock_email.send_ingestion_complete.assert_called_once()
+            call_args = mock_email.send_ingestion_complete.call_args
+            assert call_args.kwargs["name"] == "there"
     
-    def test_handles_missing_email_in_profile(self, mock_supabase):
-        """Should handle profile without email gracefully."""
-        # Profile has no email
-        profile_mock = Mock()
-        profile_mock.data = {"display_name": "John", "email": None}
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
+    def test_handles_missing_email_in_auth(self, mock_supabase):
+        """Should handle missing auth email gracefully - no email sent."""
+        # Setup auth user with NO email
+        auth_user = Mock()
+        auth_user.user = Mock()
+        auth_user.user.email = None
+        mock_supabase.auth.admin.get_user_by_id.return_value = auth_user
+        
+        def table_side_effect(table_name):
+            table_mock = Mock()
+            if table_name == "user_profiles":
+                profile_mock = Mock()
+                profile_mock.data = {"display_name": "John", "full_name": None}
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
+            return table_mock
+        
+        mock_supabase.table.side_effect = table_side_effect
         
         with patch('worker.tasks.email_service') as mock_email:
             from worker.tasks import send_email_notification
@@ -120,19 +188,19 @@ class TestSendEmailNotification:
     
     def test_uses_fallback_name_when_display_name_missing(self, mock_supabase):
         """Should use 'there' as fallback when no name is available."""
-        # Profile with no names
-        profile_mock = Mock()
-        profile_mock.data = {"email": "user@example.com", "display_name": None, "full_name": None}
-        
-        settings_mock = Mock()
-        settings_mock.data = {"enabled": True}
+        # Setup auth user with email
+        self._setup_auth_user(mock_supabase, "user@example.com")
         
         def table_side_effect(table_name):
             table_mock = Mock()
-            if table_name == "profiles":
-                table_mock.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
+            if table_name == "user_profiles":
+                profile_mock = Mock()
+                profile_mock.data = {"display_name": None, "full_name": None}  # No names
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
             elif table_name == "user_notification_settings":
-                table_mock.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
+                settings_mock = Mock()
+                settings_mock.data = [{"enabled": True}]
+                table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
             return table_mock
         
         mock_supabase.table.side_effect = table_side_effect
@@ -149,18 +217,19 @@ class TestSendEmailNotification:
     
     def test_prefers_display_name_over_full_name(self, mock_supabase):
         """Should prefer display_name when both are available."""
-        profile_mock = Mock()
-        profile_mock.data = {"email": "user@example.com", "display_name": "Johnny", "full_name": "John Smith"}
-        
-        settings_mock = Mock()
-        settings_mock.data = {"enabled": True}
+        # Setup auth user with email
+        self._setup_auth_user(mock_supabase, "user@example.com")
         
         def table_side_effect(table_name):
             table_mock = Mock()
-            if table_name == "profiles":
-                table_mock.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
+            if table_name == "user_profiles":
+                profile_mock = Mock()
+                profile_mock.data = {"display_name": "Johnny", "full_name": "John Smith"}
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
             elif table_name == "user_notification_settings":
-                table_mock.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = settings_mock
+                settings_mock = Mock()
+                settings_mock.data = [{"enabled": True}]
+                table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
             return table_mock
         
         mock_supabase.table.side_effect = table_side_effect

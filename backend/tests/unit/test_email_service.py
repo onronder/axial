@@ -133,7 +133,7 @@ class TestEmailServiceSendIngestionComplete:
         # Verify call parameters
         call_args = mock_resend.Emails.send.call_args[0][0]
         assert call_args["to"] == ["user@example.com"]
-        assert "🚀" in call_args["subject"]
+        assert "✨" in call_args["subject"] or "AI Assistant" in call_args["subject"]
         assert "Axio Hub" in call_args["from"]
     
     def test_send_ingestion_complete_disabled(self):

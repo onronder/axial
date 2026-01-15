@@ -9,6 +9,22 @@ export default defineConfig({
         globals: true,
         setupFiles: './__tests__/setup.ts',
         include: ['__tests__/**/*.test.{ts,tsx}'],
+        // Memory optimization for OOM issues
+        pool: 'forks',
+        poolOptions: {
+            forks: {
+                singleFork: true,
+                isolate: false,
+            },
+        },
+        // Disable file parallelization
+        fileParallelism: false,
+        // Increase test timeout
+        testTimeout: 30000,
+        // Clear mocks between tests
+        clearMocks: true,
+        // Disable transforms caching to reduce memory
+        cache: false,
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'html'],

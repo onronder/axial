@@ -10,6 +10,8 @@ class PlanLimits(BaseModel):
     plan_name: str
     max_files: int
     max_storage_bytes: int
+    max_scopes: int
+    max_llm_tokens: int
     max_team_seats: int = 1
     allow_web_crawl: bool = False
     model_tier: str = "standard" # standard, hybrid, premium
@@ -27,6 +29,8 @@ QUOTA_LIMITS = {
         plan_name="free",
         max_files=settings.LIMITS_STARTER_FILES,
         max_storage_bytes=settings.LIMITS_STARTER_MB * 1024 * 1024,
+        max_scopes=settings.LIMITS_STARTER_SCOPES,
+        max_llm_tokens=settings.LIMITS_STARTER_LLM_TOKENS,
         max_team_seats=1,
         allow_web_crawl=False,
         model_tier="standard"
@@ -35,6 +39,8 @@ QUOTA_LIMITS = {
         plan_name="starter",
         max_files=settings.LIMITS_STARTER_FILES,
         max_storage_bytes=settings.LIMITS_STARTER_MB * 1024 * 1024,
+        max_scopes=settings.LIMITS_STARTER_SCOPES,
+        max_llm_tokens=settings.LIMITS_STARTER_LLM_TOKENS,
         max_team_seats=1,
         allow_web_crawl=True,
         model_tier="standard"
@@ -43,6 +49,8 @@ QUOTA_LIMITS = {
         plan_name="pro",
         max_files=settings.LIMITS_PRO_FILES,
         max_storage_bytes=settings.LIMITS_PRO_MB * 1024 * 1024,
+        max_scopes=settings.LIMITS_PRO_SCOPES,
+        max_llm_tokens=settings.LIMITS_PRO_LLM_TOKENS,
         max_team_seats=5,
         allow_web_crawl=True,
         model_tier="premium"
@@ -51,6 +59,8 @@ QUOTA_LIMITS = {
         plan_name="enterprise",
         max_files=100000,
         max_storage_bytes=1024 * 1024 * 1024 * 1024, # 1TB
+        max_scopes=settings.LIMITS_ENTERPRISE_SCOPES,
+        max_llm_tokens=settings.LIMITS_ENTERPRISE_LLM_TOKENS,
         max_team_seats=100,
         allow_web_crawl=True,
         model_tier="premium"

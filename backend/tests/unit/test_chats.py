@@ -12,10 +12,44 @@ Tests for:
 
 import pytest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import api.v1.chat  # Ensure module is loaded for patching
 import asyncio
 from fastapi import HTTPException
+
+
+@pytest.fixture(autouse=True)
+def mock_org_id():
+    with patch(
+        "api.v1.chat.team_service.get_organization_id",
+        new_callable=AsyncMock,
+        return_value="org-1",
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def mock_effective_plan():
+    with patch(
+        "api.v1.chat.team_service.get_effective_plan",
+        new_callable=AsyncMock,
+        return_value="pro",
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def mock_llm_quota():
+    with patch(
+        "api.v1.chat.check_llm_quota",
+        new_callable=AsyncMock,
+        return_value={"balance": 1000},
+    ), patch(
+        "api.v1.chat.record_llm_usage",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        yield
 
 
 class TestChatList:
@@ -163,7 +197,7 @@ class TestRAGChatEndpoint:
                 from api.v1.chat import chat_endpoint, ChatRequest
                 
                 # Act
-                payload = ChatRequest(query="Original Query", history=[{"role": "user", "content": "prev"}])
+                payload = ChatRequest(query="Original Query", history=[{"role": "user", "content": "prev"}], model="auto")
                 await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
                 
                 # Assert
@@ -206,7 +240,7 @@ class TestRAGChatEndpoint:
                 
                 # Act & Assert
                 with pytest.raises(Exception): # or HTTP 500
-                   payload = ChatRequest(query="Test", history=[])
+                   payload = ChatRequest(query="Test", history=[], model="auto")
                    await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
                 
                 # Ideally check if error was logged/captured, but note that 
@@ -249,7 +283,7 @@ class TestRAGChatEndpoint:
                 from api.v1.chat import chat_endpoint, ChatRequest, HTTPException
                 
                 # Act
-                payload = ChatRequest(query="Test")
+                payload = ChatRequest(query="Test", model="auto")
                 with pytest.raises(HTTPException):
                     await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
                 
@@ -446,7 +480,7 @@ class TestChatEndpointErrors:
 
             from api.v1.chat import chat_endpoint, ChatRequest
 
-            result = await chat_endpoint(mock_request, ChatRequest(query="Q"), mock_bg_tasks, user_id="user-1")
+            result = await chat_endpoint(mock_request, ChatRequest(query="Q", model="auto"), mock_bg_tasks, user_id="user-1")
 
         assert result.answer == "Answer"
 
@@ -481,23 +515,38 @@ class TestChatEndpointErrors:
             from api.v1.chat import chat_endpoint, ChatRequest
 
             with pytest.raises(HTTPException):
-                await chat_endpoint(mock_request, ChatRequest(query="Q"), mock_bg_tasks, user_id="user-1")
+                await chat_endpoint(mock_request, ChatRequest(query="Q", model="auto"), mock_bg_tasks, user_id="user-1")
 
 
 class TestStreamAndSaveErrors:
     @pytest.mark.asyncio
     async def test_stream_chat_response_emits_error(self):
         prompt = MagicMock()
-        llm = MagicMock()
         chain = MagicMock()
         chain.astream.side_effect = Exception("boom")
         prompt.__or__.return_value = chain
 
+        prompt_builder = MagicMock(return_value=(prompt, {"context": "ctx", "question": "Q", "language": "en"}, "sys"))
+        candidate = api.v1.chat.ModelSelection(provider="openai", model="gpt-4o-mini", reason="primary")
+
         events = []
-        async for event in api.v1.chat.stream_chat_response(
-            prompt, llm, "ctx", "Q", [], "conv-1", "user-1", MagicMock(), "en"
-        ):
-            events.append(event)
+        with patch("api.v1.chat.LLMFactory.get_model", return_value=MagicMock()):
+            async for event in api.v1.chat.stream_chat_response(
+                prompt_builder,
+                [candidate],
+                "fast",
+                "ctx",
+                "Q",
+                [],
+                "conv-1",
+                "user-1",
+                MagicMock(),
+                "en",
+                None,
+                "org-1",
+                "starter",
+            ):
+                events.append(event)
 
         assert any("error" in event for event in events)
 
@@ -705,7 +754,7 @@ class TestChatEndpointPaths:
             from api.v1.chat import chat_endpoint, ChatRequest
             response = await chat_endpoint(
                 request,
-                ChatRequest(query="ask", conversation_id="conv-1"),
+                ChatRequest(query="ask", conversation_id="conv-1", model="auto"),
                 background_tasks,
                 user_id="user-1",
             )
@@ -726,13 +775,18 @@ async def test_stream_chat_response_emits_events():
 
     prompt = MagicMock()
     prompt.__or__.return_value = chain
+    prompt_builder = MagicMock(return_value=(prompt, {"context": "context", "question": "question", "language": "en"}, "sys"))
+    candidate = api.v1.chat.ModelSelection(provider="openai", model="gpt-4o-mini", reason="primary")
 
-    with patch("api.v1.chat.save_messages", return_value="msg-1"):
+    with patch("api.v1.chat.save_messages", return_value="msg-1"), \
+         patch("api.v1.chat.record_llm_usage", new_callable=AsyncMock, return_value=None), \
+         patch("api.v1.chat.LLMFactory.get_model", return_value=MagicMock()):
         events = [
             chunk
             async for chunk in stream_chat_response(
-                prompt,
-                MagicMock(),
+                prompt_builder,
+                [candidate],
+                "fast",
                 "context",
                 "question",
                 [{"label": "Doc"}],
@@ -740,6 +794,9 @@ async def test_stream_chat_response_emits_events():
                 "user-1",
                 MagicMock(),
                 "en",
+                None,
+                "org-1",
+                "starter",
             )
         ]
 
@@ -997,7 +1054,7 @@ async def test_chat_endpoint_streaming_returns_response():
         mock_router.return_value.provider = "openai"
         mock_router.return_value.model = "gpt-4o"
 
-        payload = ChatRequest(query="Hello", history=[], stream=True)
+        payload = ChatRequest(query="Hello", history=[], stream=True, model="auto")
         response = await chat_endpoint(request, payload, bg_tasks, user_id="user-1")
 
     assert response.media_type == "text/event-stream"

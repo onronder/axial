@@ -391,16 +391,14 @@ class TestAsyncIngestion:
         )
         test_user_id = "00000000-0000-0000-0000-000000000001"
 
-        # Use a valid provider and mock the provider/feature checks
+        # Use a non-web provider to test credentials requirement (web uses different flow)
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
-             patch("api.v1.integrations._require_provider", return_value="web"), \
-             patch("api.v1.integrations._resolve_org_and_plan", return_value=("org-1", "starter")), \
-             patch("api.v1.integrations.check_admission"), \
-             patch("api.v1.integrations.check_feature_access", return_value={"allowed": True}):
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission"):
             with pytest.raises(HTTPException) as exc:
                 await ingest_provider_items(
-                    "web",
-                    IngestRequest(item_ids=["https://example.com"]),
+                    "google_drive",
+                    IngestRequest(item_ids=["file-1"]),
                     user_id=test_user_id,
                 )
 
@@ -420,20 +418,25 @@ class TestAsyncIngestion:
         task.delay.return_value = SimpleNamespace(id="task-1")
         test_user_id = "00000000-0000-0000-0000-000000000001"
 
-        # Use a valid provider and mock the provider/feature checks
-        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
-             patch("api.v1.integrations._require_provider", return_value="web"), \
-             patch("api.v1.integrations._resolve_org_and_plan", return_value=("org-1", "starter")), \
-             patch("api.v1.integrations.check_admission"), \
-             patch("api.v1.integrations.check_feature_access", return_value={"allowed": True}):
-            with patch("worker.tasks.unified_ingest_task", task):
-                response = await ingest_provider_items(
-                    "web",
-                    IngestRequest(item_ids=["https://example.com"]),
-                    user_id=test_user_id,
-                )
+        connector = MagicMock()
+        connector.normalize_url.return_value = "https://example.com"
+        connector._is_safe_url.return_value = True
 
-        assert response["status"] == "accepted"
+        # Test web provider flow with proper mocking
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission"), \
+             patch("api.v1.integrations.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.integrations.WebConnector", return_value=connector), \
+             patch("api.v1.integrations.queue_web_crawl", return_value={"crawl_id": "c1", "task_id": "t1", "job_id": "j1"}), \
+             patch("api.v1.integrations.increment_usage"):
+            response = await ingest_provider_items(
+                "web",
+                IngestRequest(item_ids=["https://example.com"]),
+                user_id=test_user_id,
+            )
+
+        assert response["status"] == "queued"
 
 
 class TestOAuthIntegration:
@@ -1100,7 +1103,7 @@ class TestSyncConnectorThreadOffloading:
         
         # Auth errors should return 401, not 500
         assert exc.value.status_code == 401
-        assert "Authentication failed" in exc.value.detail
+        assert exc.value.detail["error"] == "INTEGRATION_AUTH_FAILED"
 
 
 class TestCrawlWebErrors:
@@ -1159,9 +1162,10 @@ class TestIngestProviderItemsErrors:
 
     @pytest.mark.asyncio
     async def test_ingest_provider_unknown(self):
+        # Use a truly unknown provider name to test validation
         with pytest.raises(HTTPException) as exc:
             await ingest_provider_items(
-                "dropbox",
+                "unknown_provider_xyz",
                 IngestRequest(item_ids=["file-1"]),
                 user_id="user-1",
             )
@@ -1550,7 +1554,7 @@ class TestIntegrationsAdditional:
 
         connector = MagicMock()
         connector.normalize_url.return_value = "https://example.com"
-        connector.is_safe_url.return_value = False
+        connector._is_safe_url.return_value = False  # Use _is_safe_url (internal method name)
 
         with patch("api.v1.integrations.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
              patch("api.v1.integrations.WebConnector", return_value=connector):
@@ -1635,9 +1639,11 @@ class TestIntegrationsAdditional:
     async def test_ingest_web_unsafe_url(self):
         connector = MagicMock()
         connector.normalize_url.return_value = "https://example.com"
-        connector.is_safe_url.return_value = False
+        connector._is_safe_url.return_value = False
 
         with patch("api.v1.integrations.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission"), \
              patch("api.v1.integrations.WebConnector", return_value=connector):
             with pytest.raises(HTTPException) as exc:
                 await ingest_provider_items(

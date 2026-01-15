@@ -1,16 +1,35 @@
+"""
+Chat API Endpoints
+
+Scope-aware conversational RAG with Dominance Guard for context disambiguation.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, AsyncGenerator
+from collections import Counter
 from api.v1.dependencies import validate_team_access
+from api.v1.error_utils import build_error_payload, raise_http_error
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
+from core.exceptions import QuotaExceededError
 from core.ingestion_utils import normalize_source_type
+from core.resilience import is_retryable_error, CircuitBreakerOpen, openai_breaker
 from services.audit import log_chat_delete, audit_logger
 from services.llm_factory import LLMFactory
 from services.guardrails import guardrail_service
-from services.router import llm_router
+from services.router import llm_router, ComplexityEvaluator, ModelSelection
+from services.team_service import team_service
+from services.usage import check_llm_quota, record_llm_usage
+from services.scope_analysis import (
+    analyze_scope_distribution,
+    get_scope_candidates_for_clarification,
+    filter_docs_by_scope,
+    ScopeClassification,
+    ScopeAnalysisResult,
+)
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -20,6 +39,7 @@ from datetime import datetime, timezone
 import logging
 import json
 import sentry_sdk
+import asyncio
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access)])
@@ -187,19 +207,52 @@ class ChatRequest(BaseModel):
     Constraints:
     - query: max 20,000 chars (~5,000 tokens) - prevents massive payloads
     - conversation_id: max 50 chars (UUIDs are 36 chars)
-    - model: max 50 chars - prevents abuse
+    - model: "fast" or "smart" (or a model name), max 50 chars
+    - scope_id: explicit scope selection (bypasses Dominance Guard)
     """
     query: str = Field(..., min_length=1, max_length=20000)
     conversation_id: Optional[str] = Field(None, max_length=50)
     history: Optional[List[Dict[str, str]]] = []
-    model: str = Field(default="gpt-4o", max_length=50)
+    model: str = Field(default=settings.MODEL_ALIAS_FAST, max_length=50)
     stream: bool = Field(default=False)
+    scope_id: Optional[str] = Field(
+        None, 
+        max_length=500,
+        description="Explicit scope URI to search within. Use '__all__' to search across sources."
+    )
+
+
+class ScopeCandidate(BaseModel):
+    """Scope candidate for clarification response."""
+    id: str
+    summary: Optional[str] = None
+    type: str
+
+
+class ClarificationResponse(BaseModel):
+    """Response when scope clarification is needed (HTTP 300)."""
+    action: str = "clarify_scope"
+    message: str
+    candidates: List[ScopeCandidate]
+    query: str
+
+
+class ScopeContext(BaseModel):
+    """Scope context metadata included in successful responses."""
+    scope_id: str
+    scope_name: Optional[str] = None
+    scope_type: Optional[str] = None
+    dominance_ratio: float
+    classification: str
+
 
 class ChatResponse(BaseModel):
+    """Chat response with optional scope context."""
     answer: str
     sources: List[Dict[str, Any]]  # Enhanced sources with metadata
     conversation_id: Optional[str] = None
     message_id: Optional[str] = None
+    scope_context: Optional[ScopeContext] = None  # NEW: Scope info for transparency
 
 
 # ============================================================
@@ -218,6 +271,170 @@ Follow-up Question: {question}
 Standalone Question:"""
 
 import tiktoken
+
+MODEL_CONTEXT_WINDOWS = {
+    "gpt-4o": 128000,
+    "gpt-4o-mini": 128000,
+    "llama-3.3-70b-versatile": 8192,
+    "llama-3.1-8b-instant": 8192,
+}
+DEFAULT_CONTEXT_WINDOW = 8192
+SCOPE_IDENTITY_BUDGET_RATIO = 0.70
+GLOBAL_IDENTITY_TOKEN_BUDGET = 2000
+LONG_QUERY_WORD_THRESHOLD = 2000
+LONG_QUERY_TOKEN_THRESHOLD = 8000
+
+if settings.GROK_MODEL_NAME and settings.GROK_MODEL_NAME not in MODEL_CONTEXT_WINDOWS:
+    MODEL_CONTEXT_WINDOWS[settings.GROK_MODEL_NAME] = DEFAULT_CONTEXT_WINDOW
+
+try:
+    _TOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
+except Exception:
+    _TOKEN_ENCODER = None
+
+def _estimate_token_count(text: str) -> int:
+    if not text:
+        return 1
+    if _TOKEN_ENCODER:
+        return len(_TOKEN_ENCODER.encode(text))
+    return max(1, len(text) // 4)
+
+
+def _truncate_to_token_budget(text: str, max_tokens: int) -> str:
+    if not text or max_tokens <= 0:
+        return ""
+    if _TOKEN_ENCODER:
+        tokens = _TOKEN_ENCODER.encode(text)
+        if len(tokens) <= max_tokens:
+            return text
+        return _TOKEN_ENCODER.decode(tokens[:max_tokens])
+    char_budget = max(1, max_tokens * 4)
+    return text[:char_budget]
+
+
+def _apply_scope_identity_budget(scope_identity: str, context_text: str, model_name: str) -> str:
+    if not scope_identity:
+        return scope_identity
+    context_window = MODEL_CONTEXT_WINDOWS.get(model_name, DEFAULT_CONTEXT_WINDOW)
+    budget = int(context_window * SCOPE_IDENTITY_BUDGET_RATIO)
+    scope_tokens = _estimate_token_count(scope_identity)
+    context_tokens = _estimate_token_count(context_text)
+    if scope_tokens + context_tokens <= budget:
+        return scope_identity
+    logger.info(
+        "✂️ [Chat] Truncating scope identity for model=%s (scope=%s context=%s budget=%s)",
+        model_name,
+        scope_tokens,
+        context_tokens,
+        budget,
+    )
+    remaining = budget - context_tokens
+    if remaining <= 0:
+        return "(Scope identity omitted to preserve context.)"
+    return _truncate_to_token_budget(scope_identity, remaining)
+
+
+def _build_multi_scope_identity_context(
+    scope_infos: List[Dict[str, Any]],
+    budget_tokens: int = GLOBAL_IDENTITY_TOKEN_BUDGET,
+) -> str:
+    if not scope_infos:
+        return ""
+    per_scope_budget = max(100, budget_tokens // max(1, len(scope_infos)))
+    parts: List[str] = []
+    for info in scope_infos:
+        scope_id = info.get("id", "unknown")
+        scope_type = info.get("type", "unknown")
+        summary = info.get("summary", "") or ""
+        summary = _truncate_to_token_budget(summary, per_scope_budget)
+        parts.append(f"Scope: {scope_id}\nType: {scope_type}\nSummary: {summary}")
+    combined = "\n\n".join(parts)
+    if _estimate_token_count(combined) > budget_tokens:
+        combined = _truncate_to_token_budget(combined, budget_tokens)
+    return combined
+
+
+def _extract_scope_ids(docs: List[Dict[str, Any]], max_scopes: int = 5) -> List[str]:
+    counts: Counter[str] = Counter()
+    for doc in docs:
+        scope_id = doc.get("scope_id")
+        if not scope_id:
+            scope_id = (doc.get("metadata") or {}).get("scope_id")
+        if scope_id:
+            counts[str(scope_id)] += 1
+    return [scope_id for scope_id, _count in counts.most_common(max_scopes)]
+
+
+def _estimate_prompt_tokens(system_prompt: str, input_vars: Dict[str, Any]) -> int:
+    total = _estimate_token_count(system_prompt)
+    for value in input_vars.values():
+        if value is None:
+            continue
+        total += _estimate_token_count(str(value))
+    return total
+
+
+def _build_prompt_bundle(
+    provider: str,
+    context_text: str,
+    question: str,
+    language: str,
+    scope_identity_context: Optional[str] = None,
+    scope_name: Optional[str] = None,
+    multi_scope_identity_context: Optional[str] = None,
+) -> tuple[ChatPromptTemplate, Dict[str, Any], str]:
+    is_grok = provider == "grok"
+    if multi_scope_identity_context:
+        system_prompt = GROK_MULTI_SCOPE_SYSTEM_PROMPT if is_grok else MULTI_SCOPE_SYSTEM_PROMPT
+        input_vars = {
+            "context": context_text,
+            "question": question,
+            "language": language,
+            "scope_identities": multi_scope_identity_context,
+        }
+    elif scope_identity_context:
+        system_prompt = GROK_SCOPED_SYSTEM_PROMPT if is_grok else SCOPED_SYSTEM_PROMPT
+        input_vars = {
+            "context": context_text,
+            "question": question,
+            "language": language,
+            "scope_identity": scope_identity_context,
+            "scope_name": scope_name or "Unknown",
+        }
+    else:
+        system_prompt = GROK_SYSTEM_PROMPT if is_grok else SYSTEM_PROMPT
+        input_vars = {
+            "context": context_text,
+            "question": question,
+            "language": language,
+        }
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("user", "{question}")
+    ])
+    return prompt, input_vars, system_prompt
+
+
+def _should_failover(exc: Exception) -> bool:
+    if isinstance(exc, CircuitBreakerOpen):
+        return True
+    return is_retryable_error(exc)
+
+
+def _is_long_query(query: str) -> bool:
+    if not query:
+        return False
+    word_count = len(query.split())
+    if word_count >= LONG_QUERY_WORD_THRESHOLD:
+        return True
+    return _estimate_token_count(query) >= LONG_QUERY_TOKEN_THRESHOLD
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return True
+    return "timeout" in str(exc).lower() or "timed out" in str(exc).lower()
 
 def trim_history(history: List[Dict[str, str]], max_tokens: int = 2000) -> List[Dict[str, str]]:
     """
@@ -303,9 +520,10 @@ def condense_question(query: str, history: List[Dict[str, str]]) -> str:
 
 
 # ============================================================
-# SYSTEM PROMPT WITH CITATION RULES
+# SYSTEM PROMPTS WITH CITATION RULES
 # ============================================================
 
+# Standard prompt (no scope context)
 SYSTEM_PROMPT = """You are Axio, an intelligent AI assistant with access to the user's knowledge base.
 
 ## Your Role
@@ -333,6 +551,255 @@ If the context doesn't contain enough information, say:
 ---
 
 Remember: Cite your sources using [1], [2], etc. Respond in {language}."""
+
+
+# Scoped prompt (with scope context injection)
+SCOPED_SYSTEM_PROMPT = """You are Axio, an intelligent AI assistant with access to the user's knowledge base.
+
+## SCOPE CONTEXT
+You are answering questions specifically about:
+{scope_identity}
+
+## Your Role
+- Answer questions using ONLY the provided context documents from this scope
+- Be helpful, accurate, and conversational
+- When citing, mention the source is from "{scope_name}" when relevant
+- RESPOND IN {language} (the user's detected language)
+
+## Citation Rules (IMPORTANT)
+- Use bracket citations like [1], [2], [3] to reference your sources
+- Place citations at the end of sentences or relevant phrases
+- Each citation number corresponds to the numbered documents below
+
+## When You Don't Know
+If the context doesn't contain enough information, say:
+"I couldn't find specific information about that in {scope_name}. [No relevant sources found]"
+
+---
+
+## KNOWLEDGE BASE CONTEXT (from {scope_name}):
+
+{context}
+
+---
+
+Remember: Cite your sources using [1], [2], etc. Respond in {language}."""
+
+
+# Multi-scope prompt (Search All Sources)
+MULTI_SCOPE_SYSTEM_PROMPT = """You are Axio, an intelligent AI assistant with access to the user's knowledge base.
+
+## SCOPE DIRECTORY
+The user is searching across multiple sources. The following scope summaries
+help you orient, but DO NOT cite them as sources:
+{scope_identities}
+
+## Your Role
+- Answer questions using ONLY the provided context documents below
+- Be helpful, accurate, and conversational
+- When citing, mention the source when relevant
+- RESPOND IN {language} (the user's detected language)
+
+## Citation Rules (IMPORTANT)
+- Use bracket citations like [1], [2], [3] to reference your sources
+- Place citations at the end of sentences or relevant phrases
+- Each citation number corresponds to the numbered documents below
+
+## When You Don't Know
+If the context doesn't contain enough information, say:
+"I couldn't find specific information about that in your documents. [No relevant sources found]"
+
+---
+
+## KNOWLEDGE BASE CONTEXT (all sources):
+
+{context}
+
+---
+
+Remember: Cite your sources using [1], [2], etc. Respond in {language}."""
+
+
+# Grok-optimized prompts (short, structured, low-noise)
+GROK_SYSTEM_PROMPT = """You are Axio, an AI assistant.
+
+Rules:
+- Use ONLY the context provided
+- Cite sources using [1], [2], etc.
+- If missing, say you couldn't find it in the documents
+- Respond in {language}
+
+Context:
+{context}
+"""
+
+
+GROK_SCOPED_SYSTEM_PROMPT = """You are Axio, an AI assistant.
+
+Scope Summary (do not cite as a source):
+{scope_identity}
+
+Rules:
+- Use ONLY the context provided
+- Cite sources using [1], [2], etc.
+- If missing, say you couldn't find it in {scope_name}
+- Respond in {language}
+
+Context:
+{context}
+"""
+
+
+GROK_MULTI_SCOPE_SYSTEM_PROMPT = """You are Axio, an AI assistant.
+
+Scope Directory (do not cite as a source):
+{scope_identities}
+
+Rules:
+- Use ONLY the context provided
+- Cite sources using [1], [2], etc.
+- If missing, say you couldn't find it in the documents
+- Respond in {language}
+
+Context:
+{context}
+"""
+
+
+# ============================================================
+# SCOPE IDENTITY HELPERS
+# ============================================================
+
+def fetch_scope_identity(supabase, scope_id: str, organization_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch scope identity information from scope_identities table.
+    
+    Returns scope summary and metadata for system prompt injection.
+    """
+    try:
+        response = supabase.table("scope_identities").select(
+            "id, type, summary, attributes, file_tree"
+        ).eq("id", scope_id).eq("organization_id", organization_id).single().execute()
+        
+        if response.data:
+            return response.data
+        return None
+    except Exception as e:
+        logger.warning(f"⚠️ [Chat] Failed to fetch scope identity for {scope_id}: {e}")
+        return None
+
+
+def fetch_scope_candidates_with_summaries(
+    supabase, 
+    scope_ids: List[str], 
+    organization_id: str
+) -> List[Dict[str, Any]]:
+    """
+    Fetch scope identities for multiple scopes (for clarification response).
+    
+    Returns list of scope info with summaries and types.
+    """
+    if not scope_ids:
+        return []
+    
+    try:
+        response = supabase.table("scope_identities").select(
+            "id, type, summary, attributes"
+        ).eq("organization_id", organization_id).in_("id", scope_ids).execute()
+        
+        return response.data or []
+    except Exception as e:
+        logger.warning(f"⚠️ [Chat] Failed to fetch scope candidates: {e}")
+        return []
+
+
+def build_scope_identity_context(scope_identity: Dict[str, Any]) -> str:
+    """
+    Build a human-readable scope identity context for system prompt injection.
+    """
+    if not scope_identity:
+        return "(No scope identity available)"
+    
+    scope_id = scope_identity.get("id", "Unknown")
+    scope_type = scope_identity.get("type", "unknown")
+    summary = scope_identity.get("summary", "")
+    attributes = scope_identity.get("attributes", {})
+    
+    # Extract key attributes
+    file_count = attributes.get("file_count", "unknown")
+    languages = attributes.get("languages", [])
+    
+    context_parts = [
+        f"Scope: {scope_id}",
+        f"Type: {scope_type}",
+    ]
+    
+    if file_count != "unknown":
+        context_parts.append(f"Files: {file_count}")
+    
+    if languages:
+        context_parts.append(f"Languages/Extensions: {', '.join(languages[:10])}")
+    
+    if summary:
+        # Truncate very long summaries
+        context_parts.append(f"\n{summary[:1000]}")
+    
+    return "\n".join(context_parts)
+
+
+def extract_scope_name(scope_id: str) -> str:
+    """
+    Extract a human-readable name from a scope URI.
+    
+    Examples:
+    - github://org/repo@main -> repo
+    - s3://bucket/prefix/ -> bucket/prefix
+    - box://folder/123:Marketing -> Marketing
+    """
+    if not scope_id:
+        return "Unknown Source"
+    
+    try:
+        # Handle common patterns
+        if scope_id.startswith("github://"):
+            # github://org/repo@branch -> repo
+            parts = scope_id.replace("github://", "").split("@")[0]
+            if "/" in parts:
+                return parts.split("/")[-1]
+            return parts
+        
+        if scope_id.startswith("s3://"):
+            # s3://bucket/prefix/ -> bucket/prefix
+            return scope_id.replace("s3://", "").rstrip("/") or "S3 Bucket"
+        
+        if scope_id.startswith("box://"):
+            # box://folder/123:Name -> Name
+            if ":" in scope_id:
+                return scope_id.split(":")[-1]
+            return scope_id.replace("box://folder/", "Box Folder")
+        
+        if scope_id.startswith("gdrive://"):
+            # gdrive://drive/folder:Name -> Name
+            if ":" in scope_id:
+                return scope_id.split(":")[-1]
+            return "Google Drive"
+        
+        if scope_id.startswith("notion://"):
+            # notion://workspace/page:Title -> Title
+            if ":" in scope_id:
+                return scope_id.split(":")[-1]
+            return "Notion"
+        
+        if scope_id.startswith("dropbox://"):
+            # dropbox://namespace/path -> path
+            parts = scope_id.replace("dropbox://", "").split("/", 1)
+            return parts[-1] if len(parts) > 1 else "Dropbox"
+        
+        # Fallback: return last part of URI
+        return scope_id.split("/")[-1].split(":")[-1] or scope_id
+        
+    except Exception:
+        return scope_id[:50]
 
 
 def format_context_with_citations(docs: List[Dict]) -> tuple:
@@ -401,7 +868,7 @@ def format_context_with_citations(docs: List[Dict]) -> tuple:
 
 
 # ============================================================
-# MAIN CHAT ENDPOINT
+# MAIN CHAT ENDPOINT (with Dominance Guard)
 # ============================================================
 
 @router.post("/chat")
@@ -413,29 +880,62 @@ async def chat_endpoint(
     user_id: str = Depends(get_current_user)
 ):
     """
-    Intelligent Conversational RAG Chat Endpoint.
+    Intelligent Conversational RAG Chat Endpoint with Scope-Aware Dominance Guard.
     
     Pipeline:
     1. Guardrail Analysis - Safety, language, intent, complexity
     2. Fast Exit - Handle greetings/off-topic without RAG
     3. User Plan Lookup - Determine subscription tier
     4. Smart Routing - Select optimal model (GPT-4o or Llama)
-    5. RAG Execution - Retrieve context, generate answer
-    6. Streaming Support - Optional SSE streaming
+    5. RAG Execution - Retrieve context
+    6. **NEW** Dominance Guard - Analyze scope distribution
+       - DOMINANT (≥85%): Proceed with scoped context
+       - CONTESTED (60-84%): Proceed with annotation
+       - FRAGMENTED (<60%): Return HTTP 300 clarification request
+    7. Generation - Generate answer with scope context
+    8. Streaming Support - Optional SSE streaming
     """
     supabase = get_supabase()
     
-    # ========== STEP 1: GUARDRAIL ANALYSIS (Ultra-fast via Groq) ==========
+    # ========== STEP 1: RESOLVE ORG SCOPE ==========
+    try:
+        organization_id = await team_service.get_organization_id(user_id)
+    except Exception as e:
+        logger.warning("⚠️ [Chat] Could not resolve org for %s: %s", user_id, e)
+        organization_id = user_id
+
+    # ========== STEP 2: FETCH USER PLAN ==========
+    try:
+        user_plan = await team_service.get_effective_plan(user_id)
+    except Exception as e:
+        logger.warning(f"⚠️ [Chat] Could not fetch user plan: {e}")
+        user_plan = "free"
+
+    # ========== STEP 3: LLM QUOTA CHECK (before any LLM calls) ==========
+    try:
+        await check_llm_quota(organization_id, user_plan, required_tokens=1)
+    except QuotaExceededError as exc:
+        raise_http_error(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            "PLAN_LIMIT_EXCEEDED",
+            "LLM token quota exceeded.",
+            exc.details if isinstance(exc, QuotaExceededError) else None,
+        )
+
+    # ========== STEP 4: GUARDRAIL ANALYSIS (Ultra-fast via Groq) ==========
     guardrail_result = await guardrail_service.analyze_query(payload.query)
     detected_language = guardrail_result.language
-    
-    logger.info(f"🛡️ [Chat] Guardrails: lang={detected_language}, "
-                f"safe={guardrail_result.is_safe}, intent={guardrail_result.intent}, "
-                f"complexity={guardrail_result.complexity}")
-    
-    # ========== STEP 2: SAFETY CHECK ==========
+
+    logger.info(
+        "🛡️ [Chat] Guardrails: lang=%s safe=%s intent=%s complexity=%s",
+        detected_language,
+        guardrail_result.is_safe,
+        guardrail_result.intent,
+        guardrail_result.complexity,
+    )
+
+    # ========== STEP 5: SAFETY CHECK ==========
     if not guardrail_result.is_safe:
-        # Log safety violation to audit
         audit_logger.log(
             background_tasks,
             user_id=user_id,
@@ -445,47 +945,92 @@ async def chat_endpoint(
             details={"query": payload.query[:500], "language": detected_language},
             request=request
         )
-        
-        # Return refusal message
+
         refusal = guardrail_result.reply or "I cannot assist with that request."
         return ChatResponse(
             answer=refusal,
             sources=[],
             conversation_id=payload.conversation_id
         )
-    
-    # ========== STEP 3: INTENT CHECK (Fast exit for non-RAG) ==========
+
+    # ========== STEP 6: INTENT CHECK (Fast exit for non-RAG) ==========
     if guardrail_result.intent in ("GREETING", "OFF_TOPIC"):
-        # Return pre-generated response (no RAG needed)
         fast_reply = guardrail_result.reply or "How can I help you with your documents today?"
-        
-        # Save to conversation if conversation_id exists
+
         if payload.conversation_id:
             save_messages(supabase, payload.conversation_id, payload.query, fast_reply, [])
-        
+
         return ChatResponse(
             answer=fast_reply,
             sources=[],
             conversation_id=payload.conversation_id
         )
-    
-    # ========== STEP 4: FETCH USER PLAN ==========
-    try:
-        profile_response = supabase.table("user_profiles").select("plan").eq("user_id", user_id).single().execute()
-        user_plan = profile_response.data.get("plan", "free") if profile_response.data else "free"
-    except Exception as e:
-        logger.warning(f"⚠️ [Chat] Could not fetch user plan: {e}")
-        user_plan = "free"
-    
-    # ========== STEP 5: SMART ROUTING (Select Model) ==========
-    model_selection = llm_router.select_model(
-        plan=user_plan,
-        complexity=guardrail_result.complexity
-    )
-    logger.info(f"🚀 [Chat] Route: plan={user_plan} → {model_selection.provider}/{model_selection.model}")
+
+    # ========== STEP 7: SMART ROUTING (Select Model) ==========
+    requested_tier: Optional[str] = None
+    model_hint = (payload.model or "").strip().lower()
+    force_smart = ComplexityEvaluator.should_force_pro(payload.query)
+
+    if model_hint in {settings.MODEL_ALIAS_FAST, settings.SECONDARY_MODEL_NAME.lower()}:
+        requested_tier = settings.MODEL_ALIAS_FAST
+    elif model_hint in {settings.MODEL_ALIAS_SMART, settings.PRIMARY_MODEL_NAME.lower()}:
+        requested_tier = settings.MODEL_ALIAS_SMART
+
+    if force_smart:
+        forced_selection = llm_router.select_model(
+            plan=user_plan,
+            complexity="COMPLEX",
+            query_text=payload.query,
+        )
+        requested_tier = (
+            settings.MODEL_ALIAS_SMART
+            if forced_selection.model == settings.PRIMARY_MODEL_NAME
+            else settings.MODEL_ALIAS_FAST
+        )
+        logger.info(
+            "🧠 [Chat] Intent override: keyword force → tier=%s",
+            requested_tier,
+        )
+    elif not requested_tier:
+        model_selection = llm_router.select_model(
+            plan=user_plan,
+            complexity=guardrail_result.complexity,
+            query_text=payload.query,
+        )
+        requested_tier = (
+            settings.MODEL_ALIAS_SMART
+            if model_selection.model == settings.PRIMARY_MODEL_NAME
+            else settings.MODEL_ALIAS_FAST
+        )
+        logger.info(
+            "🚀 [Chat] Auto route: plan=%s complexity=%s → tier=%s (%s/%s)",
+            user_plan,
+            guardrail_result.complexity,
+            requested_tier,
+            model_selection.provider,
+            model_selection.model,
+        )
+    else:
+        logger.info(
+            "🚀 [Chat] User-selected tier: plan=%s model=%s → tier=%s",
+            user_plan,
+            payload.model,
+            requested_tier,
+        )
+
+    if requested_tier == settings.MODEL_ALIAS_FAST and _is_long_query(payload.query):
+        fast_window = MODEL_CONTEXT_WINDOWS.get(settings.SECONDARY_MODEL_NAME, DEFAULT_CONTEXT_WINDOW)
+        smart_window = MODEL_CONTEXT_WINDOWS.get(settings.PRIMARY_MODEL_NAME, DEFAULT_CONTEXT_WINDOW)
+        if smart_window > fast_window:
+            requested_tier = settings.MODEL_ALIAS_SMART
+            logger.info(
+                "🧠 [Chat] Long query upgrade: words>=%s → tier=%s",
+                LONG_QUERY_WORD_THRESHOLD,
+                requested_tier,
+            )
+    # ========== STEP 7.1: RESOLVE ORG SCOPE (already fetched) ==========
     
     # ========== STEP 6: CONDENSE QUESTION (with trimmed history) ==========
-    # Task 3: Token-Aware History Pruning
     trimmed_history = trim_history(payload.history or [])
     search_query = condense_question(payload.query, trimmed_history)
     
@@ -501,37 +1046,172 @@ async def chat_endpoint(
         logger.error(f"ERROR: Embedding failed: {e}")
         raise HTTPException(500, f"Embedding failed: {e}")
 
-    # ========== STEP 8: HYBRID SEARCH ==========
+    # ========== STEP 8: HYBRID SEARCH (Scope-Aware) ==========
+    # If explicit scope_id provided, use scoped search
+    explicit_scope = payload.scope_id
+    force_all_scopes = False
+    if explicit_scope == "__all__":
+        explicit_scope = None
+        force_all_scopes = True
+    
     try:
-        response = supabase.rpc("hybrid_search", {
-            "query_text": search_query,
-            "query_embedding": query_vector,
-            "match_count": 10,  # Fetch more initially, then filter
-            "filter_user_id": user_id,
-            "vector_weight": 0.7,
-            "keyword_weight": 0.3,
-            "similarity_threshold": 0.25
-        }).execute()
+        if explicit_scope:
+            # User explicitly selected a scope - use scoped search
+            logger.info(f"🎯 [Chat] Explicit scope search: {explicit_scope[:50]}...")
+            response = supabase.rpc("hybrid_search_scoped", {
+                "query_text": search_query,
+                "query_embedding": query_vector,
+                "match_count": 10,
+                "filter_org_id": organization_id,
+                "filter_scope_ids": [explicit_scope],
+                "similarity_threshold": 0.25
+            }).execute()
+        elif force_all_scopes:
+            # Search all sources using scoped RPC (wildcard scope filter)
+            response = supabase.rpc("hybrid_search_scoped", {
+                "query_text": search_query,
+                "query_embedding": query_vector,
+                "match_count": 15,
+                "filter_org_id": organization_id,
+                "filter_scope_ids": None,
+                "vector_weight": 0.7,
+                "keyword_weight": 0.3,
+                "similarity_threshold": 0.25
+            }).execute()
+        else:
+            # Standard search - Dominance Guard will analyze distribution
+            response = supabase.rpc("hybrid_search", {
+                "query_text": search_query,
+                "query_embedding": query_vector,
+                "match_count": 15,  # Fetch more for scope analysis
+                "filter_org_id": organization_id,
+                "vector_weight": 0.7,
+                "keyword_weight": 0.3,
+                "similarity_threshold": 0.25
+            }).execute()
         
         docs = response.data or []
         logger.info(f"📚 [Chat] Hybrid search found {len(docs)} raw candidates")
+        
     except Exception as e:
-        logger.warning(f"⚠️ [Chat] Hybrid search failed, using vector: {e}")
+        logger.warning(f"⚠️ [Chat] Hybrid search failed, using vector fallback: {e}")
         try:
             response = supabase.rpc("match_documents", {
                 "query_embedding": query_vector,
                 "match_threshold": 0.25, 
                 "match_count": 10,
-                "filter_user_id": user_id
+                "filter_org_id": organization_id
             }).execute()
             docs = response.data or []
         except Exception as fallback_e:
             logger.error(f"ERROR: Retrieval failed: {fallback_e}")
             raise HTTPException(500, f"Retrieval failed: {fallback_e}")
 
-    # ========== STEP 9: DYNAMIC CONTEXT INJECTION ==========
-    # CRITICAL FIX: hybrid_search returns 'vector_score', match_documents returns 'similarity'
-    # Check for both fields to handle both search methods
+    # ========== STEP 9: DOMINANCE GUARD (Scope Analysis) ==========
+    scope_context: Optional[ScopeContext] = None
+    selected_scope_id: Optional[str] = None
+    scope_identity: Optional[Dict[str, Any]] = None
+    multi_scope_identity_context: Optional[str] = None
+    
+    if force_all_scopes:
+        logger.info("🌐 [Chat] Search all sources selected - skipping dominance guard")
+        scope_ids = _extract_scope_ids(docs)
+        if scope_ids:
+            scope_infos = fetch_scope_candidates_with_summaries(
+                supabase, scope_ids, organization_id
+            )
+            multi_scope_identity_context = _build_multi_scope_identity_context(
+                scope_infos,
+                GLOBAL_IDENTITY_TOKEN_BUDGET,
+            )
+    elif explicit_scope:
+        # User explicitly selected scope - skip dominance analysis
+        selected_scope_id = explicit_scope
+        scope_identity = fetch_scope_identity(supabase, explicit_scope, organization_id)
+        scope_context = ScopeContext(
+            scope_id=explicit_scope,
+            scope_name=extract_scope_name(explicit_scope),
+            scope_type=scope_identity.get("type") if scope_identity else None,
+            dominance_ratio=1.0,
+            classification="explicit",
+        )
+        logger.info(f"🎯 [Chat] Using explicit scope: {explicit_scope[:50]}...")
+    
+    elif docs:
+        # Analyze scope distribution
+        scope_analysis = analyze_scope_distribution(docs)
+        
+        logger.info(
+            f"🔍 [Chat] Scope analysis: {scope_analysis.classification.value}, "
+            f"primary={scope_analysis.primary_scope_id[:50] if scope_analysis.primary_scope_id else 'None'}..., "
+            f"ratio={scope_analysis.dominance_ratio:.2%}"
+        )
+        
+        # ========== DOMINANCE GUARD DECISION ==========
+        
+        if scope_analysis.classification == ScopeClassification.FRAGMENTED:
+            # FRAGMENTED: Return HTTP 300 clarification request
+            logger.info("⚠️ [Chat] FRAGMENTED scope - requesting clarification")
+            
+            # Fetch scope summaries for candidates
+            candidate_scope_ids = [
+                s.scope_id for s in 
+                ([scope_analysis.primary_scope_stats] if scope_analysis.primary_scope_stats else []) +
+                scope_analysis.secondary_scopes[:4]
+            ]
+            
+            scope_infos = fetch_scope_candidates_with_summaries(
+                supabase, candidate_scope_ids, organization_id
+            )
+            
+            # Build scope_id -> info lookup
+            scope_info_map = {s["id"]: s for s in scope_infos}
+            
+            # Build candidates for response
+            candidates = []
+            for scope_stats in ([scope_analysis.primary_scope_stats] if scope_analysis.primary_scope_stats else []) + scope_analysis.secondary_scopes[:4]:
+                info = scope_info_map.get(scope_stats.scope_id, {})
+                candidates.append(ScopeCandidate(
+                    id=scope_stats.scope_id,
+                    summary=info.get("summary", f"{scope_stats.count} relevant documents")[:200],
+                    type=info.get("type", "unknown"),
+                ))
+            
+            # Return HTTP 300 Multiple Choices
+            return JSONResponse(
+                status_code=300,
+                content=ClarificationResponse(
+                    action="clarify_scope",
+                    message=(
+                        "I found relevant information across multiple sources. "
+                        "Please specify which source you'd like me to search, "
+                        "or I can search all and clearly attribute each piece."
+                    ),
+                    candidates=candidates,
+                    query=payload.query,
+                ).model_dump(),
+            )
+        
+        elif scope_analysis.classification in (ScopeClassification.DOMINANT, ScopeClassification.CONTESTED):
+            # DOMINANT or CONTESTED: Proceed with primary scope
+            selected_scope_id = scope_analysis.primary_scope_id
+            
+            if selected_scope_id:
+                scope_identity = fetch_scope_identity(supabase, selected_scope_id, organization_id)
+                scope_context = ScopeContext(
+                    scope_id=selected_scope_id,
+                    scope_name=extract_scope_name(selected_scope_id),
+                    scope_type=scope_identity.get("type") if scope_identity else None,
+                    dominance_ratio=scope_analysis.dominance_ratio,
+                    classification=scope_analysis.classification.value,
+                )
+            
+            # For DOMINANT, filter docs to primary scope only
+            if scope_analysis.classification == ScopeClassification.DOMINANT and selected_scope_id:
+                docs = filter_docs_by_scope(docs, selected_scope_id)
+                logger.info(f"✅ [Chat] DOMINANT: filtered to {len(docs)} docs from {selected_scope_id[:50]}...")
+
+    # ========== STEP 10: DYNAMIC CONTEXT INJECTION ==========
     high_quality_docs = [
         d for d in docs 
         if d.get("vector_score", d.get("similarity", 0)) >= settings.RAG_SIMILARITY_THRESHOLD
@@ -541,63 +1221,237 @@ async def chat_endpoint(
     sources_metadata = []
     
     if high_quality_docs:
-        logger.info(f"✅ [Chat] High quality context found: {len(high_quality_docs)} docs")
+        logger.info(f"✅ [Chat] High quality context: {len(high_quality_docs)} docs")
         context_text, sources_metadata = format_context_with_citations(high_quality_docs)
     else:
-        # CRITICAL: Do NOT fall back to generic AI responses!
-        # RAG must be document-only. Provide explicit "no docs" message.
-        logger.warning(f"⚠️ [Chat] No docs above {settings.RAG_SIMILARITY_THRESHOLD} threshold. Using document-only response.")
-        context_text = "[No relevant documents found in your knowledge base for this query.]"
+        scope_name = extract_scope_name(selected_scope_id) if selected_scope_id else "your knowledge base"
+        logger.warning(f"⚠️ [Chat] No docs above {settings.RAG_SIMILARITY_THRESHOLD} threshold")
+        context_text = f"[No relevant documents found in {scope_name} for this query.]"
         sources_metadata = []
 
-    # ========== STEP 10: GET SELECTED LLM & ENFORCE PLAN ==========
-    # Task 1: Hard-Enforce Limits via Factory
+    # ========== STEP 11: GET SELECTED LLM & ENFORCE PLAN ==========
     llm_result = LLMFactory.get_model(
-        provider=model_selection.provider,
-        model_name=model_selection.model,
-        user_plan=user_plan,  # Must pass plan for enforcement
+        user_plan=user_plan,
+        requested_tier=requested_tier or settings.MODEL_ALIAS_FAST,
         temperature=0.1,
-        streaming=payload.stream
+        streaming=payload.stream,
     )
     if isinstance(llm_result, tuple):
-        llm, _ = llm_result
+        llm, model_metadata = llm_result
     else:
         llm = llm_result
+        model_metadata = {}
+    if not isinstance(model_metadata, dict):
+        model_metadata = {}
+
+    actual_tier = model_metadata.get("actual_tier", requested_tier or settings.MODEL_ALIAS_FAST)
+    primary_provider = model_metadata.get("provider") or (
+        settings.PRIMARY_MODEL_PROVIDER
+        if actual_tier == settings.MODEL_ALIAS_SMART
+        else settings.SECONDARY_MODEL_PROVIDER
+    )
+    primary_model_name = model_metadata.get("model") or (
+        settings.PRIMARY_MODEL_NAME
+        if actual_tier == settings.MODEL_ALIAS_SMART
+        else settings.SECONDARY_MODEL_NAME
+    )
+
+    llm_candidates = [ModelSelection(provider=primary_provider, model=primary_model_name, reason="primary")]
+    if primary_provider == "openai":
+        llm_candidates.extend(llm_router.get_fallback_models())
+
+    candidate_models = [c.model for c in llm_candidates if c.model]
+    if candidate_models:
+        budget_model_name = min(
+            candidate_models,
+            key=lambda name: MODEL_CONTEXT_WINDOWS.get(name, DEFAULT_CONTEXT_WINDOW),
+        )
+    else:
+        budget_model_name = primary_model_name
+
+    logger.info(
+        "🤖 [Chat] LLM: requested=%s actual=%s model=%s provider=%s fallbacks=%s",
+        requested_tier,
+        actual_tier,
+        primary_model_name,
+        primary_provider,
+        [f"{c.provider}/{c.model}" for c in llm_candidates[1:]],
+    )
     
-    # ALWAYS use RAG prompt - never fall back to generic AI
-    # The context will indicate "no documents found" if empty
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),  # Contains {context} placeholder
-        ("user", "{question}")
-    ])
-    input_vars = {
-        "context": context_text,
-        "question": search_query,
-        "language": detected_language
-    }
+    # ========== STEP 12: BUILD PROMPT (Scope-Aware) ==========
+    scope_identity_context = None
+    scope_name = None
+    if scope_identity and selected_scope_id:
+        scope_identity_context = build_scope_identity_context(scope_identity)
+        scope_name = extract_scope_name(selected_scope_id)
+        scope_identity_context = _apply_scope_identity_budget(
+            scope_identity_context,
+            context_text,
+            budget_model_name,
+        )
+
+    prompt_cache: Dict[str, tuple[ChatPromptTemplate, Dict[str, Any], str]] = {}
+
+    def _prompt_bundle_for(provider: str) -> tuple[ChatPromptTemplate, Dict[str, Any], str]:
+        cached = prompt_cache.get(provider)
+        if cached:
+            return cached
+        bundle = _build_prompt_bundle(
+            provider=provider,
+            context_text=context_text,
+            question=search_query,
+            language=detected_language,
+            scope_identity_context=scope_identity_context,
+            scope_name=scope_name,
+            multi_scope_identity_context=multi_scope_identity_context,
+        )
+        prompt_cache[provider] = bundle
+        return bundle
+
+    prompt, input_vars, system_prompt = _prompt_bundle_for(primary_provider)
+    provider_set = {candidate.provider for candidate in llm_candidates}
+    estimated_input_tokens = max(
+        _estimate_prompt_tokens(
+            _prompt_bundle_for(provider)[2],
+            _prompt_bundle_for(provider)[1],
+        )
+        for provider in provider_set
+    )
+
+    try:
+        await check_llm_quota(
+            organization_id,
+            user_plan,
+            required_tokens=estimated_input_tokens,
+        )
+    except QuotaExceededError as exc:
+        raise_http_error(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            "PLAN_LIMIT_EXCEEDED",
+            "LLM token quota exceeded.",
+            exc.details if isinstance(exc, QuotaExceededError) else None,
+        )
     
+    # ========== STEP 13: GENERATION ==========
     if payload.stream:
-        # ========== STREAMING RESPONSE ==========
         return StreamingResponse(
             stream_chat_response(
-                prompt, llm, context_text, search_query, 
-                sources_metadata, payload.conversation_id, user_id, supabase,
-                detected_language
+                _prompt_bundle_for,
+                llm_candidates,
+                actual_tier,
+                context_text,
+                search_query,
+                sources_metadata,
+                payload.conversation_id,
+                user_id,
+                supabase,
+                detected_language,
+                scope_context,
+                organization_id,
+                user_plan,
             ),
             media_type="text/event-stream"
         )
     else:
-        # ========== STANDARD RESPONSE ==========
-        chain = prompt | llm | StrOutputParser()
-        
-        try:
-            answer = chain.invoke(input_vars)
-        except Exception as e:
-            logger.error(f"ERROR: LLM Generation failed: {e}")
-            sentry_sdk.capture_exception(e)
-            raise HTTPException(500, f"LLM Generation failed: {e}")
+        answer = None
+        used_provider = primary_provider
+        used_model = primary_model_name
+        used_prompt_tokens = estimated_input_tokens
+        last_exc: Optional[Exception] = None
 
-        # Save messages if conversation_id is provided
+        for idx, candidate in enumerate(llm_candidates):
+            if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
+                logger.warning("⚡ [Chat] OpenAI circuit open, skipping primary")
+                continue
+
+            current_llm = llm
+            if idx > 0:
+                try:
+                    llm_result = LLMFactory.get_model(
+                        provider=candidate.provider,
+                        model_name=candidate.model,
+                        user_plan=user_plan,
+                        requested_tier=actual_tier,
+                        temperature=0.1,
+                        streaming=False,
+                        allow_override=True,
+                    )
+                    current_llm = llm_result[0] if isinstance(llm_result, tuple) else llm_result
+                except Exception as e:
+                    last_exc = e
+                    if _should_failover(e):
+                        logger.warning("⚠️ [Chat] Fallback init failed for %s/%s: %s", candidate.provider, candidate.model, e)
+                        continue
+                    raise
+
+            candidate_prompt, candidate_vars, system_prompt = _prompt_bundle_for(candidate.provider)
+            chain = candidate_prompt | current_llm | StrOutputParser()
+
+            try:
+                if candidate.provider == "openai":
+                    with openai_breaker:
+                        answer = chain.invoke(candidate_vars)
+                else:
+                    answer = chain.invoke(candidate_vars)
+                used_provider = candidate.provider
+                used_model = candidate.model
+                used_prompt_tokens = _estimate_prompt_tokens(system_prompt, candidate_vars)
+                break
+            except Exception as e:
+                last_exc = e
+                if _should_failover(e):
+                    logger.warning("⚠️ [Chat] LLM failover from %s/%s: %s", candidate.provider, candidate.model, e)
+                    continue
+                logger.error("ERROR: LLM Generation failed: %s", e)
+                sentry_sdk.capture_exception(e)
+                if _is_timeout_error(e):
+                    raise_http_error(
+                        status.HTTP_504_GATEWAY_TIMEOUT,
+                        "LLM_TIMEOUT",
+                        "The model took too long to respond. Please try again.",
+                        {"reason": str(e)[:500]},
+                    )
+                raise_http_error(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    "LLM_FAILED",
+                    "LLM generation failed.",
+                    {"reason": str(e)[:500]},
+                )
+
+        if answer is None and last_exc is not None:
+            logger.error("ERROR: All LLM providers failed: %s", last_exc)
+            sentry_sdk.capture_exception(last_exc)
+            if _is_timeout_error(last_exc):
+                raise_http_error(
+                    status.HTTP_504_GATEWAY_TIMEOUT,
+                    "LLM_TIMEOUT",
+                    "The model took too long to respond. Please try again.",
+                    {"reason": str(last_exc)[:500]},
+                )
+            raise_http_error(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "LLM_FAILED",
+                "LLM generation failed.",
+                {"reason": str(last_exc)[:500]},
+            )
+
+        # Add scope footnote for DOMINANT/CONTESTED classifications
+        if scope_context and scope_context.classification in ("dominant", "contested"):
+            footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
+            answer = answer + footnote
+
+        total_tokens = used_prompt_tokens + _estimate_token_count(answer)
+        try:
+            await record_llm_usage(
+                organization_id,
+                total_tokens,
+                plan_code=user_plan,
+                provider=used_provider,
+                model=used_model,
+            )
+        except Exception as e:
+            logger.warning("⚠️ [Chat] Failed to record LLM usage: %s", e)
+
         message_id = save_messages(
             supabase, payload.conversation_id, payload.query, answer,
             sources_metadata
@@ -607,48 +1461,158 @@ async def chat_endpoint(
             answer=answer,
             sources=sources_metadata,
             conversation_id=payload.conversation_id,
-            message_id=message_id
+            message_id=message_id,
+            scope_context=scope_context,
         )
 
 
 async def stream_chat_response(
-    prompt, llm, context: str, question: str,
-    sources: List[Dict], conversation_id: str, user_id: str, supabase,
-    language: str = "en"
+    prompt_builder,
+    llm_candidates: List[ModelSelection],
+    actual_tier: str,
+    context: str,
+    question: str,
+    sources: List[Dict],
+    conversation_id: str,
+    user_id: str,
+    supabase,
+    language: str = "en",
+    scope_context: Optional[ScopeContext] = None,
+    organization_id: str = "",
+    plan_code: str = "free",
 ) -> AsyncGenerator[str, None]:
     """
-    Stream chat response using Server-Sent Events (SSE).
-    
+    Stream chat response using Server-Sent Events (SSE) with failover support.
+
     Event format:
     - data: {"type": "token", "content": "..."}
     - data: {"type": "sources", "sources": [...]}
+    - data: {"type": "scope_context", "scope_context": {...}}
     - data: {"type": "done"}
     """
-    full_response = ""
-    
-    try:
+    last_exc: Optional[Exception] = None
+
+    for candidate in llm_candidates:
+        if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
+            logger.warning("⚡ [Chat] OpenAI circuit open, skipping stream attempt")
+            continue
+
+        full_response = ""
+        sent_any = False
+
+        try:
+            llm_result = LLMFactory.get_model(
+                provider=candidate.provider,
+                model_name=candidate.model,
+                user_plan=plan_code,
+                requested_tier=actual_tier,
+                temperature=0.1,
+                streaming=True,
+                allow_override=True,
+            )
+            llm = llm_result[0] if isinstance(llm_result, tuple) else llm_result
+        except Exception as e:
+            last_exc = e
+            if _should_failover(e):
+                logger.warning("⚠️ [Chat] Failed to init stream provider %s/%s: %s", candidate.provider, candidate.model, e)
+                continue
+            raise
+
+        prompt, input_vars, system_prompt = prompt_builder(candidate.provider)
         chain = prompt | llm
-        
-        async for chunk in chain.astream({"context": context, "question": question, "language": language}):
-            if hasattr(chunk, 'content') and chunk.content:
-                full_response += chunk.content
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
-        
-        # Send sources after completion
-        yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
-        
-        # Save messages
-        message_id = save_messages(
-            supabase, conversation_id, question, full_response,
-            sources
+
+        try:
+            if candidate.provider == "openai":
+                with openai_breaker:
+                    async for chunk in chain.astream(input_vars):
+                        if hasattr(chunk, "content") and chunk.content:
+                            sent_any = True
+                            full_response += chunk.content
+                            yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+            else:
+                async for chunk in chain.astream(input_vars):
+                    if hasattr(chunk, "content") and chunk.content:
+                        sent_any = True
+                        full_response += chunk.content
+                        yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+
+            # Add scope footnote for DOMINANT/CONTESTED classifications
+            if scope_context and scope_context.classification in ("dominant", "contested"):
+                footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
+                full_response += footnote
+                yield f"data: {json.dumps({'type': 'token', 'content': footnote})}\n\n"
+
+            # Send sources after completion
+            yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+
+            # Send scope context if available
+            if scope_context:
+                yield f"data: {json.dumps({'type': 'scope_context', 'scope_context': scope_context.model_dump()})}\n\n"
+
+            # Save messages
+            message_id = save_messages(
+                supabase, conversation_id, question, full_response,
+                sources
+            )
+
+            total_tokens = _estimate_prompt_tokens(system_prompt, input_vars) + _estimate_token_count(full_response)
+            try:
+                await record_llm_usage(
+                    organization_id,
+                    total_tokens,
+                    plan_code=plan_code,
+                    provider=candidate.provider,
+                    model=candidate.model,
+                )
+            except Exception as e:
+                logger.warning("⚠️ [Chat] Failed to record LLM usage: %s", e)
+
+            yield f"data: {json.dumps({'type': 'done', 'message_id': message_id})}\n\n"
+            return
+
+        except Exception as e:
+            last_exc = e
+            if sent_any:
+                logger.error("Streaming error after partial output: %s", e)
+                sentry_sdk.capture_exception(e)
+                payload = build_error_payload(
+                    "LLM_FAILED",
+                    "Streaming interrupted.",
+                    {"reason": str(e)[:500]},
+                )
+                yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
+                return
+
+            if _should_failover(e):
+                logger.warning("⚠️ [Chat] Streaming failover from %s/%s: %s", candidate.provider, candidate.model, e)
+                continue
+
+            logger.error("Streaming error: %s", e)
+            sentry_sdk.capture_exception(e)
+            if _is_timeout_error(e):
+                payload = build_error_payload(
+                    "LLM_TIMEOUT",
+                    "The model took too long to respond. Please try again.",
+                    {"reason": str(e)[:500]},
+                )
+            else:
+                payload = build_error_payload(
+                    "LLM_FAILED",
+                    "LLM generation failed.",
+                    {"reason": str(e)[:500]},
+                )
+            yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
+            return
+
+    if last_exc:
+        logger.error("Streaming error: %s", last_exc)
+        sentry_sdk.capture_exception(last_exc)
+        payload = build_error_payload(
+            "LLM_FAILED",
+            "LLM generation failed.",
+            {"reason": str(last_exc)[:500]},
         )
-        
-        yield f"data: {json.dumps({'type': 'done', 'message_id': message_id})}\n\n"
-        
-    except Exception as e:
-        logger.error(f"Streaming error: {e}")
-        sentry_sdk.capture_exception(e)
-        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
 
 
 def save_messages(supabase, conversation_id: str, query: str, answer: str, sources: List[Any]) -> Optional[str]:

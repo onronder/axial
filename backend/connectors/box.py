@@ -55,6 +55,7 @@ from connectors.enhanced import (
 from connectors.limits import connector_fetch_limit
 from core.db import get_supabase
 from core.config import settings
+from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,10 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     - Uses root_readonly scope (minimum required)
     - Gracefully handles 403 on restricted folders
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._folder_name_cache: Dict[str, str] = {}
 
     @property
     def connector_type(self) -> SourceType:
@@ -838,20 +843,27 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         file_id = metadata.get("id")
         name = metadata.get("name")
         file_size = metadata.get("size", 0)
+        parent_folder_id = self._normalize_folder_id(self._get_parent_id(metadata))
+        folder_name = self._get_folder_name(config, parent_folder_id)
 
         # Download content with appropriate strategy
         content = self._download_file_content(config, file_id, file_size)
 
+        doc_metadata = {
+            "source": "box",
+            "box_id": file_id,
+            "folder_id": parent_folder_id,
+            "folder_name": folder_name,
+            "sha1": metadata.get("sha1"),
+            "modified_at": metadata.get("modified_at"),
+            "size": metadata.get("size"),
+            "parent_id": self._get_parent_id(metadata),
+        }
+        doc_metadata["scope_id"] = build_scope_uri("box", doc_metadata)
+
         return SourceDocument(
             content=content,
-            metadata={
-                "source": "box",
-                "box_id": file_id,
-                "sha1": metadata.get("sha1"),
-                "modified_at": metadata.get("modified_at"),
-                "size": metadata.get("size"),
-                "parent_id": self._get_parent_id(metadata),
-            },
+            metadata=doc_metadata,
             source_type=SourceType.BOX,
             source_id=self._build_canonical_source_id(file_id, is_folder=False),  # DETERMINISTIC!
             filename=name,
@@ -956,6 +968,27 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         if parent and isinstance(parent, dict):
             return parent.get("id")
         return None
+
+    def _get_folder_name(self, config: dict, folder_id: str) -> str:
+        """
+        Resolve folder name for canonical scope URI generation.
+        """
+        folder_id = self._normalize_folder_id(folder_id)
+        cached = self._folder_name_cache.get(folder_id)
+        if cached:
+            return cached
+        try:
+            result = self._request(
+                config,
+                f"/folders/{folder_id}",
+                params={"fields": "id,name"},
+            )
+            name = result.get("name") or "root"
+        except Exception as exc:
+            logger.warning("⚠️ [Box] Failed to resolve folder name for %s: %s", folder_id, exc)
+            name = "root"
+        self._folder_name_cache[folder_id] = name
+        return name
 
     @staticmethod
     def _parse_datetime(value: Optional[str]) -> Optional[datetime]:

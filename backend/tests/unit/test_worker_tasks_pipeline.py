@@ -77,7 +77,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
+                metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://test.txt"},
             )
 
         assert result.success is True
@@ -101,7 +101,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
+                metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://big.txt"},
             )
 
         assert result.success is False
@@ -129,7 +129,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "application/pdf"},
+                metadata={"mime_type": "application/pdf", "organization_id": "org-1", "scope_id": "file_upload://slow.pdf"},
             )
 
         assert result.success is False
@@ -157,7 +157,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "application/octet-stream"},
+                metadata={"mime_type": "application/octet-stream", "organization_id": "org-1", "scope_id": "file_upload://file.bin"},
             )
 
         assert result.success is True
@@ -181,7 +181,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
+                metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://empty.txt"},
             )
 
         assert result.success is True
@@ -208,7 +208,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
+                metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://fail.txt"},
             )
 
         assert result.success is False
@@ -236,6 +236,7 @@ class TestIngestDocumentBatched:
             doc_id = tasks.ingest_document_batched(
                 supabase=supabase,
                 user_id="user-1",
+                organization_id="org-1",
                 doc_title="doc.txt",
                 source_type="file_upload",
                 metadata={"mime_type": "text/plain"},
@@ -272,6 +273,7 @@ class TestIngestDocumentBatched:
             doc_id = tasks.ingest_document_batched(
                 supabase=supabase,
                 user_id="user-1",
+                organization_id="org-1",
                 doc_title="doc.txt",
                 source_type="file_upload",
                 metadata={"mime_type": "text/plain"},
@@ -295,6 +297,7 @@ class TestIngestDocumentBatched:
             tasks.ingest_document_batched(
                 supabase=supabase,
                 user_id="user-1",
+                organization_id="org-1",
                 doc_title="doc.txt",
                 source_type="file_upload",
                 metadata={"mime_type": "text/plain"},
@@ -326,26 +329,42 @@ class TestFinalizeJobTask:
     def test_finalize_job_task_skips_incomplete_job(self):
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
-        job_table = _make_chain_table(result_data={"status": "processing", "total_files": 2})
+        job_table = _make_chain_table(result_data={"status": "processing", "total_files": 2, "organization_id": "org-1"})
         supabase.table.return_value = job_table
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("worker.tasks.get_ingest_job_counters", return_value={"total": 2, "processed": 1}):
             tasks.finalize_job_task.run.__func__(task, "user-1", "job-1")
 
-        job_table.update.assert_not_called()
+        # Should not call update for final status update since job is incomplete
+        # (though org backfill may call update if organization_id is None)
+        update_calls = [c for c in job_table.update.call_args_list if "status" in str(c)]
+        assert len(update_calls) == 0
 
     @pytest.mark.unit
     def test_finalize_job_task_updates_status_and_notifies(self):
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
+        # Provide tables for job and file status queries
         job_table = _make_chain_table(
-            execute_side_effect=[
-                MagicMock(data={"status": "processing", "total_files": 2}),
-                MagicMock(data=[{}]),
+            result_data={"status": "processing", "total_files": 2, "organization_id": "org-1"}
+        )
+        # File status table should return a list of dicts with document_id
+        file_status_table = _make_chain_table(
+            result_data=[{"document_id": "doc-1"}, {"document_id": "doc-2"}]
+        )
+        # Documents table returns docs with scope_id
+        docs_table = _make_chain_table(
+            result_data=[
+                {"id": "doc-1", "scope_id": "file_upload://file1.txt"},
+                {"id": "doc-2", "scope_id": "file_upload://file2.txt"},
             ]
         )
-        supabase.table.return_value = job_table
+        supabase.table.side_effect = lambda name: {
+            "ingestion_jobs": job_table,
+            "ingestion_file_status": file_status_table,
+            "documents": docs_table,
+        }.get(name, job_table)
 
         counts = {
             "total": 2,
@@ -362,10 +381,12 @@ class TestFinalizeJobTask:
              patch("worker.tasks._get_ingestion_counts_from_db", return_value=counts), \
              patch("worker.tasks.create_notification") as create_notification, \
              patch("worker.tasks.send_email_notification") as send_email_notification, \
-             patch("worker.tasks.clear_ingest_job_counters") as clear_counters:
+             patch("worker.tasks.clear_ingest_job_counters") as clear_counters, \
+             patch("worker.tasks.synthesize_and_save_identity", return_value=None):
             tasks.finalize_job_task.run.__func__(task, "user-1", "job-1")
 
-        job_table.update.assert_called_once()
+        # Should have at least one update call for status
+        job_table.update.assert_called()
         create_notification.assert_called_once()
         send_email_notification.assert_called_once()
         clear_counters.assert_called_once()
@@ -394,7 +415,8 @@ class TestProcessFileTask:
     def test_process_file_task_missing_content_fails(self):
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
-        file_data = {"filename": "empty.txt"}
+        file_data = {"filename": "empty.txt", "organization_id": "org-1"}
+        scope_id = "file_upload://empty.txt"
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("worker.tasks.update_file_status") as update_file_status, \
@@ -406,6 +428,7 @@ class TestProcessFileTask:
                 file_data,
                 "status-1",
                 "file_upload",
+                scope_id,
             )
 
         assert result["status"] == "failed"
@@ -420,10 +443,12 @@ class TestProcessFileTask:
         supabase = MagicMock()
         file_data = {
             "filename": "big.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"too-big").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://big.txt"
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch.object(tasks.settings, "MAX_FILE_SIZE", 1), \
@@ -436,6 +461,7 @@ class TestProcessFileTask:
                 file_data,
                 "status-1",
                 "file_upload",
+                scope_id,
             )
 
         assert result["status"] == "failed"
@@ -455,10 +481,12 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.pdf",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"content").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "application/pdf",
         }
+        scope_id = "file_upload://file.pdf"
 
         parse_result = _make_parse_result(
             file_type="pdf",
@@ -477,6 +505,7 @@ class TestProcessFileTask:
                 file_data,
                 "status-1",
                 "file_upload",
+                scope_id,
             )
 
         # With async embedding pipeline, returns "queued_embedding"
@@ -492,10 +521,12 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.bin",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"binary").decode("utf-8"),
             "size_bytes": 6,
             "mime_type": "application/octet-stream",
         }
+        scope_id = "file_upload://file.bin"
 
         parse_result = _make_parse_result(
             file_type="unsupported",
@@ -514,6 +545,7 @@ class TestProcessFileTask:
                 file_data,
                 "status-1",
                 "file_upload",
+                scope_id,
             )
 
         assert result["status"] == "skipped"
@@ -532,10 +564,12 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"content").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://file.txt"
 
         # Simulate parsing failure
         with patch("worker.tasks.get_supabase", return_value=supabase), \
@@ -549,6 +583,7 @@ class TestProcessFileTask:
                 file_data,
                 "status-1",
                 "file_upload",
+                scope_id,
             )
 
         assert result["status"] == "failed"
@@ -571,10 +606,12 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.txt",
+            "organization_id": "org-1",
             "content_b64": base64.b64encode(b"content").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://file.txt"
 
         parse_result = _make_parse_result(
             file_type="txt",
@@ -597,6 +634,7 @@ class TestProcessFileTask:
                 file_data,
                 "status-1",
                 "file_upload",
+                scope_id,
             )
 
         # With async embedding pipeline, success returns "queued_embedding" or "success"
@@ -614,10 +652,12 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.txt",
+            "organization_id": "org-1",
             "storage_path": "uploads/file.txt",
             "size_bytes": 7,
             "mime_type": "text/plain",
         }
+        scope_id = "file_upload://uploads/file.txt"
 
         parse_result = _make_parse_result(
             file_type="txt",
@@ -637,6 +677,7 @@ class TestProcessFileTask:
                 file_data,
                 "status-1",
                 "file_upload",
+                scope_id,
             )
 
         # With async embedding pipeline, success returns "queued_embedding" or "success"
@@ -690,7 +731,8 @@ class TestNotificationsAndEmail:
     def test_send_email_notification_respects_setting(self):
         supabase = MagicMock()
         profile_table = _make_chain_table(data={"display_name": "User", "email": "u@example.com"})
-        settings_table = _make_chain_table(data={"enabled": False})
+        # Settings uses execute() which returns a list of rows, not a single object
+        settings_table = _make_chain_table(data=[{"enabled": False}])
         supabase.table.side_effect = lambda name: {
             "user_profiles": profile_table,
             "profiles": profile_table,

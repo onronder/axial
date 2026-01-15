@@ -477,7 +477,7 @@ class TestMimeTypeGuessing:
         connector = S3Connector()
         
         # Unknown extension falls back to content_type
-        assert connector._guess_mime_type("file.xyz", "text/plain") == "text/plain"
+        assert connector._guess_mime_type("file.unknownext12345", "text/plain") == "text/plain"
         
         # No hints falls back to octet-stream
-        assert connector._guess_mime_type("file.xyz") == "application/octet-stream"
+        assert connector._guess_mime_type("file.unknownext12345") == "application/octet-stream"

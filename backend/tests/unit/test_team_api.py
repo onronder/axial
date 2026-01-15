@@ -85,7 +85,7 @@ async def test_delete_team_non_owner():
         from api.v1.team import delete_team
 
         with pytest.raises(HTTPException) as exc:
-            await delete_team(user_id="user-1")
+            await delete_team(purge_data=False, user_id="user-1")
         assert exc.value.status_code == 403
 
 
@@ -104,7 +104,7 @@ async def test_delete_team_success():
          patch("api.v1.team.team_service.invalidate_plan_cache") as invalidate_cache:
         from api.v1.team import delete_team
 
-        result = await delete_team(user_id="user-1")
+        result = await delete_team(purge_data=False, user_id="user-1")
         assert result["status"] == "success"
         invalidate_cache.assert_called_once_with("user-1")
 
@@ -475,7 +475,7 @@ async def test_delete_team_missing_team():
         from api.v1.team import delete_team
 
         with pytest.raises(HTTPException) as exc:
-            await delete_team(user_id="user-1")
+            await delete_team(purge_data=False, user_id="user-1")
         assert exc.value.status_code == 404
 
 
@@ -492,7 +492,7 @@ async def test_delete_team_handles_exception():
         from api.v1.team import delete_team
 
         with pytest.raises(HTTPException) as exc:
-            await delete_team(user_id="user-1")
+            await delete_team(purge_data=False, user_id="user-1")
         assert exc.value.status_code == 500
 
 

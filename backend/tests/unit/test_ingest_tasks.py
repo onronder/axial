@@ -206,18 +206,33 @@ class TestEmailNotification:
         assert True
     
     @patch('worker.tasks.email_service')
-    @patch('worker.tasks.get_supabase')
-    def test_respects_email_preference(self, mock_supabase, mock_email):
+    def test_respects_email_preference(self, mock_email):
         """Should not send email if user has disabled notifications."""
         from worker.tasks import send_email_notification
         
         mock_supabase_instance = Mock()
-        mock_supabase_instance.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"email": "test@example.com"}
-        )
-        mock_supabase_instance.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
-            data={"enabled": False}
-        )
+        # Setup auth admin mock for email
+        mock_supabase_instance.auth = Mock()
+        mock_supabase_instance.auth.admin = Mock()
+        auth_user = Mock()
+        auth_user.user = Mock()
+        auth_user.user.email = "test@example.com"
+        mock_supabase_instance.auth.admin.get_user_by_id.return_value = auth_user
+        
+        # Setup table mocks
+        def table_side_effect(table_name):
+            table_mock = Mock()
+            if table_name == "user_profiles":
+                profile_mock = Mock()
+                profile_mock.data = {"display_name": "Test User", "full_name": None}
+                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
+            elif table_name == "user_notification_settings":
+                settings_mock = Mock()
+                settings_mock.data = [{"enabled": False}]  # Disabled
+                table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
+            return table_mock
+        
+        mock_supabase_instance.table.side_effect = table_side_effect
         
         send_email_notification(mock_supabase_instance, "user-id", 5)
         

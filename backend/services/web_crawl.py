@@ -5,7 +5,7 @@ Shared across web crawl endpoints.
 """
 
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Optional
 
 import logging
 
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 def queue_web_crawl(
     *,
     user_id: str,
+    organization_id: Optional[str] = None,
     root_url: str,
     crawl_type: str,
     max_depth: int,
@@ -29,6 +30,7 @@ def queue_web_crawl(
     """Create a crawl config record and dispatch crawl discovery."""
     supabase = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
+    org_id = organization_id or user_id
 
     crawl_config_data = {
         "user_id": user_id,
@@ -54,6 +56,7 @@ def queue_web_crawl(
     job_record = {
             "id": ingestion_job_id,
             "user_id": user_id,
+            "organization_id": org_id,
             "provider": "web",
             "status": "pending",
             "total_files": 0,

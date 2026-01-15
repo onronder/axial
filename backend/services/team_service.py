@@ -438,6 +438,17 @@ class TeamService:
         except Exception as e:
             logger.error(f"[TeamService] get_user_team failed: {e}")
             return None
+
+    async def get_organization_id(self, user_id: str) -> str:
+        """
+        Resolve the organization (team) ID for a user.
+        Falls back to user_id if no team is found.
+        """
+        team = await self.get_user_team(user_id)
+        if team and team.get("id"):
+            return team["id"]
+        logger.warning(f"[TeamService] No team found for user {user_id[:8]}..., using user_id as org_id")
+        return user_id
     
     async def get_team_by_id(self, team_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -588,16 +599,10 @@ class TeamService:
             Tuple of (allowed, error_message, plan_limits)
         """
         try:
-            supabase = get_supabase()
-            
-            # Get owner's plan
-            profile_response = supabase.table("user_profiles").select(
-                "plan"
-            ).eq("user_id", owner_id).single().execute()
-            
-            plan = "free"
-            if profile_response.data:
-                plan = profile_response.data.get("plan", "free")
+            try:
+                plan = await self.get_effective_plan(owner_id)
+            except Exception:
+                plan = "free"
             
             limits = get_plan_limits(plan)
             
@@ -705,15 +710,30 @@ class TeamService:
             # Validate role
             if role not in ["admin", "editor", "viewer"]:
                 role = "viewer"
+
+            existing_user_id = None
+            try:
+                profile_res = supabase.table("user_profiles").select(
+                    "user_id"
+                ).eq("email", email).limit(1).execute()
+                profile_data = profile_res.data if isinstance(getattr(profile_res, "data", None), list) else []
+                if profile_data:
+                    existing_user_id = profile_data[0].get("user_id")
+            except Exception as e:
+                logger.warning(f"[TeamService] Failed to resolve user_id for invite {email}: {e}")
+
+            auto_activate = bool(existing_user_id)
             
             # Create invite
             member_data = {
                 "team_id": team_id,
                 "owner_user_id": owner_id,
+                "member_user_id": existing_user_id,
                 "email": email,
                 "name": name or email.split("@")[0],
                 "role": role,
-                "status": "pending",
+                "status": "active" if auto_activate else "pending",
+                "joined_at": now if auto_activate else None,
                 "created_at": now,
                 "invited_at": now
             }
@@ -726,7 +746,10 @@ class TeamService:
                 logger.info(f"[TeamService] Invited {email} to team {team_id[:8]}...")
                 
                 # Send invite email
-                await self.send_invite_email(email, name or email.split("@")[0], team["name"], invite_token)
+                if not auto_activate:
+                    await self.send_invite_email(email, name or email.split("@")[0], team["name"], invite_token)
+                else:
+                    logger.info(f"[TeamService] Auto-linked existing user for {email} to team {team_id[:8]}...")
                 
                 return {
                     "success": True,
@@ -843,18 +866,27 @@ class TeamService:
         try:
             # Parse CSV
             reader = csv.DictReader(io.StringIO(csv_content))
+            rows = list(reader)
             
             results = {
                 "success": True,
-                "total": 0,
+                "total": len(rows),
                 "invited": 0,
                 "failed": 0,
                 "errors": [],
                 "members": []
             }
-            
-            for row in reader:
-                results["total"] += 1
+
+            team = await self.get_user_team(owner_id)
+            if not team:
+                return {"success": False, "error": "Team not found", "code": "NOT_FOUND"}
+
+            team_id = team["id"]
+            current_count = await self._get_current_member_count(team_id)
+            max_seats = limits.get("max_team_seats", 1)
+            remaining_seats = max(0, max_seats - current_count)
+
+            for row in rows:
                 
                 email = row.get("email", "").strip()
                 role = row.get("role", "viewer").strip().lower()
@@ -863,6 +895,14 @@ class TeamService:
                 if not email or "@" not in email:
                     results["failed"] += 1
                     results["errors"].append({"email": email, "error": "Invalid email"})
+                    continue
+
+                if remaining_seats <= 0:
+                    results["failed"] += 1
+                    results["errors"].append({
+                        "email": email,
+                        "error": f"Team seat limit reached ({current_count}/{max_seats})",
+                    })
                     continue
                 
                 # Invite each member
@@ -876,6 +916,7 @@ class TeamService:
                 if invite_result.get("success"):
                     results["invited"] += 1
                     results["members"].append(invite_result.get("member", {}))
+                    remaining_seats = max(0, remaining_seats - 1)
                 else:
                     results["failed"] += 1
                     results["errors"].append({

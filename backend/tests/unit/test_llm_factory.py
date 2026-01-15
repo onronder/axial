@@ -141,6 +141,50 @@ def test_create_groq_success(monkeypatch):
     assert llm.kwargs["max_tokens"] == 99
 
 
+def test_create_grok_requires_api_key(monkeypatch):
+    monkeypatch.setattr(settings, "GROK_API_KEY", None)
+    with pytest.raises(ValueError):
+        LLMFactory._create_grok("grok-test", 0, False, None)
+
+
+def test_create_grok_passes_base_url(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(settings, "GROK_API_KEY", "grok-key")
+    monkeypatch.setattr(settings, "GROK_BASE_URL", "https://api.x.ai/v1")
+
+    with patch("services.llm_factory.ChatOpenAI", return_value=sentinel) as chat_openai:
+        llm = LLMFactory._create_grok("grok-test", 0.2, True, 256)
+
+    assert llm is sentinel
+    chat_openai.assert_called_once_with(
+        model="grok-test",
+        temperature=0.2,
+        streaming=True,
+        api_key=settings.GROK_API_KEY,
+        base_url=settings.GROK_BASE_URL,
+        max_tokens=256,
+    )
+
+
+def test_get_model_allow_override_uses_explicit_provider(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(settings, "GROK_API_KEY", "grok-key")
+
+    with patch.object(LLMFactory, "_create_grok", return_value=sentinel) as create_grok:
+        llm, metadata = LLMFactory.get_model(
+            provider="grok",
+            model_name="grok-test",
+            user_plan="pro",
+            requested_tier=settings.MODEL_ALIAS_FAST,
+            allow_override=True,
+        )
+
+    assert llm is sentinel
+    assert metadata["provider"] == "grok"
+    assert metadata["model"] == "grok-test"
+    create_grok.assert_called_once_with("grok-test", 0, False, None)
+
+
 def test_get_primary_and_secondary_models(monkeypatch):
     sentinel_primary = object()
     sentinel_secondary = object()

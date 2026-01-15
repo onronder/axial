@@ -1,9 +1,19 @@
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch, AsyncMock
 
 import pytest
 from fastapi import HTTPException
 
 from api.v1.search import SearchRequest, search_documents
+
+
+@pytest.fixture(autouse=True)
+def mock_org_id():
+    with patch(
+        "api.v1.search.team_service.get_organization_id",
+        new_callable=AsyncMock,
+        return_value="org-1",
+    ):
+        yield
 
 
 class TestSearchDocuments:

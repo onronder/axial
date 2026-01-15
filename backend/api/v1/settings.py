@@ -230,6 +230,33 @@ async def delete_account(user_id: str = Depends(get_current_user)):
         )
 
 
+@router.post("/settings/profile/me/anonymize", status_code=200)
+async def anonymize_account(user_id: str = Depends(get_current_user)):
+    """
+    Anonymize user data without hard deletion.
+    
+    GDPR/KVKK compliant alternative to full account deletion.
+    """
+    from services.cleanup import cleanup_service
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"🧹 [AnonymizeAccount] Request received for user: {user_id}")
+
+    try:
+        results = await cleanup_service.anonymize_user_data(user_id)
+        return {
+            "message": "Account data anonymized",
+            "details": results,
+        }
+    except Exception as e:
+        logger.error(f"❌ [AnonymizeAccount] Failed for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to anonymize account: {str(e)}",
+        )
+
+
 # ============================================================
 # NOTIFICATION SETTINGS ENDPOINTS
 # ============================================================
