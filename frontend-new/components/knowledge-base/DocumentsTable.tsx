@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useDocuments } from "@/hooks/useDocuments";
 import { useProfile } from "@/hooks/useProfile";
+import { useUsage } from "@/hooks/useUsage";
 import { StorageMeter } from "@/components/documents/StorageMeter";
 import { cn } from "@/lib/utils";
 import { normalizeSourceType } from "@/lib/sourceType";
@@ -168,6 +169,7 @@ export function DocumentsTable() {
 
   const { profile } = useProfile();
   const isViewer = profile?.role === 'viewer';
+  const { refresh: refreshUsage } = useUsage();
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalCount / pageSize) || 1),
@@ -204,6 +206,7 @@ export function DocumentsTable() {
     if (deleteId) {
       await deleteDocument(deleteId);
       setDeleteId(null);
+      refreshUsage(true); // Refresh storage stats
     }
   };
 
@@ -234,6 +237,7 @@ export function DocumentsTable() {
     try {
       await bulkDeleteDocuments({ documentIds: Array.from(selectedIds) });
       setSelectedIds(new Set());
+      refreshUsage(true); // Refresh storage stats
     } catch {
       // toast handled in hook
     }
@@ -246,6 +250,7 @@ export function DocumentsTable() {
     try {
       await bulkDeleteDocuments({ sourceType: clearSource });
       setSelectedIds(new Set());
+      refreshUsage(true); // Refresh storage stats
     } catch {
       // toast handled in hook
     }

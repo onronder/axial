@@ -77,8 +77,14 @@ export function DataSourcesGrid() {
   const [browsing, setBrowsing] = useState<MergedDataSource | null>(null);
   const [sftpConnectOpen, setSftpConnectOpen] = useState(false);
   const isViewer = profile?.role === "viewer";
-  const { canWebCrawl } = useUsage();
+  const { canWebCrawl, refresh: refreshUsage } = useUsage();
   const canRunWebCrawl = canWebCrawl && !isViewer;
+  
+  // Wrapper to refresh usage stats after disconnecting
+  const handleDisconnect = async (type: string) => {
+    await disconnect(type);
+    refreshUsage(true);
+  };
   const webCrawlDisabledReason = isViewer
     ? "View-only members cannot run crawls or ingest data."
     : !canWebCrawl
@@ -290,7 +296,7 @@ export function DataSourcesGrid() {
                     source={source}
                     onBrowse={() => setBrowsing(source)}
                     onConnect={handleConnect}
-                    onDisconnect={disconnect}
+                    onDisconnect={handleDisconnect}
                     onSync={syncIntegration}
                     disabled={isViewer}
                   />
