@@ -8,6 +8,7 @@ import { IngestModalProvider } from "@/hooks/useIngestModal";
 import { Loader2 } from "lucide-react";
 import { ProfileProvider } from "@/hooks/useProfile";
 import { UsageProvider } from "@/hooks/useUsage";
+import { QuotaStatusProvider } from "@/hooks/useQuotaStatus";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { GlobalProgress } from "@/components/layout/global-progress";
@@ -49,9 +50,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     return (
         <ProfileProvider>
             <UsageProvider>
-                <ChatHistoryProvider>
-                    <IngestModalProvider>
-                        <PaywallGuard>
+                <QuotaStatusProvider>
+                    <ChatHistoryProvider>
+                        <IngestModalProvider>
+                            <PaywallGuard>
                             <div className="min-h-screen bg-background">
                                 {/* DESKTOP SIDEBAR - Isolated error boundary */}
                                 <aside
@@ -91,8 +93,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                 </SidebarErrorBoundary>
                             </div>
                         </PaywallGuard>
-                    </IngestModalProvider>
-                </ChatHistoryProvider>
+                        </IngestModalProvider>
+                    </ChatHistoryProvider>
+                </QuotaStatusProvider>
             </UsageProvider>
         </ProfileProvider>
     );

@@ -21,6 +21,7 @@ import { SftpConnectModal } from "./SftpConnectModal";
 import { useDataSources } from "@/hooks/useDataSources";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
+import { useQuotaStatus } from "@/hooks/useQuotaStatus";
 import type { DataSourceCategory, MergedDataSource } from "@/types";
 
 // Category labels for display
@@ -78,6 +79,7 @@ export function DataSourcesGrid() {
   const [sftpConnectOpen, setSftpConnectOpen] = useState(false);
   const isViewer = profile?.role === "viewer";
   const { canWebCrawl, refresh: refreshUsage } = useUsage();
+  const { isProviderQuotaExceeded } = useQuotaStatus();
   const canRunWebCrawl = canWebCrawl && !isViewer;
   
   // Wrapper to refresh usage stats after disconnecting
@@ -299,6 +301,7 @@ export function DataSourcesGrid() {
                     onDisconnect={handleDisconnect}
                     onSync={syncIntegration}
                     disabled={isViewer}
+                    quotaExceeded={isProviderQuotaExceeded(source.type)}
                   />
                 )
               ))}

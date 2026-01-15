@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useUsage } from "@/hooks/useUsage";
 import { useFileStatus } from "@/hooks/useFileStatus";
+import { useQuotaStatus } from "@/hooks/useQuotaStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getUploadUrl, uploadToStorage, ingestFileReference, checkDuplicates } from "@/lib/api";
 import type { ExistingDocument } from "@/lib/api";
@@ -32,6 +33,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { filesUsed, filesLimit, refresh } = useUsage();
+  const { hasQuotaIssue, quotaExceededProviders } = useQuotaStatus();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
   const [uploadStage, setUploadStage] = useState<string>("");
@@ -371,12 +373,26 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
         </Alert>
       )}
 
-      {isOverLimit && (
+      {/* Only show limit warning here if no external source exceeded quota 
+          (external sources show warning on their own cards) */}
+      {isOverLimit && !hasQuotaIssue && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>File Limit Reached</AlertTitle>
           <AlertDescription>
             You have reached your limit of {filesLimit} files. Please upgrade your plan to upload more.
+          </AlertDescription>
+        </Alert>
+      )}
+      
+      {/* Show a softer warning if limit reached but caused by external source */}
+      {isOverLimit && hasQuotaIssue && (
+        <Alert variant="default" className="border-amber-500/50 bg-amber-500/10">
+          <AlertCircle className="h-4 w-4 text-amber-500" />
+          <AlertTitle className="text-amber-600 dark:text-amber-400">File Limit Reached</AlertTitle>
+          <AlertDescription className="text-amber-600/80 dark:text-amber-400/80">
+            Your file limit was reached during sync from {Array.from(quotaExceededProviders).join(", ")}. 
+            Upgrade your plan to continue uploading.
           </AlertDescription>
         </Alert>
       )}

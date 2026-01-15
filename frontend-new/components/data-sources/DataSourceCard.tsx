@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Check, X, ExternalLink, Clock, RefreshCw } from "lucide-react";
+import { Loader2, Check, X, ExternalLink, Clock, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,6 +22,8 @@ interface DataSourceCardProps {
   onDisconnect: (type: string) => Promise<void>;
   onSync: (integrationId: string) => Promise<{ success: boolean; jobId: string }>;
   disabled?: boolean;
+  /** Indicates this source encountered a quota/limit issue */
+  quotaExceeded?: boolean;
 }
 
 function formatLastSync(lastSyncAt: string | null): string {
@@ -48,6 +50,7 @@ export function DataSourceCard({
   onDisconnect,
   onSync,
   disabled = false,
+  quotaExceeded = false,
 }: DataSourceCardProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -142,22 +145,52 @@ export function DataSourceCard({
     >
       {/* Row 1: Icon + Badge */}
       <div className="flex items-start justify-between mb-3">
-        <div
-          className={cn(
-            "flex h-12 w-12 items-center justify-center rounded-xl",
-            source.isConnected
-              ? "bg-card border-2 border-emerald-500/40 shadow-md"
-              : "bg-muted group-hover:bg-primary/10"
+        <div className="relative">
+          <div
+            className={cn(
+              "flex h-12 w-12 items-center justify-center rounded-xl",
+              source.isConnected
+                ? quotaExceeded
+                  ? "bg-card border-2 border-destructive/50 shadow-md"
+                  : "bg-card border-2 border-emerald-500/40 shadow-md"
+                : "bg-muted group-hover:bg-primary/10"
+            )}
+          >
+            <DataSourceIcon
+              sourceId={source.type}
+              className="h-6 w-6"
+            />
+          </div>
+
+          {/* Quota exceeded warning indicator */}
+          {quotaExceeded && source.isConnected && (
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive flex items-center justify-center shadow-lg cursor-help ring-2 ring-background">
+                    <AlertCircle className="h-3 w-3 text-white" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[220px] text-center">
+                  <p className="text-xs font-medium">File limit exceeded</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Upgrade your plan to ingest more files from this source.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
-        >
-          <DataSourceIcon
-            sourceId={source.type}
-            className="h-6 w-6"
-          />
         </div>
 
         {source.isConnected && (
-          <Badge className="gap-1 bg-emerald-500/90 text-white text-xs border-0 px-2 py-0.5">
+          <Badge 
+            className={cn(
+              "gap-1 text-white text-xs border-0 px-2 py-0.5",
+              quotaExceeded 
+                ? "bg-amber-500/90" 
+                : "bg-emerald-500/90"
+            )}
+          >
             <Check className="h-3 w-3" />
             Connected
           </Badge>
