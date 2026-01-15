@@ -7,11 +7,11 @@ from core.db import get_supabase
 from core.rate_limit import limiter
 from core.ingestion_utils import normalize_provider
 from services.audit import log_document_delete
-from api.v1.dependencies import validate_team_access, require_editor
+from api.v1.dependencies import validate_team_access, require_editor, require_paid_access
 from services.cleanup import cleanup_service
 from services.team_service import team_service
 
-router = APIRouter(dependencies=[Depends(validate_team_access)])
+router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 
 # =============================================================================

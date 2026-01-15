@@ -27,13 +27,13 @@ class PlanLimits(BaseModel):
 QUOTA_LIMITS = {
     "free": PlanLimits(
         plan_name="free",
-        max_files=settings.LIMITS_STARTER_FILES,
-        max_storage_bytes=settings.LIMITS_STARTER_MB * 1024 * 1024,
-        max_scopes=settings.LIMITS_STARTER_SCOPES,
-        max_llm_tokens=settings.LIMITS_STARTER_LLM_TOKENS,
+        max_files=0,
+        max_storage_bytes=0,
+        max_scopes=0,
+        max_llm_tokens=0,
         max_team_seats=1,
         allow_web_crawl=False,
-        model_tier="standard"
+        model_tier="standard",
     ),
     "starter": PlanLimits(
         plan_name="starter",
@@ -100,7 +100,7 @@ async def check_quota(user_id: str, resource_type: str = "files"):
         
     # 2. Determine Limits
     limit = 0
-    if user_plan == "free" or user_plan == "starter":
+    if user_plan == "starter":
         limit = settings.LIMITS_STARTER_FILES
     elif user_plan == "pro":
         limit = settings.LIMITS_PRO_FILES

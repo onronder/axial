@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from collections import Counter
-from api.v1.dependencies import validate_team_access
+from api.v1.dependencies import validate_team_access, require_paid_access
 from api.v1.error_utils import build_error_payload, raise_http_error
 from core.security import get_current_user
 from core.db import get_supabase
@@ -42,7 +42,7 @@ import sentry_sdk
 import asyncio
 
 logger = logging.getLogger(__name__)
-router = APIRouter(dependencies=[Depends(validate_team_access)])
+router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 # Rate limiter instance
 limiter = Limiter(key_func=get_remote_address)

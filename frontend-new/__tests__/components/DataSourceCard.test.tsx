@@ -225,13 +225,13 @@ describe('DataSourceCard Component', () => {
       expect(window.location.href).toBe('/dashboard/settings/billing');
     });
 
-    it('should show upgrade button for free plan users', () => {
+    it('should show upgrade button for starter plan users', () => {
       render(
         <DataSourceCard
           {...defaultProps}
           source={s3Source}
           enterpriseOnly={true}
-          userPlan="free"
+          userPlan="starter"
         />
       );
 

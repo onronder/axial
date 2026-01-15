@@ -152,7 +152,7 @@ class TestRAGChatEndpoint:
         mock_supabase = MagicMock()
         
         # Mock user profile plan
-        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "free"}
+        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
         
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
@@ -222,7 +222,7 @@ class TestRAGChatEndpoint:
         
         mock_bg_tasks = MagicMock() 
         mock_supabase = MagicMock()
-        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "free"}
+        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
         
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
@@ -256,7 +256,7 @@ class TestRAGChatEndpoint:
         
         mock_bg_tasks = MagicMock()
         mock_supabase = MagicMock()
-        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "free"}
+        mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
         
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
@@ -500,7 +500,7 @@ class TestChatEndpointErrors:
         )
 
         supabase = MagicMock()
-        supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(data={"plan": "free"})
+        supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(data={"plan": "starter"})
         supabase.rpc.return_value.execute.side_effect = Exception("search down")
 
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
@@ -686,7 +686,7 @@ class TestChatEndpointPaths:
         )
 
         supabase = MagicMock()
-        supabase.table().select().eq().single().execute.return_value = Mock(data={"plan": "free"})
+        supabase.table().select().eq().single().execute.return_value = Mock(data={"plan": "starter"})
 
         embeddings = MagicMock()
         embeddings.embed_query.side_effect = Exception("embed error")
@@ -715,7 +715,7 @@ class TestChatEndpointPaths:
         )
 
         supabase = MagicMock()
-        supabase.table().select().eq().single().execute.return_value = Mock(data={"plan": "free"})
+        supabase.table().select().eq().single().execute.return_value = Mock(data={"plan": "starter"})
 
         def rpc_side_effect(name, params):
             if name == "hybrid_search":
@@ -1034,7 +1034,7 @@ async def test_chat_endpoint_streaming_returns_response():
     bg_tasks = MagicMock()
 
     supabase = MagicMock()
-    supabase.table().select().eq().single().execute.return_value.data = {"plan": "free"}
+    supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
     supabase.rpc.return_value.execute.return_value = MagicMock(data=[])
 
     async def fake_stream(*_args, **_kwargs):

@@ -9,7 +9,7 @@ export interface UserProfile {
     user_id: string;
     first_name: string | null;
     last_name: string | null;
-    plan: 'free' | 'pro' | 'enterprise';
+    plan: 'free' | 'starter' | 'pro' | 'enterprise';
     theme: 'light' | 'dark' | 'system';
     has_team?: boolean;
     role?: 'admin' | 'editor' | 'viewer';

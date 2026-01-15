@@ -148,7 +148,7 @@ export function DataSourceCard({
   return (
     <div
       className={cn(
-        "group glass-card border-white/10 p-4 transition-all duration-300",
+        "group glass-card border-white/10 p-4 transition-all duration-300 flex flex-col",
         source.isConnected
           ? "border-primary/30 bg-gradient-to-br from-primary/10 via-transparent to-transparent shadow-glow"
           : "hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5"
@@ -236,8 +236,8 @@ export function DataSourceCard({
         )}
       </div>
 
-      {/* Row 2: Title + Sync Status */}
-      <div className="mb-4">
+      {/* Row 2: Title + Description/Sync Status */}
+      <div className="mb-4 min-h-[52px]">
         <h3 className="font-semibold text-foreground text-base">{source.name}</h3>
         {source.isConnected ? (
           <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
@@ -245,9 +245,24 @@ export function DataSourceCard({
             Synced: {formatLastSync(source.lastSyncAt)}
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-            {source.description}
-          </p>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5 cursor-help">
+                  {source.description}
+                </p>
+              </TooltipTrigger>
+              {source.description && source.description.length > 60 && (
+                <TooltipContent 
+                  side="bottom" 
+                  className="max-w-[280px] text-left z-50"
+                  sideOffset={5}
+                >
+                  <p className="text-xs">{source.description}</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
 
@@ -309,7 +324,7 @@ export function DataSourceCard({
         </div>
       ) : showEnterpriseLock ? (
         /* Enterprise Upgrade CTA for non-enterprise users */
-        <TooltipProvider delayDuration={0}>
+        <TooltipProvider delayDuration={400}>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -322,7 +337,11 @@ export function DataSourceCard({
                 Upgrade to Enterprise
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-[240px] text-center">
+            <TooltipContent 
+              side="top" 
+              className="max-w-[240px] text-center z-50"
+              sideOffset={8}
+            >
               <p className="text-xs">
                 {source.name} connector is available on Enterprise plans. 
                 Upgrade to connect cloud storage with advanced security.

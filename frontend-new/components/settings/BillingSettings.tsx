@@ -114,7 +114,6 @@ interface Invoice {
 }
 
 const planDetails: Record<string, { name: string; description: string }> = {
-  free: { name: "Free", description: "Basic features with limited usage" },
   starter: { name: "Starter", description: "For individuals getting started" },
   pro: { name: "Pro", description: "For professionals and power users" },
   enterprise: { name: "Enterprise", description: "For teams and organizations" },
@@ -152,9 +151,15 @@ export function BillingSettings() {
   const [isEnterpriseModalOpen, setIsEnterpriseModalOpen] = useState(false);
 
   const currentPlan = effectivePlan || profile?.plan || "free";
-  const planInfo = planDetails[currentPlan] || planDetails.free;
+  const isFreePlan = currentPlan === "free";
+  const planKey = currentPlan?.startsWith("enterprise") ? "enterprise" : currentPlan;
+  const planInfo = planDetails[planKey] || planDetails.starter;
+  const planTitle = isFreePlan ? "No Active Plan" : `${planInfo.name} Plan`;
+  const planDescription = isFreePlan
+    ? "Choose a plan to unlock access."
+    : planInfo.description;
   const subscriptionStatus = usage?.subscription_status || "inactive";
-  const hasActiveSubscription = !["inactive", "canceled", "cancelled", "none"].includes(subscriptionStatus);
+  const hasActiveSubscription = !isFreePlan && !["inactive", "canceled", "cancelled", "none"].includes(subscriptionStatus);
 
   // Fetch billing history
   const fetchInvoices = useCallback(async () => {
@@ -268,7 +273,7 @@ export function BillingSettings() {
           <CardTitle className="flex items-center gap-2">
             Current Plan
             <Badge variant="ai" className="ml-2">
-              {planInfo.name}
+              {isFreePlan ? "No Active Plan" : planInfo.name}
             </Badge>
             {isPlanInherited && (
               <Badge variant="outline" className="ml-1 text-xs">
@@ -289,10 +294,10 @@ export function BillingSettings() {
               <AxioLogo variant="icon" size="lg" />
             </div>
             <div className="flex-1">
-              <h3 className="font-medium text-foreground">{planInfo.name} Plan</h3>
-              <p className="text-sm text-muted-foreground">{planInfo.description}</p>
+              <h3 className="font-medium text-foreground">{planTitle}</h3>
+              <p className="text-sm text-muted-foreground">{planDescription}</p>
             </div>
-            {currentPlan !== "free" && (
+            {hasActiveSubscription && (
               <Button
                 variant="outline"
                 onClick={handleManageSubscription}
@@ -528,7 +533,7 @@ export function BillingSettings() {
       />
 
       {/* Danger Zone - Cancel Subscription */}
-      {currentPlan !== "free" && (
+      {hasActiveSubscription && (
         <Card className="border-destructive/50">
           <CardHeader>
             <CardTitle className="text-destructive">Danger Zone</CardTitle>
@@ -562,7 +567,7 @@ export function BillingSettings() {
             <AlertDialogTitle>Cancel your subscription?</AlertDialogTitle>
             <AlertDialogDescription>
               Your {planInfo.name} plan will remain active until the end of your current billing period.
-              After that, you&apos;ll be downgraded to the Free plan with limited features.
+              After that, access ends until you choose a plan.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

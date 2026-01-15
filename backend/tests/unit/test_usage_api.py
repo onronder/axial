@@ -131,17 +131,26 @@ class TestUsageEndpointWithMocks:
             assert isinstance(result, UsageResponse)
             assert result.plan == "free"
             assert result.files.used == 4
-            assert result.files.limit == 50
+            assert result.files.limit == QUOTA_LIMITS["free"].max_files
             assert result.storage.used_bytes == 45_000_000
     
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_usage_endpoint_calculates_percentages(self, mock_usage_with_limits_free):
+    async def test_usage_endpoint_calculates_percentages(self):
         """Percentages should be calculated correctly."""
         from api.v1.usage import get_usage
-        
+
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value = mock_usage_with_limits_free
+            mock_usage = Mock()
+            mock_usage.usage = Mock(
+                files=4,
+                storage_bytes=45_000_000,
+                storage_display="45 MB",
+                plan="starter",
+                subscription_status="active",
+            )
+            mock_usage.limits = QUOTA_LIMITS["starter"]
+            mock_get.return_value = mock_usage
             
             result = await get_usage(user_id=TEST_USER_UUID)
             
@@ -161,9 +170,9 @@ class TestUsageEndpointWithMocks:
         mock_over_limit.usage.storage_bytes = 105_857_600  # Over 100MB limit
         mock_over_limit.usage.storage_display = "105 MB"
         mock_over_limit.usage.storage_display = "100 MB"
-        mock_over_limit.usage.plan = "free"
+        mock_over_limit.usage.plan = "starter"
         mock_over_limit.usage.subscription_status = "active"
-        mock_over_limit.limits = QUOTA_LIMITS["free"]
+        mock_over_limit.limits = QUOTA_LIMITS["starter"]
         
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_over_limit
@@ -236,7 +245,7 @@ class TestPlansEndpoint:
         assert "plans" in result.model_dump()
         plans = result.plans
         
-        # Should have all 4 plans
+        # Should have all plans
         assert "free" in plans
         assert "starter" in plans
         assert "pro" in plans
@@ -292,7 +301,8 @@ class TestUsageServiceWithMocks:
         ]
         mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = docs_mock
         
-        with patch("services.usage.get_supabase", return_value=mock_supabase):
+        with patch("services.usage.get_supabase", return_value=mock_supabase), \
+             patch("services.usage.team_service.get_effective_plan", new=AsyncMock(return_value="starter")):
             result = await get_user_usage(uuid4())
             
             assert isinstance(result, UserUsage)
@@ -312,10 +322,10 @@ class TestUsageServiceWithMocks:
                 files=3,
                 storage_bytes=20_000_000,
                 storage_display="20 MB",
-                plan="free",
+                plan="starter",
                 subscription_status="active"
             ),
-            limits=QUOTA_LIMITS["free"],
+            limits=QUOTA_LIMITS["starter"],
             files_remaining=2,
             storage_remaining_bytes=32_428_800,
             storage_remaining_display="32 MB",
@@ -344,10 +354,10 @@ class TestUsageServiceWithMocks:
                 files=50,  # At limit (assuming 50)
                 storage_bytes=20_000_000,
                 storage_display="20 MB",
-                plan="free",
+                plan="starter",
                 subscription_status="active"
             ),
-            limits=QUOTA_LIMITS["free"],
+            limits=QUOTA_LIMITS["starter"],
             files_remaining=0, # Remaining is 0
             storage_remaining_bytes=32_428_800,
             storage_remaining_display="32 MB",
@@ -375,10 +385,10 @@ class TestUsageServiceWithMocks:
                 files=3,
                 storage_bytes=104_000_000,  # Almost at 100MB limit
                 storage_display="104 MB",
-                plan="free",
+                plan="starter",
                 subscription_status="active"
             ),
-            limits=QUOTA_LIMITS["free"],
+            limits=QUOTA_LIMITS["starter"],
             files_remaining=47,
             storage_remaining_bytes=857_600,  # ~0.8 MB remaining
             storage_remaining_display="0.8 MB",

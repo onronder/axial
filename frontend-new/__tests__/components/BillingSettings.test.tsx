@@ -71,6 +71,7 @@ describe('BillingSettings Component', () => {
         mockUseUsage.mockReturnValue({
             plan: 'pro',
             isPlanInherited: false,
+            usage: { subscription_status: 'active' },
         });
     });
 
@@ -147,19 +148,20 @@ describe('BillingSettings Component', () => {
             expect(proElements.length).toBeGreaterThan(0);
         });
 
-        it('should show Free badge for free plan', async () => {
+        it('should show Starter badge for starter plan', async () => {
             mockProfile.mockReturnValue({
-                profile: { plan: 'free' },
+                profile: { plan: 'starter' },
                 isLoading: false,
             });
             mockUseUsage.mockReturnValue({
-                plan: 'free',
+                plan: 'starter',
                 isPlanInherited: false,
+                usage: { subscription_status: 'inactive' },
             });
 
             await renderBilling();
 
-            expect(screen.getByText('Free')).toBeInTheDocument();
+            expect(screen.getByText('Starter')).toBeInTheDocument();
         });
 
         it('should show Enterprise badge for enterprise plan', async () => {
@@ -194,7 +196,7 @@ describe('BillingSettings Component', () => {
             expect(screen.getByText('Starter Plan')).toBeInTheDocument();
         });
 
-        it('should default to Free plan details when plan is unknown', async () => {
+        it('should default to Starter plan details when plan is unknown', async () => {
             mockProfile.mockReturnValue({
                 profile: { plan: 'mystery' },
                 isLoading: false,
@@ -202,14 +204,15 @@ describe('BillingSettings Component', () => {
             mockUseUsage.mockReturnValue({
                 plan: null,
                 isPlanInherited: false,
+                usage: { subscription_status: 'inactive' },
             });
 
             await renderBilling();
 
-            expect(screen.getByText('Free Plan')).toBeInTheDocument();
+            expect(screen.getByText('Starter Plan')).toBeInTheDocument();
         });
 
-        it('should default to Free plan when no plan is available', async () => {
+        it('should default to No Active Plan when no plan is available', async () => {
             mockProfile.mockReturnValue({
                 profile: null,
                 isLoading: false,
@@ -217,11 +220,12 @@ describe('BillingSettings Component', () => {
             mockUseUsage.mockReturnValue({
                 plan: null,
                 isPlanInherited: false,
+                usage: { subscription_status: 'inactive' },
             });
 
             await renderBilling();
 
-            expect(screen.getByText('Free Plan')).toBeInTheDocument();
+            expect(screen.getByText('No Active Plan')).toBeInTheDocument();
         });
     });
 
@@ -351,29 +355,30 @@ describe('BillingSettings Component', () => {
     describe('Upgrade Buttons', () => {
         it('should show Upgrade button for non-current plans', async () => {
             mockProfile.mockReturnValue({
-                profile: { plan: 'free' },
+                profile: { plan: 'starter' },
                 isLoading: false,
             });
             mockUseUsage.mockReturnValue({
-                plan: 'free',
+                plan: 'starter',
                 isPlanInherited: false,
+                usage: { subscription_status: 'inactive' },
             });
 
             await renderBilling();
 
-            expect(screen.getByText('Get Started')).toBeInTheDocument();
             expect(screen.getByText('Upgrade to Pro')).toBeInTheDocument();
             expect(screen.getByText('Contact Sales')).toBeInTheDocument();
         });
 
         it('should open enterprise contact modal when Contact Sales is clicked', async () => {
             mockProfile.mockReturnValue({
-                profile: { plan: 'free' },
+                profile: { plan: 'starter' },
                 isLoading: false,
             });
             mockUseUsage.mockReturnValue({
-                plan: 'free',
+                plan: 'starter',
                 isPlanInherited: false,
+                usage: { subscription_status: 'inactive' },
             });
 
             await renderBilling();
@@ -403,12 +408,13 @@ describe('BillingSettings Component', () => {
 
         it('should open checkout URL on upgrade click', async () => {
             mockProfile.mockReturnValue({
-                profile: { plan: 'free' },
+                profile: { plan: 'starter' },
                 isLoading: false,
             });
             mockUseUsage.mockReturnValue({
-                plan: 'free',
+                plan: 'starter',
                 isPlanInherited: false,
+                usage: { subscription_status: 'inactive' },
             });
 
             const originalLocation = window.location;
@@ -431,12 +437,13 @@ describe('BillingSettings Component', () => {
 
         it('should show toast when checkout URL is missing', async () => {
             mockProfile.mockReturnValue({
-                profile: { plan: 'free' },
+                profile: { plan: 'starter' },
                 isLoading: false,
             });
             mockUseUsage.mockReturnValue({
-                plan: 'free',
+                plan: 'starter',
                 isPlanInherited: false,
+                usage: { subscription_status: 'inactive' },
             });
             mockApiPost.mockResolvedValue({ data: {} });
 
@@ -518,14 +525,15 @@ describe('BillingSettings Component', () => {
             expect(screen.getByText('Manage Subscription')).toBeInTheDocument();
         });
 
-        it('should not show Manage button for free plan', async () => {
+        it('should not show Manage button when subscription is inactive', async () => {
             mockProfile.mockReturnValue({
-                profile: { plan: 'free' },
+                profile: { plan: 'starter' },
                 isLoading: false,
             });
             mockUseUsage.mockReturnValue({
-                plan: 'free',
+                plan: 'starter',
                 isPlanInherited: false,
+                usage: { subscription_status: 'inactive' },
             });
 
             await renderBilling();

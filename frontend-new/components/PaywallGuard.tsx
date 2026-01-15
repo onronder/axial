@@ -9,12 +9,20 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
 import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
+import { usePathname } from "next/navigation";
+
+const FREE_ACCESS_PATHS = new Set([
+    "/dashboard/settings",
+    "/dashboard/settings/general",
+    "/dashboard/settings/billing",
+]);
 
 export function PaywallGuard({ children }: { children: React.ReactNode }) {
     const { plan: currentPlan, isLoading: isUsageLoading, usage } = useUsage();
     // usePlans now returns fully hydrated plans with features/buttons from backend
     const { plans: apiPlans, isLoading: isPlansLoading } = usePlans();
     const { toast } = useToast();
+    const pathname = usePathname();
     const [isCheckoutLoading, setIsCheckoutLoading] = useState<string | null>(null);
     const [isEnterpriseModalOpen, setIsEnterpriseModalOpen] = useState(false);
 
@@ -22,9 +30,19 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
 
     // Check if user has a valid paid plan
     // If plan is null, it means we're still loading - don't show paywall
-    const subscriptionStatus = usage?.subscription_status;
-    const hasActiveSubscription = subscriptionStatus ? !['inactive', 'canceled', 'cancelled', 'none'].includes(subscriptionStatus) : false;
-    const hasAccess = currentPlan !== null && (['starter', 'pro', 'enterprise'].includes(currentPlan) || hasActiveSubscription);
+    const planValue = typeof currentPlan === "string" ? currentPlan.toLowerCase() : "";
+    const isFreePlan = planValue === "free" || planValue === "none";
+    const hasPaidPlan = planValue !== "" && (
+        ["starter", "pro", "enterprise"].includes(planValue) || planValue.startsWith("enterprise_")
+    );
+    const subscriptionStatus = usage?.subscription_status?.toLowerCase();
+    const isSubscriptionInactive = subscriptionStatus
+        ? ["inactive", "canceled", "cancelled", "none"].includes(subscriptionStatus)
+        : false;
+    const hasAccess = currentPlan !== null && hasPaidPlan && !isSubscriptionInactive;
+
+    const normalizedPath = pathname?.endsWith("/") ? pathname.slice(0, -1) : pathname;
+    const allowFreeAccess = isFreePlan && normalizedPath ? FREE_ACCESS_PATHS.has(normalizedPath) : false;
 
     // Show loading if: explicitly loading OR plan hasn't been fetched yet
     if (isLoading || currentPlan === null) {
@@ -35,7 +53,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
         );
     }
 
-    if (hasAccess) {
+    if (hasAccess || allowFreeAccess) {
         return <>{children}</>;
     }
 
@@ -77,7 +95,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
                     </span>
                 </h1>
                 <p className="text-muted-foreground text-lg">
-                    Start free. Scale as you grow.
+                    Start with Starter. Scale as you grow.
                 </p>
             </div>
 

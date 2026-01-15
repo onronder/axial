@@ -45,7 +45,7 @@ describe('UsageIndicator Component', () => {
         it('should render loading skeleton when isLoading is true', () => {
             mockUseUsage.mockReturnValue({
                 isLoading: true,
-                plan: 'free',
+                plan: 'starter',
                 filesUsed: 0,
                 filesLimit: 10,
                 filesPercent: 0,
@@ -63,7 +63,7 @@ describe('UsageIndicator Component', () => {
         it('should not render usage bars when loading', () => {
             mockUseUsage.mockReturnValue({
                 isLoading: true,
-                plan: 'free',
+                plan: 'starter',
                 filesUsed: 0,
                 filesLimit: 10,
                 filesPercent: 0,
@@ -312,7 +312,7 @@ describe('UsageIndicator Component', () => {
         it('should handle 0% usage', () => {
             mockUseUsage.mockReturnValue({
                 isLoading: false,
-                plan: 'free',
+                plan: 'starter',
                 filesUsed: 0,
                 filesLimit: 10,
                 filesPercent: 0,
@@ -330,7 +330,7 @@ describe('UsageIndicator Component', () => {
         it('should cap width at 100%', () => {
             mockUseUsage.mockReturnValue({
                 isLoading: false,
-                plan: 'free',
+                plan: 'starter',
                 filesUsed: 15,
                 filesLimit: 10,
                 filesPercent: 150, // Over limit

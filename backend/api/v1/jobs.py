@@ -7,7 +7,7 @@ Used for polling-based progress updates during ingestion.
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
-from api.v1.dependencies import validate_team_access, require_editor
+from api.v1.dependencies import validate_team_access, require_editor, require_paid_access
 from core.security import get_current_user
 from core.db import get_supabase
 from core.ingestion_utils import normalize_provider
@@ -15,7 +15,7 @@ from models import IngestionJobResponse
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter(dependencies=[Depends(validate_team_access)])
+router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 
 @router.get("/jobs/active", response_model=Optional[IngestionJobResponse])

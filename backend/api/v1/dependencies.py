@@ -98,6 +98,32 @@ async def require_plan(required_plans: list[str]):
     return checker
 
 
+async def require_paid_access(user_id: str = Depends(validate_team_access)) -> str:
+    """
+    Require an active (non-free) plan.
+
+    Free users can access billing and profile settings but are blocked
+    from core application endpoints.
+    """
+    try:
+        plan = await team_service.get_effective_plan(user_id)
+    except Exception as exc:
+        logger.warning("[Dependencies] Failed to resolve plan for %s: %s", user_id[:8], exc)
+        plan = "free"
+
+    plan_lower = plan.lower() if plan else "free"
+    if plan_lower == "free":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "error": "SUBSCRIPTION_REQUIRED",
+                "message": "An active subscription is required to access this resource.",
+                "current_plan": plan_lower,
+            },
+        )
+    return user_id
+
+
 async def require_admin(user_id: str = Depends(validate_team_access)) -> str:
     """
     Dependency to require admin privileges.
@@ -198,6 +224,7 @@ __all__ = [
     'validate_team_access',
     'get_effective_plan',
     'require_plan',
+    'require_paid_access',
     'require_admin',
     'require_editor',
 ]

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { User, Database, FileText, Bell, CreditCard, Users, Settings, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { useUsage } from "@/hooks/useUsage";
 
 const settingsNav = [
     { name: "General", path: "/dashboard/settings/general", icon: User },
@@ -22,6 +23,14 @@ export default function SettingsLayout({
     children: React.ReactNode;
 }) {
     const pathname = usePathname();
+    const { plan } = useUsage();
+    const isFreePlan = plan === "free" || plan === "none";
+    const visibleNav = isFreePlan
+        ? settingsNav.filter((item) =>
+            item.path === "/dashboard/settings/general" ||
+            item.path === "/dashboard/settings/billing"
+        )
+        : settingsNav;
 
     return (
         <div className="relative min-h-full w-full overflow-hidden bg-background">
@@ -54,7 +63,7 @@ export default function SettingsLayout({
                     <ScrollArea className="w-full">
                         <nav className="flex px-4 lg:px-8 gap-2 mt-4 pb-2">
                             <div className="flex w-full items-center gap-1 rounded-2xl border border-white/10 bg-white/5 p-1 backdrop-blur-xl shadow-inner shadow-black/40">
-                                {settingsNav.map((item) => {
+                                {visibleNav.map((item) => {
                                     const Icon = item.icon;
                                     const isActive = pathname === item.path ||
                                         (pathname === "/dashboard/settings" && item.path === "/dashboard/settings/general");

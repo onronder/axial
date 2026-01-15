@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from core.db import get_supabase
 from core.exceptions import QuotaExceededError
 from core.quotas import PlanLimits, get_plan_limits, format_bytes
+from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
                 files=0,
                 storage_bytes=0,
                 storage_display="0 B",
-                plan="none",
+                plan="free",
                 subscription_status="inactive"
             )
         
@@ -129,6 +130,14 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
         # Non-critical - default to active if we can't fetch subscription
         logger.warning(f"Could not fetch subscription status for {user_id}: {e}")
     
+    # Resolve effective plan from team/subscription (best source of truth)
+    try:
+        effective_plan = await team_service.get_effective_plan(str(user_id))
+        if effective_plan:
+            plan = effective_plan
+    except Exception as e:
+        logger.warning(f"Could not resolve effective plan for {user_id}: {e}")
+
     # Calculate usage from documents table (accurate, not cached)
     # Using raw SQL via RPC for aggregate functions
     usage_query = f"""

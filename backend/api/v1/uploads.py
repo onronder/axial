@@ -15,7 +15,7 @@ from services.usage import check_can_upload
 from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
 from core.exceptions import QuotaExceededError
-from api.v1.dependencies import validate_team_access, require_editor
+from api.v1.dependencies import validate_team_access, require_editor, require_paid_access
 from api.v1.error_utils import raise_http_error
 from services.audit import audit_logger
 from slowapi import Limiter
@@ -26,7 +26,7 @@ import logging
 import re
 
 logger = logging.getLogger(__name__)
-router = APIRouter(dependencies=[Depends(validate_team_access)])
+router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 
 def sanitize_filename(filename: str) -> str:

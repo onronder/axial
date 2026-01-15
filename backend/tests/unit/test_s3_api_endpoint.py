@@ -41,14 +41,13 @@ class TestS3EnterpriseGate:
         """Non-enterprise plans should NOT be in the set."""
         from api.v1.integrations import ENTERPRISE_PLANS
         
-        assert "free" not in ENTERPRISE_PLANS
         assert "starter" not in ENTERPRISE_PLANS
         assert "pro" not in ENTERPRISE_PLANS
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_connect_s3_blocks_free_plan(self):
-        """Free plan users should be blocked with 403."""
+    async def test_connect_s3_blocks_unknown_plan(self):
+        """Unknown plans should be blocked with 403."""
         from api.v1.integrations import connect_s3, S3ConnectRequest
         from starlette.requests import Request
         from starlette.datastructures import Headers
@@ -70,12 +69,12 @@ class TestS3EnterpriseGate:
                 request=request,
                 body=body,
                 user_id="user-123",
-                plan="free"  # Non-enterprise plan
+                plan="unknown"  # Non-enterprise plan
             )
         
         assert exc_info.value.status_code == 403
         assert exc_info.value.detail["error"] == "ENTERPRISE_REQUIRED"
-        assert exc_info.value.detail["current_plan"] == "free"
+        assert exc_info.value.detail["current_plan"] == "unknown"
 
     @pytest.mark.unit
     @pytest.mark.asyncio

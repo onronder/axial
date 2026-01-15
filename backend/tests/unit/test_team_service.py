@@ -628,7 +628,7 @@ class TestPlanInheritanceScenarios:
         
         Scenario:
         - Team owner: Enterprise plan
-        - Team member: Viewer role (would be Free if solo)
+        - Team member: Viewer role (would be Starter if solo)
         - Expected: Member gets Enterprise features
         """
         mock_supabase = Mock()
@@ -692,13 +692,13 @@ class TestEnterpriseGatekeeping:
     
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_invite_blocked_for_free_plan(self, team_service):
-        """Free plan users cannot invite team members."""
+    async def test_invite_blocked_for_unknown_plan(self, team_service):
+        """Unknown plan users should be treated as free and blocked."""
         mock_supabase = Mock()
         
-        # Mock returning free plan
+        # Mock returning unknown plan
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"plan": "free"}
+            data={"plan": "unknown"}
         )
         
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
@@ -765,7 +765,7 @@ class TestEnterpriseGatekeeping:
         mock_supabase = Mock()
         
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"plan": "free"}
+            data={"plan": "starter"}
         )
         
         csv_content = "email,role,name\nalice@example.com,viewer,Alice"
@@ -920,7 +920,7 @@ class TestVerifyTeamAccess:
         members_table = _make_table(data=[{"team_id": TEAM_UUID, "role": "viewer"}])
         teams_table = _make_table(data={"owner_id": OWNER_UUID})
         subs_table = _make_table(data=[])
-        profiles_table = _make_table(data={"plan": "free"})
+        profiles_table = _make_table(data={"plan": "starter"})
         supabase.table.side_effect = lambda name: {
             "team_members": members_table,
             "teams": teams_table,
@@ -1057,9 +1057,9 @@ class TestTeamFeatureChecks:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_check_team_feature_access_blocks_free(self, team_service):
+    async def test_check_team_feature_access_blocks_starter(self, team_service):
         supabase = Mock()
-        profiles_table = _make_table(data={"plan": "free"})
+        profiles_table = _make_table(data={"plan": "starter"})
         supabase.table.return_value = profiles_table
 
         with patch("services.team_service.get_supabase", return_value=supabase), \
@@ -1265,7 +1265,7 @@ class TestTeamServiceCoverageGaps:
         with patch("services.team_service.get_supabase", return_value=supabase):
             plan = await service._get_effective_plan_direct(MEMBER_UUID)
 
-        assert plan == "free"
+        assert plan == "starter"
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -1425,7 +1425,7 @@ class TestTeamServiceCoverageGaps:
         from services.team_service import TeamService
         service = TeamService()
 
-        # When get_effective_plan fails, it defaults to "free" plan
+        # When get_effective_plan fails, it defaults to free plan
         # Free plan has max_team_seats=1, so team feature is not allowed
         with patch.object(service, "get_effective_plan", new=AsyncMock(side_effect=Exception("boom"))):
             allowed, message, limits = await service._check_team_feature_access(OWNER_UUID)

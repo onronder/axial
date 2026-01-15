@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from uuid import uuid4
 
 from services import usage as usage_service
@@ -29,7 +29,7 @@ async def test_get_user_usage_handles_missing_profile():
     with patch("services.usage.get_supabase", return_value=supabase):
         usage = await usage_service.get_user_usage(user_id)
 
-    assert usage.plan == "none"
+    assert usage.plan == "free"
     assert usage.subscription_status == "inactive"
     assert usage.files == 0
 
@@ -58,7 +58,8 @@ async def test_get_user_usage_subscription_lookup_error_defaults_active():
 
     supabase.table.side_effect = table_side_effect
 
-    with patch("services.usage.get_supabase", return_value=supabase):
+    with patch("services.usage.get_supabase", return_value=supabase), \
+         patch("services.usage.team_service.get_effective_plan", new=AsyncMock(return_value="starter")):
         usage = await usage_service.get_user_usage(user_id)
 
     assert usage.plan == "starter"
@@ -102,7 +103,8 @@ async def test_get_user_usage_reads_subscription_status():
 
     supabase.table.side_effect = table_side_effect
 
-    with patch("services.usage.get_supabase", return_value=supabase):
+    with patch("services.usage.get_supabase", return_value=supabase), \
+         patch("services.usage.team_service.get_effective_plan", new=AsyncMock(return_value="starter")):
         usage = await usage_service.get_user_usage(user_id)
 
     assert usage.subscription_status == "past_due"

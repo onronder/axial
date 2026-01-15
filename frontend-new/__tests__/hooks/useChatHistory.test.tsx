@@ -20,6 +20,10 @@ vi.mock('@/hooks/use-toast', () => ({
     useToast: () => ({ toast: mockToast }),
 }));
 
+vi.mock('@/hooks/useUsage', () => ({
+    useUsage: () => ({ plan: 'pro' }),
+}));
+
 vi.mock('@/lib/api', () => ({
     api: {
         get: (...args: any[]) => mockApiGet(...args),

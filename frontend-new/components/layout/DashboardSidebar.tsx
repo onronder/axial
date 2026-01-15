@@ -35,6 +35,9 @@ export function DashboardSidebar() {
     const { profile } = useProfile();
     const { plan: effectivePlan } = useUsage();
     const { setTheme, resolvedTheme } = useTheme();
+    const normalizedPlan = typeof effectivePlan === "string" ? effectivePlan.toLowerCase() : "";
+    const isFreePlan = normalizedPlan === "free" || normalizedPlan === "none";
+    const hasPaidAccess = normalizedPlan !== "" && !isFreePlan;
 
     const displayName = profile?.first_name && profile?.last_name
         ? `${profile.first_name} ${profile.last_name}`
@@ -54,6 +57,13 @@ export function DashboardSidebar() {
     };
 
     const isSettingsActive = pathname?.startsWith("/dashboard/settings");
+    const planLabel = effectivePlan
+        ? (isFreePlan
+            ? "No Active Plan"
+            : normalizedPlan.startsWith("enterprise")
+                ? "Enterprise"
+                : effectivePlan.charAt(0).toUpperCase() + effectivePlan.slice(1))
+        : null;
 
     return (
         <div className="flex h-full flex-col bg-sidebar/80 backdrop-blur-xl text-sidebar-foreground border-r border-sidebar-border px-4 py-3 gap-3">
@@ -63,28 +73,32 @@ export function DashboardSidebar() {
                     <AxioLogo variant="icon" size="md" />
                     <span className="font-display text-lg font-semibold text-gradient">Axio Hub</span>
                 </div>
-                <NotificationCenter />
+                {hasPaidAccess && <NotificationCenter />}
             </div>
 
             {/* New Chat Button */}
-            <div className="pt-1">
-                <Button
-                    variant="gradient"
-                    className="w-full justify-center gap-2 shadow-glow bg-gradient"
-                    onClick={handleNewChat}
-                >
-                    <MessageSquarePlus className="h-4 w-4" />
-                    New Chat
-                </Button>
-            </div>
+            {hasPaidAccess && (
+                <div className="pt-1">
+                    <Button
+                        variant="gradient"
+                        className="w-full justify-center gap-2 shadow-glow bg-gradient"
+                        onClick={handleNewChat}
+                    >
+                        <MessageSquarePlus className="h-4 w-4" />
+                        New Chat
+                    </Button>
+                </div>
+            )}
 
             {/* Chat History - scrollable */}
-            <div className="flex-1 overflow-y-auto overflow-x-visible pr-1">
-                <ChatHistoryList />
-            </div>
+            {hasPaidAccess && (
+                <div className="flex-1 overflow-y-auto overflow-x-visible pr-1">
+                    <ChatHistoryList />
+                </div>
+            )}
 
             {/* Usage Indicator - shows file/storage usage */}
-            <UsageIndicator />
+            {hasPaidAccess && <UsageIndicator />}
 
             {/* Help & Support */}
             <div className="px-1">
@@ -126,8 +140,8 @@ export function DashboardSidebar() {
                                         variant="secondary"
                                         className="h-4 px-1.5 text-[10px] bg-sidebar-accent hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer border border-transparent hover:border-primary/30"
                                     >
-                                        {effectivePlan
-                                            ? effectivePlan.charAt(0).toUpperCase() + effectivePlan.slice(1)
+                                        {planLabel
+                                            ? planLabel
                                             : <span className="animate-pulse">···</span>}
                                     </Badge>
                                 </Link>

@@ -205,7 +205,7 @@ export interface SearchResult {
 // PROFILE TYPES
 // =============================================================================
 
-export type Plan = 'free' | 'pro' | 'enterprise';
+export type Plan = 'free' | 'starter' | 'pro' | 'enterprise';
 export type Theme = 'light' | 'dark' | 'system';
 
 export interface UserProfile {

@@ -9,12 +9,12 @@ from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from api.v1.dependencies import validate_team_access, require_admin
+from api.v1.dependencies import validate_team_access, require_admin, require_paid_access
 from core.db import get_supabase
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter(dependencies=[Depends(validate_team_access)])
+router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 
 # =============================================================================

@@ -11,7 +11,7 @@ from core.security import get_current_user, encrypt_token, decrypt_token
 from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
-from api.v1.dependencies import validate_team_access, require_editor, get_effective_plan
+from api.v1.dependencies import validate_team_access, require_editor, get_effective_plan, require_paid_access
 from api.v1.error_utils import raise_http_error
 from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
@@ -34,7 +34,7 @@ import logging
 import httpx
 
 logger = logging.getLogger(__name__)
-router = APIRouter(dependencies=[Depends(validate_team_access)])
+router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 
 def _require_provider(provider: str) -> str:

@@ -6,6 +6,7 @@ import { PaywallGuard } from '@/components/PaywallGuard';
 const mockUseUsage = vi.fn();
 const mockUsePlans = vi.fn();
 const mockToast = vi.fn();
+const mockUsePathname = vi.fn();
 
 vi.mock('@/hooks/useUsage', () => ({
     useUsage: () => mockUseUsage(),
@@ -41,8 +42,8 @@ vi.mock('@/components/ui/use-toast', () => ({
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
         push: vi.fn(),
-        pathname: '/dashboard',
     }),
+    usePathname: () => mockUsePathname(),
 }));
 
 // Mock Api
@@ -62,6 +63,7 @@ vi.mock('@/components/billing/EnterpriseContactModal', () => ({
 describe('PaywallGuard Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockUsePathname.mockReturnValue('/dashboard');
 
         // Default auth
         mockUseAuth.mockReturnValue({
@@ -124,7 +126,7 @@ describe('PaywallGuard Component', () => {
     it('should render loader when loading', () => {
         mockUseUsage.mockReturnValue({
             isLoading: true,
-            plan: 'free',
+            plan: 'starter',
             usage: { subscription_status: 'active' },
         });
 
@@ -190,10 +192,10 @@ describe('PaywallGuard Component', () => {
         expect(screen.getByText('Dashboard Content')).toBeInTheDocument();
     });
 
-    it('should render PAYWALL when plan is none', () => {
+    it('should render PAYWALL when plan is free', () => {
         mockUseUsage.mockReturnValue({
             isLoading: false,
-            plan: 'none',
+            plan: 'free',
             usage: { subscription_status: 'inactive' },
         });
 
@@ -217,7 +219,7 @@ describe('PaywallGuard Component', () => {
         // This case might happen if cache is stale or logic mismatch, logic prioritizes status check
         mockUseUsage.mockReturnValue({
             isLoading: false,
-            plan: 'free',
+            plan: 'pro',
             usage: { subscription_status: 'inactive' },
         });
 
@@ -231,27 +233,45 @@ describe('PaywallGuard Component', () => {
         expect(screen.getByRole('heading', { name: /Simple pricing/i })).toBeInTheDocument();
     });
 
-    it('should render $0 pricing and mark current plan for free tier', () => {
+    it('should allow free users to access billing settings', () => {
+        mockUsePathname.mockReturnValue('/dashboard/settings/billing');
         mockUseUsage.mockReturnValue({
             isLoading: false,
             plan: 'free',
             usage: { subscription_status: 'inactive' },
         });
 
+        render(
+            <PaywallGuard>
+                <div>Billing Content</div>
+            </PaywallGuard>
+        );
+
+        expect(screen.getByText('Billing Content')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: /Simple pricing/i })).not.toBeInTheDocument();
+    });
+
+    it('should mark current plan for starter tier', () => {
+        mockUseUsage.mockReturnValue({
+            isLoading: false,
+            plan: 'starter',
+            usage: { subscription_status: 'inactive' },
+        });
+
         mockUsePlans.mockReturnValue({
             plans: [
                 {
-                    id: 'free',
-                    type: 'free',
-                    name: 'Free',
-                    price: 0,
-                    price_amount: 0,
+                    id: 'starter',
+                    type: 'starter',
+                    name: 'Starter',
+                    price: 900,
+                    price_amount: 900,
                     price_currency: 'USD',
                     interval: 'month',
-                    polar_product_id: 'free-id',
-                    description: 'Free plan',
+                    polar_product_id: 'starter-id',
+                    description: 'Starter plan',
                     features: [],
-                    button_text: 'Start Free',
+                    button_text: 'Get Started',
                     button_variant: 'outline',
                     popular: false
                 },
@@ -266,14 +286,14 @@ describe('PaywallGuard Component', () => {
             </PaywallGuard>
         );
 
-        expect(screen.getByText('$0')).toBeInTheDocument();
+        expect(screen.getByText('Starter')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Current Plan/i })).toBeInTheDocument();
     });
 
     it('should open enterprise modal when clicking enterprise plan', async () => {
         mockUseUsage.mockReturnValue({
             isLoading: false,
-            plan: 'none',
+            plan: 'free',
             usage: { subscription_status: 'inactive' },
         });
 
@@ -292,7 +312,7 @@ describe('PaywallGuard Component', () => {
     it('should show toast on checkout failure', async () => {
         mockUseUsage.mockReturnValue({
             isLoading: false,
-            plan: 'none',
+            plan: 'free',
             usage: { subscription_status: 'inactive' },
         });
 
@@ -320,7 +340,7 @@ describe('PaywallGuard Component', () => {
     it('should handle checkout click correctly', async () => {
         mockUseUsage.mockReturnValue({
             isLoading: false,
-            plan: 'none',
+            plan: 'free',
             usage: { subscription_status: 'inactive' },
         });
 

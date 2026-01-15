@@ -58,7 +58,7 @@ class LLMFactory:
         Smart Router: Returns (LLM, Metadata)
         
         Args:
-            user_plan: 'free'/'starter', 'pro', 'enterprise'
+            user_plan: 'free', 'starter', 'pro', 'enterprise'
             user_role: 'admin', 'member', 'viewer'
             requested_tier: 'fast' (Axio Fast) or 'smart' (Axio Pro)
             
@@ -67,6 +67,18 @@ class LLMFactory:
             metadata example: {"upsell": True, "actual_tier": "fast"}
         """
         metadata = {"upsell": False, "actual_tier": requested_tier}
+        plan_code = (user_plan or "free").lower()
+        allowed_plans = {
+            "free",
+            settings.PLAN_STARTER,
+            settings.PLAN_PRO,
+            settings.PLAN_ENTERPRISE,
+            settings.PLAN_ENTERPRISE_SMALL,
+            settings.PLAN_ENTERPRISE_MEDIUM,
+            settings.PLAN_ENTERPRISE_LARGE,
+        }
+        if plan_code not in allowed_plans:
+            plan_code = "free"
         
         # --- 1. RESOLVE TIER & ENFORCE LIMITS ---
         
@@ -79,10 +91,13 @@ class LLMFactory:
                 target_tier = settings.MODEL_ALIAS_FAST
                 metadata["actual_tier"] = "fast"
         
-        # RULE: 'Starter'/'Free' plan MUST use Fast model
-        if user_plan in ["free", "starter"]:
+        # RULE: Free/Starter plans MUST use Fast model
+        if plan_code in {"free", settings.PLAN_STARTER}:
             if target_tier == settings.MODEL_ALIAS_SMART:
-                logger.info(f"🔒 [LLMFactory] Plan Constraint: Downgrading {user_plan} to Fast (Upsell Triggered)")
+                logger.info(
+                    "🔒 [LLMFactory] Plan Constraint: Downgrading %s to Fast (Upsell Triggered)",
+                    plan_code,
+                )
                 target_tier = settings.MODEL_ALIAS_FAST
                 metadata["upsell"] = True
                 metadata["actual_tier"] = "fast"

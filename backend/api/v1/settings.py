@@ -7,7 +7,7 @@ Endpoints for user profile and notification settings management.
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
-from api.v1.dependencies import validate_team_access
+from api.v1.dependencies import validate_team_access, require_paid_access
 from core.security import get_current_user
 from core.db import get_supabase
 from datetime import datetime, timezone
@@ -301,7 +301,11 @@ DEFAULT_NOTIFICATION_SETTINGS = [
 ]
 
 
-@router.get("/settings/notifications", response_model=List[NotificationSettingResponse])
+@router.get(
+    "/settings/notifications",
+    response_model=List[NotificationSettingResponse],
+    dependencies=[Depends(require_paid_access)],
+)
 async def get_notification_settings(user_id: str = Depends(get_current_user)):
     """Get notification settings, creating defaults if they don't exist."""
     supabase = get_supabase()
@@ -336,10 +340,14 @@ async def get_notification_settings(user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch settings: {str(e)}")
 
 
-@router.patch("/settings/notifications", response_model=NotificationSettingResponse)
+@router.patch(
+    "/settings/notifications",
+    response_model=NotificationSettingResponse,
+    dependencies=[Depends(require_paid_access)],
+)
 async def update_notification_setting(
     payload: NotificationSettingUpdate,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
 ):
     """Toggle a specific notification setting."""
     supabase = get_supabase()
@@ -365,7 +373,10 @@ async def update_notification_setting(
         raise HTTPException(status_code=500, detail=f"Failed to update setting: {str(e)}")
 
 
-@router.delete("/settings/notifications")
+@router.delete(
+    "/settings/notifications",
+    dependencies=[Depends(require_paid_access)],
+)
 async def reset_notification_settings(user_id: str = Depends(get_current_user)):
     """
     Reset all notification settings to defaults.

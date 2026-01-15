@@ -4,6 +4,7 @@ import { createContext, useContext, useCallback, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { useUsage } from "@/hooks/useUsage";
 import { Source, ScopeContext, ScopeCandidate } from '@/types';
 
 export interface Message {
@@ -75,18 +76,31 @@ async function fetchConversations(): Promise<ChatConversation[]> {
 export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     const { toast } = useToast();
     const queryClient = useQueryClient();
+    const { plan } = useUsage();
+    const normalizedPlan = typeof plan === "string" ? plan.toLowerCase() : "";
+    const hasChatAccess = normalizedPlan !== "" && normalizedPlan !== "free" && normalizedPlan !== "none";
 
     // Main query for fetching conversations
     const {
         data: conversations = [],
-        isLoading,
+        isLoading: queryLoading,
         refetch
     } = useQuery({
         queryKey: CHAT_HISTORY_KEY,
         queryFn: fetchConversations,
+        enabled: hasChatAccess,
         staleTime: 5 * 60 * 1000, // 5 minutes
         gcTime: 10 * 60 * 1000,   // 10 minutes cache
     });
+    const isLoading = hasChatAccess ? queryLoading : false;
+
+    const denyChatAccess = useCallback(() => {
+        toast({
+            title: "Subscription required",
+            description: "Upgrade your plan to access chat history.",
+            variant: "destructive",
+        });
+    }, [toast]);
 
     // Create chat mutation
     const createMutation = useMutation({
@@ -167,6 +181,9 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
 
     // Get messages (uses separate query per conversation)
     const getMessagesById = useCallback(async (conversationId: string): Promise<Message[]> => {
+        if (!hasChatAccess) {
+            return [];
+        }
         try {
             const { data } = await api.get(`/conversations/${conversationId}/messages`);
             return data;
@@ -178,26 +195,43 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
 
     // Wrapper functions for mutations
     const createNewChat = useCallback(async (title: string = 'New Chat'): Promise<string> => {
+        if (!hasChatAccess) {
+            denyChatAccess();
+            throw new Error("Subscription required");
+        }
         const result = await createMutation.mutateAsync(title);
         return result.id;
-    }, [createMutation]);
+    }, [createMutation, denyChatAccess, hasChatAccess]);
 
     const deleteChat = useCallback(async (id: string): Promise<void> => {
+        if (!hasChatAccess) {
+            denyChatAccess();
+            return;
+        }
         await deleteMutation.mutateAsync(id);
-    }, [deleteMutation]);
+    }, [deleteMutation, denyChatAccess, hasChatAccess]);
 
     const renameChat = useCallback(async (id: string, title: string): Promise<void> => {
+        if (!hasChatAccess) {
+            denyChatAccess();
+            return;
+        }
         await renameMutation.mutateAsync({ id, title });
-    }, [renameMutation]);
+    }, [renameMutation, denyChatAccess, hasChatAccess]);
 
     const value: ChatHistoryContextType = {
-        conversations,
+        conversations: hasChatAccess ? conversations : [],
         isLoading,
         createNewChat,
         deleteChat,
         renameChat,
         getMessagesById,
-        refresh: () => refetch(),
+        refresh: () => {
+            if (!hasChatAccess) {
+                return;
+            }
+            refetch();
+        },
     };
 
     return (

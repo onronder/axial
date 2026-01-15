@@ -28,7 +28,7 @@ describe('StorageMeter Component', () => {
     it('should render loading skeleton when isLoading is true', () => {
         mockUseUsage.mockReturnValue({
             isLoading: true,
-            plan: 'free',
+            plan: 'starter',
             filesUsed: 0,
             storageUsed: 0,
         });
@@ -44,7 +44,7 @@ describe('StorageMeter Component', () => {
     it('should render loading skeleton in horizontal variant', () => {
         mockUseUsage.mockReturnValue({
             isLoading: true,
-            plan: 'free',
+            plan: 'starter',
             filesUsed: 0,
             storageUsed: 0,
         });

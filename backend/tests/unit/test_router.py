@@ -31,7 +31,7 @@ class TestModelTierEnforcement:
         return LLMRouter()
     
     # =========================================================================
-    # BASIC TIER TESTS (Free & Starter plans - strictest gate)
+    # BASIC TIER TESTS (Free/Starter plans - strictest gate)
     # =========================================================================
     
     @pytest.mark.unit

@@ -5,9 +5,6 @@ import {
     Table2,
     ListChecks,
     LayoutGrid,
-    Box,
-    Package,
-    Server,
     Hash,
     Clock,
 } from "lucide-react";
@@ -20,8 +17,8 @@ interface ComingSoonIntegration {
     name: string;
     description: string;
     icon: React.ReactNode;
-    category: "Project & Ops" | "Enterprise Storage" | "Communication";
-    badge: "Coming Soon" | "Waitlist" | "Enterprise";
+    category: "Project & Ops" | "Communication";
+    badge: "Coming Soon" | "Waitlist";
 }
 
 const COMING_SOON_INTEGRATIONS: ComingSoonIntegration[] = [
@@ -58,23 +55,6 @@ const COMING_SOON_INTEGRATIONS: ComingSoonIntegration[] = [
         category: "Project & Ops",
         badge: "Coming Soon",
     },
-    // Enterprise Storage
-    {
-        id: "box",
-        name: "Box",
-        description: "Enterprise content management",
-        icon: <Box className="h-6 w-6" />,
-        category: "Enterprise Storage",
-        badge: "Enterprise",
-    },
-    {
-        id: "dropbox",
-        name: "Dropbox",
-        description: "Cloud file storage & sharing",
-        icon: <Package className="h-6 w-6" />,
-        category: "Enterprise Storage",
-        badge: "Coming Soon",
-    },
     // Communication
     {
         id: "slack",
@@ -86,7 +66,7 @@ const COMING_SOON_INTEGRATIONS: ComingSoonIntegration[] = [
     },
 ];
 
-const CATEGORY_ORDER = ["Project & Ops", "Enterprise Storage", "Communication"] as const;
+const CATEGORY_ORDER = ["Project & Ops", "Communication"] as const;
 
 export function ComingSoonIntegrations() {
     const { toast } = useToast();
@@ -143,7 +123,7 @@ export function ComingSoonIntegrations() {
                                     >
                                         {/* Badge */}
                                         <Badge
-                                            variant={integration.badge === "Enterprise" ? "default" : "secondary"}
+                                            variant="secondary"
                                             className="absolute top-3 right-3 text-xs"
                                         >
                                             {integration.badge}

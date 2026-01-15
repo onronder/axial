@@ -26,8 +26,6 @@ def _resolve_plan_limits(plan_code: Optional[str]) -> Dict[str, Any]:
     plan_key = (plan_code or settings.PLAN_STARTER).lower()
     if plan_key == "enterprise":
         plan_key = "enterprise_medium"
-    if plan_key == "free":
-        plan_key = settings.PLAN_STARTER
     limits = QUOTA_LIMITS.get(plan_key)
     if not limits:
         logger.warning("⚠️ [Quotas] Unknown plan '%s', defaulting to starter", plan_code)
