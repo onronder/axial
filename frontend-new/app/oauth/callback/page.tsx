@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { getMicrosoftRedirectUri, getMicrosoftTenantId } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { GitHubRepoSelector } from "@/components/data-sources/GitHubRepoSelector";
 
 type Provider = "google" | "notion" | "onedrive" | "sharepoint" | "dropbox" | "github";
 
@@ -35,6 +36,7 @@ function OAuthCallbackContent() {
     const [provider, setProvider] = useState<Provider>("google");
     const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
     const [showDebug, setShowDebug] = useState(false);
+    const [showGitHubRepoSelector, setShowGitHubRepoSelector] = useState(false);
 
     useEffect(() => {
         const code = searchParams.get("code");
@@ -134,6 +136,15 @@ function OAuthCallbackContent() {
                 console.log("🔐 [OAuth Callback] ✅ Success:", response.data);
                 setStatus("success");
 
+                // For GitHub, show repo selector instead of redirecting immediately
+                if (detectedProvider === "github") {
+                    console.log("🔐 [OAuth Callback] GitHub connected - showing repo selector");
+                    setTimeout(() => {
+                        setShowGitHubRepoSelector(true);
+                    }, 1500);
+                    return;
+                }
+
                 // Redirect to data sources after short delay
                 setTimeout(() => {
                     router.push("/dashboard/settings/data-sources");
@@ -231,7 +242,8 @@ function OAuthCallbackContent() {
                     </CardTitle>
                     <CardDescription>
                         {status === "loading" && "Please wait while we complete the connection."}
-                        {status === "success" && "Redirecting to Data Sources..."}
+                        {status === "success" && provider === "github" && !showGitHubRepoSelector && "Loading repository selector..."}
+                        {status === "success" && provider !== "github" && "Redirecting to Data Sources..."}
                         {status === "error" && error}
                     </CardDescription>
                 </CardHeader>
@@ -246,6 +258,22 @@ function OAuthCallbackContent() {
                     </CardContent>
                 )}
                 </Card>
+
+                {/* GitHub Repository Selector Modal */}
+                <GitHubRepoSelector
+                    open={showGitHubRepoSelector}
+                    onOpenChange={(open) => {
+                        setShowGitHubRepoSelector(open);
+                        if (!open) {
+                            // If user closes modal without saving, redirect anyway
+                            router.push("/dashboard/settings/data-sources");
+                        }
+                    }}
+                    onComplete={() => {
+                        setShowGitHubRepoSelector(false);
+                        router.push("/dashboard/settings/data-sources");
+                    }}
+                />
             </div>
         </div>
     );

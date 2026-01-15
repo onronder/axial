@@ -146,18 +146,13 @@ export function DataSourceCard({
           className={cn(
             "flex h-12 w-12 items-center justify-center rounded-xl",
             source.isConnected
-              ? "bg-gradient-to-br from-primary to-accent shadow-md"
+              ? "bg-card border-2 border-emerald-500/40 shadow-md"
               : "bg-muted group-hover:bg-primary/10"
           )}
         >
           <DataSourceIcon
             sourceId={source.type}
-            className={cn(
-              "h-6 w-6",
-              source.isConnected
-                ? "text-white"
-                : "text-muted-foreground group-hover:text-primary"
-            )}
+            className="h-6 w-6"
           />
         </div>
 

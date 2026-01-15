@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 import OAuthCallbackPage from "@/app/oauth/callback/page";
 import { api } from "@/lib/api";
@@ -25,6 +25,23 @@ vi.mock("@/lib/api", () => ({
         get: vi.fn(),
         patch: vi.fn(),
         delete: vi.fn(),
+    },
+}));
+
+// Mock GitHubRepoSelector to simplify testing
+vi.mock("@/components/data-sources/GitHubRepoSelector", () => ({
+    GitHubRepoSelector: ({ open, onComplete, onOpenChange }: { 
+        open: boolean; 
+        onComplete: () => void;
+        onOpenChange: (open: boolean) => void;
+    }) => {
+        if (!open) return null;
+        return (
+            <div data-testid="github-repo-selector">
+                <button onClick={onComplete}>Complete Selection</button>
+                <button onClick={() => onOpenChange(false)}>Cancel</button>
+            </div>
+        );
     },
 }));
 
@@ -110,7 +127,7 @@ describe("OAuthCallbackPage", () => {
         });
     });
 
-    it("redirects after successful GitHub exchange", async () => {
+    it("shows repo selector after successful GitHub exchange", async () => {
         searchParams = new URLSearchParams("code=gh_success&state=github");
 
         render(<OAuthCallbackPage />);
@@ -121,10 +138,44 @@ describe("OAuthCallbackPage", () => {
             });
         });
 
-        // Wait for the redirect (setTimeout 1500ms in the component)
+        // Wait for the repo selector to appear (setTimeout 1500ms in the component)
         await waitFor(() => {
-            expect(pushMock).toHaveBeenCalledWith("/dashboard/settings/data-sources");
+            expect(screen.getByTestId("github-repo-selector")).toBeInTheDocument();
         }, { timeout: 3000 });
+    });
+
+    it("redirects after completing GitHub repo selection", async () => {
+        searchParams = new URLSearchParams("code=gh_complete&state=github");
+
+        render(<OAuthCallbackPage />);
+
+        // Wait for repo selector
+        await waitFor(() => {
+            expect(screen.getByTestId("github-repo-selector")).toBeInTheDocument();
+        }, { timeout: 3000 });
+
+        // Complete selection
+        fireEvent.click(screen.getByText("Complete Selection"));
+
+        // Should redirect
+        expect(pushMock).toHaveBeenCalledWith("/dashboard/settings/data-sources");
+    });
+
+    it("redirects when GitHub repo selector is cancelled", async () => {
+        searchParams = new URLSearchParams("code=gh_cancel&state=github");
+
+        render(<OAuthCallbackPage />);
+
+        // Wait for repo selector
+        await waitFor(() => {
+            expect(screen.getByTestId("github-repo-selector")).toBeInTheDocument();
+        }, { timeout: 3000 });
+
+        // Cancel
+        fireEvent.click(screen.getByText("Cancel"));
+
+        // Should still redirect
+        expect(pushMock).toHaveBeenCalledWith("/dashboard/settings/data-sources");
     });
 
     it("shows error when GitHub access is denied", async () => {
