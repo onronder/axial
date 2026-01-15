@@ -67,6 +67,10 @@ lxml
 clamd>=1.0.2,<2.0.0
 paramiko>=3.4.0,<4.0.0
 
+# --- AWS S3 CONNECTOR ---
+boto3>=1.34.0,<2.0.0
+botocore>=1.34.0,<2.0.0
+
 # --- OCR FALLBACK FOR SCANNED PDFs & IMAGES ---
 pytesseract>=0.3.10
 pdf2image>=1.16.0

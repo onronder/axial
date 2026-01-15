@@ -6,6 +6,7 @@ from connectors.file_upload import FileUploadConnector
 from connectors.github import GitHubConnector
 from connectors.microsoft import MicrosoftGraphConnector
 from connectors.notion import NotionConnector
+from connectors.s3 import S3Connector
 from connectors.sftp import SFTPConnector
 from connectors.web import WebConnector
 
@@ -19,6 +20,7 @@ CONNECTORS: Dict[str, Type] = {
     "onedrive": MicrosoftGraphConnector,
     "sharepoint": MicrosoftGraphConnector,
     "notion": NotionConnector,
+    "s3": S3Connector,
     "sftp": SFTPConnector,
     "web": WebConnector,
 }
