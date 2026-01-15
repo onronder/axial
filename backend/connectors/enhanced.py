@@ -25,6 +25,7 @@ class SourceType(str, Enum):
     SLACK = "slack"
     GITHUB = "github"
     BOX = "box"
+    S3 = "s3"
 
 
 @dataclass

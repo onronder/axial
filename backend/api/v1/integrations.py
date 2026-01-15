@@ -11,7 +11,7 @@ from core.security import get_current_user, encrypt_token, decrypt_token
 from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
-from api.v1.dependencies import validate_team_access, require_editor
+from api.v1.dependencies import validate_team_access, require_editor, get_effective_plan
 from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
 from core.exceptions import QuotaExceededError
@@ -20,6 +20,7 @@ from services.audit import audit_logger, log_connector_sync
 from services.web_crawl import queue_web_crawl
 from connectors.web import WebConnector
 from connectors.sftp import SFTPConnector
+from connectors.s3 import S3Connector
 from core.ingestion_utils import require_canonical_provider
 from connectors.registry import get_connector_manifest
 from connectors.base import ConnectorAuthError, ConnectorTransientError
@@ -102,6 +103,43 @@ class SFTPConnectRequest(BaseModel):
     password: Optional[str] = Field(default=None, max_length=4096)
     private_key: Optional[str] = Field(default=None, max_length=16384)
     root_path: str = Field(default="/", min_length=1, max_length=1024)
+
+
+class S3ConnectRequest(BaseModel):
+    """
+    Amazon S3 connection request with IAM credentials.
+    
+    ENTERPRISE ONLY: This connector requires Enterprise plan.
+    """
+    access_key_id: str = Field(
+        ...,
+        min_length=16,
+        max_length=128,
+        description="AWS Access Key ID (typically 20 characters)"
+    )
+    secret_access_key: str = Field(
+        ...,
+        min_length=16,
+        max_length=128,
+        description="AWS Secret Access Key (typically 40 characters)"
+    )
+    region: str = Field(
+        default="us-east-1",
+        description="AWS region (e.g., us-east-1, eu-west-1)"
+    )
+    bucket_name: str = Field(
+        ...,
+        min_length=3,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+        description="S3 bucket name"
+    )
+    prefix: str = Field(
+        ...,
+        min_length=1,
+        max_length=1024,
+        description="Folder prefix to sync (e.g., 'documents/'). Required for cost protection."
+    )
 
 
 class MicrosoftExchangeRequest(BaseModel):
@@ -1391,6 +1429,167 @@ async def connect_sftp(
         "status": "success",
         "provider": "sftp",
         "integration_id": upsert_res.data[0]["id"],
+    }
+
+
+# =============================================================================
+# S3 Connector (ENTERPRISE ONLY)
+# =============================================================================
+
+# Enterprise plan identifiers for S3 gate
+ENTERPRISE_PLANS = frozenset({
+    "enterprise",
+    "enterprise_small",
+    "enterprise_medium",
+    "enterprise_large",
+})
+
+
+@router.post("/integrations/s3/connect")
+@limiter.limit("5/minute")
+async def connect_s3(
+    request: Request,
+    body: S3ConnectRequest,
+    user_id: str = Depends(require_editor),
+    plan: str = Depends(get_effective_plan),
+):
+    """
+    Connect Amazon S3 bucket with IAM credentials.
+    
+    **ENTERPRISE ONLY**: This connector requires an Enterprise plan subscription.
+    
+    SECURITY NOTES:
+    - Credentials are encrypted at rest using Fernet
+    - Only read operations (ListBucket, GetObject) are supported
+    - Provide a read-only IAM policy for maximum security
+    
+    COST PROTECTION:
+    - Prefix is required to prevent full bucket scans
+    - Only supported file extensions are processed
+    
+    IAM Policy Template (MINIMUM REQUIRED):
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [{
+        "Effect": "Allow",
+        "Action": ["s3:GetObject", "s3:ListBucket"],
+        "Resource": ["arn:aws:s3:::BUCKET", "arn:aws:s3:::BUCKET/*"]
+      }]
+    }
+    ```
+    """
+    # =================================================================
+    # ENTERPRISE GATE: Non-negotiable business rule
+    # =================================================================
+    if plan not in ENTERPRISE_PLANS:
+        logger.warning(
+            f"🚫 [S3] Enterprise gate blocked user {user_id[:8]}... "
+            f"(plan={plan})"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "ENTERPRISE_REQUIRED",
+                "current_plan": plan,
+                "message": (
+                    "Amazon S3 connector is available exclusively on Enterprise plans. "
+                    "Please upgrade your subscription to access cloud storage integrations."
+                ),
+                "upgrade_url": "/settings/billing",
+            }
+        )
+
+    # =================================================================
+    # Verify S3 Access
+    # =================================================================
+    supabase = get_supabase()
+    
+    # Get S3 connector definition
+    conn_def = supabase.table("connector_definitions").select("id").eq(
+        "type", "s3"
+    ).single().execute()
+    
+    if not conn_def.data:
+        raise HTTPException(
+            status_code=500,
+            detail="S3 connector not configured. Please contact support."
+        )
+
+    # Verify credentials and bucket access
+    connector = S3Connector()
+    config = {
+        "access_key_id": body.access_key_id,
+        "secret_access_key": body.secret_access_key,
+        "region": body.region,
+        "bucket_name": body.bucket_name,
+        "prefix": body.prefix,
+    }
+
+    try:
+        connector._verify_access(config)
+    except ValueError as exc:
+        # Prefix validation error
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ConnectorAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except ConnectorTransientError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"S3 connection failed: {exc}"
+        ) from exc
+
+    # =================================================================
+    # Store Encrypted Credentials
+    # =================================================================
+    credentials = {
+        "access_key_id": encrypt_token(body.access_key_id),
+        "secret_access_key": encrypt_token(body.secret_access_key),
+        "region": body.region,
+        "bucket_name": body.bucket_name,
+        "prefix": body.prefix,
+    }
+
+    data = {
+        "user_id": user_id,
+        "connector_definition_id": conn_def.data["id"],
+        "credentials": credentials,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    upsert_res = supabase.table("user_integrations").upsert(
+        data,
+        on_conflict="user_id,connector_definition_id",
+    ).execute()
+
+    if not upsert_res.data:
+        raise HTTPException(status_code=500, detail="Failed to store S3 credentials")
+
+    # Audit log (never log credentials)
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.connect",
+        resource_type="connector",
+        resource_id="s3",
+        details={
+            "bucket": body.bucket_name,
+            "region": body.region,
+            "prefix": body.prefix,
+        },
+    )
+
+    logger.info(
+        f"🔐 [S3] ✅ S3 connected for user {user_id[:8]}... "
+        f"(bucket={body.bucket_name}, region={body.region})"
+    )
+
+    return {
+        "status": "success",
+        "provider": "s3",
+        "integration_id": upsert_res.data[0]["id"],
+        "bucket": body.bucket_name,
+        "region": body.region,
+        "prefix": body.prefix,
     }
 
 

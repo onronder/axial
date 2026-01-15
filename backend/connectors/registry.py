@@ -63,6 +63,14 @@ CONNECTOR_REGISTRY = {
         "capabilities": ["binary_content", "incremental_sync", "enterprise"],
         "rate_limit_rpm": 600,  # Business accounts: 1000/min, use 600 for safety
     },
+    "s3": {
+        "id": "s3",
+        "name": "Amazon S3",
+        "capabilities": ["binary_content", "incremental_sync", "glacier_aware"],
+        "rate_limit_rpm": 1000,  # S3 has no rate limit, but we self-limit
+        "auth_type": "form",  # IAM credentials, not OAuth
+        "enterprise_only": True,  # Requires Enterprise plan
+    },
 }
 
 

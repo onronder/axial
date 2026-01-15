@@ -54,9 +54,12 @@ const isDataSourceCategory = (value: string | null | undefined): value is DataSo
 
 const LOCAL_UPLOAD_TYPES = new Set(["file_upload", "file-upload", "local"]);
 const CATEGORY_SOURCE_ORDER: Record<string, string[]> = {
-  cloud: ["google_drive", "dropbox", "onedrive", "sharepoint"],
+  cloud: ["google_drive", "dropbox", "onedrive", "sharepoint", "s3"],
   files: ["sftp", "file_upload", "file-upload", "local"],
 };
+
+// Enterprise-only connectors (require Enterprise plan to connect)
+const ENTERPRISE_ONLY_SOURCES = new Set(["s3"]);
 
 const normalizeType = (value: string) => value.toLowerCase().replace(/-/g, "_");
 
@@ -78,7 +81,7 @@ export function DataSourcesGrid() {
   const [browsing, setBrowsing] = useState<MergedDataSource | null>(null);
   const [sftpConnectOpen, setSftpConnectOpen] = useState(false);
   const isViewer = profile?.role === "viewer";
-  const { canWebCrawl, refresh: refreshUsage } = useUsage();
+  const { canWebCrawl, plan, refresh: refreshUsage } = useUsage();
   const { isProviderQuotaExceeded } = useQuotaStatus();
   const canRunWebCrawl = canWebCrawl && !isViewer;
   
@@ -302,6 +305,8 @@ export function DataSourcesGrid() {
                     onSync={syncIntegration}
                     disabled={isViewer}
                     quotaExceeded={isProviderQuotaExceeded(source.type)}
+                    enterpriseOnly={ENTERPRISE_ONLY_SOURCES.has(source.type)}
+                    userPlan={plan}
                   />
                 )
               ))}

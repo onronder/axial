@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Check, X, ExternalLink, Clock, RefreshCw, AlertCircle } from "lucide-react";
+import { Loader2, Check, X, ExternalLink, Clock, RefreshCw, AlertCircle, Lock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,7 +13,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { DataSourceIcon } from "./DataSourceIcon";
 import { cn } from "@/lib/utils";
-import type { MergedDataSource } from "@/types";
+import type { MergedDataSource, PlanType } from "@/types";
 
 interface DataSourceCardProps {
   source: MergedDataSource;
@@ -24,6 +24,10 @@ interface DataSourceCardProps {
   disabled?: boolean;
   /** Indicates this source encountered a quota/limit issue */
   quotaExceeded?: boolean;
+  /** Indicates this connector requires Enterprise plan */
+  enterpriseOnly?: boolean;
+  /** Current user's plan for enterprise gating */
+  userPlan?: PlanType | null;
 }
 
 function formatLastSync(lastSyncAt: string | null): string {
@@ -51,10 +55,17 @@ export function DataSourceCard({
   onSync,
   disabled = false,
   quotaExceeded = false,
+  enterpriseOnly = false,
+  userPlan = null,
 }: DataSourceCardProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Enterprise gate: Check if user can access this connector
+  const isEnterpriseUser = userPlan === 'enterprise' || 
+    (userPlan?.startsWith('enterprise_') ?? false);
+  const showEnterpriseLock = enterpriseOnly && !isEnterpriseUser && !source.isConnected;
 
   const handleConnect = async () => {
     if (disabled) {
@@ -153,14 +164,35 @@ export function DataSourceCard({
                 ? quotaExceeded
                   ? "bg-card border-2 border-destructive/50 shadow-md"
                   : "bg-card border-2 border-emerald-500/40 shadow-md"
-                : "bg-muted group-hover:bg-primary/10"
+                : showEnterpriseLock
+                  ? "bg-muted/50 opacity-75"
+                  : "bg-muted group-hover:bg-primary/10"
             )}
           >
             <DataSourceIcon
               sourceId={source.type}
-              className="h-6 w-6"
+              className={cn("h-6 w-6", showEnterpriseLock && "opacity-60")}
             />
           </div>
+
+          {/* Enterprise-only badge */}
+          {enterpriseOnly && !source.isConnected && (
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-gradient-to-r from-violet-500 to-purple-500 flex items-center justify-center shadow-lg cursor-help ring-2 ring-background">
+                    <Lock className="h-2.5 w-2.5 text-white" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[220px] text-center">
+                  <p className="text-xs font-medium">Enterprise Only</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    This connector requires an Enterprise plan.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
 
           {/* Quota exceeded warning indicator */}
           {quotaExceeded && source.isConnected && (
@@ -182,7 +214,7 @@ export function DataSourceCard({
           )}
         </div>
 
-        {source.isConnected && (
+        {source.isConnected ? (
           <Badge 
             className={cn(
               "gap-1 text-white text-xs border-0 px-2 py-0.5",
@@ -193,6 +225,13 @@ export function DataSourceCard({
           >
             <Check className="h-3 w-3" />
             Connected
+          </Badge>
+        ) : enterpriseOnly && (
+          <Badge 
+            className="gap-1 text-white text-xs border-0 px-2 py-0.5 bg-gradient-to-r from-violet-500 to-purple-500"
+          >
+            <Sparkles className="h-3 w-3" />
+            Enterprise
           </Badge>
         )}
       </div>
@@ -268,6 +307,29 @@ export function DataSourceCard({
             </Tooltip>
           </TooltipProvider>
         </div>
+      ) : showEnterpriseLock ? (
+        /* Enterprise Upgrade CTA for non-enterprise users */
+        <TooltipProvider delayDuration={0}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-8 text-xs font-medium border-violet-500/50 bg-gradient-to-r from-violet-500/10 to-purple-500/10 hover:from-violet-500/20 hover:to-purple-500/20 text-violet-400 hover:text-violet-300"
+                onClick={() => window.location.href = '/dashboard/settings/billing'}
+              >
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                Upgrade to Enterprise
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[240px] text-center">
+              <p className="text-xs">
+                {source.name} connector is available on Enterprise plans. 
+                Upgrade to connect cloud storage with advanced security.
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       ) : (
         <Button
           variant="outline"

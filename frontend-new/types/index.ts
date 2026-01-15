@@ -111,6 +111,8 @@ export interface MergedDataSource {
     isConnected: boolean;
     lastSyncAt: string | null;
     integrationId: string | null;
+    /** If true, this connector requires Enterprise plan */
+    enterpriseOnly?: boolean;
 }
 
 // =============================================================================
