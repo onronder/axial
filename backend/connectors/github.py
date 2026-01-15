@@ -6,10 +6,20 @@ Implements strict content filtering to avoid ingesting build artifacts and binar
 
 Features:
 - OAuth authentication with token validation
-- Recursive tree fetching (single API call per repo)
+- Folder tree navigation (browse repos like filesystem)
 - Hybrid whitelist/blacklist content filtering
 - Rate limit tracking with adaptive backoff
 - Explicit repository selection (no auto-sync all)
+
+Navigation Scheme:
+- parent_id=None or "root"          → Show selected repositories as folders
+- parent_id="owner/repo"            → Show root-level items in that repo
+- parent_id="owner/repo:path/to/dir"→ Show contents of that directory
+
+ID Formats:
+- Repository folder: "owner/repo"
+- Subfolder:         "owner/repo:path/to/folder"
+- File:              "owner/repo:sha:path/to/file.py"
 
 API Reference:
 - https://docs.github.com/en/rest/git/trees
@@ -21,8 +31,10 @@ from __future__ import annotations
 import logging
 import mimetypes
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, Optional, AsyncIterator, Set
+from enum import Enum
+from typing import Any, Dict, Iterator, List, Optional, AsyncIterator, Set, Tuple
 
 import requests
 
@@ -228,6 +240,60 @@ class GitHubRateLimiter:
             return 60.0
         delta = (self.reset_at - datetime.now(timezone.utc)).total_seconds()
         return max(0, delta)
+
+
+# =============================================================================
+# Navigation Types
+# =============================================================================
+
+class NavigationLevel(Enum):
+    """Represents the current navigation level in GitHub browser."""
+    ROOT = "root"           # Show selected repositories
+    REPO_ROOT = "repo_root" # Inside a repo, showing root contents
+    SUBFOLDER = "subfolder" # Inside a subfolder
+
+
+@dataclass
+class NavigationContext:
+    """Parsed navigation context from parent_id."""
+    level: NavigationLevel
+    repo: Optional[str] = None       # "owner/repo" if inside a repo
+    path: Optional[str] = None       # Path within repo (e.g., "src/components")
+    branch: Optional[str] = None     # Branch to use
+
+
+def parse_parent_id(parent_id: Optional[str]) -> NavigationContext:
+    """
+    Parse parent_id to determine navigation context.
+    
+    Examples:
+        None or "root"              → NavigationLevel.ROOT
+        "owner/repo"                → NavigationLevel.REPO_ROOT  (repo=owner/repo)
+        "owner/repo:src"            → NavigationLevel.SUBFOLDER  (repo=owner/repo, path=src)
+        "owner/repo:src/components" → NavigationLevel.SUBFOLDER  (repo=owner/repo, path=src/components)
+    """
+    if not parent_id or parent_id == "root":
+        return NavigationContext(level=NavigationLevel.ROOT)
+    
+    # Check if it contains a path separator ":"
+    if ":" in parent_id:
+        # Format: "owner/repo:path/to/folder"
+        repo_part, path_part = parent_id.split(":", 1)
+        return NavigationContext(
+            level=NavigationLevel.SUBFOLDER,
+            repo=repo_part,
+            path=path_part,
+        )
+    
+    # Format: "owner/repo" (must contain exactly one "/")
+    if "/" in parent_id:
+        return NavigationContext(
+            level=NavigationLevel.REPO_ROOT,
+            repo=parent_id,
+        )
+    
+    # Fallback: treat as root
+    return NavigationContext(level=NavigationLevel.ROOT)
 
 
 # =============================================================================
@@ -537,7 +603,7 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
                     yield from self._fetch_tree_dfs(config, repo, entry["sha"], entry_path)
     
     # =========================================================================
-    # File Discovery - list_files()
+    # File Discovery - list_files() with Folder Tree Navigation
     # =========================================================================
     
     def list_files(
@@ -546,13 +612,283 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         since: Optional[datetime] = None,
     ) -> Iterator[RemoteFile]:
         """
-        List files from selected GitHub repositories.
+        List items from GitHub with folder tree navigation.
         
-        Requires config to contain 'selected_repositories' list in credentials.
+        Navigation Levels:
+        - ROOT: Shows selected repositories as browseable folders
+        - REPO_ROOT: Shows root-level files and folders in a repository
+        - SUBFOLDER: Shows contents of a specific folder within a repo
+        
+        Args:
+            config: Must contain 'user_id' or 'access_token', and optionally 'parent_id'
+            since: Optional timestamp for incremental sync (not used for browsing)
         """
         resolved = self._resolve_config(config)
         
-        # Get selected repositories from credentials
+        # Parse navigation context from parent_id
+        parent_id = config.get("parent_id")
+        nav = parse_parent_id(parent_id)
+        
+        logger.debug(f"🧭 [GitHub] Navigation: level={nav.level}, repo={nav.repo}, path={nav.path}")
+        
+        # Route to appropriate handler based on navigation level
+        if nav.level == NavigationLevel.ROOT:
+            yield from self._list_repos_as_folders(resolved)
+        elif nav.level == NavigationLevel.REPO_ROOT:
+            yield from self._list_folder_contents(resolved, nav.repo, path=None)
+        elif nav.level == NavigationLevel.SUBFOLDER:
+            yield from self._list_folder_contents(resolved, nav.repo, path=nav.path)
+    
+    def _list_repos_as_folders(
+        self,
+        config: dict,
+    ) -> Iterator[RemoteFile]:
+        """
+        List selected repositories as browseable folders (ROOT level).
+        
+        This is what users see when they first browse GitHub - 
+        their selected repos appear as folders they can navigate into.
+        """
+        credentials = config.get("credentials", {})
+        selected_repos = credentials.get("selected_repositories", [])
+        
+        if not selected_repos:
+            logger.warning("⚠️ [GitHub] No repositories selected")
+            return
+        
+        logger.info(f"📂 [GitHub] Listing {len(selected_repos)} selected repositories")
+        
+        for repo_config in selected_repos:
+            if not repo_config.get("enabled", True):
+                continue
+            
+            repo_name = repo_config.get("full_name")
+            if not repo_name:
+                continue
+            
+            # Repository appears as a folder
+            owner = repo_name.split("/")[0] if "/" in repo_name else repo_name
+            name = repo_name.split("/")[1] if "/" in repo_name else repo_name
+            
+            yield RemoteFile(
+                id=repo_name,  # "owner/repo" is the ID for folders
+                name=name,     # Display name (just the repo name, not full path)
+                mime_type="application/vnd.github.repository",  # Custom type for repo folders
+                size=None,
+                modified_at=None,
+                parent_id="root",
+                web_view_url=f"https://github.com/{repo_name}",
+            )
+    
+    def _list_folder_contents(
+        self,
+        config: dict,
+        repo: str,
+        path: Optional[str] = None,
+    ) -> Iterator[RemoteFile]:
+        """
+        List immediate children of a folder within a repository.
+        
+        This provides hierarchical navigation - only shows items at the 
+        current level, not the entire recursive tree.
+        
+        Args:
+            config: Resolved config with access_token
+            repo: Repository full name (owner/repo)
+            path: Path within repo (None for repo root, "src" for /src, etc.)
+        """
+        # Get branch from repo config
+        credentials = config.get("credentials", {})
+        selected_repos = credentials.get("selected_repositories", [])
+        
+        branch = None
+        for repo_config in selected_repos:
+            if repo_config.get("full_name") == repo:
+                branch = repo_config.get("branch")
+                break
+        
+        # Get default branch if not specified
+        if not branch:
+            try:
+                url = f"{GITHUB_API_BASE}/repos/{repo}"
+                repo_info = self._request(config, url)
+                branch = repo_info.get("default_branch", "main")
+            except Exception as e:
+                logger.error(f"❌ [GitHub] Failed to get repo info for {repo}: {e}")
+                branch = "main"
+        
+        # Get branch SHA
+        try:
+            sha = self._get_branch_sha(config, repo, branch)
+        except Exception as e:
+            logger.error(f"❌ [GitHub] Failed to get branch SHA for {repo}/{branch}: {e}")
+            return
+        
+        logger.info(
+            f"📂 [GitHub] Listing contents: {repo}"
+            f"{f'/{path}' if path else ''} (branch: {branch})"
+        )
+        
+        # Fetch the tree and filter to immediate children only
+        try:
+            tree_items = list(self._fetch_tree(config, repo, sha))
+        except Exception as e:
+            logger.error(f"❌ [GitHub] Failed to fetch tree for {repo}: {e}")
+            return
+        
+        # Extract immediate children at the target path
+        items = self._extract_immediate_children(tree_items, repo, branch, path)
+        
+        yield from items
+    
+    def _extract_immediate_children(
+        self,
+        tree_items: List[dict],
+        repo: str,
+        branch: str,
+        target_path: Optional[str] = None,
+    ) -> Iterator[RemoteFile]:
+        """
+        Extract only immediate children from a tree at a given path.
+        
+        Given a flat list of all tree items, returns only items that are
+        direct children of target_path (not nested deeper).
+        
+        Args:
+            tree_items: Full tree from GitHub API
+            repo: Repository name for building IDs
+            branch: Branch name for web URLs
+            target_path: Path to list children for (None = repo root)
+        """
+        # Normalize target path
+        if target_path:
+            target_path = target_path.rstrip("/")
+            prefix = target_path + "/"
+            prefix_depth = target_path.count("/") + 1
+        else:
+            prefix = ""
+            prefix_depth = 0
+        
+        # Track folders we've seen (to avoid duplicates)
+        seen_folders: Set[str] = set()
+        
+        # Track files at this level
+        files_at_level: List[RemoteFile] = []
+        folders_at_level: List[RemoteFile] = []
+        
+        for item in tree_items:
+            item_path = item.get("path", "")
+            item_type = item.get("type", "")
+            
+            # Skip items not under target path
+            if target_path:
+                if not item_path.startswith(prefix):
+                    continue
+                # Get the relative path from target
+                relative_path = item_path[len(prefix):]
+            else:
+                relative_path = item_path
+            
+            # Skip empty paths
+            if not relative_path:
+                continue
+            
+            # Determine if this is an immediate child or nested
+            depth = relative_path.count("/")
+            
+            if depth == 0:
+                # This is an immediate child
+                if item_type == "tree":
+                    # It's a folder
+                    folder_name = relative_path
+                    if folder_name not in seen_folders:
+                        # Skip blacklisted folders
+                        if self._filter.is_path_blacklisted(item_path + "/"):
+                            continue
+                        
+                        seen_folders.add(folder_name)
+                        folder_id = f"{repo}:{item_path}" if item_path else repo
+                        
+                        folders_at_level.append(RemoteFile(
+                            id=folder_id,
+                            name=folder_name,
+                            mime_type="application/vnd.github.folder",
+                            size=None,
+                            modified_at=None,
+                            parent_id=f"{repo}:{target_path}" if target_path else repo,
+                            web_view_url=f"https://github.com/{repo}/tree/{branch}/{item_path}",
+                        ))
+                        
+                elif item_type == "blob":
+                    # It's a file - apply content filter
+                    if not self._filter.should_include(item_path, item.get("size")):
+                        continue
+                    
+                    file_name = relative_path
+                    files_at_level.append(RemoteFile(
+                        id=f"{repo}:{item['sha']}:{item_path}",
+                        name=file_name,
+                        mime_type=self._guess_mime_type(file_name),
+                        size=item.get("size"),
+                        modified_at=None,
+                        parent_id=f"{repo}:{target_path}" if target_path else repo,
+                        web_view_url=f"https://github.com/{repo}/blob/{branch}/{item_path}",
+                    ))
+            else:
+                # This is a nested item - check if it reveals a folder at our level
+                # e.g., "src/components/Button.tsx" at root level reveals "src" folder
+                first_segment = relative_path.split("/")[0]
+                
+                if first_segment not in seen_folders:
+                    # Check if the folder path would be blacklisted
+                    folder_full_path = f"{prefix}{first_segment}" if prefix else first_segment
+                    if self._filter.is_path_blacklisted(folder_full_path + "/"):
+                        seen_folders.add(first_segment)  # Mark as seen to avoid re-checking
+                        continue
+                    
+                    seen_folders.add(first_segment)
+                    folder_id = f"{repo}:{folder_full_path}" if folder_full_path else repo
+                    
+                    folders_at_level.append(RemoteFile(
+                        id=folder_id,
+                        name=first_segment,
+                        mime_type="application/vnd.github.folder",
+                        size=None,
+                        modified_at=None,
+                        parent_id=f"{repo}:{target_path}" if target_path else repo,
+                        web_view_url=f"https://github.com/{repo}/tree/{branch}/{folder_full_path}",
+                    ))
+        
+        # Yield folders first, then files (standard file browser convention)
+        # Sort each group alphabetically
+        folders_at_level.sort(key=lambda x: x.name.lower())
+        files_at_level.sort(key=lambda x: x.name.lower())
+        
+        yield from folders_at_level
+        yield from files_at_level
+        
+        logger.debug(
+            f"📊 [GitHub] Found {len(folders_at_level)} folders, "
+            f"{len(files_at_level)} files at {'/' + target_path if target_path else 'root'}"
+        )
+    
+    # =========================================================================
+    # Full Repository File Listing (for ingestion/sync)
+    # =========================================================================
+    
+    def list_all_repo_files(
+        self,
+        config: dict,
+        since: Optional[datetime] = None,
+    ) -> Iterator[RemoteFile]:
+        """
+        List ALL files from selected repositories (flat, for ingestion).
+        
+        This is the original behavior - returns all files across all repos
+        without folder hierarchy. Used for full sync/ingestion operations.
+        """
+        resolved = self._resolve_config(config)
+        
         credentials = resolved.get("credentials", {})
         selected_repos = credentials.get("selected_repositories", [])
         
@@ -570,7 +906,6 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
             if not repo_name:
                 continue
             
-            # Check rate limit before processing repo
             if self._rate_limiter.should_pause():
                 logger.warning(
                     f"⏸️ [GitHub] Pausing sync - {self._rate_limiter.remaining} requests remaining"
@@ -578,41 +913,37 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
                 break
             
             try:
-                yield from self._list_repo_files(resolved, repo_name, branch, since)
+                yield from self._list_repo_files_flat(resolved, repo_name, branch, since)
             except Exception as e:
                 logger.error(f"❌ [GitHub] Failed to list files from {repo_name}: {e}")
                 continue
     
-    def _list_repo_files(
+    def _list_repo_files_flat(
         self,
         config: dict,
         repo: str,
         branch: Optional[str],
         since: Optional[datetime],
     ) -> Iterator[RemoteFile]:
-        """List files from a single repository."""
-        # Get default branch if not specified
+        """List all files from a single repository (flat listing for ingestion)."""
         if not branch:
             url = f"{GITHUB_API_BASE}/repos/{repo}"
             repo_info = self._request(config, url)
             branch = repo_info.get("default_branch", "main")
         
-        # Get branch SHA
         sha = self._get_branch_sha(config, repo, branch)
         
-        logger.info(f"📂 [GitHub] Listing files from {repo} (branch: {branch})")
+        logger.info(f"📂 [GitHub] Listing all files from {repo} (branch: {branch})")
         
         file_count = 0
         filtered_count = 0
         
-        # Fetch tree
         for entry in self._fetch_tree(config, repo, sha):
             if entry["type"] != "blob":
                 continue
             
             file_count += 1
             
-            # Apply content filter
             if not self._filter.should_include(entry["path"], entry.get("size")):
                 filtered_count += 1
                 continue
@@ -622,7 +953,7 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
                 name=entry["path"].rsplit("/", 1)[-1],
                 mime_type=self._guess_mime_type(entry["path"]),
                 size=entry.get("size"),
-                modified_at=None,  # Tree API doesn't provide timestamps
+                modified_at=None,
                 parent_id=repo,
                 web_view_url=f"https://github.com/{repo}/blob/{branch}/{entry['path']}",
             )

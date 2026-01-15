@@ -1481,6 +1481,8 @@ async def list_provider_items(
                 "application/vnd.google-apps.folder",
                 "application/vnd.notion.page",
                 "application/vnd.notion.database",
+                "application/vnd.github.folder",
+                "application/vnd.github.repository",
                 "inode/directory",
                 "application/x-directory",
             }:

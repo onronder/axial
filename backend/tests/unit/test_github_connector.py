@@ -25,6 +25,9 @@ from connectors.github import (
     CodeFileFilter,
     GitHubRateLimiter,
     GitHubConnector,
+    NavigationLevel,
+    NavigationContext,
+    parse_parent_id,
     GITHUB_API_BASE,
     get_github_connector,
 )
@@ -475,6 +478,59 @@ class TestCodeFileFilter:
         f = CodeFileFilter()
         assert f.should_include("a/b/c/d/e/f/g/h/main.py") is True
         assert f.should_include("packages/core/src/lib/utils/helpers/index.ts") is True
+
+
+# =============================================================================
+# Navigation Parsing Tests
+# =============================================================================
+
+class TestParseParentId:
+    """Tests for parse_parent_id function."""
+
+    def test_none_returns_root(self):
+        ctx = parse_parent_id(None)
+        assert ctx.level == NavigationLevel.ROOT
+        assert ctx.repo is None
+        assert ctx.path is None
+
+    def test_root_string_returns_root(self):
+        ctx = parse_parent_id("root")
+        assert ctx.level == NavigationLevel.ROOT
+        assert ctx.repo is None
+        assert ctx.path is None
+
+    def test_repo_name_returns_repo_root(self):
+        ctx = parse_parent_id("owner/repo")
+        assert ctx.level == NavigationLevel.REPO_ROOT
+        assert ctx.repo == "owner/repo"
+        assert ctx.path is None
+
+    def test_repo_with_path_returns_subfolder(self):
+        ctx = parse_parent_id("owner/repo:src")
+        assert ctx.level == NavigationLevel.SUBFOLDER
+        assert ctx.repo == "owner/repo"
+        assert ctx.path == "src"
+
+    def test_repo_with_nested_path_returns_subfolder(self):
+        ctx = parse_parent_id("owner/repo:src/components/ui")
+        assert ctx.level == NavigationLevel.SUBFOLDER
+        assert ctx.repo == "owner/repo"
+        assert ctx.path == "src/components/ui"
+
+    def test_empty_string_returns_root(self):
+        ctx = parse_parent_id("")
+        assert ctx.level == NavigationLevel.ROOT
+
+    def test_org_repo_returns_repo_root(self):
+        """Organization repos work the same as user repos."""
+        ctx = parse_parent_id("my-organization/project-name")
+        assert ctx.level == NavigationLevel.REPO_ROOT
+        assert ctx.repo == "my-organization/project-name"
+
+    def test_single_word_returns_root(self):
+        """Single word without / should fallback to root."""
+        ctx = parse_parent_id("something")
+        assert ctx.level == NavigationLevel.ROOT
 
 
 # =============================================================================
@@ -1079,7 +1135,129 @@ class TestGitHubConnector:
 
         assert files == []
 
-    def test_list_files_success(self):
+    def test_list_files_root_shows_repos_as_folders(self):
+        """At root level (no parent_id), list_files returns repos as folders."""
+        connector = GitHubConnector()
+
+        config = {
+            "access_token": "token",
+            "credentials": {
+                "selected_repositories": [
+                    {"full_name": "user/repo1", "branch": "main", "enabled": True},
+                    {"full_name": "user/repo2", "branch": "develop", "enabled": True},
+                ]
+            }
+        }
+
+        with patch.object(connector, "_resolve_config", return_value=config):
+            # No parent_id means root level
+            items = list(connector.list_files({"parent_id": None}))
+
+        assert len(items) == 2
+        assert all(isinstance(f, RemoteFile) for f in items)
+        # Repos shown as folders
+        assert items[0].id == "user/repo1"
+        assert items[0].name == "repo1"
+        assert items[0].mime_type == "application/vnd.github.repository"
+        assert items[1].id == "user/repo2"
+        assert items[1].name == "repo2"
+
+    def test_list_files_inside_repo_shows_contents(self):
+        """Inside a repo, list_files returns immediate children (files + folders)."""
+        connector = GitHubConnector()
+
+        config = {
+            "access_token": "token",
+            "credentials": {
+                "selected_repositories": [
+                    {"full_name": "user/repo", "branch": "main", "enabled": True}
+                ]
+            }
+        }
+
+        mock_tree = [
+            {"path": "src/main.py", "type": "blob", "sha": "abc123", "size": 1000},
+            {"path": "src/utils/helper.py", "type": "blob", "sha": "xyz789", "size": 500},
+            {"path": "README.md", "type": "blob", "sha": "def456", "size": 500},
+            {"path": "node_modules/test.js", "type": "blob", "sha": "ghi789", "size": 100},  # Blacklisted folder
+            {"path": "src", "type": "tree", "sha": "xyz"},
+        ]
+
+        with patch.object(connector, "_resolve_config", return_value=config), \
+             patch.object(connector, "_get_branch_sha", return_value="sha123"), \
+             patch.object(connector, "_fetch_tree", return_value=iter(mock_tree)), \
+             patch.object(connector, "_request", return_value={"default_branch": "main"}):
+            # parent_id="user/repo" means inside the repo root
+            items = list(connector.list_files({"parent_id": "user/repo"}))
+
+        # Should show: src folder (from nested files) + README.md
+        # node_modules should be filtered out
+        assert len(items) == 2
+        # Folders first, then files
+        assert items[0].name == "src"
+        assert items[0].mime_type == "application/vnd.github.folder"
+        assert items[1].name == "README.md"
+        assert "blob" in items[1].mime_type or items[1].mime_type == "text/markdown"
+
+    def test_list_files_inside_subfolder(self):
+        """Inside a subfolder, list_files returns that folder's contents."""
+        connector = GitHubConnector()
+
+        config = {
+            "access_token": "token",
+            "credentials": {
+                "selected_repositories": [
+                    {"full_name": "user/repo", "branch": "main", "enabled": True}
+                ]
+            }
+        }
+
+        mock_tree = [
+            {"path": "src/main.py", "type": "blob", "sha": "abc123", "size": 1000},
+            {"path": "src/utils/helper.py", "type": "blob", "sha": "xyz789", "size": 500},
+            {"path": "src/index.ts", "type": "blob", "sha": "index123", "size": 800},
+            {"path": "README.md", "type": "blob", "sha": "def456", "size": 500},
+        ]
+
+        with patch.object(connector, "_resolve_config", return_value=config), \
+             patch.object(connector, "_get_branch_sha", return_value="sha123"), \
+             patch.object(connector, "_fetch_tree", return_value=iter(mock_tree)), \
+             patch.object(connector, "_request", return_value={"default_branch": "main"}):
+            # parent_id="user/repo:src" means inside src folder
+            items = list(connector.list_files({"parent_id": "user/repo:src"}))
+
+        # Should show: utils folder + main.py + index.ts
+        assert len(items) == 3
+        # Folders first
+        assert items[0].name == "utils"
+        assert items[0].mime_type == "application/vnd.github.folder"
+        # Then files (sorted alphabetically)
+        file_names = [i.name for i in items[1:]]
+        assert "index.ts" in file_names
+        assert "main.py" in file_names
+
+    def test_list_files_disabled_repos_skipped(self):
+        """Disabled repos should not appear in listing."""
+        connector = GitHubConnector()
+
+        config = {
+            "access_token": "token",
+            "credentials": {
+                "selected_repositories": [
+                    {"full_name": "user/enabled", "enabled": True},
+                    {"full_name": "user/disabled", "enabled": False},
+                ]
+            }
+        }
+
+        with patch.object(connector, "_resolve_config", return_value=config):
+            items = list(connector.list_files({"parent_id": None}))
+
+        assert len(items) == 1
+        assert items[0].name == "enabled"
+
+    def test_list_all_repo_files_flat(self):
+        """list_all_repo_files returns all files flat (for ingestion)."""
         connector = GitHubConnector()
 
         config = {
@@ -1095,21 +1273,22 @@ class TestGitHubConnector:
             {"path": "src/main.py", "type": "blob", "sha": "abc123", "size": 1000},
             {"path": "README.md", "type": "blob", "sha": "def456", "size": 500},
             {"path": "node_modules/test.js", "type": "blob", "sha": "ghi789", "size": 100},  # Should be filtered
-            {"path": "src", "type": "tree", "sha": "xyz"},  # Directory, should be skipped
         ]
 
         with patch.object(connector, "_resolve_config", return_value=config), \
              patch.object(connector, "_get_branch_sha", return_value="sha123"), \
              patch.object(connector, "_fetch_tree", return_value=iter(mock_tree)), \
              patch.object(connector, "_request", return_value={"default_branch": "main"}):
-            files = list(connector.list_files({}))
+            files = list(connector.list_all_repo_files({}))
 
         assert len(files) == 2
         assert all(isinstance(f, RemoteFile) for f in files)
+        # Flat listing - file names only
         assert files[0].name == "main.py"
         assert files[1].name == "README.md"
 
-    def test_list_files_rate_limit_pause(self):
+    def test_list_all_repo_files_rate_limit_pause(self):
+        """list_all_repo_files respects rate limits."""
         connector = GitHubConnector()
         connector._rate_limiter.remaining = 100  # Below threshold
 
@@ -1123,9 +1302,9 @@ class TestGitHubConnector:
         }
 
         with patch.object(connector, "_resolve_config", return_value=config):
-            files = list(connector.list_files({}))
+            files = list(connector.list_all_repo_files({}))
 
-        # Should stop after rate limit check
+        # Should stop immediately due to rate limit
         assert files == []
 
     # -------------------------------------------------------------------------
