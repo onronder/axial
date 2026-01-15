@@ -352,6 +352,65 @@ class OAuthTokenManager:
             raise TokenRefreshError(f"Dropbox token refresh failed: {e}") from e
     
     @staticmethod
+    def validate_github_token(
+        integration_id: str,
+        access_token: str,
+    ) -> str:
+        """
+        Validate GitHub OAuth token.
+        
+        GitHub OAuth tokens do not expire by default, but they can be revoked.
+        This method validates the token is still active by calling /user.
+        
+        Args:
+            integration_id: Database ID of user_integration
+            access_token: Current access token (encrypted or plain)
+            
+        Returns:
+            Valid access token (decrypted)
+            
+        Raises:
+            TokenRefreshError: If token is invalid/revoked
+        """
+        try:
+            from core.security import decrypt_token
+            
+            decrypted_access = decrypt_token(access_token) if access_token else None
+            
+            if not decrypted_access:
+                raise TokenRefreshError("No GitHub access token available")
+            
+            # Validate token by calling /user
+            response = requests.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {decrypted_access}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 401:
+                raise TokenRefreshError("GitHub token has been revoked or is invalid")
+            
+            if response.status_code == 403:
+                raise TokenRefreshError("GitHub token lacks required permissions")
+            
+            if response.status_code != 200:
+                logger.warning(f"⚠️ [GitHub] Token validation returned {response.status_code}")
+                # Non-401 errors might be transient, allow through
+            
+            logger.debug(f"✅ [GitHub] Token validated for integration {integration_id}")
+            return decrypted_access
+            
+        except TokenRefreshError:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Failed to validate GitHub token: {e}")
+            raise TokenRefreshError(f"GitHub token validation failed: {e}") from e
+    
+    @staticmethod
     def get_valid_credentials(
         integration: Dict[str, Any],
         provider: str
@@ -443,6 +502,20 @@ class OAuthTokenManager:
                     'access_token': new_access,
                     'refresh_token': new_refresh,
                     'expires_at': new_expires,
+                    'integration_id': integration_id
+                }
+            
+            elif provider == 'github':
+                # GitHub OAuth tokens don't expire by default
+                # We just validate the token is still active
+                new_access = OAuthTokenManager.validate_github_token(
+                    integration_id,
+                    access_token,
+                )
+                return {
+                    'access_token': new_access,
+                    'refresh_token': None,  # GitHub doesn't use refresh tokens
+                    'expires_at': None,
                     'integration_id': integration_id
                 }
             

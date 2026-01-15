@@ -286,3 +286,113 @@ def test_with_token_refresh_reraises_non_token_errors():
 
     with pytest.raises(Exception, match="network down"):
         decorated({"id": "int-1"})
+
+
+# =============================================================================
+# GitHub Token Validation Tests
+# =============================================================================
+
+def test_validate_github_token_success():
+    """Test successful GitHub token validation."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"login": "testuser", "id": 12345}
+
+    with patch("services.oauth_token_manager.requests.get", return_value=mock_response), \
+         patch("core.security.decrypt_token", return_value="valid-token"):
+        result = OAuthTokenManager.validate_github_token(
+            integration_id="int-1",
+            access_token="enc-valid-token",
+        )
+
+    assert result == "valid-token"
+
+
+def test_validate_github_token_revoked():
+    """Test GitHub token validation when token is revoked (401)."""
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+
+    with patch("services.oauth_token_manager.requests.get", return_value=mock_response), \
+         patch("core.security.decrypt_token", return_value="revoked-token"):
+        with pytest.raises(TokenRefreshError, match="revoked or is invalid"):
+            OAuthTokenManager.validate_github_token(
+                integration_id="int-1",
+                access_token="enc-revoked-token",
+            )
+
+
+def test_validate_github_token_no_permissions():
+    """Test GitHub token validation when token lacks permissions (403)."""
+    mock_response = MagicMock()
+    mock_response.status_code = 403
+
+    with patch("services.oauth_token_manager.requests.get", return_value=mock_response), \
+         patch("core.security.decrypt_token", return_value="limited-token"):
+        with pytest.raises(TokenRefreshError, match="lacks required permissions"):
+            OAuthTokenManager.validate_github_token(
+                integration_id="int-1",
+                access_token="enc-limited-token",
+            )
+
+
+def test_validate_github_token_no_token():
+    """Test GitHub token validation when no token is provided."""
+    with patch("core.security.decrypt_token", return_value=None):
+        with pytest.raises(TokenRefreshError, match="No GitHub access token"):
+            OAuthTokenManager.validate_github_token(
+                integration_id="int-1",
+                access_token=None,
+            )
+
+
+def test_validate_github_token_server_error_allows_through():
+    """Test GitHub token validation allows non-401/403 errors through."""
+    mock_response = MagicMock()
+    mock_response.status_code = 500  # Server error, not auth error
+
+    with patch("services.oauth_token_manager.requests.get", return_value=mock_response), \
+         patch("core.security.decrypt_token", return_value="token"):
+        # Should not raise, since 500 is transient
+        result = OAuthTokenManager.validate_github_token(
+            integration_id="int-1",
+            access_token="enc-token",
+        )
+    
+    assert result == "token"
+
+
+def test_validate_github_token_request_exception():
+    """Test GitHub token validation handles network errors."""
+    import requests as req
+    
+    with patch("services.oauth_token_manager.requests.get", side_effect=req.RequestException("Network error")), \
+         patch("core.security.decrypt_token", return_value="token"):
+        with pytest.raises(TokenRefreshError, match="validation failed"):
+            OAuthTokenManager.validate_github_token(
+                integration_id="int-1",
+                access_token="enc-token",
+            )
+
+
+def test_get_valid_credentials_github():
+    """Test get_valid_credentials for GitHub provider."""
+    with patch.object(OAuthTokenManager, "validate_github_token", return_value="access-token"):
+        creds = OAuthTokenManager.get_valid_credentials(
+            {"id": "int-1", "access_token": "enc-access"},
+            "github",
+        )
+
+    assert creds["access_token"] == "access-token"
+    assert creds["refresh_token"] is None  # GitHub doesn't use refresh tokens
+    assert creds["expires_at"] is None  # GitHub tokens don't expire
+
+
+def test_get_valid_credentials_github_error():
+    """Test get_valid_credentials for GitHub when validation fails."""
+    with patch.object(OAuthTokenManager, "validate_github_token", side_effect=TokenRefreshError("Token revoked")):
+        with pytest.raises(TokenRefreshError):
+            OAuthTokenManager.get_valid_credentials(
+                {"id": "int-1", "access_token": "enc-access"},
+                "github",
+            )

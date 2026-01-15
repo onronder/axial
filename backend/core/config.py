@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     DROPBOX_CLIENT_SECRET: Optional[str] = None
     DROPBOX_REDIRECT_URI: Optional[str] = None
     
+    # GitHub OAuth (Code repository integration)
+    GITHUB_CLIENT_ID: Optional[str] = None
+    GITHUB_CLIENT_SECRET: Optional[str] = None
+    GITHUB_REDIRECT_URI: Optional[str] = None
+    
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_JOB_COUNTER_TTL_SECONDS: int = 86400  # 24 hours
@@ -125,6 +130,7 @@ class Settings(BaseSettings):
     CONNECTOR_CONCURRENCY_ONEDRIVE: int = 2
     CONNECTOR_CONCURRENCY_SHAREPOINT: int = 2
     CONNECTOR_CONCURRENCY_DROPBOX: int = 2
+    CONNECTOR_CONCURRENCY_GITHUB: int = 2
  
 
     # =========================================================================

@@ -77,6 +77,8 @@ def test_file_upload_connector_mime_detection():
 
 
 def test_get_connector_returns_instances():
+    from connectors.github import GitHubConnector
+    
     assert isinstance(get_connector("file_upload"), FileUploadConnector)
     assert isinstance(get_connector("google_drive"), DriveConnector)
     assert isinstance(get_connector("notion"), NotionConnector)
@@ -84,6 +86,7 @@ def test_get_connector_returns_instances():
     assert isinstance(get_connector("onedrive"), MicrosoftGraphConnector)
     assert isinstance(get_connector("sharepoint"), MicrosoftGraphConnector)
     assert isinstance(get_connector("web"), WebConnector)
+    assert isinstance(get_connector("github"), GitHubConnector)
 
 
 def test_get_connector_unknown_type_raises():

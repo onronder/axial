@@ -116,3 +116,19 @@ export function getDropboxRedirectUri(): string | undefined {
     if (typeof window === "undefined") return undefined;
     return `${window.location.origin}/oauth/callback`;
 }
+
+/**
+ * Get the GitHub Client ID from environment.
+ */
+export function getGitHubClientId(): string | undefined {
+    return process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID;
+}
+
+/**
+ * Get the GitHub OAuth redirect URI.
+ * Uses the same OAuth callback page as other providers.
+ */
+export function getGitHubRedirectUri(): string | undefined {
+    if (typeof window === "undefined") return undefined;
+    return `${window.location.origin}/oauth/callback`;
+}

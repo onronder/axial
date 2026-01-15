@@ -12,6 +12,8 @@ import {
     getMicrosoftTenantId,
     getDropboxClientId,
     getDropboxRedirectUri,
+    getGitHubClientId,
+    getGitHubRedirectUri,
     generatePkcePair,
 } from "@/lib/utils";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
@@ -275,6 +277,39 @@ export const useDataSources = () => {
 
             const authUrl = `https://www.dropbox.com/oauth2/authorize?${params.toString()}`;
             console.log('🔐 [useDataSources] Redirecting to Dropbox:', authUrl);
+
+            window.location.href = authUrl;
+        } else if (type === "github") {
+            const clientId = getGitHubClientId();
+            const redirectUri = getGitHubRedirectUri();
+
+            console.log('🔐 [useDataSources] GitHub Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
+            console.log('🔐 [useDataSources] GitHub Redirect URI:', redirectUri);
+
+            if (!clientId) {
+                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_GITHUB_CLIENT_ID not configured');
+                alert('GitHub OAuth not configured. Please check environment variables.');
+                return;
+            }
+
+            if (!redirectUri) {
+                console.error('📦 [useDataSources] ❌ GitHub Redirect URI not available');
+                alert('OAuth redirect URI is not configured.');
+                return;
+            }
+
+            // GitHub OAuth scopes for repository access
+            // repo - Full control of private repositories (includes code read)
+            // read:org - Read org membership (for org repos)
+            const params = new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                scope: 'repo read:org',
+                state: 'github', // Used to identify provider in callback
+            });
+
+            const authUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
+            console.log('🔐 [useDataSources] Redirecting to GitHub:', authUrl);
 
             window.location.href = authUrl;
         }

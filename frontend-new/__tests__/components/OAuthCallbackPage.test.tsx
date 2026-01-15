@@ -93,4 +93,46 @@ describe("OAuthCallbackPage", () => {
         expect(await screen.findByText("No authorization code received")).toBeInTheDocument();
         expect(api.post).not.toHaveBeenCalled();
     });
+
+    // =========================================================================
+    // GitHub OAuth Tests
+    // =========================================================================
+
+    it("exchanges code with GitHub endpoint", async () => {
+        searchParams = new URLSearchParams("code=gh_code_123&state=github");
+
+        render(<OAuthCallbackPage />);
+
+        await waitFor(() => {
+            expect(api.post).toHaveBeenCalledWith("/integrations/github/exchange", {
+                code: "gh_code_123",
+            });
+        });
+    });
+
+    it("redirects after successful GitHub exchange", async () => {
+        searchParams = new URLSearchParams("code=gh_success&state=github");
+
+        render(<OAuthCallbackPage />);
+
+        await waitFor(() => {
+            expect(api.post).toHaveBeenCalledWith("/integrations/github/exchange", {
+                code: "gh_success",
+            });
+        });
+
+        // Wait for the redirect (setTimeout 1500ms in the component)
+        await waitFor(() => {
+            expect(pushMock).toHaveBeenCalledWith("/dashboard/settings/data-sources");
+        }, { timeout: 3000 });
+    });
+
+    it("shows error when GitHub access is denied", async () => {
+        searchParams = new URLSearchParams("error=access_denied&state=github");
+
+        render(<OAuthCallbackPage />);
+
+        expect(await screen.findByText("Access was denied")).toBeInTheDocument();
+        expect(api.post).not.toHaveBeenCalled();
+    });
 });

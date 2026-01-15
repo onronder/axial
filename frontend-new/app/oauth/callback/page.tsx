@@ -8,7 +8,7 @@ import { getMicrosoftRedirectUri, getMicrosoftTenantId } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-type Provider = "google" | "notion" | "onedrive" | "sharepoint" | "dropbox";
+type Provider = "google" | "notion" | "onedrive" | "sharepoint" | "dropbox" | "github";
 
 type ApiError = {
     response?: {
@@ -53,7 +53,9 @@ function OAuthCallbackContent() {
                         ? "sharepoint"
                         : stateParam === "dropbox"
                             ? "dropbox"
-                            : "google";
+                            : stateParam === "github"
+                                ? "github"
+                                : "google";
         setProvider(detectedProvider);
 
         if (typeof window !== "undefined") {
@@ -124,6 +126,8 @@ function OAuthCallbackContent() {
                     sessionStorage.removeItem(pkceKey);
                 } else if (detectedProvider === "dropbox") {
                     response = await api.post("/integrations/dropbox/exchange", { code });
+                } else if (detectedProvider === "github") {
+                    response = await api.post("/integrations/github/exchange", { code });
                 } else {
                     response = await api.post("/integrations/google/exchange", { code });
                 }
@@ -147,6 +151,8 @@ function OAuthCallbackContent() {
                     providerName = "SharePoint";
                 } else if (detectedProvider === "dropbox") {
                     providerName = "Dropbox";
+                } else if (detectedProvider === "github") {
+                    providerName = "GitHub";
                 }
                 setError(apiError.response?.data?.detail || `Failed to connect ${providerName}`);
             }
@@ -164,6 +170,8 @@ function OAuthCallbackContent() {
         providerName = "SharePoint";
     } else if (provider === "dropbox") {
         providerName = "Dropbox";
+    } else if (provider === "github") {
+        providerName = "GitHub";
     }
 
     return (

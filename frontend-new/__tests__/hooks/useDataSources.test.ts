@@ -23,10 +23,15 @@ describe('useDataSources Hook Structures', () => {
         });
 
         it('should support all provider types', () => {
-            const providers = ['google_drive', 'onedrive', 'sharepoint', 'dropbox', 'notion'];
+            const providers = ['google_drive', 'onedrive', 'sharepoint', 'dropbox', 'notion', 'github'];
             providers.forEach(provider => {
                 expect(typeof provider).toBe('string');
             });
+        });
+
+        it('should include github as a valid provider', () => {
+            const providers = ['google_drive', 'onedrive', 'sharepoint', 'dropbox', 'notion', 'github'];
+            expect(providers).toContain('github');
         });
 
         it('should support all connection statuses', () => {

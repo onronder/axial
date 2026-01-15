@@ -23,6 +23,7 @@ class SourceType(str, Enum):
     ONEDRIVE = "onedrive"
     SHAREPOINT = "sharepoint"
     SLACK = "slack"
+    GITHUB = "github"
 
 
 @dataclass

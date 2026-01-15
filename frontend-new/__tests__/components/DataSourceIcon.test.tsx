@@ -104,6 +104,27 @@ describe('DataSourceIcon Component', () => {
             const svg = container.querySelector('svg');
             expect(svg).toBeInTheDocument();
         });
+
+        it('renders GitHub icon for github sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="github" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+            // GitHub icon should use currentColor for fill
+            const path = container.querySelector('path');
+            expect(path).toBeInTheDocument();
+        });
+
+        it('renders Amazon S3 icon for amazon-s3 sourceId', () => {
+            const { container } = render(<DataSourceIcon sourceId="amazon-s3" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
+
+        it('renders Amazon S3 icon for amazon_s3 sourceId (underscore variant)', () => {
+            const { container } = render(<DataSourceIcon sourceId="amazon_s3" />);
+            const svg = container.querySelector('svg');
+            expect(svg).toBeInTheDocument();
+        });
     });
 
     describe('Size Prop', () => {

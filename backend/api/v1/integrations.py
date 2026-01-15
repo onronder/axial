@@ -892,6 +892,279 @@ async def exchange_dropbox_token(
 
 
 # =============================================================================
+# GitHub OAuth (Code Repository Integration)
+# =============================================================================
+
+class GitHubExchangeRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=2048)
+
+
+class GitHubRepoSelectionRequest(BaseModel):
+    """Request to save selected repositories for sync."""
+    selected_repositories: List[dict] = Field(..., max_length=100)
+
+
+@router.post("/integrations/github/exchange")
+async def exchange_github_token(
+    request: GitHubExchangeRequest,
+    user_id: str = Depends(require_editor)
+):
+    """
+    Exchange GitHub OAuth code for tokens and persist to user_integrations.
+    
+    GitHub tokens do not expire by default, so no refresh_token handling needed.
+    After this, the user must select repositories via /github/repos/select.
+    """
+    logger.info(f"🔐 [OAuth] Starting GitHub token exchange for user: {user_id}")
+
+    if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
+        logger.error("🔐 [OAuth] GitHub credentials not configured!")
+        raise HTTPException(status_code=500, detail="GitHub credentials not configured")
+
+    supabase = get_supabase()
+
+    # 1. Lookup connector definition ID
+    def_res = supabase.table("connector_definitions").select("id").eq("type", "github").single().execute()
+    if not def_res.data:
+        raise HTTPException(status_code=500, detail="github connector not found in definitions")
+
+    connector_definition_id = def_res.data["id"]
+
+    # 2. Exchange code for token
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            token_payload = {
+                "client_id": settings.GITHUB_CLIENT_ID,
+                "client_secret": settings.GITHUB_CLIENT_SECRET,
+                "code": request.code,
+            }
+            if settings.GITHUB_REDIRECT_URI:
+                token_payload["redirect_uri"] = settings.GITHUB_REDIRECT_URI
+
+            response = await client.post(
+                "https://github.com/login/oauth/access_token",
+                data=token_payload,
+                headers={"Accept": "application/json"},
+            )
+
+        if response.status_code != 200:
+            logger.error(f"🔐 [OAuth] GitHub token exchange failed: {response.text}")
+            raise HTTPException(status_code=400, detail="GitHub token exchange failed")
+
+        token_data = response.json()
+        
+        if "error" in token_data:
+            error_desc = token_data.get("error_description", token_data.get("error"))
+            logger.error(f"🔐 [OAuth] GitHub OAuth error: {error_desc}")
+            raise HTTPException(status_code=400, detail=f"GitHub OAuth error: {error_desc}")
+        
+        access_token = token_data.get("access_token")
+        scope = token_data.get("scope", "")
+        token_type = token_data.get("token_type", "bearer")
+
+        logger.info(f"🔐 [OAuth] ✅ Got GitHub token. Scope: {scope}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"🔐 [OAuth] GitHub token exchange failed: {e}")
+        raise HTTPException(status_code=400, detail="GitHub token exchange failed") from e
+
+    if not access_token:
+        raise HTTPException(status_code=400, detail="GitHub token exchange returned no access token")
+
+    # 3. Get user info to validate token and get GitHub user ID
+    credentials = {"scope": scope}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            user_response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+
+            if user_response.status_code == 200:
+                user_info = user_response.json()
+                credentials["github_user_id"] = user_info.get("id")
+                credentials["github_login"] = user_info.get("login")
+                credentials["github_name"] = user_info.get("name")
+                credentials["github_avatar_url"] = user_info.get("avatar_url")
+                logger.info(f"🔐 [OAuth] GitHub user: {user_info.get('login')}")
+            else:
+                logger.warning(f"⚠️ [OAuth] Failed to get GitHub user info: {user_response.text}")
+
+    except Exception as e:
+        logger.warning(f"⚠️ [OAuth] Failed to get GitHub user info: {e}")
+
+    # 4. Persist integration (no expiry for GitHub tokens)
+    data = {
+        "user_id": user_id,
+        "connector_definition_id": connector_definition_id,
+        "access_token": encrypt_token(access_token),
+        "refresh_token": None,  # GitHub doesn't use refresh tokens
+        "expires_at": None,  # GitHub tokens don't expire
+        "credentials": credentials,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    upsert_res = supabase.table("user_integrations").upsert(
+        data,
+        on_conflict="user_id,connector_definition_id",
+    ).execute()
+
+    if not upsert_res.data:
+        raise HTTPException(status_code=500, detail="Failed to store GitHub credentials")
+
+    integration_id = upsert_res.data[0]["id"]
+
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.connect",
+        resource_type="connector",
+        resource_id="github",
+        details={
+            "integration_id": integration_id,
+            "github_login": credentials.get("github_login"),
+        },
+    )
+
+    logger.info(f"🔐 [OAuth] ✅ GitHub connected (integration: {integration_id})")
+
+    return {
+        "status": "success",
+        "provider": "github",
+        "integration_id": integration_id,
+        "github_login": credentials.get("github_login"),
+        "github_name": credentials.get("github_name"),
+    }
+
+
+@router.get("/integrations/github/repos")
+@limiter.limit("30/minute")
+async def list_github_repos(
+    request: Request,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    List GitHub repositories the user has access to.
+    
+    Used by frontend for repository selection UI.
+    Returns both personal repos and organization repos.
+    """
+    supabase = get_supabase()
+
+    # Get user's GitHub integration
+    def_res = supabase.table("connector_definitions").select("id").eq("type", "github").single().execute()
+    if not def_res.data:
+        raise HTTPException(status_code=500, detail="GitHub connector not found")
+
+    int_res = supabase.table("user_integrations").select(
+        "id, access_token, credentials"
+    ).eq("user_id", user_id).eq("connector_definition_id", def_res.data["id"]).single().execute()
+
+    if not int_res.data or not int_res.data.get("access_token"):
+        raise HTTPException(status_code=401, detail="GitHub not connected. Please connect GitHub first.")
+
+    # Decrypt token
+    access_token = decrypt_token(int_res.data["access_token"])
+    
+    if not access_token:
+        raise HTTPException(status_code=401, detail="GitHub token invalid. Please reconnect.")
+
+    # Use connector to fetch repos
+    try:
+        from connectors.github import GitHubConnector
+        connector = GitHubConnector()
+        repos = await run_in_threadpool(
+            lambda: connector.get_available_repositories(access_token)
+        )
+        
+        return {
+            "repositories": repos,
+            "total": len(repos),
+        }
+    except ConnectorAuthError as e:
+        logger.warning(f"⚠️ [GitHub] Auth error listing repos: {e}")
+        raise HTTPException(status_code=401, detail=f"GitHub authentication failed: {e}")
+    except Exception as e:
+        logger.error(f"❌ [GitHub] Failed to list repos: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list GitHub repositories: {e}")
+
+
+@router.post("/integrations/github/repos/select")
+async def select_github_repos(
+    request: GitHubRepoSelectionRequest,
+    user_id: str = Depends(require_editor)
+):
+    """
+    Save selected repositories for GitHub sync.
+    
+    Expected format for each repo:
+    {
+        "full_name": "owner/repo",
+        "branch": "main",  # optional, uses default if not specified
+        "enabled": true
+    }
+    """
+    supabase = get_supabase()
+
+    # Get user's GitHub integration
+    def_res = supabase.table("connector_definitions").select("id").eq("type", "github").single().execute()
+    if not def_res.data:
+        raise HTTPException(status_code=500, detail="GitHub connector not found")
+
+    int_res = supabase.table("user_integrations").select(
+        "id, credentials"
+    ).eq("user_id", user_id).eq("connector_definition_id", def_res.data["id"]).single().execute()
+
+    if not int_res.data:
+        raise HTTPException(status_code=401, detail="GitHub not connected")
+
+    integration_id = int_res.data["id"]
+    existing_credentials = int_res.data.get("credentials") or {}
+
+    # Update credentials with selected repositories
+    updated_credentials = {
+        **existing_credentials,
+        "selected_repositories": request.selected_repositories,
+        "repos_selected_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Update integration
+    update_res = supabase.table("user_integrations").update({
+        "credentials": updated_credentials,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", integration_id).execute()
+
+    if not update_res.data:
+        raise HTTPException(status_code=500, detail="Failed to save repository selection")
+
+    enabled_count = sum(1 for r in request.selected_repositories if r.get("enabled", True))
+    
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="connector.configure",
+        resource_type="connector",
+        resource_id="github",
+        details={
+            "integration_id": integration_id,
+            "repos_selected": enabled_count,
+        },
+    )
+
+    logger.info(f"✅ [GitHub] Saved {enabled_count} repos for user {user_id}")
+
+    return {
+        "status": "success",
+        "integration_id": integration_id,
+        "repos_selected": enabled_count,
+    }
+
+
+# =============================================================================
 # Integration Management Endpoints
 # =============================================================================
 

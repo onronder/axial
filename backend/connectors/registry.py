@@ -51,6 +51,12 @@ CONNECTOR_REGISTRY = {
         "capabilities": ["binary_content", "incremental_sync", "team_spaces"],
         "rate_limit_rpm": 720,  # Dropbox allows ~12 calls/sec baseline
     },
+    "github": {
+        "id": "github",
+        "name": "GitHub",
+        "capabilities": ["code_aware", "incremental_sync", "text_content"],
+        "rate_limit_rpm": 80,  # 5000/hour = 83/min, use 80 for safety margin
+    },
 }
 
 
