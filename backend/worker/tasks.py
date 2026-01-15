@@ -2224,9 +2224,13 @@ def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
     task_id = self.request.id
     supabase = get_supabase()
     user_id = doc_payload.get("user_id")
+    organization_id = doc_payload.get("organization_id") or (doc_payload.get("metadata") or {}).get("organization_id")
     job_id = doc_payload.get("job_id")
     file_status_id = doc_payload.get("file_status_id")
     filename = doc_payload.get("filename", "unknown")
+    
+    if not organization_id:
+        raise ValueError("organization_id is required for indexing")
 
     try:
         update_file_status(

@@ -161,7 +161,9 @@ describe('BillingSettings Component', () => {
 
             await renderBilling();
 
-            expect(screen.getByText('Starter')).toBeInTheDocument();
+            // Starter appears in multiple places (badge + card)
+            const starterElements = screen.getAllByText('Starter');
+            expect(starterElements.length).toBeGreaterThan(0);
         });
 
         it('should show Enterprise badge for enterprise plan', async () => {
@@ -225,7 +227,9 @@ describe('BillingSettings Component', () => {
 
             await renderBilling();
 
-            expect(screen.getByText('No Active Plan')).toBeInTheDocument();
+            // Multiple "No Active Plan" elements may appear (header + detail)
+            const noActivePlanElements = screen.getAllByText('No Active Plan');
+            expect(noActivePlanElements.length).toBeGreaterThan(0);
         });
     });
 
@@ -518,11 +522,14 @@ describe('BillingSettings Component', () => {
             mockUseUsage.mockReturnValue({
                 plan: 'pro',
                 isPlanInherited: false,
+                usage: { subscription_status: 'active' },
             });
 
             await renderBilling();
 
-            expect(screen.getByText('Manage Subscription')).toBeInTheDocument();
+            // Multiple "Manage Subscription" buttons may appear
+            const manageButtons = screen.getAllByText('Manage Subscription');
+            expect(manageButtons.length).toBeGreaterThan(0);
         });
 
         it('should not show Manage button when subscription is inactive', async () => {
@@ -548,7 +555,9 @@ describe('BillingSettings Component', () => {
 
             await renderBilling();
 
-            fireEvent.click(screen.getByText('Manage Subscription'));
+            // Multiple "Manage Subscription" buttons may appear; click the first one
+            const manageButtons = screen.getAllByText('Manage Subscription');
+            fireEvent.click(manageButtons[0]);
 
             await waitFor(() => {
                 expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/portal', '_blank');
@@ -560,7 +569,9 @@ describe('BillingSettings Component', () => {
 
             await renderBilling();
 
-            fireEvent.click(screen.getByText('Manage Subscription'));
+            // Multiple "Manage Subscription" buttons may appear; click the first one
+            const manageButtons = screen.getAllByText('Manage Subscription');
+            fireEvent.click(manageButtons[0]);
 
             await waitFor(() => {
                 expect(mockToast.error).toHaveBeenCalledWith('Failed to open subscription portal');
