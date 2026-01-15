@@ -18,6 +18,7 @@ import { URLCrawlerInput } from "./URLCrawlerInput";
 import { FileUploadZone } from "./FileUploadZone";
 import { ComingSoonIntegrations } from "./ComingSoonIntegrations";
 import { SftpConnectModal } from "./SftpConnectModal";
+import { S3ConnectModal } from "./S3ConnectModal";
 import { useDataSources } from "@/hooks/useDataSources";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
@@ -80,6 +81,7 @@ export function DataSourcesGrid() {
   const [statusFilter] = useState<FilterStatus>("all");
   const [browsing, setBrowsing] = useState<MergedDataSource | null>(null);
   const [sftpConnectOpen, setSftpConnectOpen] = useState(false);
+  const [s3ConnectOpen, setS3ConnectOpen] = useState(false);
   const isViewer = profile?.role === "viewer";
   const { canWebCrawl, plan, refresh: refreshUsage } = useUsage();
   const { isProviderQuotaExceeded } = useQuotaStatus();
@@ -115,6 +117,10 @@ export function DataSourcesGrid() {
   const handleConnect = (type: string) => {
     if (type === "sftp") {
       setSftpConnectOpen(true);
+      return;
+    }
+    if (type === "s3") {
+      setS3ConnectOpen(true);
       return;
     }
     connect(type);
@@ -327,6 +333,12 @@ export function DataSourcesGrid() {
       <SftpConnectModal
         open={sftpConnectOpen}
         onOpenChange={setSftpConnectOpen}
+        onConnected={refresh}
+      />
+
+      <S3ConnectModal
+        open={s3ConnectOpen}
+        onOpenChange={setS3ConnectOpen}
         onConnected={refresh}
       />
 
