@@ -1024,11 +1024,19 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         credentials: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Iterator[SourceDocument]:
-        """Fetch documents from GitHub for ingestion pipeline."""
+        """Fetch documents from GitHub for ingestion pipeline.
+        
+        Args:
+            item_ids: List of file IDs in format "repo:sha:path"
+            credentials: Optional credentials dict with access_token
+            **kwargs: Additional params including user_id, integration_id
+        """
         if not item_ids:
             return
         
-        resolved = self._resolve_config(credentials or {})
+        # Merge credentials with kwargs for user_id/integration_id resolution
+        config = self._build_config(credentials, **kwargs)
+        resolved = self._resolve_config(config)
         
         logger.info(f"📥 [GitHubConnector] Fetching {len(item_ids)} item(s)")
         
@@ -1080,6 +1088,33 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
     # =========================================================================
     # Configuration Resolution
     # =========================================================================
+    
+    def _build_config(
+        self,
+        credentials: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Build configuration dict by merging credentials with kwargs.
+        
+        This ensures user_id, integration_id, and other auth-related params
+        from kwargs are available for credential resolution.
+        
+        Args:
+            credentials: Optional credentials dict (may contain access_token)
+            **kwargs: Additional params (user_id, integration_id, etc.)
+            
+        Returns:
+            Merged configuration dict for _resolve_config
+        """
+        config: Dict[str, Any] = dict(credentials or {})
+        
+        # Auth-related kwargs that should be merged into config
+        auth_keys = ("user_id", "integration_id")
+        for key in auth_keys:
+            if key in kwargs and kwargs[key] is not None:
+                config[key] = kwargs[key]
+        
+        return config
     
     def _resolve_config(self, config: dict) -> dict:
         """Resolve configuration, fetching tokens from database if needed."""
