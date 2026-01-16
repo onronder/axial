@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useCallback, ReactNode, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
@@ -77,8 +77,10 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const { plan } = useUsage();
-    const normalizedPlan = typeof plan === "string" ? plan.toLowerCase() : "";
-    const hasChatAccess = normalizedPlan !== "" && normalizedPlan !== "free" && normalizedPlan !== "none";
+    const normalizedPlan = typeof plan === "string" ? plan.toLowerCase() : null;
+    const planReady = normalizedPlan !== null;
+    const hasChatAccess = planReady && normalizedPlan !== "free" && normalizedPlan !== "none";
+    const previousAccess = useRef(hasChatAccess);
 
     // Main query for fetching conversations
     const {
@@ -92,7 +94,14 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
         staleTime: 5 * 60 * 1000, // 5 minutes
         gcTime: 10 * 60 * 1000,   // 10 minutes cache
     });
-    const isLoading = hasChatAccess ? queryLoading : false;
+    const isLoading = planReady ? (hasChatAccess ? queryLoading : false) : true;
+
+    useEffect(() => {
+        if (hasChatAccess && !previousAccess.current) {
+            refetch();
+        }
+        previousAccess.current = hasChatAccess;
+    }, [hasChatAccess, refetch]);
 
     const denyChatAccess = useCallback(() => {
         toast({
@@ -181,7 +190,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
 
     // Get messages (uses separate query per conversation)
     const getMessagesById = useCallback(async (conversationId: string): Promise<Message[]> => {
-        if (!hasChatAccess) {
+        if (!planReady || !hasChatAccess) {
             return [];
         }
         try {
@@ -191,7 +200,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
             console.error('Failed to get messages:', error);
             return [];
         }
-    }, []);
+    }, [hasChatAccess, planReady]);
 
     // Wrapper functions for mutations
     const createNewChat = useCallback(async (title: string = 'New Chat'): Promise<string> => {
