@@ -142,7 +142,8 @@ async def test_chat_dominant_scope_proceeds_with_generation():
     supabase = MagicMock()
     supabase.rpc.return_value = DummyRpcResponse(docs)
 
-    guardrail = SimpleNamespace(is_safe=True, intent="QUESTION", complexity="medium", language="en", reply=None)
+    from services.guardrails import GuardrailResult
+    guardrail = GuardrailResult(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE", language="en", reply=None)
     analysis = ScopeAnalysisResult(
         classification=ScopeClassification.DOMINANT,
         primary_scope_id="github://org/repo@main",
@@ -163,7 +164,7 @@ async def test_chat_dominant_scope_proceeds_with_generation():
          patch("api.v1.chat.team_service.get_effective_plan", new_callable=AsyncMock, return_value="pro"), \
          patch("api.v1.chat.check_llm_quota", new_callable=AsyncMock, return_value={"balance": 100}), \
          patch("api.v1.chat.record_llm_usage", new_callable=AsyncMock, return_value=None), \
-         patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+         patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
          patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
          patch("api.v1.chat.OpenAIEmbeddings.embed_query", return_value=[0.1, 0.2]), \
          patch("api.v1.chat.analyze_scope_distribution", return_value=analysis), \
@@ -190,7 +191,8 @@ async def test_chat_fragmented_scope_returns_300():
     supabase = MagicMock()
     supabase.rpc.return_value = DummyRpcResponse(docs)
 
-    guardrail = SimpleNamespace(is_safe=True, intent="QUESTION", complexity="medium", language="en", reply=None)
+    from services.guardrails import GuardrailResult
+    guardrail = GuardrailResult(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE", language="en", reply=None)
     analysis = ScopeAnalysisResult(
         classification=ScopeClassification.FRAGMENTED,
         primary_scope_id="github://org/repo@main",
@@ -211,7 +213,7 @@ async def test_chat_fragmented_scope_returns_300():
          patch("api.v1.chat.team_service.get_organization_id", new_callable=AsyncMock, return_value="org-1"), \
          patch("api.v1.chat.team_service.get_effective_plan", new_callable=AsyncMock, return_value="pro"), \
          patch("api.v1.chat.check_llm_quota", new_callable=AsyncMock, return_value={"balance": 100}), \
-         patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+         patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
          patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
          patch("api.v1.chat.OpenAIEmbeddings.embed_query", return_value=[0.1, 0.2]), \
          patch("api.v1.chat.analyze_scope_distribution", return_value=analysis), \

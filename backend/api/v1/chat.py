@@ -955,17 +955,38 @@ async def chat_endpoint(
             exc.details if isinstance(exc, QuotaExceededError) else None,
         )
 
-    # ========== STEP 4: GUARDRAIL ANALYSIS (Ultra-fast via Groq) ==========
-    guardrail_result = await guardrail_service.analyze_query(payload.query)
+    # ========== STEP 4: GUARDRAIL ANALYSIS (Context-Aware) ==========
+    # NEW: Use context-aware guardrails with pre-flight document check
+    # This prevents false OFF_TOPIC classifications when documents match the query
+    guardrail_result = await guardrail_service.analyze_query_with_context(
+        query=payload.query,
+        organization_id=organization_id,
+        supabase_client=supabase,
+    )
     detected_language = guardrail_result.language
 
-    logger.info(
-        "🛡️ [Chat] Guardrails: lang=%s safe=%s intent=%s complexity=%s",
-        detected_language,
-        guardrail_result.is_safe,
-        guardrail_result.intent,
-        guardrail_result.complexity,
-    )
+    # Log guardrail results with context awareness info
+    if guardrail_result.was_overridden:
+        logger.info(
+            "🛡️ [Chat] Guardrails: lang=%s safe=%s intent=%s (OVERRIDDEN from %s) "
+            "complexity=%s preflight_matches=%d",
+            detected_language,
+            guardrail_result.is_safe,
+            guardrail_result.intent,
+            guardrail_result.original_intent,
+            guardrail_result.complexity,
+            guardrail_result.preflight_match_count,
+        )
+    else:
+        logger.info(
+            "🛡️ [Chat] Guardrails: lang=%s safe=%s intent=%s complexity=%s "
+            "has_doc_context=%s",
+            detected_language,
+            guardrail_result.is_safe,
+            guardrail_result.intent,
+            guardrail_result.complexity,
+            guardrail_result.has_document_context,
+        )
 
     # ========== STEP 5: SAFETY CHECK ==========
     if not guardrail_result.is_safe:

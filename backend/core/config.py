@@ -99,7 +99,19 @@ class Settings(BaseSettings):
     GROK_MODEL_NAME: Optional[str] = None
     GROQ_CHAT_MODEL_NAME: str = "llama-3.3-70b-versatile"
     
-    RAG_SIMILARITY_THRESHOLD: float = 0.50 
+    RAG_SIMILARITY_THRESHOLD: float = 0.50
+    
+    # =========================================================================
+    # Guardrails Pre-Flight Search Configuration
+    # =========================================================================
+    # These settings control the document-context aware guardrails feature.
+    # Pre-flight search checks if documents match a query before trusting
+    # the LLM's intent classification.
+    
+    GUARDRAIL_PREFLIGHT_ENABLED: bool = True  # Enable/disable pre-flight document check
+    GUARDRAIL_PREFLIGHT_THRESHOLD: float = 0.35  # Lower than RAG threshold for existence check
+    GUARDRAIL_PREFLIGHT_MATCH_COUNT: int = 3  # Max documents to check
+    GUARDRAIL_PREFLIGHT_MIN_MATCHES: int = 1  # Minimum matches to trigger override
     
     # =========================================================================
     # Advanced Document Parsing (LlamaParse OCR)

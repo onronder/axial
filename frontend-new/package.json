@@ -94,6 +94,7 @@
     "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react": "^4.4.1",
     "@vitest/coverage-v8": "^3.2.4",
+    "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "16.0.10",
     "jsdom": "^26.1.0",

@@ -16,6 +16,26 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import api.v1.chat  # Ensure module is loaded for patching
 import asyncio
 from fastapi import HTTPException
+from services.guardrails import GuardrailResult
+
+
+def make_guardrail_result(
+    is_safe=True,
+    intent="RAG_QUERY",
+    complexity="SIMPLE",
+    language="en",
+    reply=None,
+    has_document_context=False,
+) -> GuardrailResult:
+    """Helper to create a GuardrailResult for tests."""
+    return GuardrailResult(
+        is_safe=is_safe,
+        intent=intent,
+        complexity=complexity,
+        language=language,
+        reply=reply,
+        has_document_context=has_document_context,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -154,8 +174,10 @@ class TestRAGChatEndpoint:
         # Mock user profile plan
         mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
         
+        guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
+        
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
-             patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
              patch("api.v1.chat.condense_question", return_value="Condensed Question?") as mock_condense, \
              patch("api.v1.chat.OpenAIEmbeddings"), \
@@ -164,11 +186,6 @@ class TestRAGChatEndpoint:
             
             # Mock Save Messages
             mock_save_messages.return_value = "msg-123"
-            
-            # Mock Guardrails
-            mock_guard.return_value.is_safe = True
-            mock_guard.return_value.intent = "QA"
-            mock_guard.return_value.complexity = "simple"
             
             # Mock Router
             mock_router.return_value.provider = "openai"
@@ -224,14 +241,14 @@ class TestRAGChatEndpoint:
         mock_supabase = MagicMock()
         mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
         
+        guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY")
+        
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
-             patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.condense_question", return_value="Q"), \
              patch("api.v1.chat.OpenAIEmbeddings"), \
              patch("api.v1.chat.LLMFactory"), \
              patch("api.v1.chat.sentry_sdk") as mock_sentry:
-                
-            mock_guard.return_value.is_safe = True
             
             # Force an error during routing or generation
             with patch("api.v1.chat.llm_router.select_model", side_effect=Exception("Test Error")):
@@ -258,15 +275,16 @@ class TestRAGChatEndpoint:
         mock_supabase = MagicMock()
         mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
         
+        guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
+        
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
-             patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
              patch("api.v1.chat.condense_question", return_value="Q"), \
              patch("api.v1.chat.OpenAIEmbeddings"), \
              patch("api.v1.chat.LLMFactory"), \
              patch("api.v1.chat.sentry_sdk") as mock_sentry:
             
-            mock_guard.return_value.is_safe = True
             mock_router.return_value.provider = "openai"
             
             # FORCE ERROR IN CHAIN INVOKE
@@ -358,21 +376,24 @@ class TestChatSafety:
     @pytest.mark.asyncio
     async def test_chat_endpoint_blocks_unsafe(self):
         from fastapi import Request
+        from services.guardrails import GuardrailResult
 
         mock_request = MagicMock(spec=Request)
         mock_request.client.host = "127.0.0.1"
         mock_bg_tasks = MagicMock()
 
-        guardrail = SimpleNamespace(
+        # Use proper GuardrailResult instead of SimpleNamespace
+        guardrail = GuardrailResult(
             is_safe=False,
-            intent="QA",
-            complexity="simple",
+            intent="OFF_TOPIC",
+            complexity="SIMPLE",
             language="en",
             reply="Blocked",
         )
 
+        # Mock the context-aware method (which is now called by chat_endpoint)
         with patch("api.v1.chat.get_supabase", return_value=MagicMock()), \
-             patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.audit_logger.log") as audit_log:
             from api.v1.chat import chat_endpoint, ChatRequest
 
@@ -447,20 +468,14 @@ class TestChatEndpointErrors:
         mock_request.client.host = "127.0.0.1"
         mock_bg_tasks = MagicMock()
 
-        guardrail = SimpleNamespace(
-            is_safe=True,
-            intent="QA",
-            complexity="simple",
-            language="en",
-            reply=None,
-        )
+        guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
 
         supabase = MagicMock()
         supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = Exception("db")
         supabase.rpc.return_value.execute.return_value = MagicMock(data=[])
 
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
-             patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
              patch("api.v1.chat.condense_question", return_value="Q"), \
              patch("api.v1.chat.OpenAIEmbeddings") as mock_embeddings, \
@@ -491,20 +506,14 @@ class TestChatEndpointErrors:
         mock_request.client.host = "127.0.0.1"
         mock_bg_tasks = MagicMock()
 
-        guardrail = SimpleNamespace(
-            is_safe=True,
-            intent="QA",
-            complexity="simple",
-            language="en",
-            reply=None,
-        )
+        guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
 
         supabase = MagicMock()
         supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(data={"plan": "starter"})
         supabase.rpc.return_value.execute.side_effect = Exception("search down")
 
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
-             patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
              patch("api.v1.chat.condense_question", return_value="Q"), \
              patch("api.v1.chat.OpenAIEmbeddings") as mock_embeddings:
@@ -619,16 +628,14 @@ class TestChatEndpointPaths:
         request.client.host = "127.0.0.1"
         background_tasks = BackgroundTasks()
 
-        guardrail = SimpleNamespace(
+        guardrail = make_guardrail_result(
             is_safe=False,
             intent="RAG_QUERY",
             reply="Nope",
-            language="en",
-            complexity="SIMPLE",
         )
 
         with patch("api.v1.chat.get_supabase", return_value=MagicMock()), \
-             patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.audit_logger.log") as mock_audit:
             from api.v1.chat import chat_endpoint, ChatRequest
             response = await chat_endpoint(
@@ -648,16 +655,14 @@ class TestChatEndpointPaths:
         request.client.host = "127.0.0.1"
         background_tasks = BackgroundTasks()
 
-        guardrail = SimpleNamespace(
+        guardrail = make_guardrail_result(
             is_safe=True,
             intent="GREETING",
             reply="Hello",
-            language="en",
-            complexity="SIMPLE",
         )
 
         with patch("api.v1.chat.get_supabase", return_value=MagicMock()), \
-             patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.save_messages") as mock_save:
             from api.v1.chat import chat_endpoint, ChatRequest
             response = await chat_endpoint(
@@ -677,12 +682,9 @@ class TestChatEndpointPaths:
         request.client.host = "127.0.0.1"
         background_tasks = BackgroundTasks()
 
-        guardrail = SimpleNamespace(
+        guardrail = make_guardrail_result(
             is_safe=True,
             intent="RAG_QUERY",
-            reply=None,
-            language="en",
-            complexity="SIMPLE",
         )
 
         supabase = MagicMock()
@@ -692,7 +694,7 @@ class TestChatEndpointPaths:
         embeddings.embed_query.side_effect = Exception("embed error")
 
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
-             patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.OpenAIEmbeddings", return_value=embeddings):
             from api.v1.chat import chat_endpoint, ChatRequest
             with pytest.raises(HTTPException) as exc:
@@ -706,12 +708,9 @@ class TestChatEndpointPaths:
         request.client.host = "127.0.0.1"
         background_tasks = BackgroundTasks()
 
-        guardrail = SimpleNamespace(
+        guardrail = make_guardrail_result(
             is_safe=True,
             intent="RAG_QUERY",
-            reply=None,
-            language="en",
-            complexity="SIMPLE",
         )
 
         supabase = MagicMock()
@@ -723,7 +722,7 @@ class TestChatEndpointPaths:
         embeddings.embed_query.return_value = [0.1]
 
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
-             patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
              patch("api.v1.chat.OpenAIEmbeddings", return_value=embeddings), \
              patch("api.v1.chat.settings.RAG_SIMILARITY_THRESHOLD", 0.1):
