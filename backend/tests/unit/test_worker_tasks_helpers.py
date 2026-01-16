@@ -117,7 +117,7 @@ def test_create_file_status_returns_id():
         data=[{"id": "status-1"}]
     )
 
-    result = tasks.create_file_status(supabase, "job-1", "user-1", "file.txt", 10)
+    result = tasks.create_file_status(supabase, "job-1", "user-1", "org-1", "file.txt", 10)
     assert result == "status-1"
 
 
@@ -147,3 +147,148 @@ def test_store_celery_task_id_updates_job():
 
     tasks.store_celery_task_id(supabase, "job-1", "task-1")
     supabase.table.return_value.update.assert_called_once()
+
+
+# ============================================================
+# Tests for org/scope validation
+# ============================================================
+
+class TestOrgScopeValidation:
+    """Tests for _validate_org_scope_consistency function."""
+
+    def test_validate_org_scope_valid(self):
+        """Valid UUIDs pass validation without error."""
+        org_id = "11111111-1111-1111-1111-111111111111"
+        scope_id = "github://owner/repo"
+        
+        # Should not raise
+        tasks._validate_org_scope_consistency(org_id, scope_id, "test_context")
+
+    def test_validate_org_scope_missing_org_id(self):
+        """Missing org_id raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            tasks._validate_org_scope_consistency(None, "github://owner/repo", "test_context")
+        
+        assert "organization_id is required" in str(exc_info.value)
+        assert "test_context" in str(exc_info.value)
+
+    def test_validate_org_scope_empty_org_id(self):
+        """Empty org_id raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            tasks._validate_org_scope_consistency("", "github://owner/repo", "test_context")
+        
+        assert "organization_id is required" in str(exc_info.value)
+
+    def test_validate_org_scope_missing_scope_id(self):
+        """Missing scope_id raises ValueError."""
+        org_id = "11111111-1111-1111-1111-111111111111"
+        
+        with pytest.raises(ValueError) as exc_info:
+            tasks._validate_org_scope_consistency(org_id, None, "test_context")
+        
+        assert "scope_id is required" in str(exc_info.value)
+        assert "test_context" in str(exc_info.value)
+
+    def test_validate_org_scope_empty_scope_id(self):
+        """Empty scope_id raises ValueError."""
+        org_id = "11111111-1111-1111-1111-111111111111"
+        
+        with pytest.raises(ValueError) as exc_info:
+            tasks._validate_org_scope_consistency(org_id, "", "test_context")
+        
+        assert "scope_id is required" in str(exc_info.value)
+
+    def test_validate_org_scope_invalid_uuid(self):
+        """Invalid org_id UUID format raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            tasks._validate_org_scope_consistency("not-a-uuid", "github://owner/repo", "test_context")
+        
+        assert "Invalid organization_id format" in str(exc_info.value)
+
+    def test_validate_org_scope_context_in_error(self):
+        """Context string is included in error messages."""
+        context = "unified_ingest_task:abc123"
+        
+        with pytest.raises(ValueError) as exc_info:
+            tasks._validate_org_scope_consistency(None, "github://owner/repo", context)
+        
+        assert context in str(exc_info.value)
+
+
+class TestEnsureScopeIdentityPlaceholder:
+    """Tests for _ensure_scope_identity_placeholder function."""
+
+    def test_ensure_placeholder_empty_scope_returns_false(self):
+        """Empty scope_id raises ValueError without DB call."""
+        supabase = MagicMock()
+        with pytest.raises(ValueError):
+            tasks._ensure_scope_identity_placeholder(
+                supabase=supabase,
+                organization_id="11111111-1111-1111-1111-111111111111",
+                user_id="22222222-2222-2222-2222-222222222222",
+                scope_id="",
+            )
+        supabase.table.assert_not_called()
+
+    def test_ensure_placeholder_none_scope_returns_false(self):
+        """None scope_id raises ValueError without DB call."""
+        supabase = MagicMock()
+        with pytest.raises(ValueError):
+            tasks._ensure_scope_identity_placeholder(
+                supabase=supabase,
+                organization_id="11111111-1111-1111-1111-111111111111",
+                user_id="22222222-2222-2222-2222-222222222222",
+                scope_id=None,
+            )
+        supabase.table.assert_not_called()
+
+    def test_ensure_placeholder_creates_record(self):
+        """Valid inputs create scope identity placeholder."""
+        supabase = MagicMock()
+        supabase.rpc.return_value.execute.return_value = MagicMock(data="created")
+        
+        result = tasks._ensure_scope_identity_placeholder(
+            supabase=supabase,
+            organization_id="11111111-1111-1111-1111-111111111111",
+            user_id="22222222-2222-2222-2222-222222222222",
+            scope_id="github://owner/repo",
+            source_type="github",
+        )
+        
+        assert result == "created"
+        supabase.rpc.assert_called_once()
+
+    def test_ensure_placeholder_handles_upsert_error_with_existing_check(self):
+        """On upsert error, checks if placeholder exists (race condition)."""
+        supabase = MagicMock()
+
+        # RPC fails, fallback upsert fails, select finds existing
+        supabase.rpc.return_value.execute.side_effect = Exception("rpc down")
+        supabase.table.return_value.upsert.return_value.execute.side_effect = Exception("conflict")
+        supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+            data=[{"id": "github://owner/repo"}]
+        )
+
+        result = tasks._ensure_scope_identity_placeholder(
+            supabase=supabase,
+            organization_id="11111111-1111-1111-1111-111111111111",
+            user_id="22222222-2222-2222-2222-222222222222",
+            scope_id="github://owner/repo",
+        )
+        
+        # Should return exists because placeholder was found via select
+        assert result == "exists"
+
+    def test_ensure_placeholder_invalid_org_id_raises(self):
+        """Invalid org_id raises ValueError."""
+        supabase = MagicMock()
+        
+        with pytest.raises(ValueError) as exc_info:
+            tasks._ensure_scope_identity_placeholder(
+                supabase=supabase,
+                organization_id="not-a-uuid",
+                user_id="22222222-2222-2222-2222-222222222222",
+                scope_id="github://owner/repo",
+            )
+        
+        assert "Invalid organization_id format" in str(exc_info.value)

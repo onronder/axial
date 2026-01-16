@@ -77,7 +77,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://test.txt"},
+                metadata={"mime_type": "text/plain", "organization_id": "11111111-1111-1111-1111-111111111111", "scope_id": "file_upload://test.txt"},
             )
 
         assert result.success is True
@@ -101,7 +101,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://big.txt"},
+                metadata={"mime_type": "text/plain", "organization_id": "11111111-1111-1111-1111-111111111111", "scope_id": "file_upload://big.txt"},
             )
 
         assert result.success is False
@@ -129,7 +129,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "application/pdf", "organization_id": "org-1", "scope_id": "file_upload://slow.pdf"},
+                metadata={"mime_type": "application/pdf", "organization_id": "11111111-1111-1111-1111-111111111111", "scope_id": "file_upload://slow.pdf"},
             )
 
         assert result.success is False
@@ -157,7 +157,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "application/octet-stream", "organization_id": "org-1", "scope_id": "file_upload://file.bin"},
+                metadata={"mime_type": "application/octet-stream", "organization_id": "11111111-1111-1111-1111-111111111111", "scope_id": "file_upload://file.bin"},
             )
 
         assert result.success is True
@@ -181,7 +181,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://empty.txt"},
+                metadata={"mime_type": "text/plain", "organization_id": "11111111-1111-1111-1111-111111111111", "scope_id": "file_upload://empty.txt"},
             )
 
         assert result.success is True
@@ -208,7 +208,7 @@ class TestProcessDocumentPipeline:
                 job_id="job-1",
                 file_status_id="status-1",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://fail.txt"},
+                metadata={"mime_type": "text/plain", "organization_id": "11111111-1111-1111-1111-111111111111", "scope_id": "file_upload://fail.txt"},
             )
 
         assert result.success is False
@@ -236,10 +236,14 @@ class TestIngestDocumentBatched:
             doc_id = tasks.ingest_document_batched(
                 supabase=supabase,
                 user_id="user-1",
-                organization_id="org-1",
+                organization_id="11111111-1111-1111-1111-111111111111",
                 doc_title="doc.txt",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
+                metadata={
+                    "mime_type": "text/plain",
+                    "scope_id": "file_upload://doc.txt",
+                    "organization_id": "11111111-1111-1111-1111-111111111111",
+                },
                 chunks_payload=chunks_payload,
                 file_size_bytes=123,
             )
@@ -273,10 +277,14 @@ class TestIngestDocumentBatched:
             doc_id = tasks.ingest_document_batched(
                 supabase=supabase,
                 user_id="user-1",
-                organization_id="org-1",
+                organization_id="11111111-1111-1111-1111-111111111111",
                 doc_title="doc.txt",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
+                metadata={
+                    "mime_type": "text/plain",
+                    "scope_id": "file_upload://doc.txt",
+                    "organization_id": "11111111-1111-1111-1111-111111111111",
+                },
                 chunks_payload=chunks_payload,
                 file_size_bytes=123,
                 content_hash="hash-1",
@@ -297,10 +305,14 @@ class TestIngestDocumentBatched:
             tasks.ingest_document_batched(
                 supabase=supabase,
                 user_id="user-1",
-                organization_id="org-1",
+                organization_id="11111111-1111-1111-1111-111111111111",
                 doc_title="doc.txt",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
+                metadata={
+                    "mime_type": "text/plain",
+                    "scope_id": "file_upload://doc.txt",
+                    "organization_id": "11111111-1111-1111-1111-111111111111",
+                },
                 chunks_payload=[],
                 file_size_bytes=123,
             )
@@ -329,7 +341,7 @@ class TestFinalizeJobTask:
     def test_finalize_job_task_skips_incomplete_job(self):
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
-        job_table = _make_chain_table(result_data={"status": "processing", "total_files": 2, "organization_id": "org-1"})
+        job_table = _make_chain_table(result_data={"status": "processing", "total_files": 2, "organization_id": "11111111-1111-1111-1111-111111111111"})
         supabase.table.return_value = job_table
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
@@ -347,7 +359,7 @@ class TestFinalizeJobTask:
         supabase = MagicMock()
         # Provide tables for job and file status queries
         job_table = _make_chain_table(
-            result_data={"status": "processing", "total_files": 2, "organization_id": "org-1"}
+            result_data={"status": "processing", "total_files": 2, "organization_id": "11111111-1111-1111-1111-111111111111"}
         )
         # File status table should return a list of dicts with document_id
         file_status_table = _make_chain_table(
@@ -415,7 +427,7 @@ class TestProcessFileTask:
     def test_process_file_task_missing_content_fails(self):
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
-        file_data = {"filename": "empty.txt", "organization_id": "org-1"}
+        file_data = {"filename": "empty.txt", "organization_id": "11111111-1111-1111-1111-111111111111"}
         scope_id = "file_upload://empty.txt"
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
@@ -443,7 +455,7 @@ class TestProcessFileTask:
         supabase = MagicMock()
         file_data = {
             "filename": "big.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"too-big").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "text/plain",
@@ -481,7 +493,7 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.pdf",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"content").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "application/pdf",
@@ -521,7 +533,7 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.bin",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"binary").decode("utf-8"),
             "size_bytes": 6,
             "mime_type": "application/octet-stream",
@@ -564,7 +576,7 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"content").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "text/plain",
@@ -606,7 +618,7 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"content").decode("utf-8"),
             "size_bytes": 7,
             "mime_type": "text/plain",
@@ -652,7 +664,7 @@ class TestProcessFileTask:
 
         file_data = {
             "filename": "file.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "storage_path": "uploads/file.txt",
             "size_bytes": 7,
             "mime_type": "text/plain",

@@ -24,7 +24,7 @@ async def test_file_upload_connector_fetch(mock_supabase):
 
     with patch("connectors.file_upload.get_supabase", return_value=mock_supabase):
         documents = []
-        async for doc in connector.fetch_documents([storage_path]):
+        async for doc in connector.fetch_documents([storage_path], credentials={"user_id": "user-1"}):
             documents.append(doc)
 
     assert len(documents) == 1
@@ -43,7 +43,7 @@ def test_file_upload_connector_missing_file_raises():
 
     with patch("connectors.file_upload.get_supabase", return_value=supabase):
         with pytest.raises(ItemNotFoundError):
-            list(connector.fetch_documents_sync(["uploads/user/missing.pdf"]))
+            list(connector.fetch_documents_sync(["uploads/user/missing.pdf"], credentials={"user_id": "user-1"}))
 
 
 @pytest.mark.asyncio
@@ -59,7 +59,7 @@ async def test_file_upload_connector_multiple_files(mock_supabase):
 
     with patch("connectors.file_upload.get_supabase", return_value=mock_supabase):
         documents = []
-        async for doc in connector.fetch_documents(paths):
+        async for doc in connector.fetch_documents(paths, credentials={"user_id": "user-1"}):
             documents.append(doc)
 
     assert [doc.filename for doc in documents] == ["file1.pdf", "file2.txt", "file3.docx"]

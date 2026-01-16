@@ -157,6 +157,79 @@ def cleanup_old_audit_logs():
 # RECONCILIATION TASKS
 # ============================================================
 
+@celery_app.task(name="cleanup_orphan_scope_placeholders", ignore_result=True)
+def cleanup_orphan_scope_placeholders():
+    """
+    Clean up orphan scope identity placeholders.
+    
+    Placeholders are created before document ingestion to satisfy FK constraints.
+    If ingestion fails or is cancelled, these placeholders can remain and:
+    1. Count toward the user's scope quota
+    2. Show "Generating identity..." in UI
+    3. Clutter the database
+    
+    Cleanup criteria:
+    - status = 'placeholder'
+    - is_placeholder = true in attributes
+    - No associated documents exist
+    - Created more than 24 hours ago (allows time for slow ingestions)
+    
+    Runs daily at 5 AM via Celery Beat.
+    """
+    try:
+        supabase = get_supabase()
+        cutoff_date = datetime.now(timezone.utc) - timedelta(hours=24)
+        
+        # Find placeholder scope identities older than 24 hours
+        placeholders_res = supabase.table("scope_identities").select(
+            "id, organization_id, user_id, created_at"
+        ).eq("status", "placeholder").lt(
+            "updated_at", cutoff_date.isoformat()
+        ).execute()
+        
+        placeholders = placeholders_res.data or []
+        if not placeholders:
+            logger.info("🧹 [Cleanup] No orphan scope placeholders found")
+            return {"deleted": 0, "checked": 0}
+        
+        deleted_count = 0
+        checked_count = len(placeholders)
+        
+        for placeholder in placeholders:
+            scope_id = placeholder.get("id")
+            org_id = placeholder.get("organization_id")
+            
+            if not scope_id or not org_id:
+                continue
+            
+            # Check if any documents reference this scope
+            docs_res = supabase.table("documents").select(
+                "id", count="exact"
+            ).eq("organization_id", org_id).eq("scope_id", scope_id).limit(1).execute()
+            
+            doc_count = docs_res.count or 0
+            
+            if doc_count == 0:
+                # No documents - safe to delete this orphan placeholder
+                try:
+                    supabase.table("scope_identities").delete().eq(
+                        "organization_id", org_id
+                    ).eq("id", scope_id).eq("status", "placeholder").execute()
+                    
+                    deleted_count += 1
+                    logger.info(f"🧹 [Cleanup] Deleted orphan placeholder: {scope_id[:50]}...")
+                except Exception as del_err:
+                    logger.warning(f"⚠️ [Cleanup] Failed to delete placeholder {scope_id}: {del_err}")
+        
+        logger.info(f"🧹 [Cleanup] Deleted {deleted_count}/{checked_count} orphan scope placeholders")
+        
+        return {"deleted": deleted_count, "checked": checked_count}
+        
+    except Exception as e:
+        logger.error(f"❌ [Cleanup] Failed to clean up orphan placeholders: {e}")
+        return {"error": str(e)}
+
+
 @celery_app.task(name="worker.periodic_tasks.reconcile_ingestion_jobs", ignore_result=True)
 def reconcile_ingestion_jobs():
     """

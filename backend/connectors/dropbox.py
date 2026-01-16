@@ -38,6 +38,7 @@ from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, I
 from connectors.limits import connector_fetch_limit
 from core.db import get_supabase
 from core.config import settings
+from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
@@ -531,6 +532,8 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
         Handles:
         - Single files: Download directly
         - Folders: Recursive traversal
+        
+        Scope ID Format: dropbox://{folder_id_or_path}
         """
         if not item_ids:
             return iter(())
@@ -544,6 +547,9 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
                 # Normalize the path/ID
                 path = self._normalize_path_id(item_id)
                 
+                # Generate scope_id using canonical URI builder
+                scope_id = build_scope_uri("dropbox", {"folder_id": item_id})
+                
                 # Get metadata to determine if file or folder
                 metadata = self._rpc_request(
                     resolved,
@@ -556,10 +562,10 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
                 if tag == "folder":
                     # Recursive folder download
                     logger.info(f"📁 [Dropbox] Expanding folder: {metadata.get('name')}")
-                    yield from self._fetch_folder_documents(resolved, path)
+                    yield from self._fetch_folder_documents(resolved, path, scope_id)
                 else:
                     # Single file
-                    yield self._build_source_document(resolved, metadata)
+                    yield self._build_source_document(resolved, metadata, scope_id)
                     
             except ItemNotFoundError:
                 logger.warning(f"⚠️ [Dropbox] Not found: {item_id}")
@@ -574,6 +580,7 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
         self,
         config: dict,
         folder_path: str,
+        scope_id: str,
     ) -> Iterator[SourceDocument]:
         """Recursively fetch all documents in a folder."""
         # List files in folder
@@ -587,7 +594,7 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
                     "/files/get_metadata",
                     {"path": remote_file.id},
                 )
-                yield self._build_source_document(config, metadata)
+                yield self._build_source_document(config, metadata, scope_id)
             except Exception as e:
                 logger.error(f"❌ [Dropbox] Failed to fetch {remote_file.name}: {e}")
                 continue
@@ -596,6 +603,7 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
         self,
         config: dict,
         metadata: dict,
+        scope_id: str,
     ) -> SourceDocument:
         """Build SourceDocument from Dropbox metadata."""
         path = metadata.get("path_lower") or metadata.get("path_display")
@@ -620,6 +628,7 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
                 "content_hash": metadata.get("content_hash"),
                 "modified_at": metadata.get("server_modified"),
                 "size": metadata.get("size"),
+                "scope_id": scope_id,  # CRITICAL: Required for FK compliance
             },
             source_type=SourceType.DROPBOX,
             source_id=metadata.get("id") or path,

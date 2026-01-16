@@ -71,6 +71,7 @@ class TestUnifiedIngestTask:
             mock_supabase,
             job_id=job_id,
             user_id=user_id,
+            organization_id=str(uuid4()),
             filename="test.pdf",
             file_size=1024
         )

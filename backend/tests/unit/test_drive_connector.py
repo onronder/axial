@@ -423,7 +423,12 @@ def test_fetch_documents_sync_folder_branch_skips_missing_docs():
 def test_build_source_document_returns_none_when_no_content():
     connector = DriveConnector()
     with patch.object(connector, "_download_file_content", return_value=(None, None, None)):
-        result = connector._build_source_document(MagicMock(), {"id": "file-1"}, parent_id=None)
+        result = connector._build_source_document(
+            MagicMock(),
+            {"id": "file-1"},
+            parent_id=None,
+            scope_id="google_drive://drive-1/folder-1",
+        )
 
     assert result is None
 

@@ -217,7 +217,7 @@ async def delete_team(
         if purge_data:
             from services.cleanup import cleanup_service, ActiveIngestionError
             try:
-                await cleanup_service.execute_org_deletion(team_id)
+                await cleanup_service.execute_org_deletion(team_id, owner_id=user_id)
             except ActiveIngestionError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,

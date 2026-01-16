@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from collections import Counter
-from api.v1.dependencies import validate_team_access, require_paid_access
+from api.v1.dependencies import validate_team_access, require_paid_access, get_user_organization_id
 from api.v1.error_utils import build_error_payload, raise_http_error
 from core.security import get_current_user
 from core.db import get_supabase
@@ -72,13 +72,15 @@ class MessageResponse(BaseModel):
 
 @router.get("/conversations", response_model=List[ConversationResponse])
 async def list_conversations(
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
-    """List all conversations for the current user."""
+    """List all conversations for the organization (team-shared)."""
     supabase = get_supabase()
     
     try:
-        response = supabase.table("conversations").select("*").eq("user_id", user_id).order("updated_at", desc=True).execute()
+        # Organization-wide conversation access for team collaboration
+        response = supabase.table("conversations").select("*").eq("organization_id", organization_id).order("updated_at", desc=True).execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch conversations: {str(e)}")
@@ -86,14 +88,16 @@ async def list_conversations(
 @router.post("/conversations", response_model=ConversationResponse)
 async def create_conversation(
     payload: ConversationCreate,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
-    """Create a new conversation."""
+    """Create a new conversation (org-scoped for team sharing)."""
     supabase = get_supabase()
     
     now = datetime.now(timezone.utc).isoformat()
     data = {
         "user_id": user_id,
+        "organization_id": organization_id,  # CRITICAL: Enable team-shared conversations
         "title": payload.title,
         "created_at": now,
         "updated_at": now
@@ -110,13 +114,15 @@ async def create_conversation(
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(
     conversation_id: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
-    """Get a specific conversation."""
+    """Get a specific conversation (org-scoped access)."""
     supabase = get_supabase()
     
     try:
-        response = supabase.table("conversations").select("*").eq("id", conversation_id).eq("user_id", user_id).single().execute()
+        # Organization-wide access for team collaboration
+        response = supabase.table("conversations").select("*").eq("id", conversation_id).eq("organization_id", organization_id).single().execute()
         if not response.data:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return response.data
@@ -129,16 +135,18 @@ async def get_conversation(
 async def update_conversation(
     conversation_id: str,
     payload: ConversationUpdate,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
-    """Update a conversation (e.g., rename)."""
+    """Update a conversation (e.g., rename). Org-scoped access."""
     supabase = get_supabase()
     
     try:
+        # Organization-wide access for team collaboration
         response = supabase.table("conversations").update({
             "title": payload.title,
             "updated_at": datetime.now(timezone.utc).isoformat()
-        }).eq("id", conversation_id).eq("user_id", user_id).execute()
+        }).eq("id", conversation_id).eq("organization_id", organization_id).execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Conversation not found")
@@ -153,18 +161,19 @@ async def delete_conversation(
     conversation_id: str,
     request: Request,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
-    """Delete a conversation and all its messages."""
+    """Delete a conversation and all its messages. Org-scoped access."""
     supabase = get_supabase()
     
     try:
-        # Get conversation info for audit log
-        conv_response = supabase.table("conversations").select("title").eq("id", conversation_id).eq("user_id", user_id).single().execute()
+        # Get conversation info for audit log (org-scoped)
+        conv_response = supabase.table("conversations").select("title").eq("id", conversation_id).eq("organization_id", organization_id).single().execute()
         conv_title = conv_response.data.get("title", "Unknown") if conv_response.data else "Unknown"
         
-        # Delete conversation (messages cascade)
-        response = supabase.table("conversations").delete().eq("id", conversation_id).eq("user_id", user_id).execute()
+        # Delete conversation (messages cascade) - org-scoped
+        response = supabase.table("conversations").delete().eq("id", conversation_id).eq("organization_id", organization_id).execute()
         
         # Audit log (async)
         log_chat_delete(background_tasks, user_id, conversation_id, conv_title, request)
@@ -175,13 +184,14 @@ async def delete_conversation(
 @router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
 async def get_messages(
     conversation_id: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
-    """Get all messages for a conversation."""
+    """Get all messages for a conversation. Org-scoped access."""
     supabase = get_supabase()
     
-    # First verify the user owns this conversation
-    conv_check = supabase.table("conversations").select("id").eq("id", conversation_id).eq("user_id", user_id).execute()
+    # Verify org membership has access to this conversation
+    conv_check = supabase.table("conversations").select("id").eq("id", conversation_id).eq("organization_id", organization_id).execute()
     if not conv_check.data:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
@@ -675,13 +685,25 @@ def fetch_scope_identity(supabase, scope_id: str, organization_id: str) -> Optio
     Fetch scope identity information from scope_identities table.
     
     Returns scope summary and metadata for system prompt injection.
+    
+    Note: Filters out placeholder identities (status='placeholder' or is_placeholder=True)
+    to prevent showing "Generating identity..." text in chat responses.
     """
     try:
         response = supabase.table("scope_identities").select(
-            "id, type, summary, attributes, file_tree"
+            "id, type, summary, attributes, file_tree, status"
         ).eq("id", scope_id).eq("organization_id", organization_id).single().execute()
         
         if response.data:
+            # Filter out placeholder identities
+            status = response.data.get("status")
+            attributes = response.data.get("attributes") or {}
+            is_placeholder = attributes.get("is_placeholder", False)
+            
+            if status == "placeholder" or is_placeholder:
+                logger.debug(f"🔍 [Chat] Skipping placeholder scope identity for {scope_id}")
+                return None
+            
             return response.data
         return None
     except Exception as e:
@@ -698,16 +720,27 @@ def fetch_scope_candidates_with_summaries(
     Fetch scope identities for multiple scopes (for clarification response).
     
     Returns list of scope info with summaries and types.
+    
+    Note: Filters out placeholder identities to prevent showing incomplete data.
     """
     if not scope_ids:
         return []
     
     try:
         response = supabase.table("scope_identities").select(
-            "id, type, summary, attributes"
-        ).eq("organization_id", organization_id).in_("id", scope_ids).execute()
+            "id, type, summary, attributes, status"
+        ).eq("organization_id", organization_id).in_("id", scope_ids).neq(
+            "status", "placeholder"
+        ).execute()
         
-        return response.data or []
+        # Additional filter for is_placeholder attribute (defense in depth)
+        results = []
+        for item in (response.data or []):
+            attributes = item.get("attributes") or {}
+            if not attributes.get("is_placeholder", False):
+                results.append(item)
+        
+        return results
     except Exception as e:
         logger.warning(f"⚠️ [Chat] Failed to fetch scope candidates: {e}")
         return []
@@ -958,7 +991,10 @@ async def chat_endpoint(
         fast_reply = guardrail_result.reply or "How can I help you with your documents today?"
 
         if payload.conversation_id:
-            save_messages(supabase, payload.conversation_id, payload.query, fast_reply, [])
+            save_messages(
+                supabase, payload.conversation_id, payload.query, fast_reply, [],
+                organization_id=organization_id  # Org-scoped validation
+            )
 
         return ChatResponse(
             answer=fast_reply,
@@ -1094,18 +1130,8 @@ async def chat_endpoint(
         logger.info(f"📚 [Chat] Hybrid search found {len(docs)} raw candidates")
         
     except Exception as e:
-        logger.warning(f"⚠️ [Chat] Hybrid search failed, using vector fallback: {e}")
-        try:
-            response = supabase.rpc("match_documents", {
-                "query_embedding": query_vector,
-                "match_threshold": 0.25, 
-                "match_count": 10,
-                "filter_org_id": organization_id
-            }).execute()
-            docs = response.data or []
-        except Exception as fallback_e:
-            logger.error(f"ERROR: Retrieval failed: {fallback_e}")
-            raise HTTPException(500, f"Retrieval failed: {fallback_e}")
+        logger.error("ERROR: Retrieval failed: %s", e)
+        raise HTTPException(500, f"Retrieval failed: {e}")
 
     # ========== STEP 9: DOMINANCE GUARD (Scope Analysis) ==========
     scope_context: Optional[ScopeContext] = None
@@ -1454,7 +1480,8 @@ async def chat_endpoint(
 
         message_id = save_messages(
             supabase, payload.conversation_id, payload.query, answer,
-            sources_metadata
+            sources_metadata,
+            organization_id=organization_id  # Org-scoped validation
         )
 
         return ChatResponse(
@@ -1549,10 +1576,11 @@ async def stream_chat_response(
             if scope_context:
                 yield f"data: {json.dumps({'type': 'scope_context', 'scope_context': scope_context.model_dump()})}\n\n"
 
-            # Save messages
+            # Save messages (org-scoped validation)
             message_id = save_messages(
                 supabase, conversation_id, question, full_response,
-                sources
+                sources,
+                organization_id=organization_id  # Org-scoped validation
             )
 
             total_tokens = _estimate_prompt_tokens(system_prompt, input_vars) + _estimate_token_count(full_response)
@@ -1615,13 +1643,41 @@ async def stream_chat_response(
         yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
 
 
-def save_messages(supabase, conversation_id: str, query: str, answer: str, sources: List[Any]) -> Optional[str]:
-    """Save user and assistant messages to database."""
+def save_messages(
+    supabase,
+    conversation_id: str,
+    query: str,
+    answer: str,
+    sources: List[Any],
+    organization_id: str = None,
+) -> Optional[str]:
+    """
+    Save user and assistant messages to database.
+    
+    SECURITY: When organization_id is provided, validates that the conversation
+    belongs to the organization before updating. This prevents cross-org writes
+    when using service keys that bypass RLS.
+    """
     if not conversation_id:
         return None
     
     try:
         now = datetime.now(timezone.utc).isoformat()
+        
+        # SECURITY: Validate conversation belongs to organization before any writes
+        # This prevents ID harvesting attacks across organizational boundaries
+        if organization_id:
+            conv_check = supabase.table("conversations")\
+                .select("id")\
+                .eq("id", conversation_id)\
+                .eq("organization_id", organization_id)\
+                .execute()
+            if not conv_check.data:
+                logger.warning(
+                    f"⚠️ [SaveMessages] Org mismatch: conv {conversation_id[:8]}... "
+                    f"not in org {organization_id[:8]}..."
+                )
+                return None  # Silent fail - don't leak info about other orgs
         
         # Save user message
         supabase.table("messages").insert({
@@ -1645,10 +1701,13 @@ def save_messages(supabase, conversation_id: str, query: str, answer: str, sourc
         if assistant_msg.data:
             message_id = assistant_msg.data[0]['id']
         
-        # Update conversation timestamp
-        supabase.table("conversations").update({
+        # Update conversation timestamp (org-scoped if provided)
+        update_query = supabase.table("conversations").update({
             "updated_at": now
-        }).eq("id", conversation_id).execute()
+        }).eq("id", conversation_id)
+        if organization_id:
+            update_query = update_query.eq("organization_id", organization_id)
+        update_query.execute()
         
         return message_id
         

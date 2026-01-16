@@ -27,6 +27,7 @@ from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, I
 from connectors.limits import connector_fetch_limit
 from core.sync import SyncManager
 from core.db import get_supabase
+from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,11 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         credentials: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Iterator[SourceDocument]:
+        """
+        Fetch documents from OneDrive/SharePoint for ingestion pipeline.
+        
+        Scope ID Format: onedrive://{drive_id}/{item_id} or sharepoint://{drive_id}/{item_id}
+        """
         if not item_ids:
             return iter(())
 
@@ -135,16 +141,21 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         if site_id:
             resolved.setdefault("site_id", site_id)
 
+        target_type = resolved.get("target_type", self.target_type)
+
         for item_id in item_ids:
+            # Generate scope_id using canonical URI builder
+            scope_id = build_scope_uri(target_type, {"drive_id": drive_id, "item_id": item_id})
+            
             if item_id in (None, "root"):
-                yield from self._walk_folder(resolved, "root")
+                yield from self._walk_folder(resolved, "root", scope_id)
                 continue
 
             item = self._get_item(resolved, item_id)
             if item.get("folder"):
-                yield from self._walk_folder(resolved, item_id)
+                yield from self._walk_folder(resolved, item_id, scope_id)
             else:
-                yield self._build_source_document(resolved, item)
+                yield self._build_source_document(resolved, item, scope_id)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -252,7 +263,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             if remote:
                 yield remote
 
-    def _walk_folder(self, config: dict, folder_id: str) -> Iterator[SourceDocument]:
+    def _walk_folder(self, config: dict, folder_id: str, scope_id: str) -> Iterator[SourceDocument]:
         drive_id = config["drive_id"]
         stack = [folder_id]
 
@@ -262,7 +273,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
                 if item.get("folder"):
                     stack.append(item["id"])
                     continue
-                yield self._build_source_document(config, item)
+                yield self._build_source_document(config, item, scope_id)
 
     def _list_children(self, config: dict, drive_id: str, parent_id: str) -> Iterator[dict]:
         if parent_id in (None, "root"):
@@ -337,7 +348,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             web_view_url=item.get("webUrl"),
         )
 
-    def _build_source_document(self, config: dict, item: dict) -> SourceDocument:
+    def _build_source_document(self, config: dict, item: dict, scope_id: str) -> SourceDocument:
         content = self._download_content(config, item["id"])
         filename = item.get("name") or item["id"]
         mime_type = (item.get("file") or {}).get("mimeType") or "application/octet-stream"
@@ -353,6 +364,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
                 "web_url": item.get("webUrl"),
                 "modified_at": item.get("lastModifiedDateTime"),
                 "size": item.get("size"),
+                "scope_id": scope_id,  # CRITICAL: Required for FK compliance
             },
             source_type=self.connector_type,
             source_id=item["id"],

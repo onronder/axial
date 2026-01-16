@@ -7,7 +7,7 @@ from core.db import get_supabase
 from core.rate_limit import limiter
 from core.ingestion_utils import normalize_provider
 from services.audit import log_document_delete
-from api.v1.dependencies import validate_team_access, require_editor, require_paid_access
+from api.v1.dependencies import validate_team_access, require_editor, require_paid_access, get_user_organization_id
 from services.cleanup import cleanup_service
 from services.team_service import team_service
 
@@ -68,31 +68,36 @@ class BulkDeleteRequest(BaseModel):
 @limiter.limit("100/minute")
 async def get_document_stats(
     request: Request,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
-    Get lightweight document statistics for the current user.
+    Get lightweight document statistics for the organization.
     
     Uses efficient count query - O(1) performance instead of O(n) data transfer.
-    Used by frontend to check if user needs onboarding.
+    Used by frontend to check if team needs onboarding.
     """
     supabase = get_supabase()
     
     try:
-        # Use count query - only fetches count, not actual data
+        # Use count query - only fetches count, not actual data (org-wide)
         count_response = supabase.table("documents")\
             .select("id", count="exact")\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
+            .neq("source_type", "identity")\
+            .neq("source_type", "scope_identity")\
             .execute()
         
         total = count_response.count if count_response.count is not None else 0
         
-        # Get last updated (most recent document)
+        # Get last updated (most recent document in org)
         last_updated = None
         if total > 0:
             latest_response = supabase.table("documents")\
                 .select("created_at")\
-                .eq("user_id", user_id)\
+                .eq("organization_id", organization_id)\
+                .neq("source_type", "identity")\
+                .neq("source_type", "scope_identity")\
                 .order("created_at", desc=True)\
                 .limit(1)\
                 .execute()
@@ -122,6 +127,7 @@ async def list_documents(
     request: Request,
     response: Response,
     user_id: str = Depends(validate_team_access),  # Validates team access
+    organization_id: str = Depends(get_user_organization_id),  # Org-scoped query
     limit: int = 50,
     offset: int = 0,
     q: Optional[str] = None,
@@ -130,10 +136,12 @@ async def list_documents(
     supabase = get_supabase()
     
     try:
-        # Build query for completed documents
+        # Build query for completed documents (org-scoped for team visibility)
         query = supabase.table("documents")\
             .select("*", count="exact")\
-            .eq("user_id", user_id)
+            .eq("organization_id", organization_id)\
+            .neq("source_type", "identity")\
+            .neq("source_type", "scope_identity")  # Org-wide access
             
         # Apply search filter
         if q and q.strip():
@@ -167,11 +175,13 @@ async def list_documents(
             docs.append(d)
         
         # Also fetch failed files from ingestion_file_status (not yet in documents)
+        # Organization-wide: Show failed files from all team members
         if include_failed:
             try:
+                # Query failed files for the organization
                 failed_query = supabase.table("ingestion_file_status")\
                     .select("*")\
-                    .eq("user_id", user_id)\
+                    .eq("organization_id", organization_id)\
                     .eq("status", "failed")\
                     .is_("document_id", "null")
                 
@@ -231,12 +241,14 @@ async def bulk_delete_documents(
     payload: BulkDeleteRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(require_editor)
+    user_id: str = Depends(require_editor),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Bulk delete documents by ID list or by source type.
     
     Does NOT disconnect connectors; only removes indexed records and related chunks.
+    Deletes from the organization's shared knowledge base.
     """
     supabase = get_supabase()
 
@@ -248,13 +260,13 @@ async def bulk_delete_documents(
     if payload.document_ids:
         doc_ids.extend(payload.document_ids)
 
-    # Expand by source type if provided
+    # Expand by source type if provided (org-wide)
     if payload.source_type:
         normalized_source = normalize_provider(payload.source_type) or payload.source_type
         try:
             source_docs = supabase.table("documents")\
                 .select("id")\
-                .eq("user_id", user_id)\
+                .eq("organization_id", organization_id)\
                 .eq("source_type", normalized_source)\
                 .execute()
             doc_ids.extend([row["id"] for row in (source_docs.data or []) if row.get("id")])
@@ -271,16 +283,14 @@ async def bulk_delete_documents(
 
     for doc_id in doc_ids:
         try:
-            await cleanup_service.delete_single_document(doc_id, user_id)
+            await cleanup_service.delete_single_document(
+                doc_id, user_id, organization_id=organization_id
+            )
             deleted.append(doc_id)
         except Exception as e:
             failed.append({"id": doc_id, "error": str(e)})
 
-    # Best-effort usage sync so storage meter stays accurate
-    try:
-        supabase.rpc("recalculate_user_usage", {"target_user_id": user_id}).execute()
-    except Exception:
-        pass
+    # Usage is computed live at org scope; no cache sync needed.
 
     # Audit log only records aggregate to avoid noisy entries
     if deleted:
@@ -313,8 +323,10 @@ async def delete_document(
     doc_id: str,
     request: Request,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(require_editor)
+    user_id: str = Depends(require_editor),
+    organization_id: str = Depends(get_user_organization_id),
 ):
+    """Delete a document. Org-scoped: team editors can delete shared docs."""
     supabase = get_supabase()
     
     try:
@@ -325,11 +337,11 @@ async def delete_document(
                 detail="Viewers cannot delete documents."
             )
 
-        # First, get document info for audit log
+        # First, get document info for audit log (org-scoped access)
         doc_response = supabase.table("documents")\
             .select("title")\
             .eq("id", doc_id)\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .single()\
             .execute()
         if not doc_response.data:
@@ -338,7 +350,8 @@ async def delete_document(
         doc_title = doc_response.data.get("title", "Unknown")
         
         # Delete using cleanup service (Atomic: Vector -> Storage -> DB)
-        await cleanup_service.delete_single_document(doc_id, user_id)
+        # Pass organization_id for org-scoped deletion
+        await cleanup_service.delete_single_document(doc_id, user_id, organization_id=organization_id)
             
 
         
@@ -363,12 +376,13 @@ async def update_document(
     update: DocumentUpdate,
     request: Request,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(require_editor)
+    user_id: str = Depends(require_editor),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Update document metadata (title, description, tags).
     
-    Only the document owner or team members with editor/admin role can update.
+    Org-scoped: Team members with editor/admin role can update shared documents.
     """
     from services.audit import audit_logger
     
@@ -382,11 +396,11 @@ async def update_document(
                 detail="Viewers cannot update documents."
             )
         
-        # Check document exists and user owns it
+        # Check document exists in organization (org-scoped access)
         doc_response = supabase.table("documents")\
             .select("*")\
             .eq("id", document_id)\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .single()\
             .execute()
         
@@ -412,11 +426,11 @@ async def update_document(
         if not update_data:
             raise HTTPException(status_code=400, detail="No update fields provided")
         
-        # Perform update
+        # Perform update (org-scoped)
         result = supabase.table("documents")\
             .update(update_data)\
             .eq("id", document_id)\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .execute()
         
         if not result.data:
@@ -467,22 +481,23 @@ async def get_document_chunks(
     document_id: str,
     request: Request,
     user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
     limit: int = 50,
     offset: int = 0
 ):
     """
     Get all chunks for a document.
     
-    Useful for debugging and displaying document content breakdown.
+    Org-scoped: Team members can view chunks of shared documents.
     """
     supabase = get_supabase()
     
     try:
-        # Verify document exists and user owns it
+        # Verify document exists in organization (org-scoped access)
         doc_check = supabase.table("documents")\
             .select("id")\
             .eq("id", document_id)\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .single()\
             .execute()
         

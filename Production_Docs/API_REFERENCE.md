@@ -78,13 +78,17 @@ Note: `backend/api/v1/health.py` defines additional health endpoints (`/health/r
 - Response (stream): SSE with `token`, `sources`, `scope_context`, `done`, `error`
 - Side effects: persists chat messages, records LLM usage, performs scope analysis.
 
-## Streaming (Legacy)
+## Streaming
 ### POST `/api/v1/chat/stream`
 - Auth: `validate_team_access`
-- Body: `StreamingChatRequest`
-  - `query`, `conversation_id`
+- Body: `ChatRequest` (stream forced true)
+  - `query` (string, 1..20000)
+  - `conversation_id` (string or null)
+  - `history` (array of `{role, content}`)
+  - `model` (tier alias or model name)
+  - `scope_id` (string or null, `__all__` allowed)
 - Response: SSE events `sources`, `token`, `done`, `error`
-- Notes: This is a legacy streaming endpoint separate from `/api/v1/chat?stream=true`.
+- Notes: Same guardrails as `/api/v1/chat` (dominance, quotas, failover).
 
 ## Search
 ### POST `/api/v1/search`
@@ -624,7 +628,7 @@ paths:
           description: Clarification required
   /api/v1/chat/stream:
     post:
-      summary: Legacy chat streaming
+      summary: Chat streaming
       tags: [chat]
       security:
         - bearerAuth: []
@@ -633,7 +637,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StreamingChatRequest"
+              $ref: "#/components/schemas/ChatRequest"
       responses:
         "200":
           description: text/event-stream

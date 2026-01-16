@@ -178,3 +178,122 @@ def test_reconcile_ingestion_jobs_handles_error():
     with patch("worker.periodic_tasks.get_supabase", side_effect=RuntimeError("db")):
         result = periodic_tasks.reconcile_ingestion_jobs()
     assert "error" in result
+
+
+# ============================================================
+# Tests for cleanup_orphan_scope_placeholders
+# ============================================================
+
+def test_cleanup_orphan_scope_placeholders_no_placeholders():
+    """Test cleanup when no placeholders exist."""
+    supabase = MagicMock()
+    # Return empty list for placeholders query
+    supabase.table.return_value.select.return_value.eq.return_value.lt.return_value.execute.return_value.data = []
+    
+    with patch("worker.periodic_tasks.get_supabase", return_value=supabase):
+        result = periodic_tasks.cleanup_orphan_scope_placeholders()
+    
+    assert result["deleted"] == 0
+    assert result["checked"] == 0
+
+
+def test_cleanup_orphan_scope_placeholders_with_documents():
+    """Test cleanup skips placeholders that have associated documents."""
+    supabase = MagicMock()
+    
+    # Mock the table calls
+    def table_side_effect(name):
+        table_mock = MagicMock()
+        if name == "scope_identities":
+            # Return one placeholder
+            table_mock.select.return_value.eq.return_value.lt.return_value.execute.return_value.data = [
+                {"id": "github://test/repo", "organization_id": "org-123", "user_id": "user-1"}
+            ]
+            return table_mock
+        if name == "documents":
+            # Return count > 0 (has documents)
+            table_mock.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.count = 5
+            return table_mock
+        return table_mock
+    
+    supabase.table.side_effect = table_side_effect
+    
+    with patch("worker.periodic_tasks.get_supabase", return_value=supabase):
+        result = periodic_tasks.cleanup_orphan_scope_placeholders()
+    
+    # Should check 1, delete 0 (has documents)
+    assert result["checked"] == 1
+    assert result["deleted"] == 0
+
+
+def test_cleanup_orphan_scope_placeholders_deletes_orphans():
+    """Test cleanup deletes placeholders without associated documents."""
+    supabase = MagicMock()
+    
+    # Track calls
+    delete_calls = []
+    
+    def table_side_effect(name):
+        table_mock = MagicMock()
+        if name == "scope_identities":
+            # First call: select placeholders
+            select_chain = MagicMock()
+            select_chain.eq.return_value.lt.return_value.execute.return_value.data = [
+                {"id": "github://orphan/repo", "organization_id": "org-123", "user_id": "user-1"}
+            ]
+            table_mock.select.return_value = select_chain
+            
+            # Delete call chain
+            def track_delete():
+                delete_calls.append("delete")
+                delete_chain = MagicMock()
+                delete_chain.eq.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock()
+                return delete_chain
+            table_mock.delete.side_effect = track_delete
+            return table_mock
+        if name == "documents":
+            # Return count = 0 (no documents - orphan)
+            table_mock.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.count = 0
+            return table_mock
+        return table_mock
+    
+    supabase.table.side_effect = table_side_effect
+    
+    with patch("worker.periodic_tasks.get_supabase", return_value=supabase):
+        result = periodic_tasks.cleanup_orphan_scope_placeholders()
+    
+    assert result["checked"] == 1
+    assert result["deleted"] == 1
+    assert len(delete_calls) == 1
+
+
+def test_cleanup_orphan_scope_placeholders_handles_error():
+    """Test cleanup handles database errors gracefully."""
+    with patch("worker.periodic_tasks.get_supabase", side_effect=RuntimeError("db")):
+        result = periodic_tasks.cleanup_orphan_scope_placeholders()
+    assert "error" in result
+
+
+def test_cleanup_orphan_scope_placeholders_skips_invalid_rows():
+    """Test cleanup skips rows with missing scope_id or org_id."""
+    supabase = MagicMock()
+    
+    def table_side_effect(name):
+        table_mock = MagicMock()
+        if name == "scope_identities":
+            # Return placeholders with missing fields
+            table_mock.select.return_value.eq.return_value.lt.return_value.execute.return_value.data = [
+                {"id": None, "organization_id": "org-123", "user_id": "user-1"},
+                {"id": "github://test", "organization_id": None, "user_id": "user-1"},
+            ]
+            return table_mock
+        return table_mock
+    
+    supabase.table.side_effect = table_side_effect
+    
+    with patch("worker.periodic_tasks.get_supabase", return_value=supabase):
+        result = periodic_tasks.cleanup_orphan_scope_placeholders()
+    
+    # Should check 2, delete 0 (invalid rows skipped)
+    assert result["checked"] == 2
+    assert result["deleted"] == 0

@@ -44,6 +44,7 @@ class TestDocumentStatsEndpoint:
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
+        table.neq.return_value = table
         table.order.return_value = table
         table.limit.return_value = table
         table.execute.return_value = count_response
@@ -75,7 +76,7 @@ class TestDocumentStatsEndpoint:
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase_with_stats):
             from api.v1.documents import get_document_stats
             scope = {"type": "http", "method": "GET", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)}
-            result = asyncio.run(get_document_stats(Request(scope), user_id="user-1"))
+            result = asyncio.run(get_document_stats(Request(scope), user_id="user-1", organization_id="org-1"))
         assert result.total_documents == 0
     
     @pytest.mark.unit
@@ -91,6 +92,7 @@ class TestDocumentStatsEndpoint:
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
+        table.neq.return_value = table
         table.order.return_value = table
         table.limit.return_value = table
         table.execute.side_effect = [count_response, latest_response]
@@ -99,7 +101,7 @@ class TestDocumentStatsEndpoint:
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase_with_stats):
             from api.v1.documents import get_document_stats
             scope = {"type": "http", "method": "GET", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)}
-            result = asyncio.run(get_document_stats(Request(scope), user_id="user-1"))
+            result = asyncio.run(get_document_stats(Request(scope), user_id="user-1", organization_id="org-1"))
         assert result.last_updated == "2024-01-02T00:00:00Z"
 
 
@@ -108,12 +110,13 @@ class TestDocumentListEndpoint:
     
     @pytest.mark.unit
     def test_list_documents_returns_user_documents_only(self, sample_document):
-        """Documents endpoint must filter by user_id."""
+        """Documents endpoint must filter by organization_id."""
         # Verify RLS is properly applied
         mock_supabase = MagicMock()
         query = mock_supabase.table.return_value
         query.select.return_value = query
         query.eq.return_value = query
+        query.neq.return_value = query
         query.order.return_value = query
         query.range.return_value = query
         query.execute.return_value = MagicMock(data=[sample_document], count=1)
@@ -124,11 +127,12 @@ class TestDocumentListEndpoint:
                 request=MagicMock(spec=Request),
                 response=MagicMock(spec=Response),
                 user_id="test-user",
+                organization_id="org-1",
                 limit=10,
                 offset=0
             ))
 
-        query.eq.assert_any_call("user_id", "test-user")
+        query.eq.assert_any_call("organization_id", "org-1")
         assert len(result) == 1
     
     @pytest.mark.unit
@@ -144,6 +148,7 @@ class TestDocumentListEndpoint:
         query = mock_supabase.table.return_value
         query.select.return_value = query
         query.eq.return_value = query
+        query.neq.return_value = query
         query.order.return_value = query
         query.range.return_value = query
         
@@ -162,6 +167,7 @@ class TestDocumentListEndpoint:
                 request=mock_request,
                 response=mock_response,
                 user_id="test-user",
+                organization_id="org-1",
                 limit=10,
                 offset=20
             ))
@@ -184,6 +190,7 @@ class TestDocumentListEndpoint:
         query = mock_supabase.table.return_value
         query.select.return_value = query
         query.eq.return_value = query
+        query.neq.return_value = query
         query.ilike.return_value = query # Critical: verify ilike needed
         query.order.return_value = query
         query.range.return_value = query
@@ -197,6 +204,7 @@ class TestDocumentListEndpoint:
                 request=mock_request,
                 response=mock_response,
                 user_id="test-user",
+                organization_id="org-1",
                 q="budget report"
             ))
         query.ilike.assert_called_with("title", "%budget report%")
@@ -211,6 +219,7 @@ class TestDocumentListEndpoint:
         docs_table = MagicMock()
         docs_table.select.return_value = docs_table
         docs_table.eq.return_value = docs_table
+        docs_table.neq.return_value = docs_table
         docs_table.order.return_value = docs_table
         docs_table.range.return_value = docs_table
         docs_table.execute.return_value = MagicMock(data=[{"id": "doc-1", "title": "Doc"}], count=1)
@@ -245,6 +254,7 @@ class TestDocumentListEndpoint:
                 request=mock_request,
                 response=mock_response,
                 user_id="test-user",
+                organization_id="org-1",
                 limit=10,
                 offset=0,
                 include_failed=True,
@@ -261,6 +271,7 @@ class TestDocumentListEndpoint:
         query = mock_supabase.table.return_value
         query.select.return_value = query
         query.eq.return_value = query
+        query.neq.return_value = query
         query.order.return_value = query
         query.range.return_value = query
         query.execute.return_value = MagicMock(data=[], count=0)
@@ -272,7 +283,8 @@ class TestDocumentListEndpoint:
             asyncio.run(list_documents(
                 request=MagicMock(spec=Request),
                 response=mock_response,
-                user_id="test-user"
+                user_id="test-user",
+                organization_id="org-1",
             ))
             
             # Verify ordering
@@ -303,6 +315,7 @@ class TestDocumentDeleteEndpoint:
                         make_request(),
                         BackgroundTasks(),
                         user_id="user-1",
+                        organization_id="org-1",
                     )
                 )
     
@@ -329,10 +342,11 @@ class TestDocumentDeleteEndpoint:
                     make_request(),
                     BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 )
             )
 
-        mock_cleanup.assert_called_once_with("doc-1", "user-1")
+        mock_cleanup.assert_called_once_with("doc-1", "user-1", organization_id="org-1")
     
     @pytest.mark.unit
     def test_delete_nonexistent_document_returns_404(self):
@@ -356,6 +370,7 @@ class TestDocumentDeleteEndpoint:
                         make_request(),
                         BackgroundTasks(),
                         user_id="user-1",
+                        organization_id="org-1",
                     )
                 )
         assert exc.value.status_code == 404
@@ -483,10 +498,11 @@ class TestDocumentUpdateEndpoint:
                     make_request(method="PATCH"),
                     BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 )
             )
 
-        table.eq.assert_any_call("user_id", "user-1")
+        table.eq.assert_any_call("organization_id", "org-1")
     
     @pytest.mark.unit
     def test_update_endpoint_returns_404_for_nonexistent(self):
@@ -527,6 +543,7 @@ class TestDocumentUpdateEndpoint:
                     make_request(method="PATCH"),
                     BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 ))
 
         assert exc.value.status_code == 404
@@ -557,6 +574,7 @@ class TestDocumentUpdateEndpoint:
                 make_request(method="PATCH"),
                 BackgroundTasks(),
                 user_id="user-1",
+                organization_id="org-1",
             ))
 
         update_payload = table.update.call_args[0][0]
@@ -586,6 +604,7 @@ class TestDocumentUpdateEndpoint:
                     make_request(method="PATCH"),
                     BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 ))
 
         assert exc.value.status_code == 500
@@ -687,9 +706,14 @@ class TestDocumentChunksEndpoint:
             from api.v1.documents import get_document_chunks
 
             scope = {"type": "http", "method": "GET", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)}
-            asyncio.run(get_document_chunks("doc-1", Request(scope), user_id="user-1"))
+            asyncio.run(get_document_chunks(
+                "doc-1",
+                Request(scope),
+                user_id="user-1",
+                organization_id="org-1",
+            ))
 
-        table.eq.assert_any_call("user_id", "user-1")
+        table.eq.assert_any_call("organization_id", "org-1")
     
     @pytest.mark.unit
     def test_get_chunks_returns_404_for_nonexistent_document(self):
@@ -742,6 +766,7 @@ class TestDocumentErrorPaths:
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
+        table.neq.return_value = table
         table.execute.side_effect = Exception("boom")
         mock_supabase.table.return_value = table
 
@@ -750,7 +775,7 @@ class TestDocumentErrorPaths:
 
             scope = {"type": "http", "method": "GET", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)}
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_document_stats(Request(scope), user_id="user-1"))
+                asyncio.run(get_document_stats(Request(scope), user_id="user-1", organization_id="org-1"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -759,6 +784,7 @@ class TestDocumentErrorPaths:
         docs_table = MagicMock()
         docs_table.select.return_value = docs_table
         docs_table.eq.return_value = docs_table
+        docs_table.neq.return_value = docs_table
         docs_table.order.return_value = docs_table
         docs_table.range.return_value = docs_table
         docs_table.execute.return_value = MagicMock(data=[sample_document], count=1)
@@ -783,6 +809,7 @@ class TestDocumentErrorPaths:
                 request=MagicMock(spec=Request),
                 response=MagicMock(spec=Response),
                 user_id="test-user",
+                organization_id="org-1",
                 limit=10,
                 offset=0,
                 include_failed=True,
@@ -796,6 +823,7 @@ class TestDocumentErrorPaths:
         docs_table = MagicMock()
         docs_table.select.return_value = docs_table
         docs_table.eq.return_value = docs_table
+        docs_table.neq.return_value = docs_table
         docs_table.order.return_value = docs_table
         docs_table.range.return_value = docs_table
         docs_table.execute.side_effect = Exception("boom")
@@ -809,6 +837,7 @@ class TestDocumentErrorPaths:
                     request=MagicMock(spec=Request),
                     response=MagicMock(spec=Response),
                     user_id="test-user",
+                    organization_id="org-1",
                     limit=10,
                     offset=0,
                 ))
@@ -827,6 +856,7 @@ class TestDocumentErrorPaths:
                     request=make_request(),
                     background_tasks=BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 ))
         assert exc.value.status_code == 403
 
@@ -851,6 +881,7 @@ class TestDocumentErrorPaths:
                     request=make_request(),
                     background_tasks=BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 ))
         assert exc.value.status_code == 500
 
@@ -875,6 +906,7 @@ class TestDocumentErrorPaths:
                     request=make_request(method="PATCH"),
                     background_tasks=BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 ))
         assert exc.value.status_code == 400
 
@@ -905,6 +937,7 @@ class TestDocumentErrorPaths:
                     request=make_request(method="PATCH"),
                     background_tasks=BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 ))
         assert exc.value.status_code == 500
 
@@ -922,6 +955,7 @@ class TestDocumentErrorPaths:
                     request=make_request(method="PATCH"),
                     background_tasks=BackgroundTasks(),
                     user_id="user-1",
+                    organization_id="org-1",
                 ))
         assert exc.value.status_code == 403
 
@@ -940,7 +974,12 @@ class TestDocumentErrorPaths:
 
             scope = {"type": "http", "method": "GET", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)}
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_document_chunks("doc-1", Request(scope), user_id="user-1"))
+                asyncio.run(get_document_chunks(
+                    "doc-1",
+                    Request(scope),
+                    user_id="user-1",
+                    organization_id="org-1",
+                ))
         assert exc.value.status_code == 404
 
     @pytest.mark.unit
@@ -969,5 +1008,10 @@ class TestDocumentErrorPaths:
 
             scope = {"type": "http", "method": "GET", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)}
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_document_chunks("doc-1", Request(scope), user_id="user-1"))
+                asyncio.run(get_document_chunks(
+                    "doc-1",
+                    Request(scope),
+                    user_id="user-1",
+                    organization_id="org-1",
+                ))
         assert exc.value.status_code == 500

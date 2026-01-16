@@ -30,6 +30,7 @@ from connectors.base import (
 import trafilatura
 import requests
 from connectors.limits import connector_fetch_limit
+from core.scopes import build_scope_uri
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +413,12 @@ class WebConnector(EnhancedConnector, BaseConnector):
         credentials: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Iterator[SourceDocument]:
+        """
+        Fetch documents from web pages for ingestion pipeline.
+        
+        Scope ID Format: web://{domain}
+        All pages from the same domain share a scope for quota/retrieval purposes.
+        """
         urls = item_ids or []
         respect_robots = kwargs.get("respect_robots", True)
 
@@ -424,11 +431,15 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 if respect_robots and not self.check_robots_txt(url, self.USER_AGENT):
                     logger.info(f"🚫 [Web] Blocked by robots.txt: {url}")
                     continue
+                
+                # Generate scope_id using canonical URI builder
+                scope_id = build_scope_uri("web", {"url": url})
 
                 if self.is_youtube_url(url):
                     transcript = self.fetch_youtube_transcript(url)
                     if transcript:
                         metadata = self.get_youtube_metadata(url)
+                        metadata["scope_id"] = scope_id  # CRITICAL: Required for FK compliance
                         video_id = metadata.get("video_id", "youtube")
                         yield SourceDocument(
                             content=transcript,
@@ -462,6 +473,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
                                 "source_url": url,
                                 "author": metadata.author if metadata else None,
                                 "date": str(metadata.date) if metadata and metadata.date else None,
+                                "scope_id": scope_id,  # CRITICAL: Required for FK compliance
                             },
                             source_type=SourceType.WEB,
                             source_id=url,

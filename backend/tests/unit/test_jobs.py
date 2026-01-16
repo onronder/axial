@@ -102,15 +102,16 @@ class TestGetActiveJob:
         assert percent == 0
     
     @pytest.mark.unit
-    def test_filters_by_user_id(self, mock_supabase_with_active_job):
-        """Should only return jobs for the current user."""
-        # This tests that user isolation is enforced
-        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_with_active_job):
+    def test_filters_by_organization_id(self, mock_supabase_with_active_job):
+        """Should only return jobs for the current organization."""
+        # This tests that org isolation is enforced
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_with_active_job), \
+             patch("api.v1.jobs._resolve_org_id", return_value="org-1"):
             from api.v1.jobs import get_active_job
 
             asyncio.run(get_active_job(user_id="user-123"))
 
-        mock_supabase_with_active_job.table.return_value.eq.assert_any_call("user_id", "user-123")
+        mock_supabase_with_active_job.table.return_value.eq.assert_any_call("organization_id", "org-1")
     
     @pytest.mark.unit
     def test_returns_most_recent_job(self):
@@ -486,8 +487,8 @@ class TestRetryJobEndpoint:
     
     @pytest.mark.unit
     def test_retry_job_verifies_ownership(self):
-        """Should verify job belongs to requesting user."""
-        # Query should filter by user_id
+        """Should verify job belongs to requesting org."""
+        # Query should filter by organization_id
         mock_supabase = MagicMock()
         job_response = MagicMock()
         job_response.data = {"id": "job-1", "user_id": "user-123", "status": "failed"}
@@ -514,7 +515,7 @@ class TestRetryJobEndpoint:
 
             asyncio.run(retry_job("job-1", user_id="user-123"))
 
-        job_table.eq.assert_any_call("user_id", "user-123")
+        job_table.eq.assert_any_call("organization_id", "user-123")
     
     @pytest.mark.unit
     def test_retry_job_returns_404_for_nonexistent(self):
@@ -678,7 +679,7 @@ class TestRetryFileEndpoint:
                     "status": "failed",
                     "retry_count": 1,
                     "can_retry": True,
-                    "ingestion_jobs": {"user_id": "user-123"},
+                    "ingestion_jobs": {"organization_id": "user-123"},
                 }
             ),
             MagicMock(data=[]),
@@ -922,7 +923,7 @@ class TestJobErrorPaths:
         file_table.eq.return_value = file_table
         file_table.single.return_value = file_table
         file_table.execute.return_value = MagicMock(
-            data={"status": "failed", "ingestion_jobs": {"user_id": "other"}}
+            data={"status": "failed", "ingestion_jobs": {"organization_id": "other"}}
         )
 
         supabase = MagicMock()
@@ -945,7 +946,7 @@ class TestJobErrorPaths:
             data={
                 "status": "processing",
                 "can_retry": True,
-                "ingestion_jobs": {"user_id": "user-123"},
+                "ingestion_jobs": {"organization_id": "user-123"},
             }
         )
 
@@ -969,7 +970,7 @@ class TestJobErrorPaths:
             data={
                 "status": "failed",
                 "can_retry": False,
-                "ingestion_jobs": {"user_id": "user-123"},
+                "ingestion_jobs": {"organization_id": "user-123"},
             }
         )
 
@@ -994,7 +995,7 @@ class TestJobErrorPaths:
                 "status": "failed",
                 "retry_count": 3,
                 "can_retry": True,
-                "ingestion_jobs": {"user_id": "user-123"},
+                "ingestion_jobs": {"organization_id": "user-123"},
             }
         )
 

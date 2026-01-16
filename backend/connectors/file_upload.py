@@ -11,6 +11,7 @@ from typing import Any, AsyncIterator, Dict, Iterator, Optional
 from connectors.base import ConnectorTransientError, RemoteFile
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
 from core.db import get_supabase
+from core.scopes import build_scope_uri
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ class FileUploadConnector(EnhancedConnector):
     Connector for direct file uploads.
     
     Fetches files from Supabase Storage that were uploaded via presigned URLs.
+    
+    Scope ID Format: upload://{user_id}/manual
+    All manual uploads from a user are grouped under a single scope.
     """
     
     @property
@@ -38,6 +42,14 @@ class FileUploadConnector(EnhancedConnector):
         Synchronous fetch for worker pipelines (no asyncio/event loop required).
         """
         supabase = get_supabase()
+        
+        # Extract user_id from credentials or kwargs for scope_id generation
+        user_id = kwargs.get("user_id") or (credentials or {}).get("user_id")
+        if not user_id:
+            raise ValueError("user_id is required for file upload ingestion")
+        
+        # Use canonical scope URI builder
+        scope_id = build_scope_uri("file_upload", {"user_id": user_id})
 
         for storage_path in item_ids:
             try:
@@ -55,6 +67,7 @@ class FileUploadConnector(EnhancedConnector):
                     metadata={
                         "storage_path": storage_path,
                         "upload_method": "direct",
+                        "scope_id": scope_id,  # CRITICAL: Required for FK compliance
                     },
                     source_type=SourceType.FILE_UPLOAD,
                     source_id=storage_path,

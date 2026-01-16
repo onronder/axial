@@ -151,7 +151,13 @@ async def require_admin(user_id: str = Depends(validate_team_access)) -> str:
             return user_id  # User is a team owner, grant admin access
         
         # Check if user has admin role in team_members
-        member_result = supabase.table("team_members").select("role").eq("user_id", user_id).eq("role", "admin").execute()
+        member_result = (
+            supabase.table("team_members")
+            .select("role")
+            .eq("member_user_id", user_id)
+            .eq("role", "admin")
+            .execute()
+        )
         
         if member_result.data and len(member_result.data) > 0:
             return user_id  # User has admin role
@@ -218,6 +224,37 @@ async def require_editor(user_id: str = Depends(validate_team_access)) -> str:
         )
 
 
+async def get_user_organization_id(user_id: str = Depends(validate_team_access)) -> str:
+    """
+    Get the user's organization_id (team_id).
+    
+    This is the canonical way to get the organization context for org-scoped
+    queries. Falls back to user_id if user has no team (solo user).
+    
+    Usage:
+        @router.get("/documents")
+        async def list_docs(org_id: str = Depends(get_user_organization_id)):
+            # Query by org_id instead of user_id
+            ...
+    
+    Returns:
+        organization_id (team_id) if user has a team, otherwise user_id
+    """
+    try:
+        team = await team_service.get_user_team(user_id)
+        if team and team.get("id"):
+            return str(team["id"])
+        
+        # For solo users (no team), use user_id as organization_id
+        # This maintains compatibility for users before team feature
+        return user_id
+        
+    except Exception as e:
+        logger.warning(f"[get_user_organization_id] Failed for {user_id[:8]}...: {e}")
+        # Fail open - use user_id
+        return user_id
+
+
 # Re-export get_current_user for convenience
 __all__ = [
     'get_current_user',
@@ -227,4 +264,5 @@ __all__ = [
     'require_paid_access',
     'require_admin',
     'require_editor',
+    'get_user_organization_id',
 ]

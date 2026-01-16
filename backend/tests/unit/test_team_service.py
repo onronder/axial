@@ -146,7 +146,7 @@ class TestGetEffectivePlan:
              patch.object(team_service, "_get_effective_plan_direct", new=AsyncMock(return_value="starter")):
             plan = await team_service.get_effective_plan(OWNER_UUID)
 
-        assert plan == "starter"
+        assert plan == "free"
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -354,7 +354,7 @@ class TestTeamServiceAdditional:
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_trialing_status_is_allowed(self, team_service):
-        """Trialing status is allowed and returns actual plan."""
+        """Legacy profile trialing data does not grant plan access."""
         mock_supabase = Mock()
         
         # Mock RPC call reflecting logic where we check status
@@ -381,12 +381,12 @@ class TestTeamServiceAdditional:
             mock_supabase.rpc.return_value.execute.side_effect = Exception("RPC fail")
             
             plan = await team_service.get_effective_plan(OWNER_UUID)
-            assert plan == "pro"
+            assert plan == "free"
 
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_profile_plan_used_when_no_subscription(self, team_service):
-        """No subscription data falls back to profile plan."""
+        """No subscription data defaults to free."""
         mock_supabase = Mock()
 
         mock_supabase.rpc.return_value.execute.side_effect = Exception("RPC fail")
@@ -415,7 +415,7 @@ class TestTeamServiceAdditional:
 
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
             plan = await team_service.get_effective_plan(OWNER_UUID)
-            assert plan == "pro"
+            assert plan == "free"
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -958,11 +958,11 @@ class TestVerifyTeamAccess:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_verify_team_access_fail_open_on_error(self, team_service):
+    async def test_verify_team_access_fail_closed_on_error(self, team_service):
         with patch("services.team_service.get_supabase", side_effect=Exception("boom")):
             result = await team_service.verify_team_access(MEMBER_UUID)
 
-        assert result["allowed"] is True
+        assert result["allowed"] is False
         assert result["reason"] == "error"
 
 
@@ -1227,7 +1227,7 @@ class TestTeamServiceCoverageGaps:
         with patch("services.team_service.get_supabase", return_value=supabase):
             plan = await service._get_effective_plan_direct(MEMBER_UUID)
 
-        assert plan == "starter"
+        assert plan == "free"
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -1265,7 +1265,7 @@ class TestTeamServiceCoverageGaps:
         with patch("services.team_service.get_supabase", return_value=supabase):
             plan = await service._get_effective_plan_direct(MEMBER_UUID)
 
-        assert plan == "starter"
+        assert plan == "free"
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -1287,7 +1287,7 @@ class TestTeamServiceCoverageGaps:
              patch("services.team_service.get_plan_limits", return_value=_make_limits(5)):
             plan = await service._get_effective_plan_direct(MEMBER_UUID)
 
-        assert plan == "enterprise"
+        assert plan == "free"
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -1566,3 +1566,75 @@ class TestRemoveMemberAdditional:
             result = await team_service.remove_member(OWNER_UUID, "member-1", hard_delete=True)
 
         assert result["success"] is True
+
+
+# ============================================================
+# Tests for Plan Normalization with Logging
+# ============================================================
+
+class TestPlanNormalization:
+    """Tests for _normalize_plan with logging for unknown plans."""
+
+    @pytest.fixture
+    def team_service(self):
+        from services.team_service import TeamService
+        return TeamService()
+
+    @pytest.mark.unit
+    def test_normalize_plan_valid_plans(self, team_service):
+        """Valid plans are returned as-is (lowercase)."""
+        assert team_service._normalize_plan("free") == "free"
+        assert team_service._normalize_plan("Free") == "free"
+        assert team_service._normalize_plan("FREE") == "free"
+        assert team_service._normalize_plan("starter") == "starter"
+        assert team_service._normalize_plan("Starter") == "starter"
+        assert team_service._normalize_plan("pro") == "pro"
+        assert team_service._normalize_plan("Pro") == "pro"
+        assert team_service._normalize_plan("enterprise") == "enterprise"
+        assert team_service._normalize_plan("Enterprise") == "enterprise"
+        assert team_service._normalize_plan("ENTERPRISE") == "enterprise"
+
+    @pytest.mark.unit
+    def test_normalize_plan_none_returns_free(self, team_service):
+        """None plan defaults to free."""
+        assert team_service._normalize_plan(None) == "free"
+        assert team_service._normalize_plan("") == "free"
+
+    @pytest.mark.unit
+    def test_normalize_plan_unknown_returns_free_with_logging(self, team_service):
+        """Unknown plans default to free and log a warning."""
+        with patch("services.team_service.logger") as mock_logger:
+            result = team_service._normalize_plan("enterprise_large")
+            
+            assert result == "free"
+            mock_logger.warning.assert_called_once()
+            warning_msg = mock_logger.warning.call_args[0][0]
+            assert "enterprise_large" in warning_msg
+            assert "normalized to 'free'" in warning_msg
+
+    @pytest.mark.unit
+    def test_normalize_plan_custom_plan_logs_warning(self, team_service):
+        """Custom plan codes (like from legacy systems) are logged."""
+        unknown_plans = ["pro_annual", "business", "enterprise_plus", "trial", "beta"]
+        
+        with patch("services.team_service.logger") as mock_logger:
+            for plan in unknown_plans:
+                mock_logger.reset_mock()
+                result = team_service._normalize_plan(plan)
+                
+                assert result == "free"
+                mock_logger.warning.assert_called_once()
+                warning_msg = mock_logger.warning.call_args[0][0]
+                assert plan in warning_msg
+
+    @pytest.mark.unit
+    def test_valid_plans_constant_matches_normalize(self, team_service):
+        """VALID_PLANS constant should match what _normalize_plan accepts."""
+        from services.team_service import TeamService
+        
+        for plan in TeamService.VALID_PLANS:
+            # Valid plans should not trigger warning
+            with patch("services.team_service.logger") as mock_logger:
+                result = team_service._normalize_plan(plan)
+                assert result == plan
+                mock_logger.warning.assert_not_called()

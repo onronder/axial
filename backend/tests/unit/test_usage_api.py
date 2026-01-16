@@ -465,7 +465,7 @@ class TestPlanLimitsConsistency:
     def test_all_plans_have_positive_file_limits(self):
         """Every plan should have positive max_files."""
         for plan_name, limits in QUOTA_LIMITS.items():
-            if plan_name == "none":
+            if plan_name in {"none", "free"}:
                 continue
             assert limits.max_files > 0, f"Plan {plan_name} has invalid max_files"
     
@@ -473,7 +473,7 @@ class TestPlanLimitsConsistency:
     def test_all_plans_have_positive_storage_limits(self):
         """Every plan should have positive max_storage_bytes."""
         for plan_name, limits in QUOTA_LIMITS.items():
-            if plan_name == "none":
+            if plan_name in {"none", "free"}:
                 continue
             assert limits.max_storage_bytes > 0, f"Plan {plan_name} has invalid max_storage_bytes"
     

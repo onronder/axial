@@ -57,22 +57,22 @@ class TestChatList:
     
     @pytest.mark.unit
     def test_list_chats_returns_user_chats_only(self):
-        """Chat list must filter by user_id (RLS equivalent)."""
+        """Chat list must filter by organization_id (RLS equivalent)."""
         mock_supabase = MagicMock()
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
         table.order.return_value = table
-        table.execute.return_value = MagicMock(data=[{"id": "chat-1", "user_id": "user-1"}])
+        table.execute.return_value = MagicMock(data=[{"id": "chat-1", "organization_id": "org-1"}])
         mock_supabase.table.return_value = table
 
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
             from api.v1.chat import list_conversations
 
-            result = asyncio.run(list_conversations(user_id="user-1"))
+            result = asyncio.run(list_conversations(user_id="user-1", organization_id="org-1"))
 
         assert result[0]["id"] == "chat-1"
-        table.eq.assert_any_call("user_id", "user-1")
+        table.eq.assert_any_call("organization_id", "org-1")
     
     @pytest.mark.unit
     def test_list_chats_ordered_by_updated_at_desc(self):
@@ -699,7 +699,7 @@ class TestChatEndpointPaths:
                 await chat_endpoint(request, ChatRequest(query="ask"), background_tasks, user_id="user-1")
             assert exc.value.status_code == 500
 
-    async def test_chat_falls_back_to_vector_search(self):
+    async def test_chat_errors_when_hybrid_search_fails(self):
         from fastapi import Request, BackgroundTasks
 
         request = MagicMock(spec=Request)
@@ -717,50 +717,25 @@ class TestChatEndpointPaths:
         supabase = MagicMock()
         supabase.table().select().eq().single().execute.return_value = Mock(data={"plan": "starter"})
 
-        def rpc_side_effect(name, params):
-            if name == "hybrid_search":
-                raise Exception("hybrid fail")
-            if name == "match_documents":
-                return Mock(execute=Mock(return_value=Mock(data=[{
-                    "content": "Doc",
-                    "title": "Doc",
-                    "source_type": "file_upload",
-                    "similarity": 0.9,
-                    "metadata": {},
-                }])))
-            raise AssertionError(name)
-
-        supabase.rpc.side_effect = rpc_side_effect
+        supabase.rpc.side_effect = Exception("hybrid fail")
 
         embeddings = MagicMock()
         embeddings.embed_query.return_value = [0.1]
-
-        prompt = MagicMock()
-        stage = MagicMock()
-        chain = MagicMock()
-        chain.invoke.return_value = "Answer"
-        prompt.__or__.return_value = stage
-        stage.__or__.return_value = chain
 
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
              patch("api.v1.chat.OpenAIEmbeddings", return_value=embeddings), \
-             patch("api.v1.chat.ChatPromptTemplate.from_messages", return_value=prompt), \
-             patch("api.v1.chat.StrOutputParser", return_value=MagicMock()), \
-             patch("api.v1.chat.LLMFactory.get_model", return_value=MagicMock()), \
-             patch("api.v1.chat.save_messages", return_value="msg-1"), \
              patch("api.v1.chat.settings.RAG_SIMILARITY_THRESHOLD", 0.1):
             from api.v1.chat import chat_endpoint, ChatRequest
-            response = await chat_endpoint(
-                request,
-                ChatRequest(query="ask", conversation_id="conv-1", model="auto"),
-                background_tasks,
-                user_id="user-1",
-            )
-
-        assert response.answer == "Answer"
-        assert response.message_id == "msg-1"
+            with pytest.raises(HTTPException) as exc:
+                await chat_endpoint(
+                    request,
+                    ChatRequest(query="ask", conversation_id="conv-1", model="auto"),
+                    background_tasks,
+                    user_id="user-1",
+                )
+            assert exc.value.status_code == 500
 
 
 @pytest.mark.asyncio

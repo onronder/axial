@@ -27,6 +27,7 @@ from connectors.base import (
 )
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
 from core.db import get_supabase
+from core.scopes import build_scope_uri
 from core.security import decrypt_token
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,11 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
         credentials: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Iterator[SourceDocument]:
+        """
+        Fetch documents from SFTP server for ingestion pipeline.
+        
+        Scope ID Format: sftp://{host}/{root_path}
+        """
         if not item_ids:
             return iter(())
 
@@ -186,6 +192,10 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
             raise ConnectorAuthError("Invalid SFTP configuration")
 
         root_path = self._normalize_root(resolved.get("root_path", "/"))
+        host = resolved.get("host")
+        
+        # Generate scope_id using canonical URI builder
+        scope_id = build_scope_uri("sftp", {"host": host, "root_path": root_path})
 
         with self._sftp_connection(resolved) as sftp:
             for item_id in item_ids:
@@ -197,9 +207,9 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
                     continue
                 if stat.S_ISDIR(attrs.st_mode):
                     for file_path, file_attrs in self._walk(sftp, remote_path, since_ts=None):
-                        yield self._build_source_document(sftp, file_path, file_attrs, resolved)
+                        yield self._build_source_document(sftp, file_path, file_attrs, resolved, scope_id)
                 else:
-                    yield self._build_source_document(sftp, remote_path, attrs, resolved)
+                    yield self._build_source_document(sftp, remote_path, attrs, resolved, scope_id)
 
     def verify_connection(self, config: dict) -> None:
         """
@@ -406,6 +416,7 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
         path: str,
         attrs: paramiko.SFTPAttributes,
         config: dict,
+        scope_id: str,
     ) -> SourceDocument:
         content = self._read_file(sftp, path, attrs)
         filename = posixpath.basename(path)
@@ -430,6 +441,7 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
                 "root_path": config.get("root_path", "/"),
                 "modified_at": self._to_datetime(attrs.st_mtime).isoformat() if attrs.st_mtime else None,
                 "size": attrs.st_size,
+                "scope_id": scope_id,  # CRITICAL: Required for FK compliance
             },
             source_type=SourceType.SFTP,
             source_id=path,

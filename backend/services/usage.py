@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 
 class UserUsage(BaseModel):
     """
-    Current usage statistics for a user.
+    Current usage statistics for a user (organization-scoped).
     
     Attributes:
         user_id: The user's UUID
-        files: Number of documents/files owned
+        files: Number of documents/files in the org
         storage_bytes: Total storage used in bytes
         storage_display: Human-readable storage string
         plan: Current subscription plan name
@@ -66,6 +66,7 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
     Get the current usage statistics for a user.
     
     Strategy: Query documents table directly with SUM/COUNT for accuracy.
+    Usage is calculated at the organization scope to reflect shared quotas.
     This is safer than cached columns for MVP to avoid sync issues.
     Consider migrating to cached columns (user_profiles.file_count, 
     total_storage_bytes) if performance becomes an issue.
@@ -110,25 +111,46 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
         logger.error(f"Error fetching user profile for {user_id}: {e}")
         raise e
     
-    # Get subscription status from subscriptions table via team membership
+    organization_id = str(user_id)
+    team_id = None
+
+    # Resolve team_id for org-scoped usage (member -> owner fallback)
     try:
-        # First get user's team_id from team_members
         team_result = supabase.table("team_members").select("team_id").eq(
             "member_user_id", str(user_id)
         ).limit(1).execute()
-        
-        if team_result.data:
-            team_id = team_result.data[0].get("team_id")
-            # Then get subscription status for that team
-            sub_result = supabase.table("subscriptions").select("status").eq(
-                "team_id", str(team_id)
-            ).limit(1).execute()
-            
-            if sub_result.data:
-                subscription_status = sub_result.data[0].get("status", "active")
+        team_data = team_result.data if isinstance(team_result.data, list) else []
+        if team_data and isinstance(team_data[0], dict):
+            team_id = team_data[0].get("team_id")
     except Exception as e:
-        # Non-critical - default to active if we can't fetch subscription
-        logger.warning(f"Could not fetch subscription status for {user_id}: {e}")
+        logger.warning(f"Could not fetch team membership for {user_id}: {e}")
+
+    if not team_id:
+        try:
+            owner_team = supabase.table("teams").select("id").eq(
+                "owner_id", str(user_id)
+            ).limit(1).execute()
+            owner_data = owner_team.data if isinstance(owner_team.data, list) else []
+            if owner_data and isinstance(owner_data[0], dict):
+                team_id = owner_data[0].get("id")
+        except Exception as e:
+            logger.warning(f"Could not resolve owner team for {user_id}: {e}")
+
+    if team_id:
+        organization_id = str(team_id)
+
+        # Get subscription status from subscriptions table via team_id
+        try:
+            sub_result = supabase.table("subscriptions").select("status").eq(
+                "team_id", organization_id
+            ).limit(1).execute()
+
+            sub_data = sub_result.data if isinstance(sub_result.data, list) else []
+            if sub_data and isinstance(sub_data[0], dict):
+                subscription_status = sub_data[0].get("status", "active")
+        except Exception as e:
+            # Non-critical - default to active if we can't fetch subscription
+            logger.warning(f"Could not fetch subscription status for {user_id}: {e}")
     
     # Resolve effective plan from team/subscription (best source of truth)
     try:
@@ -152,7 +174,7 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
     # For MVP, we'll query the documents directly
     docs_result = supabase.table("documents").select(
         "id, file_size_bytes"
-    ).eq("user_id", str(user_id)).execute()
+    ).eq("organization_id", organization_id).execute()
     
     file_count = 0
     total_bytes = 0

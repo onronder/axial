@@ -17,6 +17,7 @@ from connectors.base import (
 )
 from core.db import get_supabase
 from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync
+from core.scopes import build_scope_uri
 from connectors.limits import connector_fetch_limit
 import requests
 from starlette.concurrency import run_in_threadpool
@@ -286,12 +287,19 @@ class NotionConnector(EnhancedConnector, BaseConnector):
         for doc in self.fetch_documents_sync(item_ids, credentials, **kwargs):
             yield doc
 
+
     def fetch_documents_sync(
         self,
         item_ids: list[str],
         credentials: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Iterator[SourceDocument]:
+        """
+        Fetch documents from Notion for ingestion pipeline.
+        
+        Scope ID Format: notion://{root_page_id}
+        All child pages inherit the root page's scope.
+        """
         user_id = kwargs.get("user_id")
         if not item_ids:
             return iter(())
@@ -314,7 +322,7 @@ class NotionConnector(EnhancedConnector, BaseConnector):
 
         processed_ids = set()
 
-        def ingest_page_recursive(page_id: str, depth: int = 0) -> Iterator[SourceDocument]:
+        def ingest_page_recursive(page_id: str, scope_id: str, depth: int = 0) -> Iterator[SourceDocument]:
             if page_id in processed_ids or depth > 10:
                 return
             processed_ids.add(page_id)
@@ -374,6 +382,7 @@ class NotionConnector(EnhancedConnector, BaseConnector):
                             "title": title,
                             "page_id": page_id,
                             "source_url": page.get("url"),
+                            "scope_id": scope_id,  # CRITICAL: Required for FK compliance
                         },
                         source_type=SourceType.NOTION,
                         source_id=page_id,
@@ -385,13 +394,16 @@ class NotionConnector(EnhancedConnector, BaseConnector):
                     logger.info(f"✅ [Notion] Fetched: {title}")
 
                 for child_id in child_page_ids:
-                    yield from ingest_page_recursive(child_id, depth + 1)
+                    # Child pages inherit the root page's scope_id
+                    yield from ingest_page_recursive(child_id, scope_id, depth + 1)
 
             except Exception as e:
                 logger.error(f"❌ [Notion] Failed to fetch {page_id}: {e}")
 
         for page_id in item_ids:
-            yield from ingest_page_recursive(page_id)
+            # Generate scope_id using canonical URI builder
+            scope_id = build_scope_uri("notion", {"page_id": page_id})
+            yield from ingest_page_recursive(page_id, scope_id)
 
         logger.info("📥 [Notion] Completed fetch for %s initial item(s)", len(item_ids))
 

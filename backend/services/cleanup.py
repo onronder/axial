@@ -91,24 +91,28 @@ class AccountCleanupService:
             logger.error(f"❌ [AccountCleanup] Deletion failed for user {user_id}: {e}")
             raise
 
-    async def execute_org_deletion(self, organization_id: str) -> dict:
+    async def execute_org_deletion(self, organization_id: str, owner_id: str) -> dict:
         """
         Execute irreversible deletion of all org-scoped data.
 
         Deletes vectors, documents, scope identities, and ingestion jobs
         associated with the organization.
         """
-        logger.info("🗑️ [AccountCleanup] Starting org deletion for %s", organization_id)
+        logger.info(
+            "🗑️ [AccountCleanup] Starting org deletion for %s (owner=%s)",
+            organization_id,
+            owner_id,
+        )
 
         try:
             response = self.supabase.rpc(
                 "purge_organization",
-                {"p_org_id": organization_id},
+                {"p_organization_id": organization_id, "p_owner_id": owner_id},
             ).execute()
             payload = response.data or {}
         except Exception as e:
             error_text = str(e)
-            if "active_ingestion_jobs" in error_text:
+            if "active_ingestion_jobs" in error_text or "Cannot purge while ingestion jobs are active" in error_text:
                 logger.warning("⛔ [OrgCleanup] Active ingestion blocks purge for %s", organization_id)
                 raise ActiveIngestionError(
                     "Organization has active ingestion jobs; aborting purge."
@@ -182,13 +186,16 @@ class AccountCleanupService:
             logger.warning("⚠️ [Anonymize] Failed to anonymize auth user: %s", e)
 
         return results
-    async def delete_single_document(self, doc_id: str, user_id: str) -> dict:
+    async def delete_single_document(
+        self, doc_id: str, user_id: str, organization_id: str = None
+    ) -> dict:
         """
         Delete a single document atomically (Vectors -> Storage -> DB).
         
         Args:
             doc_id: Document UUID
-            user_id: User UUID
+            user_id: User UUID (for audit/logging)
+            organization_id: Organization UUID (for org-scoped deletion)
             
         Returns:
             dict with cleanup status
@@ -197,7 +204,14 @@ class AccountCleanupService:
         
         try:
             # 1. Get document metadata to find storage path
-            doc = self.supabase.table("documents").select("*").eq("id", doc_id).eq("user_id", user_id).single().execute()
+            # Use organization_id for org-scoped access if provided
+            query = self.supabase.table("documents").select("*").eq("id", doc_id)
+            if organization_id:
+                query = query.eq("organization_id", organization_id)
+            else:
+                query = query.eq("user_id", user_id)
+            
+            doc = query.single().execute()
             if not doc.data:
                 raise Exception("Document not found")
                 
@@ -236,12 +250,13 @@ class AccountCleanupService:
                 except Exception as e:
                     logger.warning(f"⚠️ [DocCleanup] Storage delete failed (continuing): {e}")
 
-            # 4. Delete Database Record
-            self.supabase.table("documents")\
-                .delete()\
-                .eq("id", doc_id)\
-                .eq("user_id", user_id)\
-                .execute()
+            # 4. Delete Database Record (org-scoped if organization_id provided)
+            delete_query = self.supabase.table("documents").delete().eq("id", doc_id)
+            if organization_id:
+                delete_query = delete_query.eq("organization_id", organization_id)
+            else:
+                delete_query = delete_query.eq("user_id", user_id)
+            delete_query.execute()
                 
             return {"status": "success", "id": doc_id}
             

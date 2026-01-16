@@ -169,6 +169,12 @@ celery_app.conf.update(
             "task": "worker.periodic_tasks.cleanup_old_audit_logs",
             "schedule": crontab(day_of_week=0, hour=4, minute=0),
         },
+        # Cleanup orphan scope identity placeholders daily at 5am UTC
+        # These are created during ingestion but may remain if jobs fail
+        "cleanup-orphan-scope-placeholders-daily": {
+            "task": "cleanup_orphan_scope_placeholders",
+            "schedule": crontab(hour=5, minute=0),
+        },
     },
 )
 

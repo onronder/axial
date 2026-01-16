@@ -25,16 +25,31 @@ MAX_SUMMARY_CHARS = 2000
 
 
 def _infer_scope_type(scope_id: str) -> str:
-    scheme = (scope_id or "").split("://", 1)[0]
+    """
+    Infer the identity type from scope_id URI scheme.
+    
+    Maps canonical URI schemes to human-readable identity types.
+    Supports all connector schemes defined in core/scopes.py.
+    """
+    scheme = (scope_id or "").split("://", 1)[0].lower()
     return {
+        # Cloud storage
         "github": "github_repo",
         "s3": "s3_bucket",
         "box": "box_folder",
         "dropbox": "dropbox_folder",
+        # Google
         "gdrive": "gdrive_folder",
         "google_drive": "gdrive_folder",
+        "drive": "gdrive_folder",
+        # Microsoft
+        "onedrive": "onedrive_folder",
+        "sharepoint": "sharepoint_folder",
+        # Other connectors
         "notion": "notion_workspace",
+        "sftp": "sftp_server",
         "web": "web_domain",
+        "upload": "file_upload",
         "file_upload": "file_upload",
     }.get(scheme, "unknown")
 
@@ -91,10 +106,29 @@ async def synthesize_and_save_identity(
 ) -> None:
     """
     Build and persist a scope identity card from a list of SourceDocuments.
+    
+    This function is called during finalize_job_task after ingestion completes.
+    It transitions scope identities from 'placeholder' status (created during
+    ingestion) to 'completed' status with full identity information.
+    
+    Args:
+        scope_id: Canonical scope URI (e.g., 'github://owner/repo')
+        documents: List of SourceDocument objects from the ingestion
+        organization_id: The organization UUID
+        user_id: The user who initiated the ingestion
+        plan_code: Optional plan code for quota checks
+        
+    Raises:
+        ValueError: If required parameters are missing
+        QuotaExceededError: If scope limit exceeded (for new scopes)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if not scope_id:
         raise ValueError("scope_id is required for identity synthesis")
     if not documents:
+        logger.debug(f"[ScopeIdentity] No documents for {scope_id[:50]}..., skipping synthesis")
         return
     if not organization_id:
         raise ValueError("organization_id is required for identity synthesis")
@@ -148,17 +182,66 @@ async def synthesize_and_save_identity(
     limits = get_plan_limits(plan_code)
     max_scopes = limits.max_scopes
 
+    # Check if scope already exists (may be a placeholder from ingestion)
     existing_scope = (
         supabase.table("scope_identities")
-        .select("id")
+        .select("id, status, attributes")
         .eq("organization_id", organization_id)
         .eq("id", scope_id)
         .limit(1)
         .execute()
     )
     has_existing = bool(existing_scope.data)
+    existing_status = None
+    is_placeholder_upgrade = False
+    
+    if has_existing:
+        existing_rows = existing_scope.data
+        if isinstance(existing_rows, dict):
+            existing_rows = [existing_rows]
+        if not isinstance(existing_rows, list):
+            existing_rows = []
+        existing_data = existing_rows[0] if existing_rows else {}
+        existing_status = existing_data.get("status")
+        existing_attrs = existing_data.get("attributes") or {}
+        is_placeholder_upgrade = (
+            existing_status == "placeholder" or 
+            existing_attrs.get("is_placeholder", False)
+        )
+        
+        if is_placeholder_upgrade:
+            logger.info(
+                f"[ScopeIdentity] Upgrading placeholder to completed: {scope_id[:50]}... "
+                f"(org: {organization_id[:8]}...)"
+            )
 
-    if not has_existing and max_scopes > 0:
+    # ==========================================================================
+    # HARD QUOTA ENFORCEMENT (Polar-Managed Billing)
+    # ==========================================================================
+    # Business Rule: No Polar subscription (or trial) = No data ingestion.
+    # If max_scopes is 0, the organization has no active subscription.
+    # This is the "Hard Zero" rule - strictly enforced, no exceptions.
+    # ==========================================================================
+    
+    if not has_existing:
+        # HARD ZERO RULE: Block ALL new scopes if max_scopes <= 0
+        if max_scopes <= 0:
+            logger.warning(
+                f"[ScopeIdentity] BLOCKED: No subscription for org {organization_id[:8]}... "
+                f"(max_scopes={max_scopes}, plan={plan_code})"
+            )
+            raise QuotaExceededError(
+                "Active subscription required. Please subscribe to ingest data.",
+                {
+                    "limit": 0,
+                    "current": 0,
+                    "plan": plan_code or "none",
+                    "organization_id": organization_id,
+                    "reason": "no_subscription",
+                },
+            )
+        
+        # Standard quota check for subscribed users
         scope_count = (
             supabase.table("scope_identities")
             .select("id", count="exact")
@@ -177,12 +260,14 @@ async def synthesize_and_save_identity(
                 },
             )
 
+    # Upsert the completed identity (this upgrades placeholders or creates new)
     supabase.table("scope_identities").upsert(
         {
             "id": scope_id,
             "organization_id": organization_id,
             "user_id": user_id,
             "type": inferred_type,
+            "status": "completed",
             "summary": summary,
             "file_tree": ascii_tree,
             "attributes": {
@@ -191,12 +276,19 @@ async def synthesize_and_save_identity(
                 "stats_sampled": sampled,
                 "languages": unique_extensions,
                 "size": total_size_bytes,
+                "is_placeholder": False,
             },
             "last_ingested_at": now,
             "updated_at": now,
         },
         on_conflict="organization_id,id",
     ).execute()
+    
+    action = "upgraded" if is_placeholder_upgrade else ("updated" if has_existing else "created")
+    logger.info(
+        f"[ScopeIdentity] ✅ {action.capitalize()} identity for {scope_id[:50]}... "
+        f"({total_files} files, {inferred_type})"
+    )
 
     source_id = f"identity::{scope_id}"
     doc_title = f"Scope Identity: {scope_id}"

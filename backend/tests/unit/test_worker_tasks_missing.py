@@ -177,10 +177,10 @@ def test_ingest_document_batched_no_chunks():
     doc_id = tasks.ingest_document_batched(
         supabase=supabase,
         user_id="user-1",
-        organization_id="org-1",
+        organization_id="11111111-1111-1111-1111-111111111111",
         doc_title="Doc",
         source_type="file_upload",
-        metadata={},
+        metadata={"scope_id": "file_upload://doc-1", "organization_id": "11111111-1111-1111-1111-111111111111"},
         chunks_payload=[],
         file_size_bytes=1,
     )
@@ -198,10 +198,10 @@ def test_ingest_document_batched_insert_error(monkeypatch):
     doc_id = tasks.ingest_document_batched(
         supabase=supabase,
         user_id="user-1",
-        organization_id="org-1",
+        organization_id="11111111-1111-1111-1111-111111111111",
         doc_title="Doc",
         source_type="file_upload",
-        metadata={},
+        metadata={"scope_id": "file_upload://doc-1", "organization_id": "11111111-1111-1111-1111-111111111111"},
         chunks_payload=[{"content": "x", "embedding": [0.1], "chunk_index": 0, "metadata": {}}],
         file_size_bytes=1,
     )
@@ -213,7 +213,7 @@ def test_create_file_status_returns_none_on_empty():
     supabase = MagicMock()
     table = _make_table([])
     supabase.table.return_value = table
-    assert tasks.create_file_status(supabase, "job-1", "user-1", "file.txt") is None
+    assert tasks.create_file_status(supabase, "job-1", "user-1", "org-1", "file.txt") is None
 
 
 def test_create_file_status_handles_exception():
@@ -221,7 +221,7 @@ def test_create_file_status_handles_exception():
     table = _make_table([])
     table.execute.side_effect = Exception("boom")
     supabase.table.return_value = table
-    assert tasks.create_file_status(supabase, "job-1", "user-1", "file.txt") is None
+    assert tasks.create_file_status(supabase, "job-1", "user-1", "org-1", "file.txt") is None
 
 
 def test_update_file_status_no_id():
@@ -379,7 +379,7 @@ def test_process_document_pipeline_handles_string_content(monkeypatch):
         job_id="job-1",
         file_status_id="status-1",
         source_type="file_upload",
-        metadata={"organization_id": "org-1", "scope_id": "file_upload://file.bin"},
+        metadata={"organization_id": "11111111-1111-1111-1111-111111111111", "scope_id": "file_upload://file.bin"},
     )
 
     assert outcome.success is True
@@ -409,7 +409,7 @@ def test_process_document_pipeline_skips_none_embeddings(monkeypatch):
         job_id="job-1",
         file_status_id="status-1",
         source_type="file_upload",
-        metadata={"organization_id": "org-1", "scope_id": "file_upload://file.txt"},
+        metadata={"organization_id": "11111111-1111-1111-1111-111111111111", "scope_id": "file_upload://file.txt"},
     )
 
     assert outcome.success is True
@@ -417,8 +417,10 @@ def test_process_document_pipeline_skips_none_embeddings(monkeypatch):
 
 def test_unified_ingest_task_cancelled(monkeypatch):
     supabase = MagicMock()
+    org_scope = {"team_id": "11111111-1111-1111-1111-111111111111"}
 
     monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
+    monkeypatch.setattr(tasks, "_resolve_org_scope", lambda *_args, **_kwargs: org_scope)
     monkeypatch.setattr(tasks, "store_celery_task_id", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(tasks, "check_job_cancelled", lambda *_args, **_kwargs: True)
 
@@ -430,7 +432,9 @@ def test_unified_ingest_task_cancelled(monkeypatch):
 def test_unified_ingest_task_base64_fallback(monkeypatch):
     supabase = MagicMock()
     table = _make_table([{"id": "status-1"}])
+    table.execute.return_value.count = 0
     supabase.table.return_value = table
+    org_scope = {"team_id": "11111111-1111-1111-1111-111111111111"}
 
     def fetch_docs(*_args, **_kwargs):
         yield SimpleNamespace(
@@ -458,6 +462,7 @@ def test_unified_ingest_task_base64_fallback(monkeypatch):
             return False
 
     monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
+    monkeypatch.setattr(tasks, "_resolve_org_scope", lambda *_args, **_kwargs: org_scope)
     monkeypatch.setattr(tasks, "get_connector", lambda *_args, **_kwargs: connector)
     monkeypatch.setattr(tasks, "connector_fetch_limit", lambda *_args, **_kwargs: DummyContext())
     monkeypatch.setattr(tasks, "init_ingest_job_counters", lambda *_args, **_kwargs: True)
@@ -466,7 +471,14 @@ def test_unified_ingest_task_base64_fallback(monkeypatch):
     monkeypatch.setattr(tasks, "update_job_status", lambda *_args, **_kwargs: None)
 
     with patch("celery.group", return_value=FakeGroup()):
-        result = tasks.unified_ingest_task.run("user-1", "job-1", "file_upload", ["item"], {})
+        result = tasks.unified_ingest_task.run(
+            "user-1",
+            "job-1",
+            "file_upload",
+            ["item"],
+            {},
+            plan_code="starter",
+        )
 
     assert result["status"] == "dispatched"
 
@@ -493,7 +505,7 @@ def test_process_file_task_handles_string_content(monkeypatch):
             "job-1",
             {
                 "filename": "file.txt",
-                "organization_id": "org-1",
+                "organization_id": "11111111-1111-1111-1111-111111111111",
                 "storage_path": "uploads/x",
                 "size_bytes": 1,
                 "mime_type": "text/plain",

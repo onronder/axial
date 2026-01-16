@@ -77,10 +77,10 @@ async def get_usage(
     user_id: str = Depends(get_current_user)
 ):
     """
-    Get current usage statistics for the authenticated user.
+    Get current usage statistics for the authenticated user's organization.
     
-    Returns file count, storage usage, and feature access
-    based on the user's current plan.
+    Returns org-wide file count, storage usage, and feature access
+    based on the effective plan.
     """
     try:
         usage_with_limits = await get_user_usage_with_limits(UUID(user_id))

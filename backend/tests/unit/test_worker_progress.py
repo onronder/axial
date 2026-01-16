@@ -139,7 +139,7 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
@@ -183,7 +183,7 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
@@ -228,7 +228,7 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
@@ -268,7 +268,7 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
@@ -298,7 +298,7 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
@@ -336,7 +336,7 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",
@@ -381,7 +381,7 @@ class TestIngestFileTaskProgress:
 
         file_data = {
             "filename": "test.txt",
-            "organization_id": "org-1",
+            "organization_id": "11111111-1111-1111-1111-111111111111",
             "content_b64": base64.b64encode(b"hello").decode("utf-8"),
             "size_bytes": 5,
             "mime_type": "text/plain",

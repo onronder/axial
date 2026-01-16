@@ -177,12 +177,33 @@ class SubscriptionService:
         # Extract customer_id from webhook data (needed for Customer Portal sessions)
         customer = body.get("customer", {})
         customer_id = customer.get("id") if isinstance(customer, dict) else None
-
+        
+        # ==========================================================================
+        # SUBSCRIPTION STATUS HANDLING (Polar-Managed Billing)
+        # ==========================================================================
+        # Map Polar status to our internal status:
+        # - "active" → "active" (full access)
+        # - "trialing" → "active" (trial has full plan access until expiry)
+        # - "past_due" → "active" (grace period, still has access)
+        # - "canceled" → handled by _cancel_subscription
+        # - "incomplete" → "pending" (payment not completed)
+        # ==========================================================================
+        polar_status = body.get("status", "active")
+        internal_status = "active"
+        
+        if polar_status == "incomplete":
+            internal_status = "pending"
+            logger.info(f"[SubscriptionService] Subscription incomplete for team {team_id}, status=pending")
+        elif polar_status == "trialing":
+            # Trial has FULL plan access - this is critical for the trial experience
+            internal_status = "active"
+            logger.info(f"[SubscriptionService] Trial active for team {team_id}, granting {plan} access")
+        
         supabase.table("subscriptions").upsert({
             "team_id": team_id,
             "polar_id": body.get("id"),
             "customer_id": customer_id,  # Store for Customer Portal API
-            "status": "active",
+            "status": internal_status,
             "plan_type": plan,
             "seats": 1  # Default to 1, future: body.get("quantity", 1)
         }, on_conflict="team_id").execute()
@@ -223,6 +244,18 @@ class SubscriptionService:
         logger.info(f"SUCCESS: Team {team_id} plan updated to {plan}")
 
     async def _cancel_subscription(self, body: Dict[str, Any], action: str):
+        """
+        Handle subscription cancellation or revocation.
+        
+        CRITICAL: This is the enforcement point for the "Hard Zero" rule.
+        When a subscription is canceled:
+        1. Update subscriptions table status to "canceled"
+        2. Update user_profiles.plan to "free" (max_scopes=0)
+        3. Invalidate all plan caches
+        
+        This ensures that ALL ingestion stops immediately when a trial
+        expires or payment fails.
+        """
         metadata = body.get("metadata") or body.get("checkout", {}).get("metadata") or {}
         team_id = metadata.get("team_id")
         
@@ -231,9 +264,33 @@ class SubscriptionService:
              return
 
         supabase = get_supabase()
+        
+        # Update subscriptions table
         supabase.table("subscriptions").update({
             "status": "canceled"
         }).eq("team_id", team_id).execute()
+        
+        # ==========================================================================
+        # HARD ZERO ENFORCEMENT: Downgrade to "free" plan
+        # ==========================================================================
+        # When canceled, the team loses all plan privileges immediately.
+        # The "free" plan has max_scopes=0, which blocks ALL ingestion.
+        # ==========================================================================
+        owner_id = None
+        try:
+            team_response = supabase.table("teams").select("owner_id").eq("id", team_id).single().execute()
+            owner_id = team_response.data.get("owner_id") if team_response.data else None
+            if owner_id:
+                supabase.table("user_profiles").update({
+                    "plan": "free",
+                    "subscription_status": "canceled"
+                }).eq("user_id", owner_id).execute()
+                logger.warning(
+                    f"[SubscriptionService] Team {team_id[:8]}... downgraded to FREE plan. "
+                    f"Action: {action}. Owner: {owner_id[:8]}..."
+                )
+        except Exception as e:
+            logger.error(f"[SubscriptionService] Failed to downgrade plan for team {team_id}: {e}")
 
         # Invalidate cached plans for all team members (owner + members)
         try:
@@ -241,8 +298,6 @@ class SubscriptionService:
                 "member_user_id"
             ).eq("team_id", team_id).neq("status", "removed").execute()
             member_ids = {row.get("member_user_id") for row in (member_rows.data or []) if row.get("member_user_id")}
-            team_response = supabase.table("teams").select("owner_id").eq("id", team_id).single().execute()
-            owner_id = team_response.data.get("owner_id") if team_response.data else None
             if owner_id:
                 member_ids.add(owner_id)
             for member_id in member_ids:
@@ -250,7 +305,7 @@ class SubscriptionService:
         except Exception as e:
             logger.warning(f"[SubscriptionService] Failed to invalidate plan cache for team {team_id}: {e}")
 
-        logger.info(f"Team {team_id} subscription {action}")
+        logger.info(f"Team {team_id} subscription {action} - plan downgraded to FREE")
 
 # Singleton instance
 subscription_service = SubscriptionService()

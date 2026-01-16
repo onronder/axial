@@ -12,7 +12,7 @@ async def test_execute_org_deletion_blocks_active_ingestion():
 
     service = AccountCleanupService(supabase=supabase)
     with pytest.raises(ActiveIngestionError):
-        await service.execute_org_deletion("org-1")
+        await service.execute_org_deletion("org-1", owner_id="user-1")
 
 
 @pytest.mark.asyncio
@@ -30,7 +30,7 @@ async def test_execute_org_deletion_returns_counts():
     supabase.rpc.return_value.execute.return_value = mock_response
 
     service = AccountCleanupService(supabase=supabase)
-    result = await service.execute_org_deletion("org-1")
+    result = await service.execute_org_deletion("org-1", owner_id="user-1")
 
     assert result["vector_store"]["deleted"] == 3
     assert result["documents"]["deleted"] == 2

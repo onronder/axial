@@ -32,6 +32,7 @@ def _make_chain_table(execute_data=None):
     table.eq.return_value = table
     table.in_.return_value = table
     table.limit.return_value = table
+    table.single.return_value = table
     table.update.return_value = table
     table.insert.return_value = table
     table.execute.return_value = SimpleNamespace(data=execute_data)
@@ -51,7 +52,11 @@ def test_process_document_pipeline_handles_exception():
             job_id="job-1",
             file_status_id="status-1",
             source_type="file_upload",
-            metadata={"mime_type": "text/plain", "organization_id": "org-1", "scope_id": "file_upload://file.txt"},
+            metadata={
+                "mime_type": "text/plain",
+                "organization_id": "11111111-1111-1111-1111-111111111111",
+                "scope_id": "file_upload://file.txt",
+            },
         )
 
     assert result.success is False
@@ -132,11 +137,13 @@ def test_unified_ingest_task_dispatches_group_for_docs(monkeypatch):
         SimpleNamespace(data=[{"id": "status-1"}]),
         SimpleNamespace(data=[{"id": "status-2"}]),
     ]
+    scope_identities = _make_chain_table(execute_data=[])
 
     supabase = MagicMock()
     supabase.table.side_effect = lambda name: {
         "ingestion_jobs": ingestion_jobs,
         "ingestion_file_status": file_status,
+        "scope_identities": scope_identities,
     }[name]
 
     @contextmanager
@@ -163,11 +170,12 @@ def test_unified_ingest_task_dispatches_group_for_docs(monkeypatch):
 
     result = tasks.unified_ingest_task._orig_run.__func__(
         task,
-        "user-1",
+        "11111111-1111-1111-1111-111111111111",
         "job-1",
         "file_upload",
         ["a", "b"],
         {},
+        plan_code="starter",
     )
 
     assert result["status"] == "dispatched"
@@ -213,11 +221,12 @@ def test_unified_ingest_task_handles_invalid_content(monkeypatch):
     with pytest.raises(ValueError, match="Unsupported document content type"):
         tasks.unified_ingest_task._orig_run.__func__(
             task,
-            "user-1",
+            "11111111-1111-1111-1111-111111111111",
             "job-1",
             "file_upload",
             ["a"],
             {},
+            plan_code="starter",
         )
 
     assert called["status"] == "failed"
@@ -230,7 +239,7 @@ def test_process_file_task_skips_empty_pdf(monkeypatch):
 
     file_data = {
         "filename": "empty.pdf",
-        "organization_id": "org-1",
+        "organization_id": "11111111-1111-1111-1111-111111111111",
         "content_b64": base64.b64encode(b"content").decode("utf-8"),
         "size_bytes": 7,
         "mime_type": "application/pdf",
@@ -280,7 +289,7 @@ def test_process_file_task_reuses_existing_document(monkeypatch):
 
     file_data = {
         "filename": "file.txt",
-        "organization_id": "org-1",
+        "organization_id": "11111111-1111-1111-1111-111111111111",
         "content_b64": base64.b64encode(b"content").decode("utf-8"),
         "size_bytes": 7,
         "mime_type": "text/plain",
@@ -317,7 +326,7 @@ def test_process_file_task_dispatches_embedding_task(monkeypatch):
 
     file_data = {
         "filename": "file.txt",
-        "organization_id": "org-1",
+        "organization_id": "11111111-1111-1111-1111-111111111111",
         "content_b64": base64.b64encode(b"content").decode("utf-8"),
         "size_bytes": 7,
         "mime_type": "text/plain",
@@ -353,7 +362,7 @@ def test_process_file_task_handles_exception():
 
     file_data = {
         "filename": "file.txt",
-        "organization_id": "org-1",
+        "organization_id": "11111111-1111-1111-1111-111111111111",
         "content_b64": base64.b64encode(b"content").decode("utf-8"),
         "size_bytes": 7,
         "mime_type": "text/plain",

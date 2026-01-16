@@ -18,12 +18,53 @@ logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 
+def _resolve_org_id(supabase, user_id: str) -> str:
+    """
+    Resolve organization_id for org-scoped job access.
+    Falls back to user_id on lookup errors.
+    """
+    try:
+        member = (
+            supabase.table("team_members")
+            .select("team_id")
+            .eq("member_user_id", user_id)
+            .neq("status", "removed")
+            .limit(1)
+            .execute()
+        )
+        member_data = member.data if isinstance(member.data, list) else []
+        if member_data and isinstance(member_data[0], dict):
+            team_id = member_data[0].get("team_id")
+            if team_id:
+                return str(team_id)
+    except Exception as e:
+        logger.warning("⚠️ [Jobs] Failed to resolve team membership for %s: %s", user_id, e)
+
+    try:
+        owner = (
+            supabase.table("teams")
+            .select("id")
+            .eq("owner_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        owner_data = owner.data if isinstance(owner.data, list) else []
+        if owner_data and isinstance(owner_data[0], dict):
+            owner_id = owner_data[0].get("id")
+            if owner_id:
+                return str(owner_id)
+    except Exception as e:
+        logger.warning("⚠️ [Jobs] Failed to resolve owner team for %s: %s", user_id, e)
+
+    return user_id
+
+
 @router.get("/jobs/active", response_model=Optional[IngestionJobResponse])
 async def get_active_job(
     user_id: str = Depends(get_current_user)
 ):
     """
-    Get the user's current active ingestion job.
+    Get the organization's current active ingestion job.
     
     Returns the most recent job with status 'pending' or 'processing'.
     Used by frontend for polling-based progress updates.
@@ -32,12 +73,13 @@ async def get_active_job(
         IngestionJobResponse if active job exists, None otherwise (204)
     """
     supabase = get_supabase()
+    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Query for active jobs (pending or processing)
         response = supabase.table("ingestion_jobs")\
             .select("*")\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .in_("status", ["pending", "processing"])\
             .order("created_at", desc=True)\
             .limit(1)\
@@ -78,16 +120,17 @@ async def get_job_by_id(
     """
     Get a specific job by ID.
     
-    Ensures user can only access their own jobs.
+    Ensures users can only access jobs in their organization.
     """
     supabase = get_supabase()
+    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         try:
             response = supabase.table("ingestion_jobs")\
                 .select("id, provider, total_files, processed_files, status, error_message, created_at")\
                 .eq("id", job_id)\
-                .eq("user_id", user_id)\
+                .eq("organization_id", organization_id)\
                 .single()\
                 .execute()
         except Exception as e:
@@ -131,16 +174,17 @@ async def list_recent_jobs(
     limit: int = 10
 ):
     """
-    List user's recent ingestion jobs.
+    List recent ingestion jobs for the organization.
     
     Useful for showing job history.
     """
     supabase = get_supabase()
+    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         response = supabase.table("ingestion_jobs")\
             .select("*")\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .order("created_at", desc=True)\
             .limit(limit)\
             .execute()
@@ -191,13 +235,14 @@ async def cancel_job(
     from datetime import datetime, timezone
     
     supabase = get_supabase()
+    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Verify ownership
         response = supabase.table("ingestion_jobs")\
             .select("id, status, celery_task_id")\
             .eq("id", job_id)\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .single()\
             .execute()
         
@@ -230,7 +275,7 @@ async def cancel_job(
             "cancelled_by": user_id,
             "message": "Cancelled by user",
             "status_message": "Cancelled by user"
-        }).eq("id", job_id).execute()
+        }).eq("id", job_id).eq("organization_id", organization_id).execute()
         
         # Update any pending/processing file statuses
         supabase.table("ingestion_file_status").update({
@@ -238,6 +283,7 @@ async def cancel_job(
             "status_message": "Cancelled by user",
             "progress": 0
         }).eq("job_id", job_id)\
+         .eq("organization_id", organization_id)\
          .in_("status", ["pending", "uploading", "parsing", "processing", "embedding", "indexing"])\
          .execute()
         
@@ -272,12 +318,14 @@ async def retry_file(
         File status ID and retry count
     """
     supabase = get_supabase()
+    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Get file status
         response = supabase.table("ingestion_file_status")\
-            .select("*, ingestion_jobs!inner(user_id, provider, celery_task_id)")\
+            .select("*, ingestion_jobs!inner(organization_id, provider, celery_task_id)")\
             .eq("id", file_status_id)\
+            .eq("organization_id", organization_id)\
             .single()\
             .execute()
         
@@ -286,8 +334,8 @@ async def retry_file(
         
         file_status = response.data
         
-        # Verify ownership through parent job
-        if file_status["ingestion_jobs"]["user_id"] != user_id:
+        # Verify org ownership through parent job
+        if file_status["ingestion_jobs"]["organization_id"] != organization_id:
             raise HTTPException(status_code=404, detail="File not found")
         
         # Check if file can be retried
@@ -318,7 +366,7 @@ async def retry_file(
             "status_message": f"Retry attempt {retry_count}/3",
             "error_message": None,
             "retry_count": retry_count
-        }).eq("id", file_status_id).execute()
+        }).eq("id", file_status_id).eq("organization_id", organization_id).execute()
         
         # Update parent job to processing if it was completed/failed
         job_id = file_status["job_id"]
@@ -327,6 +375,7 @@ async def retry_file(
             "message": f"Retrying failed file ({retry_count}/3)",
             "status_message": f"Retrying failed file ({retry_count}/3)"
         }).eq("id", job_id)\
+         .eq("organization_id", organization_id)\
          .in_("status", ["completed", "failed"])\
          .execute()
         
@@ -360,13 +409,14 @@ async def get_job_files(
     Returns detailed per-file progress information.
     """
     supabase = get_supabase()
+    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Verify job ownership
         job_response = supabase.table("ingestion_jobs")\
             .select("id")\
             .eq("id", job_id)\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .single()\
             .execute()
         
@@ -377,6 +427,7 @@ async def get_job_files(
         response = supabase.table("ingestion_file_status")\
             .select("*")\
             .eq("job_id", job_id)\
+            .eq("organization_id", organization_id)\
             .order("created_at", desc=False)\
             .execute()
         
@@ -412,13 +463,14 @@ async def retry_job(
     from datetime import datetime, timezone
     
     supabase = get_supabase()
+    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Verify ownership and get job details
         response = supabase.table("ingestion_jobs")\
             .select("id, status")\
             .eq("id", job_id)\
-            .eq("user_id", user_id)\
+            .eq("organization_id", organization_id)\
             .single()\
             .execute()
         
@@ -438,6 +490,7 @@ async def retry_job(
         failed_files_response = supabase.table("ingestion_file_status")\
             .select("id, retry_count")\
             .eq("job_id", job_id)\
+            .eq("organization_id", organization_id)\
             .eq("status", "failed")\
             .execute()
         
@@ -467,7 +520,7 @@ async def retry_job(
                 "status_message": f"Retry attempt {retry_count}/3",
                 "error_message": None,
                 "retry_count": retry_count
-            }).eq("id", file_info["id"]).execute()
+            }).eq("id", file_info["id"]).eq("organization_id", organization_id).execute()
         
         # Reset job status to processing
         supabase.table("ingestion_jobs").update({
@@ -475,7 +528,7 @@ async def retry_job(
             "message": f"Retrying {len(retryable_files)} failed files",
             "status_message": f"Retrying {len(retryable_files)} failed files",
             "updated_at": datetime.now(timezone.utc).isoformat()
-        }).eq("id", job_id).execute()
+        }).eq("id", job_id).eq("organization_id", organization_id).execute()
         
         logger.info(f"🔄 Retry job {job_id}: queued {len(retryable_files)} files for reprocessing")
         

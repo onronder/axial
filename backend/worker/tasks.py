@@ -22,6 +22,7 @@ from core.config import settings
 from core.exceptions import QuotaExceededError
 from core.hashing import compute_content_hash
 from core.ingestion_utils import normalize_provider, normalize_source_type
+from core.quotas import get_plan_limits
 from core.job_counters import (
     init_ingest_job_counters,
     increment_ingest_job_total,
@@ -75,6 +76,206 @@ logger = logging.getLogger(__name__)
 logger.info("✅ Worker tasks module loaded - Cache buster 001")
 
 DEFAULT_INGEST_DISPATCH_BATCH_SIZE = 50
+
+
+def _infer_scope_identity_type(scope_id: str, source_type: Optional[str] = None) -> str:
+    """
+    Infer the identity type from scope_id URI scheme.
+    
+    Maps canonical URI schemes to human-readable identity types.
+    Supports all connector schemes defined in core/scopes.py.
+    """
+    scheme = (scope_id or "").split("://", 1)[0].lower()
+    mapping = {
+        # Cloud storage
+        "github": "github_repo",
+        "s3": "s3_bucket",
+        "box": "box_folder",
+        "dropbox": "dropbox_folder",
+        # Google
+        "gdrive": "gdrive_folder",
+        "google_drive": "gdrive_folder",
+        "drive": "gdrive_folder",
+        # Microsoft
+        "onedrive": "onedrive_folder",
+        "sharepoint": "sharepoint_folder",
+        # Other connectors
+        "notion": "notion_workspace",
+        "sftp": "sftp_server",
+        "web": "web_domain",
+        "upload": "file_upload",
+        "file_upload": "file_upload",
+    }
+    if scheme in mapping:
+        return mapping[scheme]
+    if source_type:
+        return str(source_type)
+    return "unknown"
+
+
+def _validate_org_scope_consistency(
+    organization_id: str,
+    scope_id: str,
+    context: str,
+) -> None:
+    """
+    Validate organization_id and scope_id are present and consistent.
+    
+    Raises ValueError with detailed context if validation fails.
+    This prevents FK violations from org ID mismatches.
+    """
+    if not organization_id:
+        raise ValueError(f"[{context}] organization_id is required but was None/empty")
+    if not scope_id:
+        raise ValueError(f"[{context}] scope_id is required but was None/empty")
+    
+    # Validate UUIDs are properly formatted (basic check)
+    try:
+        import uuid
+        # organization_id should be a valid UUID
+        uuid.UUID(str(organization_id))
+    except ValueError as e:
+        raise ValueError(f"[{context}] Invalid organization_id format: {organization_id}") from e
+
+
+def _ensure_scope_identity_placeholder(
+    supabase,
+    organization_id: str,
+    user_id: str,
+    scope_id: str,
+    source_type: Optional[str] = None,
+    max_scopes: int = 0,
+) -> str:
+    """
+    Ensure a scope identity placeholder exists before document insertion.
+    
+    This is CRITICAL for FK compliance: the documents table has a FK
+    (organization_id, scope_id) -> scope_identities(organization_id, id).
+    
+    Uses the atomic try_create_scope_placeholder RPC to prevent TOCTOU
+    race conditions where multiple workers could exceed quota simultaneously.
+    
+    Args:
+        supabase: Supabase client
+        organization_id: The organization UUID (must match documents.organization_id)
+        user_id: The user who initiated the ingestion
+        scope_id: The canonical scope URI (e.g., 'github://owner/repo')
+        source_type: Optional source type for identity type inference
+        max_scopes: Maximum allowed scopes for the organization's plan
+        
+    Returns:
+        Result string: 'created', 'exists', 'quota_exceeded', 'no_subscription'
+        
+    Raises:
+        QuotaExceededError: If quota would be exceeded
+        ValueError: If org/scope validation fails
+    """
+    if not scope_id:
+        logger.warning("[ScopePlaceholder] Skipping: scope_id is empty")
+        raise ValueError("scope_id is required for placeholder creation")
+    
+    # Validate org/scope consistency to prevent FK violations
+    try:
+        _validate_org_scope_consistency(organization_id, scope_id, "ScopePlaceholder")
+    except ValueError as e:
+        logger.error(f"[ScopePlaceholder] Validation failed: {e}")
+        raise
+    
+    identity_type = _infer_scope_identity_type(scope_id, source_type)
+    
+    # Try to use the atomic RPC function first
+    try:
+        result = supabase.rpc(
+            "try_create_scope_placeholder",
+            {
+                "p_organization_id": organization_id,
+                "p_user_id": user_id,
+                "p_scope_id": scope_id,
+                "p_source_type": identity_type,
+                "p_max_scopes": max_scopes,
+            }
+        ).execute()
+        
+        status = result.data if result.data else "exists"
+        
+        if status == "no_subscription":
+            logger.warning(f"[ScopePlaceholder] BLOCKED: No subscription for org {organization_id[:8]}...")
+            raise QuotaExceededError(
+                "Active subscription required. Please subscribe to ingest data.",
+                {"reason": "no_subscription", "organization_id": organization_id},
+            )
+        
+        if status == "quota_exceeded":
+            logger.warning(f"[ScopePlaceholder] Quota exceeded for org {organization_id[:8]}...")
+            raise QuotaExceededError(
+                "Scope limit reached for your plan.",
+                {"max_scopes": max_scopes, "organization_id": organization_id},
+            )
+        
+        logger.debug(f"[ScopePlaceholder] {status}: {scope_id[:50]}... (org: {organization_id[:8]}...)")
+        return status
+        
+    except QuotaExceededError:
+        raise
+    except Exception as e:
+        # Fallback to direct upsert if RPC not available (e.g., migration not run yet)
+        logger.warning(f"[ScopePlaceholder] RPC failed, falling back to direct upsert: {e}")
+        return _ensure_scope_identity_placeholder_fallback(
+            supabase, organization_id, user_id, scope_id, identity_type
+        )
+
+
+def _ensure_scope_identity_placeholder_fallback(
+    supabase,
+    organization_id: str,
+    user_id: str,
+    scope_id: str,
+    identity_type: str,
+) -> str:
+    """
+    Fallback placeholder creation when atomic RPC is not available.
+    
+    Note: This has race condition risk - use atomic RPC when possible.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        supabase.table("scope_identities").upsert(
+            {
+                "id": scope_id,
+                "organization_id": organization_id,
+                "user_id": user_id,
+                "type": identity_type,
+                "status": "placeholder",
+                "summary": "Generating identity...",
+                "file_tree": "",
+                "attributes": {"is_placeholder": True},
+                "last_ingested_at": now,
+                "updated_at": now,
+            },
+            on_conflict="organization_id,id",
+            ignore_duplicates=True,
+        ).execute()
+        
+        logger.debug(f"[ScopePlaceholder] Ensured placeholder for {scope_id[:50]}... (org: {organization_id[:8]}...)")
+        return "created"
+        
+    except Exception as e:
+        logger.error(f"[ScopePlaceholder] Failed to create placeholder for {scope_id}: {e}")
+        
+        # Verify the placeholder exists (race condition handling)
+        try:
+            check = supabase.table("scope_identities").select("id").eq(
+                "organization_id", organization_id
+            ).eq("id", scope_id).limit(1).execute()
+            
+            if check.data:
+                logger.info(f"[ScopePlaceholder] Placeholder exists (concurrent create): {scope_id[:50]}...")
+                return "exists"
+        except Exception:
+            pass
+        
+        raise
 
 
 # ============================================================
@@ -415,18 +616,25 @@ def ingest_document_batched(
     file_status_id: str = None,  # NEW: for per-file progress tracking
     content_hash: str | None = None,
     source_id: str | None = None,
+    max_scopes: int = 0,  # For atomic quota check in _ensure_scope_identity_placeholder
 ) -> str:
     """
     Insert document and chunks in batches to prevent DB timeouts.
     
     This replaces the single-RPC approach which times out on large documents.
     
+    IMPORTANT: This function enforces FK constraints by ensuring scope_identities
+    exist before document insertion. The (organization_id, scope_id) must match
+    exactly with the scope_identities table.
+    
     Args:
         supabase: Supabase client
         user_id: User ID
+        organization_id: Organization ID
+        organization_id: Organization UUID (MUST match scope identity)
         doc_title: Document title
         source_type: Source type (file, drive, notion, web)
-        metadata: Document metadata dict
+        metadata: Document metadata dict (must contain scope_id)
         chunks_payload: List of chunk dicts with content, embedding, etc.
         file_size_bytes: File size for quota tracking
         job_id: Optional job ID for progress updates
@@ -435,11 +643,53 @@ def ingest_document_batched(
         
     Returns:
         Document ID (UUID string)
+        
+    Raises:
+        ValueError: If organization_id or scope_id is missing/invalid
     """
     DB_BATCH_SIZE = max(1, min(settings.CHUNK_INSERT_BATCH_SIZE, 200))  # Configurable batch size to prevent timeouts
     source_type = normalize_source_type(source_type) or source_type
     metadata = metadata or {}
     scope_id = metadata.get("scope_id")
+    
+    # ==========================================================================
+    # HARD SCOPE_ID REQUIREMENT
+    # ==========================================================================
+    # Business Rule: ALL documents MUST have a scope_id for FK compliance.
+    # Documents without scope_id violate data custody and break multi-tenancy.
+    # This is a hard error, not a warning.
+    # ==========================================================================
+    if not scope_id:
+        error_msg = (
+            f"CRITICAL: scope_id is REQUIRED for document ingestion. "
+            f"Document '{doc_title}' has no scope_id in metadata. "
+            f"This is a connector bug - all connectors must stamp scope_id."
+        )
+        logger.error(f"[IngestDoc] {error_msg}")
+        raise ValueError(error_msg)
+    
+    # Validate org/scope consistency BEFORE any database operations
+    _validate_org_scope_consistency(organization_id, scope_id, "ingest_document_batched")
+    
+    # Cross-check: ensure metadata org_id matches parameter
+    metadata_org_id = metadata.get("organization_id")
+    if metadata_org_id and str(metadata_org_id) != str(organization_id):
+        logger.warning(
+            f"[IngestDoc] organization_id mismatch: param={organization_id[:8]}... "
+            f"vs metadata={str(metadata_org_id)[:8]}... - using parameter value"
+        )
+        metadata["organization_id"] = organization_id
+
+    # Ensure scope identity placeholder exists BEFORE document insert
+    # Uses atomic quota check to prevent TOCTOU race conditions
+    _ensure_scope_identity_placeholder(
+            supabase=supabase,
+            organization_id=organization_id,
+            user_id=user_id,
+            scope_id=str(scope_id),
+            source_type=source_type,
+            max_scopes=max_scopes,
+        )
     
     # Step 1: Create parent document record FIRST
     # NOTE: Using actual column names from migrations:
@@ -464,12 +714,20 @@ def ingest_document_batched(
         metadata.setdefault("source_id", resolved_source_id)
         doc_data["source_id"] = resolved_source_id
 
+    # ==========================================================================
+    # DOCUMENT DEDUPLICATION (Organization-Wide)
+    # ==========================================================================
+    # Dedup at organization level, not user level. This ensures:
+    # 1. One org stores only one copy of a document
+    # 2. Multiple team members can't create duplicates
+    # 3. Storage/quota is calculated correctly
+    # ==========================================================================
     existing_doc = None
     if resolved_source_id:
         existing = (
             supabase.table("documents")
             .select("id, content_hash")
-            .eq("user_id", user_id)
+            .eq("organization_id", organization_id)  # Org-wide dedup
             .eq("source_id", resolved_source_id)
             .limit(1)
             .execute()
@@ -478,9 +736,9 @@ def ingest_document_batched(
         if existing_data:
             existing_doc = existing_data[0]
     elif content_hash:
-        existing = supabase.table("documents").select("id").eq("user_id", user_id).eq(
-            "title", doc_title
-        ).eq("content_hash", content_hash).limit(1).execute()
+        existing = supabase.table("documents").select("id").eq(
+            "organization_id", organization_id  # Org-wide dedup
+        ).eq("title", doc_title).eq("content_hash", content_hash).limit(1).execute()
         existing_data = existing.data if isinstance(getattr(existing, "data", None), list) else []
         if existing_data:
             existing_doc = {"id": existing_data[0]["id"], "content_hash": content_hash}
@@ -565,6 +823,7 @@ def create_file_status(
     supabase, 
     job_id: str, 
     user_id: str, 
+    organization_id: str,
     filename: str, 
     file_size: int = 0
 ) -> Optional[str]:
@@ -585,6 +844,7 @@ def create_file_status(
         result = supabase.table("ingestion_file_status").insert({
             "job_id": job_id,
             "user_id": user_id,
+            "organization_id": organization_id,
             "filename": filename,
             "file_size_bytes": file_size,
             "status": "pending",
@@ -1161,10 +1421,13 @@ def process_document_pipeline(
             **(result.metadata or {}),
         }
         
-        # Extract organization_id from metadata
+        # Extract organization_id and max_scopes from metadata
         organization_id = (metadata or {}).get("organization_id")
         if not organization_id:
             raise ValueError("organization_id is required in metadata for ingestion")
+        
+        # Get max_scopes from metadata (propagated from parent task)
+        pipeline_max_scopes = (metadata or {}).get("max_scopes", 0)
         
         doc_id = ingest_document_batched(
             supabase=supabase,
@@ -1180,6 +1443,7 @@ def process_document_pipeline(
             file_status_id=file_status_id,
             content_hash=content_hash,
             source_id=source_id,
+            max_scopes=pipeline_max_scopes,  # Propagate quota for atomic scope check
         )
         
         # 5. Complete
@@ -1327,10 +1591,27 @@ def unified_ingest_task(
     logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}, Plan: {plan_code or 'starter'}")
     
     supabase = get_supabase()
-    org_scope = _resolve_org_scope(supabase, user_id)
-    organization_id = org_scope.get("team_id") or user_id
-    if not org_scope.get("team_id"):
-        logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id")
+    organization_id = None
+    if job_id:
+        try:
+            job_res = (
+                supabase.table("ingestion_jobs")
+                .select("organization_id")
+                .eq("id", job_id)
+                .single()
+                .execute()
+            )
+            if job_res.data and job_res.data.get("organization_id"):
+                organization_id = job_res.data["organization_id"]
+        except Exception:
+            pass
+    if not organization_id:
+        org_scope = _resolve_org_scope(supabase, user_id)
+        organization_id = org_scope.get("team_id") or user_id
+        if not org_scope.get("team_id"):
+            logger.warning(
+                f"[UnifiedIngest:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id"
+            )
     
     try:
         # Store Celery task ID for cancellation support
@@ -1396,6 +1677,65 @@ def unified_ingest_task(
         file_tasks = []
         total_files = 0
         last_group_id = None
+        scope_ids_seen: set[str] = set()
+        new_scope_count = 0
+        scope_plan_code = plan_code
+        if scope_plan_code not in {"free", "starter", "pro", "enterprise"}:
+            scope_plan_code = None
+        if not scope_plan_code:
+            try:
+                scope_plan_code = asyncio.run(team_service.get_effective_plan(user_id))
+            except Exception:
+                scope_plan_code = "free"
+        max_scopes = int(get_plan_limits(scope_plan_code).max_scopes or 0)
+        existing_scope_count = 0
+        
+        # ==========================================================================
+        # HARD ZERO RULE: Block ingestion if no active subscription
+        # ==========================================================================
+        # Business Rule: No Polar subscription (or trial) = No data ingestion.
+        # This check happens BEFORE any documents are processed to fail fast.
+        # ==========================================================================
+        if max_scopes <= 0:
+            logger.warning(
+                f"[UnifiedIngest:{task_id}] ❌ BLOCKED: No subscription for user {user_id[:8]}... "
+                f"(max_scopes={max_scopes}, plan={scope_plan_code})"
+            )
+            update_job_status(
+                supabase,
+                job_id,
+                "failed",
+                error_message="Active subscription required. Please subscribe to ingest data.",
+            )
+            create_notification(
+                supabase, user_id,
+                "Subscription Required",
+                "Please subscribe to a plan to ingest data. Visit Settings > Billing.",
+                "error",
+                {"job_id": job_id, "reason": "no_subscription"}
+            )
+            raise QuotaExceededError(
+                "Active subscription required. Please subscribe to ingest data.",
+                {
+                    "limit": 0,
+                    "plan": scope_plan_code or "none",
+                    "organization_id": organization_id,
+                    "reason": "no_subscription",
+                },
+            )
+        
+        # Count existing scopes for quota tracking
+        scope_count = (
+            supabase.table("scope_identities")
+            .select("id", count="exact")
+            .eq("organization_id", organization_id)
+            .execute()
+        )
+        count_value = getattr(scope_count, "count", 0)
+        try:
+            existing_scope_count = int(count_value or 0)
+        except (TypeError, ValueError):
+            existing_scope_count = 0
 
         def _flush_batch() -> None:
             nonlocal file_tasks, last_group_id
@@ -1435,6 +1775,7 @@ def unified_ingest_task(
                 file_status_result = supabase.table("ingestion_file_status").insert({
                     "job_id": job_id,
                     "user_id": user_id,
+                    "organization_id": organization_id,
                     "filename": doc.filename,
                     "file_size_bytes": doc.size_bytes or 0,  # FIXED: was "file_size"
                     "status": "pending",
@@ -1478,6 +1819,26 @@ def unified_ingest_task(
                     raise ValueError("scope_id is required for ingestion")
                 scope_id = str(scope_id)
 
+                # Use atomic scope quota check + placeholder creation
+                # This prevents TOCTOU race conditions where multiple workers
+                # could pass the quota check before any creates the placeholder
+                if scope_id not in scope_ids_seen:
+                    scope_ids_seen.add(scope_id)
+                    
+                    # The atomic function handles: exists check, quota check, placeholder creation
+                    result = _ensure_scope_identity_placeholder(
+                        supabase=supabase,
+                        organization_id=organization_id,
+                        user_id=user_id,
+                        scope_id=scope_id,
+                        source_type=doc_source_type,
+                        max_scopes=max_scopes,  # Pass quota for atomic check
+                    )
+                    
+                    # Track new scopes for local quota tracking
+                    if result == "created":
+                        new_scope_count += 1
+
                 file_data = {
                     "filename": doc.filename,
                     "content_b64": content_b64,
@@ -1503,6 +1864,7 @@ def unified_ingest_task(
                         connector_type=connector_type,
                         scope_id=scope_id,
                         plan_code=plan_code,
+                        max_scopes=max_scopes,  # Propagate quota for atomic scope check
                     )
                 )
                 total_files += 1
@@ -1663,6 +2025,7 @@ def process_file_task(
     connector_type: str,
     scope_id: str,
     plan_code: Optional[str] = None,
+    max_scopes: int = 0,  # Propagated from parent task for atomic quota check
 ):
     """
     Process a SINGLE file independently.
@@ -1677,6 +2040,7 @@ def process_file_task(
         file_status_id: ID of the file status record for progress tracking
         connector_type: Source type for metadata
         scope_id: Canonical scope URI for the file
+        max_scopes: User's quota limit (propagated for atomic scope creation)
     """
     import base64
     import tempfile
@@ -2068,6 +2432,7 @@ def process_file_task(
             "connector_type": connector_type,
             "filename": filename,
             "plan_code": plan_code,
+            "max_scopes": max_scopes,  # Propagate quota for atomic scope check
         }
 
         generate_embeddings_task.apply_async(
@@ -2136,15 +2501,29 @@ def process_file_task(
 def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_code: Optional[str] = None):
     """
     Generate embeddings for parsed chunks on the embedding queue, then dispatch indexing.
+    
+    IMPORTANT: Validates organization_id consistency to prevent FK violations downstream.
     """
     task_id = self.request.id
     supabase = get_supabase()
     job_id = doc_payload.get("job_id")
     file_status_id = doc_payload.get("file_status_id")
     user_id = doc_payload.get("user_id")
-    organization_id = doc_payload.get("organization_id") or (doc_payload.get("metadata") or {}).get("organization_id")
+    metadata = doc_payload.get("metadata") or {}
+    organization_id = doc_payload.get("organization_id") or metadata.get("organization_id")
+    scope_id = metadata.get("scope_id")
+    
     if not organization_id:
         raise ValueError("organization_id is required for ingestion")
+    
+    # Validate org/scope consistency early to catch mismatches before expensive embedding
+    if scope_id:
+        try:
+            _validate_org_scope_consistency(organization_id, scope_id, f"generate_embeddings_task:{task_id}")
+        except ValueError as e:
+            logger.error(f"[EmbedTask:{task_id}] Org/scope validation failed: {e}")
+            raise
+    
     filename = doc_payload.get("filename", "unknown")
     plan_label = plan_code or doc_payload.get("plan_code") or settings.PLAN_STARTER
 
@@ -2220,17 +2599,31 @@ def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_
 def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
     """
     Persist document and chunk embeddings on the indexing queue.
+    
+    IMPORTANT: This is the final stage before DB insert. Validates org/scope
+    consistency to catch any mismatches that slipped through earlier stages.
     """
     task_id = self.request.id
     supabase = get_supabase()
     user_id = doc_payload.get("user_id")
-    organization_id = doc_payload.get("organization_id") or (doc_payload.get("metadata") or {}).get("organization_id")
+    metadata = doc_payload.get("metadata") or {}
+    organization_id = doc_payload.get("organization_id") or metadata.get("organization_id")
+    scope_id = metadata.get("scope_id")
     job_id = doc_payload.get("job_id")
     file_status_id = doc_payload.get("file_status_id")
     filename = doc_payload.get("filename", "unknown")
+    max_scopes = doc_payload.get("max_scopes", 0)  # Extract quota for atomic scope check
     
     if not organization_id:
         raise ValueError("organization_id is required for indexing")
+    
+    # Final validation before DB insert - this is our last chance to catch mismatches
+    if scope_id:
+        try:
+            _validate_org_scope_consistency(organization_id, scope_id, f"index_chunks_task:{task_id}")
+        except ValueError as e:
+            logger.error(f"[IndexTask:{task_id}] Org/scope validation failed: {e}")
+            raise
 
     try:
         update_file_status(
@@ -2275,6 +2668,7 @@ def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
             file_status_id=file_status_id,
             content_hash=doc_payload.get("content_hash"),
             source_id=doc_payload.get("source_id") or (doc_payload.get("metadata") or {}).get("source_id"),
+            max_scopes=max_scopes,  # Propagate quota for atomic scope check
         )
 
         total_chunks = len(chunk_records)
@@ -2673,6 +3067,27 @@ def crawl_discovery_task(
     logger.info(f"🕸️ [Discovery:{task_id}] URL: {root_url}, Type: {crawl_type}, Depth: {max_depth}, Max: {max_pages}")
     
     supabase = get_supabase()
+    organization_id = crawl_config.get("organization_id")
+    if not organization_id and job_id:
+        try:
+            job_res = (
+                supabase.table("ingestion_jobs")
+                .select("organization_id")
+                .eq("id", job_id)
+                .single()
+                .execute()
+            )
+            if job_res.data and job_res.data.get("organization_id"):
+                organization_id = job_res.data["organization_id"]
+        except Exception:
+            pass
+    if not organization_id:
+        org_scope = _resolve_org_scope(supabase, user_id)
+        organization_id = org_scope.get("team_id") or user_id
+        if not org_scope.get("team_id"):
+            logger.warning(
+                f"🕸️ [Discovery:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id"
+            )
     
     try:
         # Import connector
@@ -2796,7 +3211,7 @@ def crawl_discovery_task(
                 for i in range(0, len(urls_to_process), batch_size):
                     batch = urls_to_process[i:i + batch_size]
                     existing_res = supabase.table("documents").select("source_url").eq(
-                        "user_id", user_id
+                        "organization_id", organization_id
                     ).in_(
                         "source_url", batch
                     ).execute()
@@ -2851,6 +3266,7 @@ def crawl_discovery_task(
                     supabase,
                     job_id,
                     user_id,
+                    organization_id,
                     filename=url,
                     file_size=0,
                 ))
@@ -3130,6 +3546,13 @@ def process_page_task(
         if not org_scope.get("team_id"):
             logger.warning(f"[Page:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id")
         doc_metadata["organization_id"] = organization_id
+        
+        # Get user's quota for atomic scope check
+        try:
+            page_plan_code = asyncio.run(team_service.get_effective_plan(user_id))
+        except Exception:
+            page_plan_code = "free"
+        page_max_scopes = int(get_plan_limits(page_plan_code).max_scopes or 0)
         if _is_duplicate_document(supabase, content_hash, org_scope, user_id):
             # Treat as skipped/duplicate; do not parse/embed
             update_file_status(
@@ -3163,6 +3586,7 @@ def process_page_task(
             source_url=source_url,
             content_hash=content_hash,
             source_id=source_url,
+            max_scopes=page_max_scopes,  # Propagate quota for atomic scope check
         )
 
         if not doc_id:

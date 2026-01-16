@@ -15,6 +15,7 @@ from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, A
 from connectors.base import BaseConnector, ConnectorAuthError, ConnectorRateLimitError, ConnectorTransientError, RemoteFile
 from core.db import get_supabase
 from core.config import settings
+from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 from connectors.limits import connector_fetch_limit
 from core.resilience import with_google_retry
@@ -349,6 +350,9 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                     fileId=item_id,
                     fields="id, name, mimeType, webViewLink, size",
                 )
+                
+                # Generate scope_id using canonical URI builder
+                scope_id = build_scope_uri("google_drive", {"folder_id": item_id})
 
                 if file_meta["mimeType"] == "application/vnd.google-apps.folder":
                     folder_files = list(self._get_all_files_recursive(service, item_id))
@@ -358,11 +362,11 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                         file_meta["name"],
                     )
                     for f in folder_files:
-                        doc = self._build_source_document(service, f, parent_id=item_id)
+                        doc = self._build_source_document(service, f, parent_id=item_id, scope_id=scope_id)
                         if doc:
                             yield doc
                 else:
-                    doc = self._build_source_document(service, file_meta, parent_id=None)
+                    doc = self._build_source_document(service, file_meta, parent_id=None, scope_id=scope_id)
                     if doc:
                         yield doc
             except Exception as e:
@@ -375,7 +379,8 @@ class DriveConnector(EnhancedConnector, BaseConnector):
         self,
         service,
         file_meta: Dict[str, Any],
-        parent_id: Optional[str]
+        parent_id: Optional[str],
+        scope_id: str,
     ) -> Optional[SourceDocument]:
         content_bytes, export_mime, filename = self._download_file_content(service, file_meta)
         if not content_bytes:
@@ -395,6 +400,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                 "mime_type": export_mime,
                 "file_size": file_size,
                 "size": file_size,
+                "scope_id": scope_id,  # CRITICAL: Required for FK compliance
             },
             source_type=SourceType.GOOGLE_DRIVE,
             source_id=file_id or "unknown",

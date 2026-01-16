@@ -49,13 +49,36 @@ class TeamService:
     - Handle team membership
     """
 
+    # Known valid plan codes - keep in sync with PRICING_PLANS.md
+    VALID_PLANS = frozenset({"free", "starter", "pro", "enterprise"})
+
     @staticmethod
     def _normalize_plan(plan: Optional[str]) -> str:
+        """
+        Normalize plan code to known valid values.
+        
+        Args:
+            plan: Raw plan code from database or webhook
+            
+        Returns:
+            Normalized plan code: 'free', 'starter', 'pro', or 'enterprise'
+            
+        Note: Unknown plan codes are logged and default to 'free' for safety.
+        This prevents accidental privilege escalation while surfacing
+        configuration issues in logs.
+        """
         if not plan:
             return "free"
         plan_lower = plan.lower()
-        if plan_lower in {"free", "starter", "pro", "enterprise"}:
+        if plan_lower in TeamService.VALID_PLANS:
             return plan_lower
+        
+        # Log unknown plan codes for monitoring/alerting
+        # This helps identify webhook configuration issues or DB inconsistencies
+        logger.warning(
+            f"[TeamService] Unknown plan code '{plan}' normalized to 'free'. "
+            f"Valid plans: {', '.join(sorted(TeamService.VALID_PLANS))}"
+        )
         return "free"
     
     @alru_cache(maxsize=1000, ttl=60)
@@ -89,12 +112,9 @@ class TeamService:
             ).execute()
             
             if response.data:
-                plan = str(response.data).lower()
+                plan = self._normalize_plan(str(response.data))
                 logger.debug(f"[TeamService] User {user_id[:8]}... effective plan: {plan}")
-                # Legacy RPC can return stale/unknown labels; normalize to known plans.
-                if plan in {"free", "starter", "pro", "enterprise"}:
-                    return plan
-                return await self._get_effective_plan_direct(user_id)
+                return plan
             
             # Fallback: direct query
             return await self._get_effective_plan_direct(user_id)
@@ -127,7 +147,7 @@ class TeamService:
                 if team_data_response.data:
                     data = team_data_response.data
                     
-                    # Check subscription first (source of truth)
+                    # Subscription is source of truth (no subscription = free)
                     if data.get('subscription'):
                         sub = data['subscription']
                         sub_status = sub.get('status', '')
@@ -136,16 +156,14 @@ class TeamService:
                         if sub_status == 'active':
                             logger.info(f"[TeamService] User {user_id[:8]}... has active subscription: {sub_plan}")
                             return sub_plan
-                        elif sub_status == 'canceled':
-                            logger.info(f"[TeamService] User {user_id[:8]}... subscription canceled, returning 'free'")
-                            return "free"
-                        elif sub_status in ['trialing']:
-                            return self._normalize_plan(sub_plan)
+                        if sub_status in ['trialing']:
+                            return sub_plan
+                        logger.info(f"[TeamService] User {user_id[:8]}... subscription inactive, returning 'free'")
+                        return "free"
                     
-                    # Fallback to profile
                     if data.get('profile'):
-                        profile = data['profile']
-                        return self._normalize_plan(profile.get("plan"))
+                        logger.info(f"[TeamService] User {user_id[:8]}... no subscription record, returning 'free'")
+                        return "free"
                         
             except Exception as rpc_error:
                 logger.warning(f"[TeamService] RPC call failed, falling back to sequential queries: {rpc_error}")
@@ -174,36 +192,13 @@ class TeamService:
                     if sub_status == "active":
                         logger.info(f"[TeamService] User {user_id[:8]}... has active subscription: {sub_plan}")
                         return sub_plan
-                    elif sub_status == "canceled":
-                        logger.info(f"[TeamService] User {user_id[:8]}... subscription canceled, returning 'free'")
-                        return "free"
-                    # Other statuses (trialing, etc.) - still grant access
-                    elif sub_status in ["trialing"]:
-                        return self._normalize_plan(sub_plan)
+                    if sub_status in ["trialing"]:
+                        return sub_plan
+                    logger.info(f"[TeamService] User {user_id[:8]}... subscription inactive, returning 'free'")
+                    return "free"
                 
-                # Step 3: Fallback to legacy user_profiles.plan (for users without subscription record)
-                team_response = supabase.table("teams").select(
-                    "owner_id"
-                ).eq("id", team_id).single().execute()
-                
-                if team_response.data:
-                    owner_id = team_response.data["owner_id"]
-                    is_owner = (owner_id == user_id)
-                    
-                    profile_response = supabase.table("user_profiles").select(
-                        "plan"
-                    ).eq("user_id", owner_id).single().execute()
-                    
-                    if profile_response.data:
-                        owner_plan = self._normalize_plan(profile_response.data.get("plan"))
-                        
-                        if not is_owner:
-                            plan_limits = get_plan_limits(owner_plan)
-                            if plan_limits.max_team_seats <= 1:
-                                logger.warning(f"[TeamService] Team lockout for member {user_id[:8]}...")
-                                return "free"
-                        
-                        return self._normalize_plan(owner_plan)
+                # No subscription record for team -> free
+                return "free"
             
             # Fallback: Get user's own plan from subscription or profile
             # First check if user has their own subscription via their team
@@ -218,14 +213,7 @@ class TeamService:
                     if own_sub.data[0].get("status") == "active":
                         return self._normalize_plan(own_sub.data[0].get("plan_type"))
             
-            # Final fallback: user_profiles.plan
-            own_profile = supabase.table("user_profiles").select(
-                "plan"
-            ).eq("user_id", user_id).single().execute()
-            
-            if own_profile.data:
-                return self._normalize_plan(own_profile.data.get("plan"))
-            
+            # Final fallback: no active subscription
             return "free"
             
         except Exception as e:
@@ -375,8 +363,14 @@ class TeamService:
             
         except Exception as e:
             logger.error(f"[TeamService] verify_team_access failed: {e}")
-            # On error, fail open but log
-            return {"allowed": True, "reason": "error", "plan": "free", "error": str(e)}
+            # On error, fail closed to prevent unintended access
+            return {
+                "allowed": False,
+                "reason": "error",
+                "plan": "free",
+                "message": "Unable to verify team access. Please try again.",
+                "error": str(e),
+            }
     
     async def get_user_team_member(self, user_id: str) -> Optional[Any]:
         """

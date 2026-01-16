@@ -84,7 +84,8 @@ def test_unified_ingest_task_file_upload(
             job_id=job_id,
             connector_type="file_upload",
             item_ids=[storage_path],
-            credentials=None
+            credentials=None,
+            plan_code="starter",
         )
     
     # Verify
@@ -137,7 +138,8 @@ def test_unified_ingest_task_google_drive(
             job_id=job_id,
             connector_type="google_drive",
             item_ids=file_ids,
-            credentials=credentials
+            credentials=credentials,
+            plan_code="starter",
         )
     
     # Verify
@@ -188,7 +190,8 @@ def test_unified_ingest_task_notion(
             job_id=job_id,
             connector_type="notion",
             item_ids=page_ids,
-            credentials=credentials
+            credentials=credentials,
+            plan_code="starter",
         )
     
     # Verify
@@ -232,7 +235,8 @@ def test_unified_ingest_task_web(
             job_id=job_id,
             connector_type="web",
             item_ids=[url],
-            credentials=None
+            credentials=None,
+            plan_code="starter",
         )
     
     # Verify
@@ -254,7 +258,8 @@ def test_unified_ingest_task_invalid_connector(
             job_id=str(uuid4()),
             connector_type="invalid",
             item_ids=["item1"],
-            credentials=None
+            credentials=None,
+            plan_code="starter",
         )
 
 
@@ -278,7 +283,8 @@ def test_unified_ingest_task_connector_failure(
             job_id=str(uuid4()),
             connector_type="file_upload",
             item_ids=["test.pdf"],
-            credentials=None
+            credentials=None,
+            plan_code="starter",
         )
 
 
@@ -312,7 +318,8 @@ def test_unified_ingest_task_pipeline_failure(
                 job_id=str(uuid4()),
                 connector_type="file_upload",
                 item_ids=["test.pdf"],
-                credentials=None
+                credentials=None,
+                plan_code="starter",
             )
 
 
@@ -345,7 +352,8 @@ def test_unified_ingest_task_quota_exceeded(
                 job_id=str(uuid4()),
                 connector_type="file_upload",
                 item_ids=["test.pdf"],
-                credentials=None
+                credentials=None,
+                plan_code="starter",
             )
 
 
@@ -382,7 +390,8 @@ def test_unified_ingest_task_job_status_updates(
             job_id=job_id,
             connector_type="file_upload",
             item_ids=["test.pdf"],
-            credentials=None
+            credentials=None,
+            plan_code="starter",
         )
     
     # Verify job status was updated
@@ -409,7 +418,8 @@ def test_unified_ingest_task_empty_item_ids(
         job_id=str(uuid4()),
         connector_type="file_upload",
         item_ids=[],
-        credentials=None
+        credentials=None,
+        plan_code="starter",
     )
     
     # Verify
@@ -425,6 +435,7 @@ def test_unified_ingest_task_requires_connector_type():
             connector_type=None,
             item_ids=[],
             credentials=None,
+            plan_code="starter",
         )
 
 
@@ -449,6 +460,7 @@ def test_unified_ingest_task_wraps_item_id_when_item_ids_none():
             item_ids=None,
             item_id="item-1",
             credentials=None,
+            plan_code="starter",
         )
 
     assert captured["item_ids"] == ["item-1"]
@@ -474,6 +486,7 @@ def test_unified_ingest_task_wraps_item_ids_when_not_list():
             connector_type="file_upload",
             item_ids="item-1",
             credentials=None,
+            plan_code="starter",
         )
 
     assert captured["item_ids"] == ["item-1"]
@@ -496,6 +509,7 @@ def test_unified_ingest_task_logs_provider_normalization_failure():
             connector_type="Google-Drive",
             item_ids=[],
             credentials=None,
+            plan_code="starter",
         )
 
     assert result["status"] == "completed"
@@ -526,7 +540,8 @@ def test_unified_ingest_task_retry_on_connection_error(
             job_id=str(uuid4()),
             connector_type="file_upload",
             item_ids=["test.pdf"],
-            credentials=None
+            credentials=None,
+            plan_code="starter",
         )
     
     # Verify retry was called
@@ -566,7 +581,8 @@ def test_unified_ingest_task_multiple_files(
             job_id=str(uuid4()),
             connector_type="file_upload",
             item_ids=["file1", "file2", "file3"],
-            credentials=None
+            credentials=None,
+            plan_code="starter",
         )
     
     # Verify

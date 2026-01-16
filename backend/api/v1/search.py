@@ -123,20 +123,10 @@ async def search_documents(
         
     except Exception as e:
         logger.error(f"❌ [Search] Hybrid search failed: {e}")
-        # Fallback to match_documents if hybrid_search unavailable
-        try:
-            response = supabase.rpc("match_documents", {
-                "query_embedding": query_vector,
-                "match_threshold": payload.threshold,
-                "match_count": payload.limit,
-                "filter_org_id": organization_id
-            }).execute()
-            matches = response.data or []
-        except Exception as fallback_e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Search failed: {str(fallback_e)}"
-            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Search failed: {str(e)}"
+        )
     
     # 3. Analyze scope distribution (optional)
     scope_analysis_response = None
