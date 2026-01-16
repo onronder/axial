@@ -299,7 +299,9 @@ class TestUsageServiceWithMocks:
             {"id": "doc-1", "file_size_bytes": 1_000_000},
             {"id": "doc-2", "file_size_bytes": 2_000_000},
         ]
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = docs_mock
+        docs_query = mock_supabase.table.return_value.select.return_value.eq.return_value
+        docs_query.neq.return_value = docs_query
+        docs_query.execute.return_value = docs_mock
         
         with patch("services.usage.get_supabase", return_value=mock_supabase), \
              patch("services.usage.team_service.get_effective_plan", new=AsyncMock(return_value="starter")):

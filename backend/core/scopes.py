@@ -12,6 +12,23 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
+SCOPE_PREFIX_BY_PROVIDER: Dict[str, str] = {
+    "box": "box://",
+    "dropbox": "dropbox://",
+    "file_upload": "upload://",
+    "upload": "upload://",
+    "github": "github://",
+    "google_drive": "gdrive://",
+    "drive": "gdrive://",
+    "gdrive": "gdrive://",
+    "notion": "notion://",
+    "onedrive": "onedrive://",
+    "s3": "s3://",
+    "sftp": "sftp://",
+    "sharepoint": "sharepoint://",
+    "web": "web://",
+}
+
 
 def _require(metadata: Dict[str, Any], *keys: str) -> str:
     for key in keys:

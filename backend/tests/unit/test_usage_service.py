@@ -9,6 +9,7 @@ def _make_table(execute_result=None, execute_side_effect=None):
     table = MagicMock()
     table.select.return_value = table
     table.eq.return_value = table
+    table.neq.return_value = table
     table.single.return_value = table
     table.limit.return_value = table
     if execute_side_effect is not None:

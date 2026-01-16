@@ -168,13 +168,20 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
             COALESCE(SUM(file_size_bytes), 0) as total_bytes
         FROM documents
         WHERE user_id = '{str(user_id)}'
+          AND source_type != 'identity'
+          AND source_type != 'scope_identity'
     """
     
     # Alternative: Use PostgREST count and iterate (less efficient but works)
     # For MVP, we'll query the documents directly
-    docs_result = supabase.table("documents").select(
-        "id, file_size_bytes"
-    ).eq("organization_id", organization_id).execute()
+    docs_result = (
+        supabase.table("documents")
+        .select("id, file_size_bytes")
+        .eq("organization_id", organization_id)
+        .neq("source_type", "identity")
+        .neq("source_type", "scope_identity")
+        .execute()
+    )
     
     file_count = 0
     total_bytes = 0

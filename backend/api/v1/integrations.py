@@ -11,7 +11,13 @@ from core.security import get_current_user, encrypt_token, decrypt_token
 from core.db import get_supabase
 from core.config import settings
 from core.rate_limit import limiter
-from api.v1.dependencies import validate_team_access, require_editor, get_effective_plan, require_paid_access
+from api.v1.dependencies import (
+    validate_team_access,
+    require_editor,
+    get_effective_plan,
+    require_paid_access,
+    get_user_organization_id,
+)
 from api.v1.error_utils import raise_http_error
 from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
@@ -23,6 +29,7 @@ from connectors.web import WebConnector
 from connectors.sftp import SFTPConnector
 from connectors.s3 import S3Connector
 from core.ingestion_utils import require_canonical_provider
+from core.scopes import SCOPE_PREFIX_BY_PROVIDER
 from connectors.registry import get_connector_manifest
 from connectors.base import ConnectorAuthError, ConnectorTransientError
 from google_auth_oauthlib.flow import Flow
@@ -1667,7 +1674,8 @@ async def get_provider_status(
 @router.delete("/integrations/{provider}")
 async def disconnect_provider(
     provider: str,
-    user_id: str = Depends(require_editor)
+    user_id: str = Depends(require_editor),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Disconnect a provider integration.
@@ -1678,6 +1686,8 @@ async def disconnect_provider(
     
     # Initialize cleanup counters before try block to ensure they're always defined
     deleted_docs = 0
+    deleted_identity_docs = 0
+    deleted_identity_scopes = 0
     deleted_jobs = 0
     deleted_sync = 0
     
@@ -1739,6 +1749,39 @@ async def disconnect_provider(
             logger.info(f"🧹 [Disconnect] Deleted {deleted_docs} documents")
         except Exception as e:
             logger.warning(f"⚠️ [Disconnect] Document cleanup failed: {e}")
+
+        # 2a.1 Delete identity documents + scope identities tied to this provider
+        scope_prefix = SCOPE_PREFIX_BY_PROVIDER.get(provider)
+        if scope_prefix:
+            try:
+                identity_docs = (
+                    supabase.table("documents")
+                    .delete()
+                    .eq("organization_id", organization_id)
+                    .eq("source_type", "identity")
+                    .like("scope_id", f"{scope_prefix}%")
+                    .execute()
+                )
+                deleted_identity_docs = len(identity_docs.data) if identity_docs.data else 0
+                logger.info(
+                    f"🧹 [Disconnect] Deleted {deleted_identity_docs} identity documents "
+                    f"for {provider} (scope prefix {scope_prefix})"
+                )
+
+                identity_scopes = (
+                    supabase.table("scope_identities")
+                    .delete()
+                    .eq("organization_id", organization_id)
+                    .like("id", f"{scope_prefix}%")
+                    .execute()
+                )
+                deleted_identity_scopes = len(identity_scopes.data) if identity_scopes.data else 0
+                logger.info(
+                    f"🧹 [Disconnect] Deleted {deleted_identity_scopes} scope identities "
+                    f"for {provider} (scope prefix {scope_prefix})"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ [Disconnect] Identity cleanup failed: {e}")
         
         # 2b. Delete Ingestion Jobs and associated file statuses
         try:
@@ -1792,6 +1835,8 @@ async def disconnect_provider(
             resource_id=provider,
             details={
                 "documents_deleted": deleted_docs,
+                "identity_documents_deleted": deleted_identity_docs,
+                "identity_scopes_deleted": deleted_identity_scopes,
                 "jobs_deleted": deleted_jobs,
                 "sync_deleted": deleted_sync,
             },
@@ -1802,7 +1847,9 @@ async def disconnect_provider(
             "provider": provider,
             "cleanup": {
                 "documents_deleted": deleted_docs,
-                "jobs_deleted": deleted_jobs
+                "identity_documents_deleted": deleted_identity_docs,
+                "identity_scopes_deleted": deleted_identity_scopes,
+                "jobs_deleted": deleted_jobs,
             }
         }
     except HTTPException:

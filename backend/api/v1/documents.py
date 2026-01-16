@@ -6,10 +6,14 @@ from core.security import get_current_user
 from core.db import get_supabase
 from core.rate_limit import limiter
 from core.ingestion_utils import normalize_provider
+from core.scopes import SCOPE_PREFIX_BY_PROVIDER
 from services.audit import log_document_delete
 from api.v1.dependencies import validate_team_access, require_editor, require_paid_access, get_user_organization_id
 from services.cleanup import cleanup_service
 from services.team_service import team_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
@@ -273,6 +277,19 @@ async def bulk_delete_documents(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to resolve documents for source: {e}")
 
+        scope_prefix = SCOPE_PREFIX_BY_PROVIDER.get(normalized_source)
+        if scope_prefix:
+            try:
+                identity_docs = supabase.table("documents")\
+                    .select("id")\
+                    .eq("organization_id", organization_id)\
+                    .eq("source_type", "identity")\
+                    .like("scope_id", f"{scope_prefix}%")\
+                    .execute()
+                doc_ids.extend([row["id"] for row in (identity_docs.data or []) if row.get("id")])
+            except Exception as e:
+                logger.warning("Failed to resolve identity documents for %s: %s", normalized_source, e)
+
     # Deduplicate and validate
     doc_ids = list({d for d in doc_ids if d})
     if not doc_ids:
@@ -289,6 +306,19 @@ async def bulk_delete_documents(
             deleted.append(doc_id)
         except Exception as e:
             failed.append({"id": doc_id, "error": str(e)})
+
+    if payload.source_type:
+        normalized_source = normalize_provider(payload.source_type) or payload.source_type
+        scope_prefix = SCOPE_PREFIX_BY_PROVIDER.get(normalized_source)
+        if scope_prefix:
+            try:
+                supabase.table("scope_identities")\
+                    .delete()\
+                    .eq("organization_id", organization_id)\
+                    .like("id", f"{scope_prefix}%")\
+                    .execute()
+            except Exception as e:
+                logger.warning("Failed to delete scope identities for %s: %s", normalized_source, e)
 
     # Usage is computed live at org scope; no cache sync needed.
 

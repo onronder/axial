@@ -296,6 +296,7 @@ async def synthesize_and_save_identity(
         "scope_id": scope_id,
         "type": "identity_card",
         "is_identity": True,
+        "source_type": "identity",
         "organization_id": organization_id,
     }
     embedding = generate_embeddings_batch_sync([summary])[0]
