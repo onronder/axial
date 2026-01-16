@@ -36,6 +36,8 @@ def build_table(execute_data=None):
     table = MagicMock()
     table.select.return_value = table
     table.eq.return_value = table
+    table.in_.return_value = table
+    table.like.return_value = table
     table.single.return_value = table
     table.order.return_value = table
     table.limit.return_value = table
@@ -49,7 +51,7 @@ def build_table(execute_data=None):
 
 def build_supabase(table_map):
     supabase = MagicMock()
-    supabase.table.side_effect = lambda name: table_map[name]
+    supabase.table.side_effect = lambda name: table_map.get(name, build_table([]))
     return supabase
 
 
@@ -811,24 +813,27 @@ class TestDisconnectProvider:
         supabase = build_supabase({"connector_definitions": build_table(None)})
         with patch("api.v1.integrations.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
-                await disconnect_provider("unknown", user_id="user-1")
+                await disconnect_provider("unknown", user_id="user-1", organization_id="org-1")
 
     @pytest.mark.asyncio
     async def test_disconnect_provider_missing_definition_raises(self):
         supabase = build_supabase({"connector_definitions": build_table(None)})
         with patch("api.v1.integrations.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("google_drive", user_id="user-1")
+                await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert exc.value.status_code == 404
 
     @pytest.mark.asyncio
     async def test_disconnect_provider_cleans_records(self):
+        documents_table = build_table([])
+        scope_identities_table = build_table([])
         supabase = build_supabase(
             {
                 "connector_definitions": build_table({"id": "def-1"}),
                 "user_integrations": build_table({"access_token": "enc-token"}),
-                "documents": build_table([]),
+                "documents": documents_table,
+                "scope_identities": scope_identities_table,
                 "ingestion_jobs": build_table([{"id": "job-1"}]),
                 "ingestion_file_status": build_table([]),
                 "sync_state": build_table([]),
@@ -839,9 +844,11 @@ class TestDisconnectProvider:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([response])):
-            result = await disconnect_provider("google_drive", user_id="user-1")
+            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
+        documents_table.like.assert_called()
+        scope_identities_table.like.assert_called()
 
     @pytest.mark.asyncio
     async def test_disconnect_provider_notion_path(self):
@@ -860,7 +867,7 @@ class TestDisconnectProvider:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([response])):
-            result = await disconnect_provider("notion", user_id="user-1")
+            result = await disconnect_provider("notion", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -880,7 +887,7 @@ class TestDisconnectProvider:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([])):
-            result = await disconnect_provider("notion", user_id="user-1")
+            result = await disconnect_provider("notion", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -903,7 +910,7 @@ class TestDisconnectProvider:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
-            result = await disconnect_provider("google_drive", user_id="user-1")
+            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -929,7 +936,7 @@ class TestDisconnectProvider:
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("google_drive", user_id="user-1")
+                await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert exc.value.status_code == 500
 
@@ -1193,7 +1200,7 @@ class TestDisconnectProvider:
     @pytest.mark.asyncio
     async def test_disconnect_provider_unknown(self):
         with pytest.raises(HTTPException) as exc:
-            await disconnect_provider("unknown", user_id="user-1")
+            await disconnect_provider("unknown", user_id="user-1", organization_id="org-1")
         assert exc.value.status_code == 400
         assert "Unsupported provider value" in exc.value.detail
 
@@ -1203,7 +1210,7 @@ class TestDisconnectProvider:
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("google_drive", user_id="user-1")
+                await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert exc.value.status_code == 404
 
@@ -1223,7 +1230,7 @@ class TestDisconnectProvider:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
-            result = await disconnect_provider("google_drive", user_id="user-1")
+            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -1516,7 +1523,7 @@ class TestIntegrationsAdditional:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=ErrorAsyncClient()):
-            result = await disconnect_provider("google_drive", user_id="user-1")
+            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -1831,7 +1838,7 @@ class TestDisconnectProviderCoverage:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([])):
-            result = await disconnect_provider("notion", user_id="user-1")
+            result = await disconnect_provider("notion", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -1854,7 +1861,7 @@ class TestDisconnectProviderCoverage:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
-            result = await disconnect_provider("google_drive", user_id="user-1")
+            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -1880,7 +1887,7 @@ class TestDisconnectProviderCoverage:
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("google_drive", user_id="user-1")
+                await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
 
         assert exc.value.status_code == 500
 

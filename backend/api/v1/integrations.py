@@ -29,7 +29,7 @@ from connectors.web import WebConnector
 from connectors.sftp import SFTPConnector
 from connectors.s3 import S3Connector
 from core.ingestion_utils import require_canonical_provider
-from core.scopes import SCOPE_PREFIX_BY_PROVIDER
+from core.scopes import get_scope_prefixes
 from connectors.registry import get_connector_manifest
 from connectors.base import ConnectorAuthError, ConnectorTransientError
 from google_auth_oauthlib.flow import Flow
@@ -1743,7 +1743,7 @@ async def disconnect_provider(
         try:
             doc_result = supabase.table("documents").delete().eq(
                 "user_id", user_id
-            ).in_("source_type", source_types).execute()
+            ).eq("organization_id", organization_id).in_("source_type", source_types).execute()
             
             deleted_docs = len(doc_result.data) if doc_result.data else 0
             logger.info(f"🧹 [Disconnect] Deleted {deleted_docs} documents")
@@ -1751,34 +1751,36 @@ async def disconnect_provider(
             logger.warning(f"⚠️ [Disconnect] Document cleanup failed: {e}")
 
         # 2a.1 Delete identity documents + scope identities tied to this provider
-        scope_prefix = SCOPE_PREFIX_BY_PROVIDER.get(provider)
-        if scope_prefix:
+        scope_prefixes = get_scope_prefixes(provider)
+        if scope_prefixes:
             try:
-                identity_docs = (
-                    supabase.table("documents")
-                    .delete()
-                    .eq("organization_id", organization_id)
-                    .eq("source_type", "identity")
-                    .like("scope_id", f"{scope_prefix}%")
-                    .execute()
-                )
-                deleted_identity_docs = len(identity_docs.data) if identity_docs.data else 0
+                deleted_identity_docs = 0
+                deleted_identity_scopes = 0
+                for scope_prefix in scope_prefixes:
+                    identity_docs = (
+                        supabase.table("documents")
+                        .delete()
+                        .eq("organization_id", organization_id)
+                        .eq("user_id", user_id)
+                        .eq("source_type", "identity")
+                        .like("scope_id", f"{scope_prefix}%")
+                        .execute()
+                    )
+                    deleted_identity_docs += len(identity_docs.data) if identity_docs.data else 0
+
+                    identity_scopes = (
+                        supabase.table("scope_identities")
+                        .delete()
+                        .eq("organization_id", organization_id)
+                        .eq("user_id", user_id)
+                        .like("id", f"{scope_prefix}%")
+                        .execute()
+                    )
+                    deleted_identity_scopes += len(identity_scopes.data) if identity_scopes.data else 0
+
                 logger.info(
                     f"🧹 [Disconnect] Deleted {deleted_identity_docs} identity documents "
-                    f"for {provider} (scope prefix {scope_prefix})"
-                )
-
-                identity_scopes = (
-                    supabase.table("scope_identities")
-                    .delete()
-                    .eq("organization_id", organization_id)
-                    .like("id", f"{scope_prefix}%")
-                    .execute()
-                )
-                deleted_identity_scopes = len(identity_scopes.data) if identity_scopes.data else 0
-                logger.info(
-                    f"🧹 [Disconnect] Deleted {deleted_identity_scopes} scope identities "
-                    f"for {provider} (scope prefix {scope_prefix})"
+                    f"and {deleted_identity_scopes} scope identities for {provider}"
                 )
             except Exception as e:
                 logger.warning(f"⚠️ [Disconnect] Identity cleanup failed: {e}")
@@ -1788,7 +1790,7 @@ async def disconnect_provider(
             # First, find all job IDs for this provider
             jobs_res = supabase.table("ingestion_jobs").select("id").eq(
                 "user_id", user_id
-            ).eq("provider", provider).execute()
+            ).eq("organization_id", organization_id).eq("provider", provider).execute()
             
             job_ids = [job["id"] for job in (jobs_res.data or [])]
             
@@ -1801,7 +1803,7 @@ async def disconnect_provider(
             # Then delete the jobs
             job_result = supabase.table("ingestion_jobs").delete().eq(
                 "user_id", user_id
-            ).eq("provider", provider).execute()
+            ).eq("organization_id", organization_id).eq("provider", provider).execute()
             
             deleted_jobs = len(job_result.data) if job_result.data else 0
             logger.info(f"🧹 [Disconnect] Deleted {deleted_jobs} ingestion jobs")

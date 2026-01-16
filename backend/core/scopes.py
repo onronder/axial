@@ -9,25 +9,39 @@ All connectors MUST use build_scope_uri() to generate scope IDs.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
-SCOPE_PREFIX_BY_PROVIDER: Dict[str, str] = {
-    "box": "box://",
-    "dropbox": "dropbox://",
-    "file_upload": "upload://",
-    "upload": "upload://",
-    "github": "github://",
-    "google_drive": "gdrive://",
-    "drive": "gdrive://",
-    "gdrive": "gdrive://",
-    "notion": "notion://",
-    "onedrive": "onedrive://",
-    "s3": "s3://",
-    "sftp": "sftp://",
-    "sharepoint": "sharepoint://",
-    "web": "web://",
+SCOPE_PREFIX_BY_PROVIDER: Dict[str, Tuple[str, ...]] = {
+    "box": ("box://",),
+    "dropbox": ("dropbox://",),
+    "file_upload": ("upload://", "file_upload://"),
+    "upload": ("upload://", "file_upload://"),
+    "file": ("upload://", "file_upload://"),
+    "github": ("github://",),
+    "google_drive": ("gdrive://", "drive://", "google_drive://"),
+    "drive": ("gdrive://", "drive://", "google_drive://"),
+    "gdrive": ("gdrive://", "drive://", "google_drive://"),
+    "notion": ("notion://",),
+    "onedrive": ("onedrive://",),
+    "s3": ("s3://",),
+    "sftp": ("sftp://",),
+    "sharepoint": ("sharepoint://",),
+    "web": ("web://",),
 }
+
+CANONICAL_PROVIDER_BY_ALIAS: Dict[str, str] = {
+    "drive": "google_drive",
+    "gdrive": "google_drive",
+    "upload": "file_upload",
+    "file": "file_upload",
+}
+
+UPLOAD_PROVIDER_ALIASES: Tuple[str, ...] = tuple(
+    provider
+    for provider, prefixes in SCOPE_PREFIX_BY_PROVIDER.items()
+    if "upload://" in prefixes or "file_upload://" in prefixes
+)
 
 
 def _require(metadata: Dict[str, Any], *keys: str) -> str:
@@ -51,6 +65,23 @@ def _normalize_source_type(source_type: str) -> str:
     if not source_type:
         raise ValueError("source_type is required")
     return str(source_type).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def canonicalize_provider(provider: Optional[str]) -> Optional[str]:
+    if not provider:
+        return None
+    normalized = _normalize_source_type(provider)
+    return CANONICAL_PROVIDER_BY_ALIAS.get(normalized, normalized)
+
+
+def get_scope_prefixes(provider: Optional[str]) -> Tuple[str, ...]:
+    if not provider:
+        return tuple()
+    normalized = _normalize_source_type(provider)
+    prefixes = SCOPE_PREFIX_BY_PROVIDER.get(normalized)
+    if not prefixes:
+        return tuple()
+    return tuple(prefixes)
 
 
 def _normalize_path(value: str) -> str:

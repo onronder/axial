@@ -37,3 +37,34 @@ async def test_execute_org_deletion_returns_counts():
     assert result["scope_identities"]["deleted"] == 1
     assert result["ingestion_jobs"]["deleted"] == 4
     assert result["org_usage"]["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_delete_single_document_skips_storage_for_identity():
+    supabase = MagicMock()
+    documents_table = MagicMock()
+    documents_table.select.return_value = documents_table
+    documents_table.eq.return_value = documents_table
+    documents_table.single.return_value = documents_table
+    documents_table.delete.return_value = documents_table
+    documents_table.execute.side_effect = [
+        SimpleNamespace(data={"id": "doc-1", "source_type": "identity", "metadata": {}}),
+        SimpleNamespace(data=[]),
+    ]
+
+    chunks_table = MagicMock()
+    chunks_table.delete.return_value = chunks_table
+    chunks_table.eq.return_value = chunks_table
+    chunks_table.execute.return_value = SimpleNamespace(data=[])
+
+    supabase.table.side_effect = lambda name: {
+        "documents": documents_table,
+        "document_chunks": chunks_table,
+    }[name]
+    supabase.storage = MagicMock()
+
+    service = AccountCleanupService(supabase=supabase)
+    result = await service.delete_single_document("doc-1", user_id="user-1", organization_id="org-1")
+
+    assert result["status"] == "success"
+    supabase.storage.from_.assert_not_called()

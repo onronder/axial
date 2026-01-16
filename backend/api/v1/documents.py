@@ -5,8 +5,8 @@ from pydantic import BaseModel
 from core.security import get_current_user
 from core.db import get_supabase
 from core.rate_limit import limiter
-from core.ingestion_utils import normalize_provider
-from core.scopes import SCOPE_PREFIX_BY_PROVIDER
+from core.ingestion_utils import normalize_provider, canonicalize_provider_name
+from core.scopes import get_scope_prefixes
 from services.audit import log_document_delete
 from api.v1.dependencies import validate_team_access, require_editor, require_paid_access, get_user_organization_id
 from services.cleanup import cleanup_service
@@ -266,7 +266,7 @@ async def bulk_delete_documents(
 
     # Expand by source type if provided (org-wide)
     if payload.source_type:
-        normalized_source = normalize_provider(payload.source_type) or payload.source_type
+        normalized_source = canonicalize_provider_name(payload.source_type) or payload.source_type
         try:
             source_docs = supabase.table("documents")\
                 .select("id")\
@@ -277,8 +277,8 @@ async def bulk_delete_documents(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to resolve documents for source: {e}")
 
-        scope_prefix = SCOPE_PREFIX_BY_PROVIDER.get(normalized_source)
-        if scope_prefix:
+        scope_prefixes = get_scope_prefixes(normalized_source)
+        for scope_prefix in scope_prefixes:
             try:
                 identity_docs = supabase.table("documents")\
                     .select("id")\
@@ -308,9 +308,8 @@ async def bulk_delete_documents(
             failed.append({"id": doc_id, "error": str(e)})
 
     if payload.source_type:
-        normalized_source = normalize_provider(payload.source_type) or payload.source_type
-        scope_prefix = SCOPE_PREFIX_BY_PROVIDER.get(normalized_source)
-        if scope_prefix:
+        normalized_source = canonicalize_provider_name(payload.source_type) or payload.source_type
+        for scope_prefix in get_scope_prefixes(normalized_source):
             try:
                 supabase.table("scope_identities")\
                     .delete()\

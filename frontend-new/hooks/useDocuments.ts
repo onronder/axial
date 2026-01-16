@@ -84,8 +84,13 @@ async function fetchDocuments({ page, pageSize, search }: FetchDocsParams): Prom
     const totalHeader = response.headers['x-total-count'];
     const total = totalHeader ? parseInt(totalHeader, 10) : response.data.length;
 
+    const filtered = response.data.filter((doc: BackendDocument) => {
+        const normalized = normalizeSourceType(doc.source_type) || doc.source_type || "";
+        return normalized !== "identity" && normalized !== "scope_identity";
+    });
+
     return {
-        documents: response.data.map(mapDocument),
+        documents: filtered.map(mapDocument),
         total
     };
 }

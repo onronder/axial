@@ -67,6 +67,8 @@ async def test_get_user_usage_subscription_lookup_error_defaults_active():
     assert usage.subscription_status == "active"
     assert usage.files == 2
     assert usage.storage_bytes == 10
+    documents_table.neq.assert_any_call("source_type", "identity")
+    documents_table.neq.assert_any_call("source_type", "scope_identity")
 
 
 @pytest.mark.asyncio

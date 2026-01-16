@@ -172,15 +172,15 @@ def cleanup_orphan_scope_placeholders():
     - status = 'placeholder'
     - is_placeholder = true in attributes
     - No associated documents exist
-    - Created more than 24 hours ago (allows time for slow ingestions)
+    - Created more than 72 hours ago (allows time for slow ingestions)
     
     Runs daily at 5 AM via Celery Beat.
     """
     try:
         supabase = get_supabase()
-        cutoff_date = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(hours=72)
         
-        # Find placeholder scope identities older than 24 hours
+        # Find placeholder scope identities older than 72 hours
         placeholders_res = supabase.table("scope_identities").select(
             "id, organization_id, user_id, created_at"
         ).eq("status", "placeholder").lt(
