@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { DataSourceCard } from "./DataSourceCard";
 import { FileBrowser } from "./FileBrowser";
 import { URLCrawlerInput } from "./URLCrawlerInput";
+import { YoutubeInput } from "./YoutubeInput";
 import { FileUploadZone } from "./FileUploadZone";
 import { ComingSoonIntegrations } from "./ComingSoonIntegrations";
 import { SftpConnectModal } from "./SftpConnectModal";
@@ -57,6 +58,7 @@ const LOCAL_UPLOAD_TYPES = new Set(["file_upload", "file-upload", "local"]);
 const CATEGORY_SOURCE_ORDER: Record<string, string[]> = {
   cloud: ["google_drive", "dropbox", "onedrive", "sharepoint", "s3"],
   files: ["sftp", "file_upload", "file-upload", "local"],
+  web: ["web", "youtube"],  // Web crawler first, then YouTube
 };
 
 // Enterprise-only connectors (require Enterprise plan to connect)
@@ -99,6 +101,8 @@ export function DataSourcesGrid() {
       : undefined;
 
   const connectedCount = connectedSources.length;
+  
+  // Virtual data source for local file uploads (shown if not already in backend sources)
   const localUploadSource: MergedDataSource = {
     id: "local-upload",
     definitionId: "local-upload",
@@ -111,8 +115,30 @@ export function DataSourcesGrid() {
     lastSyncAt: null,
     integrationId: null,
   };
+  
+  // Virtual data source for YouTube video ingestion
+  const youtubeSource: MergedDataSource = {
+    id: "youtube-video",
+    definitionId: "youtube-video",
+    type: "youtube",
+    name: "YouTube Video",
+    description: "Transcribe and chat with YouTube videos",
+    iconPath: null,
+    category: "web",
+    isConnected: false,
+    lastSyncAt: null,
+    integrationId: null,
+  };
+  
   const hasLocalUpload = dataSources.some((source) => LOCAL_UPLOAD_TYPES.has(source.type));
-  const displaySources = hasLocalUpload ? dataSources : [...dataSources, localUploadSource];
+  const hasYoutubeSource = dataSources.some((source) => source.type === "youtube");
+  
+  // Combine backend sources with virtual sources (if not already present)
+  const displaySources = [
+    ...dataSources,
+    ...(hasLocalUpload ? [] : [localUploadSource]),
+    ...(hasYoutubeSource ? [] : [youtubeSource]),
+  ];
 
   const handleConnect = (type: string) => {
     if (type === "sftp") {
@@ -269,8 +295,24 @@ export function DataSourcesGrid() {
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {orderedSources.map((source) => (
-                // Use URLCrawlerInput for web type, FileUploadZone for local upload, DataSourceCard for others
-                source.type === "web" ? (
+                // Use YoutubeInput for YouTube, URLCrawlerInput for web, FileUploadZone for local upload, DataSourceCard for others
+                source.type === "youtube" ? (
+                  <YoutubeInput
+                    key={source.id}
+                    source={{
+                      id: source.id,
+                      name: source.name,
+                      type: source.type,
+                      status: source.isConnected ? "connected" : "disconnected",
+                      lastSync: source.lastSyncAt || "-",
+                      icon: source.iconPath || source.type,
+                      description: source.description,
+                      category: isDataSourceCategory(source.category) ? source.category : "web",
+                    }}
+                    disabled={!canRunWebCrawl}
+                    disabledReason={webCrawlDisabledReason}
+                  />
+                ) : source.type === "web" ? (
                   <URLCrawlerInput
                     key={source.id}
                     source={{

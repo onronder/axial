@@ -44,6 +44,12 @@ class TestIsYouTubeUrl:
         connector = WebConnector()
         assert connector.is_youtube_url("https://www.youtube.com/embed/dQw4w9WgXcQ") is True
     
+    def test_youtube_shorts_url(self):
+        """Should detect YouTube Shorts URLs."""
+        connector = WebConnector()
+        assert connector.is_youtube_url("https://www.youtube.com/shorts/dQw4w9WgXcQ") is True
+        assert connector.is_youtube_url("https://youtube.com/shorts/abc12345def") is True
+    
     def test_non_youtube_urls(self):
         """Should return False for non-YouTube URLs."""
         connector = WebConnector()
@@ -340,6 +346,21 @@ class TestWebIngest:
         assert len(docs) == 1
         assert docs[0].content == "Transcript"
 
+    def test_ingest_youtube_returns_youtube_source_type(self):
+        """Should return SourceType.YOUTUBE for YouTube videos, not WEB."""
+        connector = WebConnector()
+        with patch.object(connector, "_is_safe_url", return_value=True), \
+             patch.object(connector, "check_robots_txt", return_value=True), \
+             patch.object(connector, "is_youtube_url", return_value=True), \
+             patch.object(connector, "fetch_youtube_transcript", return_value="Transcript text"), \
+             patch.object(connector, "get_youtube_metadata", return_value={"source": "youtube", "video_id": "abc123"}):
+            docs = list(connector.fetch_documents_sync(["https://youtu.be/abc123"]))
+        assert len(docs) == 1
+        assert docs[0].source_type == SourceType.YOUTUBE
+        assert docs[0].source_type != SourceType.WEB
+        assert docs[0].metadata["source"] == "youtube"
+        assert docs[0].metadata["video_id"] == "abc123"
+
     def test_ingest_handles_html_text(self):
         connector = WebConnector()
         meta = SimpleNamespace(title="Title", author="Author", date="2024-01-01")
@@ -378,6 +399,18 @@ class TestUrlNormalizationAndSafety:
     def test_is_safe_url_allows_public_ip(self):
         connector = WebConnector()
         assert connector._is_safe_url("https://8.8.8.8/") is True
+
+    def test_public_is_safe_url_wrapper(self):
+        """Test public is_safe_url() wrapper method used by worker tasks."""
+        connector = WebConnector()
+        # Should allow public URLs
+        assert connector.is_safe_url("https://www.example.com/") is True
+        assert connector.is_safe_url("https://8.8.8.8/") is True
+        # Should block private/local URLs
+        assert connector.is_safe_url("http://127.0.0.1/") is False
+        assert connector.is_safe_url("http://localhost/") is False
+        # Should block invalid schemes
+        assert connector.is_safe_url("ftp://example.com") is False
 
     def test_is_safe_url_blocks_private_host_resolution(self, monkeypatch):
         connector = WebConnector()

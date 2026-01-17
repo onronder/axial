@@ -23,4 +23,14 @@ describe('sourceType', () => {
         expect(formatSourceTypeLabel('Custom Source')).toBe('custom_source');
         expect(formatSourceTypeLabel(null)).toBe('Unknown');
     });
+
+    it('normalizes youtube source type', () => {
+        expect(normalizeSourceType('youtube')).toBe('youtube');
+        expect(normalizeSourceType('YouTube')).toBe('youtube');
+        expect(normalizeSourceType('YOUTUBE')).toBe('youtube');
+    });
+
+    it('formats YouTube label correctly', () => {
+        expect(formatSourceTypeLabel('youtube')).toBe('YouTube');
+    });
 });

@@ -18,6 +18,7 @@ class SourceType(str, Enum):
     GOOGLE_DRIVE = "google_drive"
     NOTION = "notion"
     WEB = "web"
+    YOUTUBE = "youtube"  # YouTube video transcripts
     SFTP = "sftp"
     DROPBOX = "dropbox"
     ONEDRIVE = "onedrive"

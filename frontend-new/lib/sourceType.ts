@@ -2,6 +2,7 @@ export type CanonicalSourceType =
   | "file_upload"
   | "google_drive"
   | "web"
+  | "youtube"
   | "notion"
   | "slack"
   | "onedrive"
@@ -18,6 +19,7 @@ const SOURCE_TYPE_ALIASES: Record<string, string> = {
   google_drive: "google_drive",
   notion: "notion",
   web: "web",
+  youtube: "youtube",
   slack: "slack",
   onedrive: "onedrive",
   "one_drive": "onedrive",
@@ -39,6 +41,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   file_upload: "File Upload",
   google_drive: "Google Drive",
   web: "Web Crawl",
+  youtube: "YouTube",
   notion: "Notion",
   slack: "Slack",
   onedrive: "OneDrive",

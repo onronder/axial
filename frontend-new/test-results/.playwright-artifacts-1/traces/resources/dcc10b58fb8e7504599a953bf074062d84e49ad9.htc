@@ -1,8 +1,0 @@
-1:"$Sreact.fragment"
-2:I[876864,["/_next/static/chunks/2f3114f242a50809.js?dpl=dpl_BKSHDDu4UkR8kgC9rxqTJuGFvdUb"],"ViewportBoundary"]
-4:I[876864,["/_next/static/chunks/2f3114f242a50809.js?dpl=dpl_BKSHDDu4UkR8kgC9rxqTJuGFvdUb"],"MetadataBoundary"]
-5:"$Sreact.suspense"
-0:{"b":"nBuVQJI-z8KnHOHp4wRgv","f":[[["",{"children":["dashboard",{"children":["chat",{"children":[["chatId","af7fb261-4d7b-4084-9319-28e07d575d32","d"],{"children":["__PAGE__",{}]}]}]}]},"$undefined","$undefined",true],null,["$","$1","h",{"children":[null,["$","$L2","K59Ik_nLTH8vYXW-4NPpxv",{"children":"$@3"}],["$","div","K59Ik_nLTH8vYXW-4NPpxm",{"hidden":true,"children":["$","$L4",null,{"children":["$","$5",null,{"name":"Next.Metadata","children":"$@6"}]}]}]]}],false]],"S":false}
-3:[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]
-7:I[847565,["/_next/static/chunks/2f3114f242a50809.js?dpl=dpl_BKSHDDu4UkR8kgC9rxqTJuGFvdUb"],"IconMark"]
-6:[["$","title","0",{"children":"Axio Hub"}],["$","meta","1",{"name":"description","content":"AI-Powered Knowledge Assistant"}],["$","link","2",{"rel":"icon","href":"/favicon.ico?favicon.0b3bf435.ico","sizes":"256x256","type":"image/x-icon"}],["$","link","3",{"rel":"icon","href":"/favicon-32.png"}],["$","link","4",{"rel":"apple-touch-icon","href":"/apple-touch-icon.png"}],["$","$L7","5",{}]]

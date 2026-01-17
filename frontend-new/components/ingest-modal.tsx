@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { BookOpen, CheckCircle, Globe, Loader2, Upload, X } from "lucide-react"
+import { BookOpen, CheckCircle, Globe, Loader2, Upload, X, Youtube, AlertCircle } from "lucide-react"
 
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal"
 // NotionInput removed - using OAuth flow now
@@ -18,7 +18,32 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
-type TabType = 'file' | 'url' | 'website' | 'notion'
+type TabType = 'file' | 'url' | 'website' | 'notion' | 'youtube'
+
+/**
+ * YouTube URL validation patterns.
+ * Supports standard watch URLs, short URLs, embeds, and shorts.
+ */
+const YOUTUBE_URL_PATTERNS = [
+    /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=[\w-]{11}/i,
+    /^(https?:\/\/)?(www\.)?youtu\.be\/[\w-]{11}/i,
+    /^(https?:\/\/)?(www\.)?youtube\.com\/embed\/[\w-]{11}/i,
+    /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]{11}/i,
+]
+
+function isValidYoutubeUrl(url: string): boolean {
+    const trimmedUrl = url.trim()
+    if (!trimmedUrl) return false
+    return YOUTUBE_URL_PATTERNS.some((pattern) => pattern.test(trimmedUrl))
+}
+
+function normalizeYoutubeUrl(url: string): string {
+    const trimmedUrl = url.trim()
+    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+        return `https://${trimmedUrl}`
+    }
+    return trimmedUrl.replace('http://', 'https://')
+}
 
 interface IngestModalProps {
     isOpen: boolean
@@ -34,6 +59,10 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
     // Website tab state
     const [websiteUrl, setWebsiteUrl] = useState<string>("")
+
+    // YouTube tab state
+    const [youtubeUrl, setYoutubeUrl] = useState<string>("")
+    const [youtubeValidationError, setYoutubeValidationError] = useState<string | null>(null)
 
     // Hook for Data Sources (OAuth)
     const { connect, isConnected, loading: dsLoading } = useDataSources()
@@ -158,6 +187,28 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 })
 
                 ingestionJobId = data?.job_id || data?.crawl_id || null
+            } else if (activeTab === 'youtube') {
+                if (!youtubeUrl) {
+                    return
+                }
+
+                // Validate YouTube URL specifically
+                if (!isValidYoutubeUrl(youtubeUrl)) {
+                    setYoutubeValidationError("Please enter a valid YouTube video URL")
+                    throw new Error("Please enter a valid YouTube video URL (e.g., youtube.com/watch?v=... or youtu.be/...)")
+                }
+
+                // Normalize and send to web backend (backend detects YouTube and fetches transcript)
+                const normalizedUrl = normalizeYoutubeUrl(youtubeUrl)
+                const { data } = await authFetch.post('/integrations/web/crawl', {
+                    url: normalizedUrl,
+                    crawl_type: 'single',
+                    max_depth: 1,
+                    respect_robots: true,
+                    allow_subdomains: false
+                })
+
+                ingestionJobId = data?.job_id || data?.crawl_id || null
             }
 
             if (ingestionJobId) {
@@ -167,9 +218,17 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
             // Robust error handling: Check content type
             // Axios-based calls throw on non-2xx; fetch path removed for web crawl.
 
+            // Show appropriate success message based on tab
+            const toastDescriptions: Record<string, string> = {
+                file: "Your file is being processed.",
+                youtube: "Fetching transcript and processing video content...",
+                website: "The website has been added to the crawl queue.",
+                url: "The URL has been added to the crawl queue.",
+            }
+            
             toast({
                 title: "Ingestion Queued",
-                description: activeTab === 'file' ? "Your file is being processed." : "The URL has been added to the crawl queue.",
+                description: toastDescriptions[activeTab] || "Your content is being processed.",
                 variant: "default",
                 className: "bg-green-50 border-green-200 text-green-900",
             })
@@ -178,6 +237,8 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
             setFile(null)
             setUrl("")
             setWebsiteUrl("")
+            setYoutubeUrl("")
+            setYoutubeValidationError(null)
 
         } catch (err) {
             const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
@@ -201,10 +262,11 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
     const tabs = [
         { id: 'file' as const, label: 'File', icon: Upload },
+        { id: 'youtube' as const, label: 'YouTube', icon: Youtube },
         { id: 'website' as const, label: 'Website', icon: Globe },
         { id: 'notion' as const, label: 'Notion', icon: BookOpen },
     ]
-    const isActionDisabled = loading || isViewer || (activeTab === 'website' && isWebCrawlLocked)
+    const isActionDisabled = loading || isViewer || ((activeTab === 'website' || activeTab === 'youtube') && isWebCrawlLocked)
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={handleBackdropClick}>
@@ -258,6 +320,52 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                                 {isWebCrawlLocked && (
                                     <p className="text-xs text-amber-500">
                                         Web crawling is locked on your current plan. Upgrade to Starter or Pro to enable site ingestion.
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'youtube' && (
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-100">
+                                    <Youtube className="h-5 w-5 text-red-500 shrink-0" />
+                                    <div className="text-sm text-slate-600">
+                                        Paste a YouTube video URL to transcribe and chat with the content.
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium leading-none">YouTube Video URL</label>
+                                    <div className="relative">
+                                        <Input
+                                            key="youtube-input"
+                                            type="url"
+                                            placeholder="https://youtube.com/watch?v=..."
+                                            value={youtubeUrl}
+                                            onChange={(e) => {
+                                                setYoutubeUrl(e.target.value)
+                                                if (youtubeValidationError) setYoutubeValidationError(null)
+                                            }}
+                                            disabled={isWebCrawlLocked || loading}
+                                            className={cn(youtubeValidationError && "border-destructive")}
+                                            aria-invalid={!!youtubeValidationError}
+                                        />
+                                        {youtubeValidationError && (
+                                            <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />
+                                        )}
+                                    </div>
+                                    {youtubeValidationError && (
+                                        <p className="text-xs text-destructive flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3" />
+                                            {youtubeValidationError}
+                                        </p>
+                                    )}
+                                    <p className="text-xs text-muted-foreground">
+                                        Supports youtube.com/watch, youtu.be, and shorts URLs.
+                                    </p>
+                                </div>
+                                {isWebCrawlLocked && (
+                                    <p className="text-xs text-amber-500">
+                                        YouTube ingestion requires Starter or Pro plan.
                                     </p>
                                 )}
                             </div>

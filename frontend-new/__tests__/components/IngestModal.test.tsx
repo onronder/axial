@@ -141,6 +141,7 @@ describe('IngestModal', () => {
 
             expect(screen.getByText('File')).toBeInTheDocument()
             expect(screen.getByText('Website')).toBeInTheDocument()
+            expect(screen.getByText('YouTube')).toBeInTheDocument()
             expect(screen.getByText('Notion')).toBeInTheDocument()
             expect(screen.getByText(/Select Document/)).toBeInTheDocument()
         })
@@ -414,6 +415,108 @@ describe('IngestModal', () => {
             });
         });
     });
+
+    describe('YouTube Submission', () => {
+        it('should switch to YouTube tab and show URL input', async () => {
+            renderModal({ isOpen: true, onClose: mockOnClose })
+
+            const youtubeTab = screen.getByText('YouTube')
+            await userEvent.click(youtubeTab)
+
+            expect(screen.getByText('YouTube Video URL')).toBeInTheDocument()
+            expect(screen.getByPlaceholderText('https://youtube.com/watch?v=...')).toBeInTheDocument()
+        })
+
+        it('should submit valid YouTube URL', async () => {
+            renderModal({ isOpen: true, onClose: mockOnClose })
+
+            const youtubeTab = screen.getByText('YouTube')
+            await userEvent.click(youtubeTab)
+
+            const urlInput = screen.getByPlaceholderText('https://youtube.com/watch?v=...')
+            await userEvent.type(urlInput, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+
+            await userEvent.click(screen.getByText('Ingest'))
+
+            await waitFor(() => {
+                expect(mockAuthPost).toHaveBeenCalledWith(
+                    '/integrations/web/crawl',
+                    expect.objectContaining({
+                        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                        crawl_type: 'single',
+                    })
+                )
+            })
+        })
+
+        it('should accept youtu.be short URL', async () => {
+            renderModal({ isOpen: true, onClose: mockOnClose })
+
+            const youtubeTab = screen.getByText('YouTube')
+            await userEvent.click(youtubeTab)
+
+            const urlInput = screen.getByPlaceholderText('https://youtube.com/watch?v=...')
+            await userEvent.type(urlInput, 'https://youtu.be/dQw4w9WgXcQ')
+
+            await userEvent.click(screen.getByText('Ingest'))
+
+            await waitFor(() => {
+                expect(mockAuthPost).toHaveBeenCalledWith(
+                    '/integrations/web/crawl',
+                    expect.objectContaining({
+                        url: 'https://youtu.be/dQw4w9WgXcQ',
+                    })
+                )
+            })
+        })
+
+        it('should reject non-YouTube URLs with error', async () => {
+            renderModal({ isOpen: true, onClose: mockOnClose })
+
+            const youtubeTab = screen.getByText('YouTube')
+            await userEvent.click(youtubeTab)
+
+            const urlInput = screen.getByPlaceholderText('https://youtube.com/watch?v=...')
+            await userEvent.type(urlInput, 'https://www.cnn.com/article')
+
+            await userEvent.click(screen.getByText('Ingest'))
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Ingestion Failed',
+                        description: expect.stringContaining('valid YouTube video URL'),
+                        variant: 'destructive',
+                    })
+                )
+            })
+
+            // Should NOT call API with invalid URL
+            expect(mockAuthPost).not.toHaveBeenCalled()
+        })
+
+        it('should return early when YouTube URL is empty', async () => {
+            renderModal({ isOpen: true, onClose: mockOnClose })
+
+            const youtubeTab = screen.getByText('YouTube')
+            await userEvent.click(youtubeTab)
+
+            await userEvent.click(screen.getByText('Ingest'))
+
+            await waitFor(() => {
+                expect(mockAuthPost).not.toHaveBeenCalled()
+            })
+        })
+
+        it('should show helper text for YouTube input', async () => {
+            renderModal({ isOpen: true, onClose: mockOnClose })
+
+            const youtubeTab = screen.getByText('YouTube')
+            await userEvent.click(youtubeTab)
+
+            expect(screen.getByText(/Paste a YouTube video URL/)).toBeInTheDocument()
+        })
+    })
 
     describe('Notion Submission', () => {
         it('should trigger connect when clicking Connect Notion', async () => {

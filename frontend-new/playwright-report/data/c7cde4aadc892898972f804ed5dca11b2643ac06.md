@@ -1,0 +1,287 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - alert [ref=e2]
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - generic [ref=e7]:
+            - img "Axio Hub" [ref=e8]
+            - generic [ref=e9]: Axio Hub
+          - button "47" [ref=e10]:
+            - img
+            - generic [ref=e11]: "47"
+        - button "New Chat" [ref=e13]:
+          - img
+          - text: New Chat
+        - generic [ref=e15]:
+          - generic [ref=e16]:
+            - paragraph [ref=e17]: Today
+            - generic [ref=e18]:
+              - generic [ref=e19]:
+                - link "The secret code in project omega" [ref=e20] [cursor=pointer]:
+                  - /url: /dashboard/chat/c097535e-9815-48a6-b3ad-6abc968c1225
+                  - generic [ref=e21]: The secret code in project omega
+                - button [ref=e23]:
+                  - img [ref=e24]
+              - generic [ref=e28]:
+                - link "The secret code in project omega" [ref=e29] [cursor=pointer]:
+                  - /url: /dashboard/chat/e668992e-ff52-4f57-9c16-e411715d019a
+                  - generic [ref=e30]: The secret code in project omega
+                - button [ref=e32]:
+                  - img [ref=e33]
+              - generic [ref=e37]:
+                - link "The secret code in project omega" [ref=e38] [cursor=pointer]:
+                  - /url: /dashboard/chat/756e732c-4bdd-4c21-a64d-a250a581edcb
+                  - generic [ref=e39]: The secret code in project omega
+                - button [ref=e41]:
+                  - img [ref=e42]
+              - generic [ref=e46]:
+                - link "The secret code in project omega" [ref=e47] [cursor=pointer]:
+                  - /url: /dashboard/chat/aa2359c4-749a-4d98-b40d-29369de38ab4
+                  - generic [ref=e48]: The secret code in project omega
+                - button [ref=e50]:
+                  - img [ref=e51]
+              - generic [ref=e55]:
+                - link "The secret code in project omega" [ref=e56] [cursor=pointer]:
+                  - /url: /dashboard/chat/d9930a17-3d89-41e5-9386-42d784cbdd2e
+                  - generic [ref=e57]: The secret code in project omega
+                - button [ref=e59]:
+                  - img [ref=e60]
+              - generic [ref=e64]:
+                - link "The secret code in project omega" [ref=e65] [cursor=pointer]:
+                  - /url: /dashboard/chat/0043d2d9-7c8e-40d7-92a5-ac4ad1978d15
+                  - generic [ref=e66]: The secret code in project omega
+                - button [ref=e68]:
+                  - img [ref=e69]
+              - generic [ref=e73]:
+                - link "The secret code in project omega" [ref=e74] [cursor=pointer]:
+                  - /url: /dashboard/chat/2d126413-b5a1-4cc3-829d-ec6ba39bff42
+                  - generic [ref=e75]: The secret code in project omega
+                - button [ref=e77]:
+                  - img [ref=e78]
+          - generic [ref=e82]:
+            - paragraph [ref=e83]: Yesterday
+            - generic [ref=e84]:
+              - generic [ref=e85]:
+                - link "The secret code in project omega" [ref=e86] [cursor=pointer]:
+                  - /url: /dashboard/chat/af7fb261-4d7b-4084-9319-28e07d575d32
+                  - generic [ref=e87]: The secret code in project omega
+                - button [ref=e89]:
+                  - img [ref=e90]
+              - generic [ref=e94]:
+                - link "Prepare feauture list our CDP project" [ref=e95] [cursor=pointer]:
+                  - /url: /dashboard/chat/12dd26c5-eb30-4c38-a193-09d75939b1da
+                  - generic [ref=e96]: Prepare feauture list our CDP project
+                - button [ref=e98]:
+                  - img [ref=e99]
+          - generic [ref=e103]:
+            - paragraph [ref=e104]: Previous 7 Days
+            - generic [ref=e105]:
+              - generic [ref=e106]:
+                - link "The implementation scope of CDP project" [ref=e107] [cursor=pointer]:
+                  - /url: /dashboard/chat/76254a76-59f3-4e89-ba24-629a1976cd5c
+                  - generic [ref=e108]: The implementation scope of CDP project
+                - button [ref=e110]:
+                  - img [ref=e111]
+              - generic [ref=e115]:
+                - link "Summarize the backend project" [ref=e116] [cursor=pointer]:
+                  - /url: /dashboard/chat/e910d70f-b048-4844-88b0-c0cfa23c8852
+                  - generic [ref=e117]: Summarize the backend project
+                - button [ref=e119]:
+                  - img [ref=e120]
+        - generic [ref=e125]:
+          - generic [ref=e126]: Enterprise
+          - generic [ref=e127]: •
+          - generic [ref=e128]: Unlimited resources
+        - button "Help & Support" [ref=e130]:
+          - img
+          - text: Help & Support
+        - link "Settings" [ref=e132] [cursor=pointer]:
+          - /url: /dashboard/settings
+          - img [ref=e133]
+          - generic [ref=e136]: Settings
+        - button "Onur Onder Enterprise" [ref=e138]:
+          - img [ref=e139]: OO
+          - generic [ref=e141]:
+            - generic [ref=e142]: Onur Onder
+            - link "Enterprise" [ref=e143] [cursor=pointer]:
+              - /url: /dashboard/settings/billing
+              - generic [ref=e144]: Enterprise
+          - img [ref=e145]
+    - main [ref=e148]:
+      - generic [ref=e150]:
+        - generic [ref=e151]:
+          - generic [ref=e152]:
+            - heading "Documents" [level=1] [ref=e153]:
+              - img [ref=e154]
+              - text: Documents
+            - paragraph [ref=e160]: Manage your knowledge base
+          - button "Upload Documents" [ref=e161]:
+            - img
+            - text: Upload Documents
+        - generic [ref=e162]:
+          - generic [ref=e163]:
+            - generic [ref=e164]:
+              - img [ref=e165]
+              - textbox "Search documents..." [ref=e168]
+            - generic [ref=e169]:
+              - button "Grid view" [ref=e170]:
+                - img
+              - button "List view" [ref=e171]:
+                - img
+          - generic [ref=e172]: 10 documents
+          - generic [ref=e173]:
+            - generic [ref=e175]:
+              - generic [ref=e176]:
+                - img [ref=e178]
+                - button [ref=e184]:
+                  - img
+              - generic [ref=e185]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e186]
+                - generic [ref=e187]:
+                  - generic [ref=e188]:
+                    - img [ref=e189]
+                    - text: 2.1 KB
+                  - generic [ref=e194]:
+                    - img [ref=e195]
+                    - text: Jan 17, 2026
+                  - generic [ref=e200]: File Upload
+            - generic [ref=e202]:
+              - generic [ref=e203]:
+                - img [ref=e205]
+                - button [ref=e211]:
+                  - img
+              - generic [ref=e212]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e213]
+                - generic [ref=e214]:
+                  - generic [ref=e215]:
+                    - img [ref=e216]
+                    - text: 2.1 KB
+                  - generic [ref=e221]:
+                    - img [ref=e222]
+                    - text: Jan 17, 2026
+                  - generic [ref=e227]: File Upload
+            - generic [ref=e229]:
+              - generic [ref=e230]:
+                - img [ref=e232]
+                - button [ref=e238]:
+                  - img
+              - generic [ref=e239]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e240]
+                - generic [ref=e241]:
+                  - generic [ref=e242]:
+                    - img [ref=e243]
+                    - text: 2.1 KB
+                  - generic [ref=e248]:
+                    - img [ref=e249]
+                    - text: Jan 17, 2026
+                  - generic [ref=e254]: File Upload
+            - generic [ref=e256]:
+              - generic [ref=e257]:
+                - img [ref=e259]
+                - button [ref=e265]:
+                  - img
+              - generic [ref=e266]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e267]
+                - generic [ref=e268]:
+                  - generic [ref=e269]:
+                    - img [ref=e270]
+                    - text: 2.1 KB
+                  - generic [ref=e275]:
+                    - img [ref=e276]
+                    - text: Jan 17, 2026
+                  - generic [ref=e281]: File Upload
+            - generic [ref=e283]:
+              - generic [ref=e284]:
+                - img [ref=e286]
+                - button [ref=e292]:
+                  - img
+              - generic [ref=e293]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e294]
+                - generic [ref=e295]:
+                  - generic [ref=e296]:
+                    - img [ref=e297]
+                    - text: 2.1 KB
+                  - generic [ref=e302]:
+                    - img [ref=e303]
+                    - text: Jan 17, 2026
+                  - generic [ref=e308]: File Upload
+            - generic [ref=e310]:
+              - generic [ref=e311]:
+                - img [ref=e313]
+                - button [ref=e319]:
+                  - img
+              - generic [ref=e320]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e321]
+                - generic [ref=e322]:
+                  - generic [ref=e323]:
+                    - img [ref=e324]
+                    - text: 2.1 KB
+                  - generic [ref=e329]:
+                    - img [ref=e330]
+                    - text: Jan 17, 2026
+                  - generic [ref=e335]: File Upload
+            - generic [ref=e337]:
+              - generic [ref=e338]:
+                - img [ref=e340]
+                - button [ref=e346]:
+                  - img
+              - generic [ref=e347]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e348]
+                - generic [ref=e349]:
+                  - generic [ref=e350]:
+                    - img [ref=e351]
+                    - text: 2.1 KB
+                  - generic [ref=e356]:
+                    - img [ref=e357]
+                    - text: Jan 17, 2026
+                  - generic [ref=e362]: File Upload
+            - generic [ref=e364]:
+              - generic [ref=e365]:
+                - img [ref=e367]
+                - button [ref=e373]:
+                  - img
+              - generic [ref=e374]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e375]
+                - generic [ref=e376]:
+                  - generic [ref=e377]:
+                    - img [ref=e378]
+                    - text: 2.1 KB
+                  - generic [ref=e383]:
+                    - img [ref=e384]
+                    - text: Jan 17, 2026
+                  - generic [ref=e389]: File Upload
+            - generic [ref=e391]:
+              - generic [ref=e392]:
+                - img [ref=e394]
+                - button [ref=e400]:
+                  - img
+              - generic [ref=e401]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e402]
+                - generic [ref=e403]:
+                  - generic [ref=e404]:
+                    - img [ref=e405]
+                    - text: 2.1 KB
+                  - generic [ref=e410]:
+                    - img [ref=e411]
+                    - text: Jan 17, 2026
+                  - generic [ref=e416]: File Upload
+            - generic [ref=e418]:
+              - generic [ref=e419]:
+                - img [ref=e421]
+                - button [ref=e427]:
+                  - img
+              - generic [ref=e428]:
+                - heading "CONFIDENTIAL_PROJECT_OMEGA.txt" [level=3] [ref=e429]
+                - generic [ref=e430]:
+                  - generic [ref=e431]:
+                    - img [ref=e432]
+                    - text: 2.1 KB
+                  - generic [ref=e437]:
+                    - img [ref=e438]
+                    - text: Jan 17, 2026
+                  - generic [ref=e443]: File Upload
+```

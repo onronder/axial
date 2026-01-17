@@ -39,6 +39,7 @@ YOUTUBE_PATTERNS = [
     r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
     r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})',
     r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+    r'(?:https?://)?(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})',
 ]
 
 
@@ -444,7 +445,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
                         yield SourceDocument(
                             content=transcript,
                             metadata=metadata,
-                            source_type=SourceType.WEB,
+                            source_type=SourceType.YOUTUBE,  # Use dedicated YouTube type
                             source_id=url,
                             filename=f"{video_id}.txt",
                             mime_type="text/plain",
@@ -529,6 +530,10 @@ class WebConnector(EnhancedConnector, BaseConnector):
             return self._is_safe_host(hostname)
         except Exception:
             return False
+
+    def is_safe_url(self, url: str) -> bool:
+        """Public wrapper for URL safety check. Used by worker tasks."""
+        return self._is_safe_url(url)
 
     @lru_cache(maxsize=512)
     def _is_safe_host(self, hostname: str) -> bool:
