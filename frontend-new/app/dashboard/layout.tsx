@@ -31,7 +31,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     useEffect(() => {
         if (!loading && !isAuthenticated) {
-            router.push("/login");
+            // Middleware should have already redirected, but this is a fallback
+            // Preserve current path for post-login redirect
+            const currentPath = window.location.pathname + window.location.search;
+            router.push(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
         }
     }, [isAuthenticated, loading, router]);
 

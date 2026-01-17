@@ -43,7 +43,8 @@ export default function AcceptInvitePage() {
         if (!session) {
             setState("unauthenticated");
             const returnUrl = encodeURIComponent(`/invite/${token}`);
-            router.push(`/login?redirect=${returnUrl}`);
+            // Use 'redirectTo' to match middleware convention
+            router.push(`/login?redirectTo=${returnUrl}`);
             return;
         }
 

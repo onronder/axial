@@ -879,10 +879,50 @@ get_effective_plan(user_id)
 | `backend/api/v1/documents.py` | Added failed/pending counts to stats |
 | `backend/services/email.py` | Added startup warning |
 | `frontend-new/lib/supabase.ts` | Documented detectSessionInUrl |
+| `frontend-new/middleware.ts` | **NEW** Production-grade session middleware |
+| `frontend-new/app/auth/auth-code-error/page.tsx` | **NEW** Missing error page |
+| `frontend-new/app/dashboard/layout.tsx` | Consistent redirect URL handling |
+| `frontend-new/components/auth/LoginForm.tsx` | Session error messages |
 
 ---
 
-## 11. Conclusion
+## 11. Frontend Session Middleware (Production-Grade)
+
+### Implementation Details
+
+Created a comprehensive Next.js middleware for session management:
+
+**Location:** `frontend-new/middleware.ts`
+
+**Features:**
+1. **Environment Validation** - Fails gracefully if Supabase is not configured
+2. **Route Classification**:
+   - `EXCLUDED_PATHS`: `/auth/callback`, `/auth/reset-password`, `/auth/auth-code-error`, `/_next`, `/api`, `/monitoring`
+   - `PUBLIC_PATHS`: `/`, `/login`, `/register`, `/forgot-password`, `/legal/*`, `/invite/*`, `/oauth/callback`
+   - All other routes require authentication
+3. **Session Validation** - Uses `getUser()` (server-validated) instead of `getSession()` (client-only)
+4. **Error Handling**:
+   - Catches `session_not_found`, `invalid`, `expired`, and `refresh_token` errors
+   - Clears stale cookies to prevent error loops
+   - Redirects to login with `error` query param for user feedback
+5. **Redirect Protection** - Prevents infinite redirect loops
+6. **Cookie Management** - Properly clears all Supabase auth cookie chunks
+
+**Security Considerations:**
+- ✅ Server-side session validation (not just cookie reading)
+- ✅ Stale cookie clearing on auth errors
+- ✅ Proper exclusion of auth callbacks (prevents breaking OAuth flows)
+- ✅ Fail-safe for missing configuration
+- ✅ Consistent redirect URL preservation
+
+**Performance Optimizations:**
+- Fast-path exits for excluded routes and static assets
+- Matcher config excludes static files at framework level
+- No unnecessary session checks for public routes
+
+---
+
+## 12. Conclusion
 
 The Axio Hub system demonstrates solid architecture with:
 
@@ -894,10 +934,11 @@ The Axio Hub system demonstrates solid architecture with:
 ✅ **Production billing integration** - Polar webhooks with idempotency + DLQ  
 ✅ **Centralized services** - Notification creation now unified  
 ✅ **Modern Python practices** - Using timezone-aware datetimes  
+✅ **Production-grade session management** - Middleware with error handling  
 
 **All identified issues have been resolved.** The system is **production-ready** with full reliability and maintainability guarantees.
 
 ---
 
 *Audit completed: 2026-01-17*  
-*Document version: 2.0 (All Issues Resolved)*
+*Document version: 3.0 (Session Middleware Added)*

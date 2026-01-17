@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -26,6 +26,25 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
+/**
+ * Error messages for different session/auth errors.
+ * These map to the `error` query parameter set by middleware.
+ */
+const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
+  session_expired: {
+    title: "Session Expired",
+    description: "Your session has expired. Please log in again to continue.",
+  },
+  session_not_found: {
+    title: "Session Invalid",
+    description: "Your session is no longer valid. Please log in again.",
+  },
+  auth_required: {
+    title: "Authentication Required",
+    description: "Please log in to access this page.",
+  },
+};
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -34,8 +53,23 @@ export function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
-  const redirectUrl = searchParams.get("redirect");
+  // Support both 'redirect' (legacy) and 'redirectTo' (middleware) params
+  const redirectUrl = searchParams.get("redirectTo") || searchParams.get("redirect");
+  const errorParam = searchParams.get("error");
+
+  // Handle error display and cleanup
+  useEffect(() => {
+    if (errorParam && ERROR_MESSAGES[errorParam]) {
+      setSessionError(errorParam);
+      
+      // Clean up URL after showing error (prevents showing on refresh)
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete("error");
+      window.history.replaceState({}, "", newUrl.toString());
+    }
+  }, [errorParam]);
 
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -78,6 +112,31 @@ export function LoginForm() {
 
   return (
     <div className="glass-card p-8 space-y-8">
+      {/* Session Error Alert */}
+      {sessionError && ERROR_MESSAGES[sessionError] && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+          <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+              {ERROR_MESSAGES[sessionError].title}
+            </p>
+            <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">
+              {ERROR_MESSAGES[sessionError].description}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSessionError(null)}
+            className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 transition-colors"
+            aria-label="Dismiss"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="text-center">
         <h1 className="text-2xl font-bold text-foreground">
