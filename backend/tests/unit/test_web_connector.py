@@ -827,8 +827,7 @@ class TestWebConnectorExtraPaths:
                 yield Transcript()
 
         class YouTubeTranscriptApi:
-            @staticmethod
-            def list_transcripts(_video_id):
+            def list(self, _video_id):
                 return TranscriptList()
 
         yt_module.YouTubeTranscriptApi = YouTubeTranscriptApi
@@ -860,8 +859,7 @@ class TestWebConnectorExtraPaths:
         yt_errors = ModuleType("youtube_transcript_api._errors")
 
         class YouTubeTranscriptApi:
-            @staticmethod
-            def list_transcripts(_video_id):
+            def list(self, _video_id):
                 raise Exception("boom")
 
         yt_module.YouTubeTranscriptApi = YouTubeTranscriptApi
@@ -883,8 +881,7 @@ class TestWebConnectorExtraPaths:
                 return None
 
         class YouTubeTranscriptApi:
-            @staticmethod
-            def list_transcripts(_video_id):
+            def list(self, _video_id):
                 return TranscriptList()
 
         yt_module.YouTubeTranscriptApi = YouTubeTranscriptApi

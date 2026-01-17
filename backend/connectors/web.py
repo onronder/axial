@@ -351,8 +351,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
                 return None
             
+            # Create API instance (new in v1.2.0)
+            ytt_api = YouTubeTranscriptApi()
+            
             # Try to get transcript (auto-generated or manual)
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            transcript_list = ytt_api.list(video_id)
             
             # Prefer manual transcripts, fall back to auto-generated
             transcript = None
