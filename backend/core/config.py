@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     GROK_MODEL_NAME: Optional[str] = None
     GROQ_CHAT_MODEL_NAME: str = "llama-3.3-70b-versatile"
     
-    RAG_SIMILARITY_THRESHOLD: float = 0.50
+    RAG_SIMILARITY_THRESHOLD: float = 0.35  # Lowered from 0.50 for better recall on conversational content
     
     # =========================================================================
     # Guardrails Pre-Flight Search Configuration

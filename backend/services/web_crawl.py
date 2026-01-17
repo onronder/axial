@@ -6,6 +6,7 @@ Shared across web crawl endpoints.
 
 from datetime import datetime, timezone
 from typing import Dict, Optional
+import re
 
 import logging
 
@@ -13,6 +14,19 @@ from core.db import get_supabase
 from worker.tasks import crawl_discovery_task
 
 logger = logging.getLogger(__name__)
+
+# YouTube URL patterns (same as connectors/web.py)
+YOUTUBE_PATTERNS = [
+    r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
+    r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})',
+    r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+    r'(?:https?://)?(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})',
+]
+
+
+def is_youtube_url(url: str) -> bool:
+    """Check if a URL is a YouTube video."""
+    return any(re.match(pattern, url) for pattern in YOUTUBE_PATTERNS)
 
 def queue_web_crawl(
     *,
@@ -31,6 +45,10 @@ def queue_web_crawl(
     supabase = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
     org_id = organization_id or user_id
+
+    # Detect YouTube vs regular web crawl for proper labeling
+    is_youtube = is_youtube_url(root_url)
+    provider = "youtube" if is_youtube else "web"
 
     crawl_config_data = {
         "user_id": user_id,
@@ -57,14 +75,14 @@ def queue_web_crawl(
             "id": ingestion_job_id,
             "user_id": user_id,
             "organization_id": org_id,
-            "provider": "web",
+            "provider": provider,  # Dynamic: "youtube" or "web"
             "status": "pending",
             "total_files": 0,
             "processed_files": 0,
             "failed_files": 0,
             "progress": 0,
-            "message": f"Queued crawl for {root_url}",
-            "status_message": f"Queued crawl for {root_url}",
+            "message": f"Queued {'YouTube video' if is_youtube else 'crawl'} for {root_url}",
+            "status_message": f"Queued {'YouTube video' if is_youtube else 'crawl'} for {root_url}",
         }
     try:
         supabase.table("ingestion_jobs").upsert(job_record, on_conflict="id").execute()
