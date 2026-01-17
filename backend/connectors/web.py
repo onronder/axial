@@ -376,7 +376,22 @@ class WebConnector(EnhancedConnector, BaseConnector):
             
             # Fetch and combine transcript segments
             segments = transcript.fetch()
-            full_text = " ".join([seg["text"] for seg in segments])
+            
+            # Extract text from segments (polymorphic: handles both dict and object types)
+            text_parts = []
+            for seg in segments:
+                if isinstance(seg, dict):
+                    # Legacy dict format: {"text": "...", "start": ..., "duration": ...}
+                    text_parts.append(seg.get("text", ""))
+                elif hasattr(seg, "text"):
+                    # New FetchedTranscriptSnippet object format (v1.2.0+)
+                    text_parts.append(seg.text)
+                else:
+                    # Fallback: convert to string to avoid crash
+                    logger.warning(f"⚠️ [YouTube] Unknown segment type: {type(seg).__name__}")
+                    text_parts.append(str(seg))
+            
+            full_text = " ".join(text_parts)
             
             logger.info(f"✅ [YouTube] Fetched transcript: {len(full_text)} chars from {video_id}")
             return full_text

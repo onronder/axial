@@ -841,6 +841,46 @@ class TestWebConnectorExtraPaths:
             text = connector.fetch_youtube_transcript("https://youtu.be/abc123")
         assert text == "hello world"
 
+    def test_fetch_youtube_transcript_object_format(self, monkeypatch):
+        """Test transcript fetch with FetchedTranscriptSnippet objects (v1.2.0+ format)."""
+        connector = WebConnector()
+        yt_module = ModuleType("youtube_transcript_api")
+        yt_errors = ModuleType("youtube_transcript_api._errors")
+
+        class FetchedTranscriptSnippet:
+            """Mock of the new object-based transcript segment."""
+            def __init__(self, text, start, duration):
+                self.text = text
+                self.start = start
+                self.duration = duration
+
+        class Transcript:
+            def fetch(self):
+                # Return objects instead of dicts (new v1.2.0+ format)
+                return [
+                    FetchedTranscriptSnippet("hello", 0.0, 1.0),
+                    FetchedTranscriptSnippet("world", 1.0, 1.0),
+                ]
+
+        class TranscriptList:
+            def find_manually_created_transcript(self, _langs):
+                return Transcript()
+
+        class YouTubeTranscriptApi:
+            def list(self, _video_id):
+                return TranscriptList()
+
+        yt_module.YouTubeTranscriptApi = YouTubeTranscriptApi
+        yt_errors.TranscriptsDisabled = Exception
+        yt_errors.NoTranscriptFound = Exception
+        yt_errors.VideoUnavailable = Exception
+        monkeypatch.setitem(sys.modules, "youtube_transcript_api", yt_module)
+        monkeypatch.setitem(sys.modules, "youtube_transcript_api._errors", yt_errors)
+
+        with patch.object(connector, "extract_youtube_video_id", return_value="abc123"):
+            text = connector.fetch_youtube_transcript("https://youtu.be/abc123")
+        assert text == "hello world"
+
     def test_fetch_youtube_transcript_import_error(self, monkeypatch):
         connector = WebConnector()
         real_import = builtins.__import__
