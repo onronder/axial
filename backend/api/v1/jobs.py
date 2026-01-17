@@ -7,7 +7,12 @@ Used for polling-based progress updates during ingestion.
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
-from api.v1.dependencies import validate_team_access, require_editor, require_paid_access
+from api.v1.dependencies import (
+    validate_team_access,
+    require_editor,
+    require_paid_access,
+    get_user_organization_id,
+)
 from core.security import get_current_user
 from core.db import get_supabase
 from core.ingestion_utils import normalize_provider
@@ -18,50 +23,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 
-def _resolve_org_id(supabase, user_id: str) -> str:
-    """
-    Resolve organization_id for org-scoped job access.
-    Falls back to user_id on lookup errors.
-    """
-    try:
-        member = (
-            supabase.table("team_members")
-            .select("team_id")
-            .eq("member_user_id", user_id)
-            .neq("status", "removed")
-            .limit(1)
-            .execute()
-        )
-        member_data = member.data if isinstance(member.data, list) else []
-        if member_data and isinstance(member_data[0], dict):
-            team_id = member_data[0].get("team_id")
-            if team_id:
-                return str(team_id)
-    except Exception as e:
-        logger.warning("⚠️ [Jobs] Failed to resolve team membership for %s: %s", user_id, e)
-
-    try:
-        owner = (
-            supabase.table("teams")
-            .select("id")
-            .eq("owner_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        owner_data = owner.data if isinstance(owner.data, list) else []
-        if owner_data and isinstance(owner_data[0], dict):
-            owner_id = owner_data[0].get("id")
-            if owner_id:
-                return str(owner_id)
-    except Exception as e:
-        logger.warning("⚠️ [Jobs] Failed to resolve owner team for %s: %s", user_id, e)
-
-    return user_id
-
-
 @router.get("/jobs/active", response_model=Optional[IngestionJobResponse])
 async def get_active_job(
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Get the organization's current active ingestion job.
@@ -73,7 +38,6 @@ async def get_active_job(
         IngestionJobResponse if active job exists, None otherwise (204)
     """
     supabase = get_supabase()
-    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Query for active jobs (pending or processing)
@@ -115,7 +79,8 @@ async def get_active_job(
 @router.get("/jobs/{job_id}", response_model=IngestionJobResponse)
 async def get_job_by_id(
     job_id: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Get a specific job by ID.
@@ -123,7 +88,6 @@ async def get_job_by_id(
     Ensures users can only access jobs in their organization.
     """
     supabase = get_supabase()
-    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         try:
@@ -171,7 +135,8 @@ async def get_job_by_id(
 @router.get("/jobs", response_model=list[IngestionJobResponse])
 async def list_recent_jobs(
     user_id: str = Depends(get_current_user),
-    limit: int = 10
+    organization_id: str = Depends(get_user_organization_id),
+    limit: int = 10,
 ):
     """
     List recent ingestion jobs for the organization.
@@ -179,7 +144,6 @@ async def list_recent_jobs(
     Useful for showing job history.
     """
     supabase = get_supabase()
-    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         response = supabase.table("ingestion_jobs")\
@@ -220,7 +184,8 @@ async def list_recent_jobs(
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_job(
     job_id: str,
-    user_id: str = Depends(require_editor)
+    user_id: str = Depends(require_editor),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Cancel an in-progress ingestion job.
@@ -235,7 +200,6 @@ async def cancel_job(
     from datetime import datetime, timezone
     
     supabase = get_supabase()
-    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Verify ownership
@@ -305,7 +269,8 @@ async def cancel_job(
 @router.post("/jobs/files/{file_status_id}/retry")
 async def retry_file(
     file_status_id: str,
-    user_id: str = Depends(require_editor)
+    user_id: str = Depends(require_editor),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Retry a failed file ingestion.
@@ -318,7 +283,6 @@ async def retry_file(
         File status ID and retry count
     """
     supabase = get_supabase()
-    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Get file status
@@ -401,7 +365,8 @@ async def retry_file(
 @router.get("/jobs/{job_id}/files")
 async def get_job_files(
     job_id: str,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Get all file statuses for a specific job.
@@ -409,7 +374,6 @@ async def get_job_files(
     Returns detailed per-file progress information.
     """
     supabase = get_supabase()
-    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Verify job ownership
@@ -447,7 +411,8 @@ async def get_job_files(
 @router.post("/jobs/{job_id}/retry")
 async def retry_job(
     job_id: str,
-    user_id: str = Depends(require_editor)
+    user_id: str = Depends(require_editor),
+    organization_id: str = Depends(get_user_organization_id),
 ):
     """
     Retry an entire failed ingestion job.
@@ -463,7 +428,6 @@ async def retry_job(
     from datetime import datetime, timezone
     
     supabase = get_supabase()
-    organization_id = _resolve_org_id(supabase, user_id)
     
     try:
         # Verify ownership and get job details

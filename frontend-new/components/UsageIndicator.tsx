@@ -52,8 +52,9 @@ export function UsageIndicator() {
         isLoading,
     } = useUsage();
 
-    // Enterprise users have unlimited resources
-    const isEnterprise = plan === "enterprise";
+    // Enterprise users have unlimited resources - no usage display needed
+    // (plan badge is shown under username in sidebar)
+    const isEnterprise = plan === "enterprise" || plan?.startsWith("enterprise");
 
     if (isLoading) {
         return (
@@ -64,17 +65,9 @@ export function UsageIndicator() {
         );
     }
 
-    // Enterprise: show simplified "Unlimited" UI
+    // Enterprise: don't show usage indicator (unlimited, and plan badge is already shown)
     if (isEnterprise) {
-        return (
-            <div className="px-3 py-3 border-t border-border/50">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="font-medium text-success">Enterprise</span>
-                    <span>•</span>
-                    <span>Unlimited resources</span>
-                </div>
-            </div>
-        );
+        return null;
     }
 
     return (
@@ -138,7 +131,8 @@ export function UsageIndicator() {
 export function UsageIndicatorCompact() {
     const { filesPercent, storagePercent, plan, isLoading } = useUsage();
 
-    if (isLoading || plan === "enterprise") return null;
+    // Enterprise users have unlimited resources - no indicator needed
+    if (isLoading || plan === "enterprise" || plan?.startsWith("enterprise")) return null;
 
     const worstPercent = Math.max(filesPercent, storagePercent);
 

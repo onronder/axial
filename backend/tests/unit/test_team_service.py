@@ -353,34 +353,27 @@ class TestTeamServiceAdditional:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_trialing_status_is_allowed(self, team_service):
-        """Legacy profile trialing data does not grant plan access."""
+    async def test_no_subscription_returns_free(self, team_service):
+        """User with no active subscription defaults to free plan.
+        
+        NOTE: subscription_status was removed from user_profiles in migration 20251231130000.
+        Subscription status is now tracked in the subscriptions table only.
+        Users without an active subscription entry default to 'free' regardless of user_profiles.plan.
+        """
         mock_supabase = Mock()
         
-        # Mock RPC call reflecting logic where we check status
-        # Since get_effective_plan uses _get_effective_plan_direct on RPC failure or logic fallback
-        # Let's mock the direct query result to simulate what happens
-        
-        # Mock team lookup (no team) - uses limit(1) with neq()
-        # Fix mock chain for eq().neq().limit()
-        mock_eq = mock_supabase.table.return_value.select.return_value.eq.return_value
-        mock_eq.neq.return_value.limit.return_value.execute.return_value = Mock(data=[])
-
-        # Mock own_team check (step 2) to be empty so it falls to step 3
-        # Direct query uses: supabase.table("teams").select("id").eq("owner_id", user_id).limit(1)
-        # This matches mock_eq.limit.return_value (since eq() is used)
-        mock_eq.limit.return_value.execute.return_value = Mock(data=[])
-
-        # Mock profile lookup - uses single()
-        mock_eq.single.return_value.execute.return_value = Mock(
-            data={"plan": "pro", "subscription_status": "trialing"}
+        # Mock RPC returning data with no active subscription
+        mock_supabase.rpc.return_value.execute.return_value = Mock(
+            data={
+                "team_id": "some-team-id",
+                "subscription": None,  # No subscription record
+                "profile": {"plan": "pro"}  # Profile plan is ignored if no subscription
+            }
         )
         
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
-             # We need to bypass the RPC call or make it return None so it falls back to direct query
-            mock_supabase.rpc.return_value.execute.side_effect = Exception("RPC fail")
-            
             plan = await team_service.get_effective_plan(OWNER_UUID)
+            # Without an active subscription, user gets 'free' regardless of profile.plan
             assert plan == "free"
 
     @pytest.mark.unit

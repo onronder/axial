@@ -39,6 +39,8 @@ class DocumentDTO(BaseModel):
 class DocumentStatsDTO(BaseModel):
     """Lightweight stats response for efficient dashboard loading."""
     total_documents: int
+    failed_documents: int = 0
+    pending_documents: int = 0
     last_updated: Optional[str] = None
 
 
@@ -78,13 +80,19 @@ async def get_document_stats(
     """
     Get lightweight document statistics for the organization.
     
-    Uses efficient count query - O(1) performance instead of O(n) data transfer.
+    Uses efficient count queries - O(1) performance instead of O(n) data transfer.
     Used by frontend to check if team needs onboarding.
+    
+    Returns:
+        - total_documents: Successfully indexed documents
+        - failed_documents: Files that failed ingestion
+        - pending_documents: Files currently being processed
+        - last_updated: Timestamp of most recent document
     """
     supabase = get_supabase()
     
     try:
-        # Use count query - only fetches count, not actual data (org-wide)
+        # Count successful documents (org-wide)
         count_response = supabase.table("documents")\
             .select("id", count="exact")\
             .eq("organization_id", organization_id)\
@@ -93,6 +101,30 @@ async def get_document_stats(
             .execute()
         
         total = count_response.count if count_response.count is not None else 0
+        
+        # Count failed files from ingestion_file_status (org-wide)
+        failed_count = 0
+        pending_count = 0
+        try:
+            failed_response = supabase.table("ingestion_file_status")\
+                .select("id", count="exact")\
+                .eq("organization_id", organization_id)\
+                .eq("status", "failed")\
+                .is_("document_id", "null")\
+                .execute()
+            failed_count = failed_response.count if failed_response.count is not None else 0
+            
+            # Count pending/processing files
+            pending_response = supabase.table("ingestion_file_status")\
+                .select("id", count="exact")\
+                .eq("organization_id", organization_id)\
+                .in_("status", ["pending", "processing"])\
+                .is_("document_id", "null")\
+                .execute()
+            pending_count = pending_response.count if pending_response.count is not None else 0
+        except Exception as e:
+            # Don't fail if ingestion_file_status query fails
+            logger.warning(f"Failed to count failed/pending files: {e}")
         
         # Get last updated (most recent document in org)
         last_updated = None
@@ -111,6 +143,8 @@ async def get_document_stats(
         
         return DocumentStatsDTO(
             total_documents=total,
+            failed_documents=failed_count,
+            pending_documents=pending_count,
             last_updated=last_updated
         )
         

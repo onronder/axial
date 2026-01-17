@@ -16,7 +16,7 @@ import threading
 import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -80,7 +80,7 @@ class CircuitBreaker:
             if self._state == CircuitState.OPEN:
                 # Check if cooldown has passed
                 if self._last_failure_time:
-                    elapsed = datetime.utcnow() - self._last_failure_time
+                    elapsed = datetime.now(timezone.utc) - self._last_failure_time
                     if elapsed > timedelta(seconds=self.cooldown_seconds):
                         self._state = CircuitState.HALF_OPEN
                         logger.info(f"[CircuitBreaker] {self.service_name}: HALF_OPEN (testing recovery)")
@@ -88,7 +88,7 @@ class CircuitBreaker:
                 
                 remaining = self.cooldown_seconds
                 if self._last_failure_time:
-                    remaining = max(0, self.cooldown_seconds - int((datetime.utcnow() - self._last_failure_time).total_seconds()))
+                    remaining = max(0, self.cooldown_seconds - int((datetime.now(timezone.utc) - self._last_failure_time).total_seconds()))
                 return False, f"circuit_open_cooldown_{remaining}s"
             
             # HALF_OPEN - allow one test request
@@ -105,7 +105,7 @@ class CircuitBreaker:
         """Record failed call, potentially open circuit."""
         with self._lock:
             self._failure_count += 1
-            self._last_failure_time = datetime.utcnow()
+            self._last_failure_time = datetime.now(timezone.utc)
             
             # Quota errors immediately open the circuit
             if error_type in ("402", "quota_exceeded", "payment_required"):

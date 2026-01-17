@@ -274,7 +274,12 @@ class TestProcessPageTask:
         supabase = MagicMock()
         supabase.rpc.return_value.execute.return_value = MagicMock(data=[])
 
-        doc = SimpleNamespace(content="hello world", metadata={"title": "Home", "source_url": "https://example.com"})
+        doc = SimpleNamespace(
+            content="hello world",
+            metadata={"title": "Home", "source_url": "https://example.com"},
+            source_type="web",
+            title="Home"
+        )
         connector = MagicMock()
         connector.is_safe_url.return_value = True
         connector.get_crawl_delay.return_value = None
@@ -308,7 +313,12 @@ class TestProcessPageTask:
         supabase = MagicMock()
         supabase.rpc.return_value.execute.return_value = MagicMock(data=[])
 
-        doc = SimpleNamespace(content=b"hello world", metadata={"title": "Home", "source_url": "https://example.com"})
+        doc = SimpleNamespace(
+            content=b"hello world",
+            metadata={"title": "Home", "source_url": "https://example.com"},
+            source_type="web",
+            title="Home"
+        )
         connector = MagicMock()
         connector.is_safe_url.return_value = True
         connector.get_crawl_delay.return_value = None

@@ -69,7 +69,7 @@ class TestGetActiveJob:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_with_active_job):
             from api.v1.jobs import get_active_job
 
-            result = asyncio.run(get_active_job(user_id="user-123"))
+            result = asyncio.run(get_active_job(user_id="user-123", organization_id="user-123"))
 
         assert result.id == "job-123"
     
@@ -79,7 +79,7 @@ class TestGetActiveJob:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_no_active_job):
             from api.v1.jobs import get_active_job
 
-            result = asyncio.run(get_active_job(user_id="user-123"))
+            result = asyncio.run(get_active_job(user_id="user-123", organization_id="user-123"))
 
         assert result is None
     
@@ -105,11 +105,10 @@ class TestGetActiveJob:
     def test_filters_by_organization_id(self, mock_supabase_with_active_job):
         """Should only return jobs for the current organization."""
         # This tests that org isolation is enforced
-        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_with_active_job), \
-             patch("api.v1.jobs._resolve_org_id", return_value="org-1"):
+        with patch("api.v1.jobs.get_supabase", return_value=mock_supabase_with_active_job):
             from api.v1.jobs import get_active_job
 
-            asyncio.run(get_active_job(user_id="user-123"))
+            asyncio.run(get_active_job(user_id="user-123", organization_id="org-1"))
 
         mock_supabase_with_active_job.table.return_value.eq.assert_any_call("organization_id", "org-1")
     
@@ -132,7 +131,7 @@ class TestGetActiveJob:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
             from api.v1.jobs import get_active_job
 
-            asyncio.run(get_active_job(user_id="user-123"))
+            asyncio.run(get_active_job(user_id="user-123", organization_id="org-1"))
 
         table.order.assert_called_with("created_at", desc=True)
         table.limit.assert_called_with(1)
@@ -163,7 +162,7 @@ class TestGetJobById:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
             from api.v1.jobs import get_job_by_id
 
-            result = asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+            result = asyncio.run(get_job_by_id("job-1", user_id="user-123", organization_id="user-123"))
 
         assert result.id == "job-1"
     
@@ -182,7 +181,7 @@ class TestGetJobById:
             from api.v1.jobs import get_job_by_id
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+                asyncio.run(get_job_by_id("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 404
     
     @pytest.mark.unit
@@ -201,7 +200,7 @@ class TestGetJobById:
             from api.v1.jobs import get_job_by_id
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+                asyncio.run(get_job_by_id("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 404
 
     @pytest.mark.unit
@@ -219,7 +218,7 @@ class TestGetJobById:
             from api.v1.jobs import get_job_by_id
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+                asyncio.run(get_job_by_id("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 404
 
     @pytest.mark.unit
@@ -237,7 +236,7 @@ class TestGetJobById:
             from api.v1.jobs import get_job_by_id
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+                asyncio.run(get_job_by_id("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 500
 
 
@@ -261,7 +260,7 @@ class TestListJobs:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
             from api.v1.jobs import list_recent_jobs
 
-            result = asyncio.run(list_recent_jobs(user_id="user-123", limit=10))
+            result = asyncio.run(list_recent_jobs(user_id="user-123", organization_id="user-123", limit=10))
 
         assert len(result) == 1
     
@@ -280,7 +279,7 @@ class TestListJobs:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
             from api.v1.jobs import list_recent_jobs
 
-            asyncio.run(list_recent_jobs(user_id="user-123", limit=5))
+            asyncio.run(list_recent_jobs(user_id="user-123", organization_id="user-123", limit=5))
 
         table.limit.assert_called_with(5)
     
@@ -299,7 +298,7 @@ class TestListJobs:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
             from api.v1.jobs import list_recent_jobs
 
-            asyncio.run(list_recent_jobs(user_id="user-123", limit=5))
+            asyncio.run(list_recent_jobs(user_id="user-123", organization_id="user-123", limit=5))
 
         table.order.assert_called_with("created_at", desc=True)
 
@@ -513,7 +512,7 @@ class TestRetryJobEndpoint:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
             from api.v1.jobs import retry_job
 
-            asyncio.run(retry_job("job-1", user_id="user-123"))
+            asyncio.run(retry_job("job-1", user_id="user-123", organization_id="user-123"))
 
         job_table.eq.assert_any_call("organization_id", "user-123")
     
@@ -593,7 +592,7 @@ class TestCancelJobEndpoint:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
             from api.v1.jobs import cancel_job
 
-            result = asyncio.run(cancel_job("job-1", user_id="user-123"))
+            result = asyncio.run(cancel_job("job-1", user_id="user-123", organization_id="user-123"))
 
         assert result["status"] == "cancelled"
         fake_celery.control.revoke.assert_called_with("task-1", terminate=True)
@@ -621,7 +620,7 @@ class TestCancelJobEndpoint:
             from api.v1.jobs import cancel_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(cancel_job("job-1", user_id="user-123"))
+                asyncio.run(cancel_job("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 404
 
 
@@ -659,7 +658,7 @@ class TestGetJobFilesEndpoint:
             from api.v1.jobs import get_job_files
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_job_files("job-1", user_id="user-123"))
+                asyncio.run(get_job_files("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 404
 
 
@@ -700,7 +699,7 @@ class TestRetryFileEndpoint:
         with patch("api.v1.jobs.get_supabase", return_value=supabase):
             from api.v1.jobs import retry_file
 
-            result = asyncio.run(retry_file("file-1", user_id="user-123"))
+            result = asyncio.run(retry_file("file-1", user_id="user-123", organization_id="user-123"))
 
         assert result["status"] == "queued"
 
@@ -735,7 +734,7 @@ class TestRetryJobEndpoint:
         with patch("api.v1.jobs.get_supabase", return_value=supabase):
             from api.v1.jobs import retry_job
 
-            result = asyncio.run(retry_job("job-1", user_id="user-123"))
+            result = asyncio.run(retry_job("job-1", user_id="user-123", organization_id="user-123"))
 
         assert result["files_queued"] == 1
 
@@ -764,7 +763,7 @@ class TestGetJobFilesDetailed:
         with patch("api.v1.jobs.get_supabase", return_value=supabase):
             from api.v1.jobs import get_job_files
 
-            result = asyncio.run(get_job_files("job-1", user_id="user-123"))
+            result = asyncio.run(get_job_files("job-1", user_id="user-123", organization_id="user-123"))
 
         assert result[0]["id"] == "file-1"
 
@@ -786,7 +785,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import get_active_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_active_job(user_id="user-123"))
+                asyncio.run(get_active_job(user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -803,7 +802,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import get_job_by_id
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_job_by_id("job-1", user_id="user-123"))
+                asyncio.run(get_job_by_id("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -821,7 +820,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import list_recent_jobs
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(list_recent_jobs(user_id="user-123", limit=10))
+                asyncio.run(list_recent_jobs(user_id="user-123", organization_id="user-123", limit=10))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -841,7 +840,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import cancel_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(cancel_job("job-1", user_id="user-123"))
+                asyncio.run(cancel_job("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 400
 
     @pytest.mark.unit
@@ -877,7 +876,7 @@ class TestJobErrorPaths:
         with patch("api.v1.jobs.get_supabase", return_value=mock_supabase):
             from api.v1.jobs import cancel_job
 
-            result = asyncio.run(cancel_job("job-1", user_id="user-123"))
+            result = asyncio.run(cancel_job("job-1", user_id="user-123", organization_id="user-123"))
 
         assert result["status"] == "cancelled"
 
@@ -895,7 +894,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import cancel_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(cancel_job("job-1", user_id="user-123"))
+                asyncio.run(cancel_job("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -913,7 +912,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_file
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_file("file-1", user_id="user-123"))
+                asyncio.run(retry_file("file-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 404
 
     @pytest.mark.unit
@@ -933,7 +932,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_file
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_file("file-1", user_id="user-123"))
+                asyncio.run(retry_file("file-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 404
 
     @pytest.mark.unit
@@ -957,7 +956,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_file
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_file("file-1", user_id="user-123"))
+                asyncio.run(retry_file("file-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 400
 
     @pytest.mark.unit
@@ -981,7 +980,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_file
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_file("file-1", user_id="user-123"))
+                asyncio.run(retry_file("file-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 400
 
     @pytest.mark.unit
@@ -1006,7 +1005,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_file
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_file("file-1", user_id="user-123"))
+                asyncio.run(retry_file("file-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 400
 
     @pytest.mark.unit
@@ -1024,7 +1023,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_file
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_file("file-1", user_id="user-123"))
+                asyncio.run(retry_file("file-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -1051,7 +1050,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import get_job_files
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_job_files("job-1", user_id="user-123"))
+                asyncio.run(get_job_files("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -1080,7 +1079,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_job("job-1", user_id="user-123"))
+                asyncio.run(retry_job("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 400
 
     @pytest.mark.unit
@@ -1111,7 +1110,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_job("job-1", user_id="user-123"))
+                asyncio.run(retry_job("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 400
 
     @pytest.mark.unit
@@ -1129,7 +1128,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_job("job-1", user_id="user-123"))
+                asyncio.run(retry_job("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -1147,7 +1146,7 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_job("job-1", user_id="user-123"))
+                asyncio.run(retry_job("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 404
 
     @pytest.mark.unit
@@ -1165,5 +1164,5 @@ class TestJobErrorPaths:
             from api.v1.jobs import retry_job
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(retry_job("job-1", user_id="user-123"))
+                asyncio.run(retry_job("job-1", user_id="user-123", organization_id="user-123"))
         assert exc.value.status_code == 400

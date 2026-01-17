@@ -679,7 +679,9 @@ def test_process_page_task_no_chunks(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [
+        SimpleNamespace(content="hi", metadata={"title": "t"}, source_type="web", title="t")
+    ]
 
     result_obj = SimpleNamespace(chunks=[], total_tokens=0)
 
@@ -701,7 +703,9 @@ def test_process_page_task_no_embeddings(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [
+        SimpleNamespace(content="hi", metadata={"title": "t"}, source_type="web", title="t")
+    ]
 
     chunk = SimpleNamespace(content="hi", token_count=1, chunk_index=0, metadata={})
     result_obj = SimpleNamespace(chunks=[chunk], total_tokens=1)
@@ -725,7 +729,9 @@ def test_process_page_task_doc_insert_failed(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [
+        SimpleNamespace(content="hi", metadata={"title": "t"}, source_type="web", title="t")
+    ]
 
     chunk = SimpleNamespace(content="hi", token_count=1, chunk_index=0, metadata={})
     result_obj = SimpleNamespace(chunks=[chunk], total_tokens=1)
@@ -751,7 +757,9 @@ def test_process_page_task_increment_error(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [
+        SimpleNamespace(content="hi", metadata={"title": "t"}, source_type="web", title="t")
+    ]
 
     chunk = SimpleNamespace(content="hi", token_count=1, chunk_index=0, metadata={})
     result_obj = SimpleNamespace(chunks=[chunk], total_tokens=1)
@@ -777,7 +785,9 @@ def test_process_page_task_exception_path(monkeypatch):
     connector = MagicMock()
     connector.is_safe_url.return_value = True
     connector.get_crawl_delay.return_value = 0
-    connector.fetch_documents_sync.return_value = [SimpleNamespace(content="hi", metadata={"title": "t"})]
+    connector.fetch_documents_sync.return_value = [
+        SimpleNamespace(content="hi", metadata={"title": "t"}, source_type="web", title="t")
+    ]
 
     monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
     monkeypatch.setattr("services.parsers.DocumentProcessorFactory", SimpleNamespace(process_web_content=lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("boom"))))

@@ -43,10 +43,19 @@ class EmailService:
             resend.api_key = self.api_key
             logger.info("📧 EmailService initialized with Resend API")
         else:
+            # STARTUP WARNING: Email service is disabled
+            # This should be prominent in logs to help operators diagnose issues
+            warning_msgs = []
             if not resend:
-                logger.warning("📧 EmailService: resend package not installed")
-            elif not self.api_key:
-                logger.warning("📧 EmailService: RESEND_API_KEY not configured")
+                warning_msgs.append("resend package not installed (pip install resend)")
+            if not self.api_key:
+                warning_msgs.append("RESEND_API_KEY environment variable not set")
+            
+            warning_detail = "; ".join(warning_msgs)
+            logger.warning(
+                f"⚠️ [STARTUP] EmailService DISABLED - {warning_detail}. "
+                f"Email notifications (ingestion complete, team invites, etc.) will not be sent."
+            )
         
         # Initialize Jinja2 environment
         if TEMPLATES_DIR.exists():
