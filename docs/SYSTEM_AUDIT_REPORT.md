@@ -879,20 +879,22 @@ get_effective_plan(user_id)
 | `backend/api/v1/documents.py` | Added failed/pending counts to stats |
 | `backend/services/email.py` | Added startup warning |
 | `frontend-new/lib/supabase.ts` | Documented detectSessionInUrl |
-| `frontend-new/middleware.ts` | **NEW** Production-grade session middleware |
+| `frontend-new/proxy.ts` | **UPDATED** Production-grade session proxy (Next.js 16) |
 | `frontend-new/app/auth/auth-code-error/page.tsx` | **NEW** Missing error page |
 | `frontend-new/app/dashboard/layout.tsx` | Consistent redirect URL handling |
 | `frontend-new/components/auth/LoginForm.tsx` | Session error messages |
 
 ---
 
-## 11. Frontend Session Middleware (Production-Grade)
+## 11. Frontend Session Proxy (Production-Grade)
 
 ### Implementation Details
 
-Created a comprehensive Next.js middleware for session management:
+Created a comprehensive Next.js 16 proxy for session management:
 
-**Location:** `frontend-new/middleware.ts`
+**Location:** `frontend-new/proxy.ts`
+
+**Note:** Next.js 16 replaced `middleware.ts` with `proxy.ts`. The proxy function replaces middleware for edge routing.
 
 **Features:**
 1. **Environment Validation** - Fails gracefully if Supabase is not configured
