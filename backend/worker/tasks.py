@@ -3428,7 +3428,16 @@ def process_page_task(
         if isinstance(page_content, bytes):
             page_content = page_content.decode("utf-8", errors="replace")
         page_metadata = doc.metadata or {}
-        page_title = page_metadata.get("title", "Web Page")
+        
+        # Determine source type from document (YouTube vs Web)
+        doc_source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
+        
+        # Set appropriate default title based on source type
+        if doc_source_type == "youtube":
+            default_title = f"YouTube Video: {page_metadata.get('video_id', 'Unknown')}"
+        else:
+            default_title = "Web Page"
+        page_title = page_metadata.get("title", default_title)
         source_url = (
             page_metadata.get("source_url")
             or page_metadata.get("url")
@@ -3508,7 +3517,7 @@ def process_page_task(
         # Document metadata
         doc_metadata = {
             **page_metadata,
-            "file_type": "web",
+            "file_type": doc_source_type,  # Use actual source type (youtube/web)
             "crawl_id": crawl_id,
             "total_tokens": result.total_tokens,
             "total_chunks": len(result.chunks),
@@ -3556,7 +3565,7 @@ def process_page_task(
             user_id=user_id,
             organization_id=organization_id,
             doc_title=page_title,
-            source_type="web",
+            source_type=doc_source_type,  # Use actual source type (youtube/web)
             metadata=doc_metadata,
             chunks_payload=chunks_payload,
             file_size_bytes=content_size,
