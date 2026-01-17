@@ -1,2052 +1,1434 @@
-Check document_chunks table - Are there any chunks for these documents?
-
-| title                          | chunk_count |
-| ------------------------------ | ----------- |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-| CONFIDENTIAL_PROJECT_OMEGA.txt | 3           |
-
-
-Check ingestion_jobs table - What's the job status?
-| id                                   | user_id                              | provider    | total_files | processed_files | status    | error_message | created_at                    | updated_at                    | progress | status_message      | cancelled_at | cancelled_by | celery_task_id                       | failed_files | message             | idempotency_key | organization_id                      |
-| ------------------------------------ | ------------------------------------ | ----------- | ----------- | --------------- | --------- | ------------- | ----------------------------- | ----------------------------- | -------- | ------------------- | ------------ | ------------ | ------------------------------------ | ------------ | ------------------- | --------------- | ------------------------------------ |
-| 390a5069-15c5-432c-8a1a-10f2a85d8116 | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 21:41:37.168402+00 | 2026-01-16 21:41:39.271342+00 | 100      | Processed 1/1 files | null         | null         | 7dd6a28f-b9b2-4b24-94c6-f982588fb076 | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 21:36:56.89993+00  | 2026-01-16 21:36:59.159975+00 | 100      | Processed 1/1 files | null         | null         | bfb2caee-8072-48cd-8b60-3431eab70efc | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| 3ac22768-9c27-40fb-b2fe-072a23cc26db | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 21:32:29.446005+00 | 2026-01-16 21:32:33.006964+00 | 100      | Processed 1/1 files | null         | null         | 3ac3253a-609c-4804-986a-33ecc86240ad | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| ff70412e-256f-4df0-957f-5857ba493cc9 | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 21:28:50.271009+00 | 2026-01-16 21:28:52.72921+00  | 100      | Processed 1/1 files | null         | null         | 061e61dd-5170-428b-a300-7e20f15e392f | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| 2402509e-0485-44ba-9953-8928dd84137e | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 18:36:41.283644+00 | 2026-01-16 18:36:45.711315+00 | 100      | Processed 1/1 files | null         | null         | 00790682-2ddf-4812-8a4e-394910ace2c6 | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| 79cb9511-d584-4bc3-a32b-2cdf44de3a90 | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 17:17:55.76607+00  | 2026-01-16 17:17:58.713317+00 | 100      | Processed 1/1 files | null         | null         | 1029cd61-d52c-4480-89e6-1cbfb533b7d3 | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 16:33:26.937054+00 | 2026-01-16 16:33:30.759108+00 | 100      | Processed 1/1 files | null         | null         | 9faea87d-4429-436b-8239-452fc56f3250 | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| 6791d199-b5f2-4004-9d58-7fb4314eb3e1 | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 15:56:19.782577+00 | 2026-01-16 15:56:22.53809+00  | 100      | Processed 1/1 files | null         | null         | 72a579e6-a71a-44e4-8b46-ec8e7292d2e5 | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| 11037a27-8eb8-4f38-b8b9-6c18c0a76adb | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 15:36:38.411349+00 | 2026-01-16 15:36:41.506409+00 | 100      | Processed 1/1 files | null         | null         | 394f18fa-a4eb-44ac-b0c5-49e02c460987 | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-| 01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 | 94e02b27-3523-42ff-a0c2-858dd8e77f85 | file_upload | 1           | 1               | completed | null          | 2026-01-16 13:49:38.116885+00 | 2026-01-16 13:49:40.830559+00 | 100      | Processed 1/1 files | null         | null         | 8b4903a0-f806-49c9-8da6-2415a3471104 | 0            | Processed 1/1 files | null            | 3cbf4dbe-c5a4-4253-b72b-6b89a15859ab |
-
-
-2026-01-16T12:51:57.756533467Z [inf]    . unified_ingest_task
-2026-01-16T12:51:57.756541698Z [inf]    . worker.tasks.check_scheduled_crawls
-2026-01-16T12:51:57.756549148Z [inf]    . worker.tasks.cleanup_old_jobs
-2026-01-16T12:51:57.756556284Z [inf]    . worker.tasks.crawl_discovery_task
-2026-01-16T12:51:57.756563709Z [inf]    . worker.tasks.finalize_crawl_task
-2026-01-16T12:51:57.756570956Z [inf]    . worker.tasks.generate_embeddings_task
-2026-01-16T12:51:57.756578250Z [inf]    . worker.tasks.health_check_task
-2026-01-16T12:51:57.756594322Z [inf]    . worker.tasks.index_chunks_task
-2026-01-16T12:51:57.756601690Z [inf]    . worker.tasks.process_page_task
-2026-01-16T12:51:57.756608546Z [inf]  
-2026-01-16T12:51:57.756616371Z [err]  [2026-01-16 12:51:48,635: INFO/MainProcess] Connected to redis://default:**@redis.railway.internal:6379//
-2026-01-16T12:51:57.756623188Z [err]  [2026-01-16 12:51:48,650: INFO/MainProcess] mingle: searching for neighbors
-2026-01-16T12:51:57.756631143Z [err]  [2026-01-16 12:51:49,688: INFO/MainProcess] mingle: all alone
-2026-01-16T12:51:57.756637726Z [err]  [2026-01-16 12:51:49,718: INFO/MainProcess] pidbox: Connected to redis://default:**@redis.railway.internal:6379//.
-2026-01-16T12:51:57.756643916Z [err]  [2026-01-16 12:51:49,729: INFO/MainProcess] celery@acf0fb67d992 ready.
-2026-01-16T12:51:57.756651696Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: Global time limit set to 120000 milliseconds.
-2026-01-16T12:51:57.756659111Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: Global size limit set to 1048576000 bytes.
-2026-01-16T12:51:57.756665610Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: File size limit set to 1048576000 bytes.
-2026-01-16T12:51:57.756672340Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: Recursion level limit set to 17.
-2026-01-16T12:51:57.756736824Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: Files limit set to 10000.
-2026-01-16T12:51:57.756747558Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: Core-dump limit is 0.
-2026-01-16T12:51:57.756754833Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: MaxEmbeddedPE limit set to 41943040 bytes.
-2026-01-16T12:51:57.756761829Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: MaxHTMLNormalize limit set to 41943040 bytes.
-2026-01-16T12:51:57.756769012Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: MaxHTMLNoTags limit set to 8388608 bytes.
-2026-01-16T12:51:57.756776513Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: MaxScriptNormalize limit set to 20971520 bytes.
-2026-01-16T12:51:57.756785767Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: MaxZipTypeRcg limit set to 1048576 bytes.
-2026-01-16T12:51:57.756793012Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: MaxPartitions limit set to 50.
-2026-01-16T12:51:57.756799498Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: MaxIconsPE limit set to 100.
-2026-01-16T12:51:57.756813532Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: MaxRecHWP3 limit set to 16.
-2026-01-16T12:51:57.756820600Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: PCREMatchLimit limit set to 100000.
-2026-01-16T12:51:57.756828547Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: PCRERecMatchLimit limit set to 2000.
-2026-01-16T12:51:57.756836111Z [inf]  Fri Jan 16 12:51:52 2026 -> Limits: PCREMaxFileSize limit set to 104857600.
-2026-01-16T12:51:57.756842799Z [inf]  Fri Jan 16 12:51:52 2026 -> Archive support enabled.
-2026-01-16T12:51:57.756849394Z [inf]  Fri Jan 16 12:51:52 2026 -> Image (graphics) scanning support enabled.
-2026-01-16T12:51:57.756856365Z [inf]  Fri Jan 16 12:51:52 2026 -> Detection using image fuzzy hash enabled.
-2026-01-16T12:51:57.756863375Z [inf]  Fri Jan 16 12:51:52 2026 -> AlertExceedsMax heuristic detection disabled.
-2026-01-16T12:51:57.756871236Z [inf]  Fri Jan 16 12:51:52 2026 -> Heuristic alerts enabled.
-2026-01-16T12:51:57.756918980Z [inf]  Fri Jan 16 12:51:52 2026 -> Portable Executable support enabled.
-2026-01-16T12:51:57.756926814Z [inf]  Fri Jan 16 12:51:52 2026 -> ELF support enabled.
-2026-01-16T12:51:57.756933868Z [inf]  Fri Jan 16 12:51:52 2026 -> Mail files support enabled.
-2026-01-16T12:51:57.756940682Z [inf]  Fri Jan 16 12:51:52 2026 -> OLE2 support enabled.
-2026-01-16T12:51:57.756951588Z [inf]  Fri Jan 16 12:51:52 2026 -> PDF support enabled.
-2026-01-16T12:51:57.756958446Z [inf]  Fri Jan 16 12:51:52 2026 -> SWF support enabled.
-2026-01-16T12:51:57.756965108Z [inf]  Fri Jan 16 12:51:52 2026 -> HTML support enabled.
-2026-01-16T12:51:57.756972440Z [inf]  Fri Jan 16 12:51:52 2026 -> XMLDOCS support enabled.
-2026-01-16T12:51:57.756979454Z [inf]  Fri Jan 16 12:51:52 2026 -> HWP3 support enabled.
-2026-01-16T12:51:57.756985835Z [inf]  Fri Jan 16 12:51:52 2026 -> OneNote support enabled.
-2026-01-16T12:51:57.756991750Z [inf]  Fri Jan 16 12:51:52 2026 -> Self checking every 600 seconds.
-2026-01-16T12:51:57.756999809Z [inf]  Fri Jan 16 12:51:52 2026 -> Listening daemon: PID: 15
-2026-01-16T12:51:57.757006661Z [inf]  Fri Jan 16 12:51:52 2026 -> MaxQueue set to: 100
-2026-01-16T13:02:03.157638459Z [inf]  Fri Jan 16 13:01:52 2026 -> SelfCheck: Database status OK.
-2026-01-16T13:11:59.538028387Z [inf]  Fri Jan 16 13:11:52 2026 -> SelfCheck: Database status OK.
-2026-01-16T13:22:01.476283555Z [inf]  Fri Jan 16 13:21:52 2026 -> SelfCheck: Database status OK.
-2026-01-16T13:32:03.597404278Z [inf]  Fri Jan 16 13:31:52 2026 -> SelfCheck: Database status OK.
-2026-01-16T13:41:59.618582226Z [inf]  Fri Jan 16 13:41:52 2026 -> SelfCheck: Database status OK.
-2026-01-16T13:46:47.565222683Z [err]  [2026-01-16 13:46:40,068: INFO/MainProcess] Task unified_ingest_task[4d3cd9ca-b025-4363-ba60-61024d8fe615] received
-2026-01-16T13:46:47.565230221Z [err]  [2026-01-16 13:46:40,072: INFO/MainProcess] [UnifiedIngest:4d3cd9ca-b025-4363-ba60-61024d8fe615] Starting FAN-OUT: file_upload, Job: 043861eb-5563-4c2a-8b8b-7ba842886ed8, Plan: enterprise_large
-2026-01-16T13:46:47.565238244Z [err]  [2026-01-16 13:46:40,072: INFO/MainProcess] 🔌 Initializing Supabase client with connection pool
-2026-01-16T13:46:47.565248730Z [err]  [2026-01-16 13:46:40,090: INFO/MainProcess] ✅ Supabase client initialized successfully
-2026-01-16T13:46:47.565257050Z [err]  [2026-01-16 13:46:40,230: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:47.565264583Z [err]  [2026-01-16 13:46:40,267: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:47.565271997Z [err]  [2026-01-16 13:46:40,298: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:47.565280423Z [err]  [2026-01-16 13:46:40,338: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:47.565288447Z [err]  [2026-01-16 13:46:40,404: INFO/MainProcess] 📊 [Job:043861eb-5563-4c2a-8b8b-7ba842886ed8] Status: processing, Processed: None
-2026-01-16T13:46:47.565298908Z [err]  [2026-01-16 13:46:40,441: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:47.565306846Z [err]  [2026-01-16 13:46:40,478: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T13:46:48.013777993Z [err]  [2026-01-16 13:46:40,480: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T13:46:48.013787570Z [err]  [2026-01-16 13:46:40,480: INFO/MainProcess] [UnifiedIngest:4d3cd9ca-b025-4363-ba60-61024d8fe615] Streaming documents from file_upload...
-2026-01-16T13:46:48.013794384Z [err]  [2026-01-16 13:46:40,546: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:48.013803254Z [err]  [2026-01-16 13:46:40,615: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_effective_plan "HTTP/2 400 Bad Request"
-2026-01-16T13:46:48.013811158Z [err]  [2026-01-16 13:46:40,617: WARNING/MainProcess] [TeamService] RPC failed, trying direct query: {'message': 'column "subscription_status" does not exist', 'code': '42703', 'hint': None, 'details': None}
-2026-01-16T13:46:48.013817432Z [err]  [2026-01-16 13:46:40,658: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_user_team_data "HTTP/2 404 Not Found"
-2026-01-16T13:46:48.013829244Z [err]  [2026-01-16 13:46:40,661: WARNING/MainProcess] [TeamService] RPC call failed, falling back to sequential queries: {'message': 'Could not find the function public.get_user_team_data(target_user_id) in the schema cache', 'code': 'PGRST202', 'hint': 'Perhaps you meant to call the function public.get_user_team_data(p_user_id)', 'details': 'Searched for the function public.get_user_team_data with parameter target_user_id or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache.'}
-2026-01-16T13:46:48.013840273Z [err]  [2026-01-16 13:46:40,710: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T13:46:48.013847889Z [err]  [2026-01-16 13:46:40,765: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=plan_type%2Cstatus&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T13:46:48.113493571Z [err]  [2026-01-16 13:46:40,766: INFO/MainProcess] [TeamService] User 94e02b27... has active subscription: enterprise
-2026-01-16T13:46:48.113498071Z [err]  [2026-01-16 13:46:40,820: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T13:46:48.113502534Z [err]  [2026-01-16 13:46:40,822: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/b5499297-d8a6-41e6-ad83-c278a1f4b5c7/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T13:46:48.113506901Z [err]  [2026-01-16 13:46:40,838: WARNING/MainProcess] Storage endpoint URL should have a trailing slash.
-2026-01-16T13:46:48.113511240Z [err]  [2026-01-16 13:46:41,073: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/b5499297-d8a6-41e6-ad83-c278a1f4b5c7/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T13:46:48.113515879Z [err]  [2026-01-16 13:46:41,113: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T13:46:48.113519939Z [err]  [2026-01-16 13:46:41,171: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T13:46:48.113524076Z [err]  [2026-01-16 13:46:41,172: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T13:46:48.113528234Z [err]  [2026-01-16 13:46:41,222: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:48.113532602Z [err]  [2026-01-16 13:46:41,249: INFO/MainProcess] Task process_file_task[ea6fa0dc-d6a7-4401-88cd-0382bcbe0208] received
-2026-01-16T13:46:48.113539248Z [err]  [2026-01-16 13:46:41,251: INFO/MainProcess] [ProcessFile:ea6fa0dc-d6a7-4401-88cd-0382bcbe0208] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 043861eb-5563-4c2a-8b8b-7ba842886ed8)
-2026-01-16T13:46:48.192246436Z [err]  [2026-01-16 13:46:41,258: INFO/MainProcess] [UnifiedIngest:4d3cd9ca-b025-4363-ba60-61024d8fe615] ✅ Dispatched batch with 1 tasks, group_id: 8d4fa2ea-6eee-467b-be33-34a54db8406d
-2026-01-16T13:46:48.192254357Z [err]  [2026-01-16 13:46:41,301: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.b131a759-0b81-47ba-af6e-ec9a0c203fc6 "HTTP/2 200 OK"
-2026-01-16T13:46:48.192261843Z [err]  [2026-01-16 13:46:41,311: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:48.192269689Z [err]  [2026-01-16 13:46:41,319: INFO/MainProcess] Task unified_ingest_task[4d3cd9ca-b025-4363-ba60-61024d8fe615] succeeded in 1.2487082295119762s: {'status': 'dispatched', 'job_id': '043861eb-5563-4c2a-8b8b-7ba842886ed8', 'total_files': 1, 'group_id': '8d4fa2ea-6eee-467b-be33-34a54db8406d'}
-2026-01-16T13:46:48.192280324Z [err]  [2026-01-16 13:46:41,364: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/b5499297-d8a6-41e6-ad83-c278a1f4b5c7/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T13:46:48.192302114Z [err]  [2026-01-16 13:46:41,427: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.b131a759-0b81-47ba-af6e-ec9a0c203fc6 "HTTP/2 200 OK"
-2026-01-16T13:46:48.192310055Z [err]  [2026-01-16 13:46:41,498: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.b131a759-0b81-47ba-af6e-ec9a0c203fc6 "HTTP/2 200 OK"
-2026-01-16T13:46:48.192317978Z [err]  [2026-01-16 13:46:41,549: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fb5499297-d8a6-41e6-ad83-c278a1f4b5c7%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T13:46:48.199781168Z [err]  [2026-01-16 13:46:41,581: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.b131a759-0b81-47ba-af6e-ec9a0c203fc6 "HTTP/2 200 OK"
-2026-01-16T13:46:48.199786765Z [err]  [2026-01-16 13:46:41,594: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T13:46:48.199792465Z [err]  [2026-01-16 13:46:41,594: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T13:46:48.199798299Z [err]  [2026-01-16 13:46:41,624: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.b131a759-0b81-47ba-af6e-ec9a0c203fc6 "HTTP/2 200 OK"
-2026-01-16T13:46:48.201346042Z [err]  [2026-01-16 13:46:41,664: INFO/MainProcess] [ProcessFile:ea6fa0dc-d6a7-4401-88cd-0382bcbe0208] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 043861eb-5563-4c2a-8b8b-7ba842886ed8, plan=enterprise_large)
-2026-01-16T13:46:48.201357916Z [err]  [2026-01-16 13:46:41,668: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[feacb195-8172-4495-8a32-69569cce0e18] received
-2026-01-16T13:46:48.201371553Z [err]  [2026-01-16 13:46:41,702: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.b131a759-0b81-47ba-af6e-ec9a0c203fc6 "HTTP/2 200 OK"
-2026-01-16T13:46:48.201378257Z [err]  [2026-01-16 13:46:41,737: INFO/MainProcess] 📊 [Embeddings] Initialized OpenAI embeddings model (text-embedding-3-small)
-2026-01-16T13:46:48.201386447Z [err]  [2026-01-16 13:46:41,765: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T13:46:48.201392405Z [err]  [2026-01-16 13:46:41,766: INFO/MainProcess] [ProcessFile:ea6fa0dc-d6a7-4401-88cd-0382bcbe0208] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/b5499297-d8a6-41e6-ad83-c278a1f4b5c7/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T13:46:48.210396098Z [err]  [2026-01-16 13:46:41,766: INFO/MainProcess] Task process_file_task[ea6fa0dc-d6a7-4401-88cd-0382bcbe0208] succeeded in 0.516063030809164s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T13:46:48.210401383Z [err]  [2026-01-16 13:46:42,514: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T13:46:48.210407663Z [err]  [2026-01-16 13:46:42,520: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 0.78s (3.8/sec)
-2026-01-16T13:46:48.210415105Z [err]  [2026-01-16 13:46:42,521: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (3.8/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T13:46:48.210421005Z [err]  [2026-01-16 13:46:42,548: INFO/MainProcess] [EmbedTask:feacb195-8172-4495-8a32-69569cce0e18] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 043861eb-5563-4c2a-8b8b-7ba842886ed8, plan=enterprise_large)
-2026-01-16T13:46:48.210426603Z [err]  [2026-01-16 13:46:42,549: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[feacb195-8172-4495-8a32-69569cce0e18] succeeded in 0.8786031305789948s: None
-2026-01-16T13:46:48.210432242Z [err]  [2026-01-16 13:46:42,563: INFO/MainProcess] Task worker.tasks.index_chunks_task[86aa0c81-fded-4c52-8440-bb840d0435c0] received
-2026-01-16T13:46:48.210437651Z [err]  [2026-01-16 13:46:42,605: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.b131a759-0b81-47ba-af6e-ec9a0c203fc6 "HTTP/2 200 OK"
-2026-01-16T13:46:48.210443031Z [err]  [2026-01-16 13:46:42,703: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T13:46:48.210450263Z [err]  [2026-01-16 13:46:42,741: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fb5499297-d8a6-41e6-ad83-c278a1f4b5c7%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T13:46:48.221765731Z [err]  [2026-01-16 13:46:42,770: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T13:46:48.221772377Z [err]  [2026-01-16 13:46:42,776: INFO/MainProcess] 📄 Created document e6987814-02df-4a49-a39e-465090e7098b: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T13:46:48.221778759Z [err]  [2026-01-16 13:46:42,863: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T13:46:48.221784982Z [err]  [2026-01-16 13:46:42,867: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.09s (doc_id=e6987814-02df-4a49-a39e-465090e7098b batch=1)
-2026-01-16T13:46:48.221791544Z [err]  [2026-01-16 13:46:42,868: INFO/MainProcess] ✅ Inserted 3 chunks for document e6987814-02df-4a49-a39e-465090e7098b
-2026-01-16T13:46:48.221797527Z [err]  [2026-01-16 13:46:42,896: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.b131a759-0b81-47ba-af6e-ec9a0c203fc6 "HTTP/2 200 OK"
-2026-01-16T13:46:48.221803871Z [err]  [2026-01-16 13:46:42,938: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:48.221811196Z [err]  [2026-01-16 13:46:42,954: INFO/MainProcess] 📊 [Job:043861eb-5563-4c2a-8b8b-7ba842886ed8] Status: processing, Processed: 1
-2026-01-16T13:46:48.221817941Z [err]  [2026-01-16 13:46:42,979: INFO/MainProcess] [IndexTask:86aa0c81-fded-4c52-8440-bb840d0435c0] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=e6987814-02df-4a49-a39e-465090e7098b)
-2026-01-16T13:46:48.221825405Z [err]  [2026-01-16 13:46:42,980: INFO/MainProcess] Task worker.tasks.index_chunks_task[86aa0c81-fded-4c52-8440-bb840d0435c0] succeeded in 0.41232140734791756s: None
-2026-01-16T13:46:48.230084040Z [err]  [2026-01-16 13:46:43,018: INFO/MainProcess] Task finalize_job_task[2a8fed5d-dbe8-4d7f-849e-2a4d53bd74ac] received
-2026-01-16T13:46:48.230090190Z [err]  [2026-01-16 13:46:43,021: INFO/MainProcess] [FinalizeJob:2a8fed5d-dbe8-4d7f-849e-2a4d53bd74ac] Finalizing job 043861eb-5563-4c2a-8b8b-7ba842886ed8
-2026-01-16T13:46:48.230096123Z [err]  [2026-01-16 13:46:43,050: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:48.230101979Z [err]  [2026-01-16 13:46:43,084: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:48.230109322Z [err]  [2026-01-16 13:46:43,086: INFO/MainProcess] [FinalizeJob:2a8fed5d-dbe8-4d7f-849e-2a4d53bd74ac] Job 043861eb-5563-4c2a-8b8b-7ba842886ed8 status updates: job=1 file=8 source=redis
-2026-01-16T13:46:48.230115880Z [err]  [2026-01-16 13:46:43,133: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T13:46:48.230307012Z [err]  [2026-01-16 13:46:43,182: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%28e6987814-02df-4a49-a39e-465090e7098b%29 "HTTP/2 200 OK"
-2026-01-16T13:46:48.230313518Z [err]  [2026-01-16 13:46:43,230: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T13:46:48.241525943Z [err]  [2026-01-16 13:46:43,233: INFO/MainProcess] [ScopeIdentity] Upgrading placeholder to completed: upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (org: 3cbf4dbe...)
-2026-01-16T13:46:48.241533994Z [err]  [2026-01-16 13:46:43,271: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T13:46:48.241539230Z [err]  [2026-01-16 13:46:43,281: INFO/MainProcess] [ScopeIdentity] ✅ Upgraded identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T13:46:48.241544565Z [err]  [2026-01-16 13:46:44,021: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T13:46:48.241549217Z [err]  [2026-01-16 13:46:44,025: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.74s (1.4/sec)
-2026-01-16T13:46:48.241555647Z [err]  [2026-01-16 13:46:44,025: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.4/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T13:46:48.241562396Z [err]  [2026-01-16 13:46:44,065: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T13:46:48.241567887Z [err]  [2026-01-16 13:46:44,103: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.043861eb-5563-4c2a-8b8b-7ba842886ed8 "HTTP/2 200 OK"
-2026-01-16T13:46:48.241573855Z [err]  [2026-01-16 13:46:44,142: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T13:46:48.241581060Z [err]  [2026-01-16 13:46:44,143: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T13:46:48.241588308Z [err]  [2026-01-16 13:46:44,177: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T13:46:48.254147424Z [err]  [2026-01-16 13:46:44,268: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T13:46:48.254152293Z [err]  [2026-01-16 13:46:44,317: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T13:46:48.254157248Z [err]  [2026-01-16 13:46:44,480: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=4fb96691-88c7-4c22-b39a-a1e681c2b840
-2026-01-16T13:46:48.254162004Z [err]  [2026-01-16 13:46:44,480: INFO/MainProcess] [FinalizeJob:2a8fed5d-dbe8-4d7f-849e-2a4d53bd74ac] ✅ Job 043861eb-5563-4c2a-8b8b-7ba842886ed8: Processed 1/1 files
-2026-01-16T13:46:48.254166679Z [err]  [2026-01-16 13:46:44,491: INFO/MainProcess] Task finalize_job_task[2a8fed5d-dbe8-4d7f-849e-2a4d53bd74ac] succeeded in 1.4699790179729462s: None
-2026-01-16T13:49:46.385190472Z [err]  [2026-01-16 13:49:38,315: INFO/MainProcess] Task unified_ingest_task[8b4903a0-f806-49c9-8da6-2415a3471104] received
-2026-01-16T13:49:46.385199637Z [err]  [2026-01-16 13:49:38,317: INFO/MainProcess] [UnifiedIngest:8b4903a0-f806-49c9-8da6-2415a3471104] Starting FAN-OUT: file_upload, Job: 01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6, Plan: enterprise_large
-2026-01-16T13:49:46.385207852Z [err]  [2026-01-16 13:49:38,409: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:46.385215459Z [err]  [2026-01-16 13:49:38,446: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:46.385223072Z [err]  [2026-01-16 13:49:38,493: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:46.385230356Z [err]  [2026-01-16 13:49:38,528: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:46.385237767Z [err]  [2026-01-16 13:49:38,593: INFO/MainProcess] 📊 [Job:01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6] Status: processing, Processed: None
-2026-01-16T13:49:46.385302955Z [err]  [2026-01-16 13:49:38,626: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:46.385312681Z [err]  [2026-01-16 13:49:38,678: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T13:49:46.385319052Z [err]  [2026-01-16 13:49:38,680: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T13:49:47.520768502Z [err]  [2026-01-16 13:49:38,680: INFO/MainProcess] [UnifiedIngest:8b4903a0-f806-49c9-8da6-2415a3471104] Streaming documents from file_upload...
-2026-01-16T13:49:47.520777003Z [err]  [2026-01-16 13:49:38,735: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:47.520783878Z [err]  [2026-01-16 13:49:38,781: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T13:49:47.520791735Z [err]  [2026-01-16 13:49:38,782: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/0ccf0d00-6ac7-4951-878b-911d17b3c0da/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T13:49:47.520798874Z [err]  [2026-01-16 13:49:38,971: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/0ccf0d00-6ac7-4951-878b-911d17b3c0da/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T13:49:47.520805780Z [err]  [2026-01-16 13:49:39,013: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T13:49:47.520812162Z [err]  [2026-01-16 13:49:39,044: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T13:49:47.520818400Z [err]  [2026-01-16 13:49:39,045: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T13:49:47.520824629Z [err]  [2026-01-16 13:49:39,082: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:47.520830964Z [err]  [2026-01-16 13:49:39,102: INFO/MainProcess] Task process_file_task[582148d2-f725-4348-adab-25e355a879b8] received
-2026-01-16T13:49:48.714860676Z [err]  [2026-01-16 13:49:39,277: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6e0cce9b-d095-4d81-bfe8-47d7f899cebf "HTTP/2 200 OK"
-2026-01-16T13:49:48.714868587Z [err]  [2026-01-16 13:49:39,325: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F0ccf0d00-6ac7-4951-878b-911d17b3c0da%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T13:49:48.714897445Z [err]  [2026-01-16 13:49:39,161: INFO/MainProcess] Task unified_ingest_task[8b4903a0-f806-49c9-8da6-2415a3471104] succeeded in 0.8442712388932705s: {'status': 'dispatched', 'job_id': '01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6', 'total_files': 1, 'group_id': '8fd4facf-d3cb-4fd4-a063-0b61e357b9cd'}
-2026-01-16T13:49:48.714905839Z [err]  [2026-01-16 13:49:39,191: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/0ccf0d00-6ac7-4951-878b-911d17b3c0da/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T13:49:48.714909319Z [err]  [2026-01-16 13:49:39,104: INFO/MainProcess] [ProcessFile:582148d2-f725-4348-adab-25e355a879b8] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6)
-2026-01-16T13:49:48.714921289Z [err]  [2026-01-16 13:49:39,113: INFO/MainProcess] [UnifiedIngest:8b4903a0-f806-49c9-8da6-2415a3471104] ✅ Dispatched batch with 1 tasks, group_id: 8fd4facf-d3cb-4fd4-a063-0b61e357b9cd
-2026-01-16T13:49:48.714923384Z [err]  [2026-01-16 13:49:39,225: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6e0cce9b-d095-4d81-bfe8-47d7f899cebf "HTTP/2 200 OK"
-2026-01-16T13:49:48.714929941Z [err]  [2026-01-16 13:49:39,140: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6e0cce9b-d095-4d81-bfe8-47d7f899cebf "HTTP/2 200 OK"
-2026-01-16T13:49:48.714947449Z [err]  [2026-01-16 13:49:39,152: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:49.597714507Z [err]  [2026-01-16 13:49:39,356: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6e0cce9b-d095-4d81-bfe8-47d7f899cebf "HTTP/2 200 OK"
-2026-01-16T13:49:49.597723358Z [err]  [2026-01-16 13:49:39,364: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T13:49:49.597730350Z [err]  [2026-01-16 13:49:39,365: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T13:49:49.597736735Z [err]  [2026-01-16 13:49:39,390: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6e0cce9b-d095-4d81-bfe8-47d7f899cebf "HTTP/2 200 OK"
-2026-01-16T13:49:49.597743412Z [err]  [2026-01-16 13:49:39,414: INFO/MainProcess] [ProcessFile:582148d2-f725-4348-adab-25e355a879b8] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6, plan=enterprise_large)
-2026-01-16T13:49:49.597749261Z [err]  [2026-01-16 13:49:39,417: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[7c7ce381-bc0a-4320-bc64-f92928721df1] received
-2026-01-16T13:49:49.597758076Z [err]  [2026-01-16 13:49:39,452: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6e0cce9b-d095-4d81-bfe8-47d7f899cebf "HTTP/2 200 OK"
-2026-01-16T13:49:49.597765281Z [err]  [2026-01-16 13:49:39,525: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T13:49:49.597773543Z [err]  [2026-01-16 13:49:39,526: INFO/MainProcess] [ProcessFile:582148d2-f725-4348-adab-25e355a879b8] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/0ccf0d00-6ac7-4951-878b-911d17b3c0da/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T13:49:49.597790734Z [err]  [2026-01-16 13:49:39,527: INFO/MainProcess] Task process_file_task[582148d2-f725-4348-adab-25e355a879b8] succeeded in 0.4234827421605587s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T13:49:49.605608518Z [err]  [2026-01-16 13:49:40,446: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T13:49:49.605698048Z [err]  [2026-01-16 13:49:40,450: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 0.98s (3.0/sec)
-2026-01-16T13:49:49.605703793Z [err]  [2026-01-16 13:49:40,522: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6e0cce9b-d095-4d81-bfe8-47d7f899cebf "HTTP/2 200 OK"
-2026-01-16T13:49:49.605708629Z [err]  [2026-01-16 13:49:40,450: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (3.0/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T13:49:49.605713083Z [err]  [2026-01-16 13:49:40,558: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T13:49:49.605719508Z [err]  [2026-01-16 13:49:40,473: INFO/MainProcess] [EmbedTask:7c7ce381-bc0a-4320-bc64-f92928721df1] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6, plan=enterprise_large)
-2026-01-16T13:49:49.605721591Z [err]  [2026-01-16 13:49:40,590: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F0ccf0d00-6ac7-4951-878b-911d17b3c0da%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T13:49:49.605727627Z [err]  [2026-01-16 13:49:40,642: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T13:49:49.605732899Z [err]  [2026-01-16 13:49:40,473: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[7c7ce381-bc0a-4320-bc64-f92928721df1] succeeded in 1.0552387870848179s: None
-2026-01-16T13:49:49.605740904Z [err]  [2026-01-16 13:49:40,484: INFO/MainProcess] Task worker.tasks.index_chunks_task[76598d17-d210-4c5b-8fba-34ebbe7513eb] received
-2026-01-16T13:49:49.615698357Z [err]  [2026-01-16 13:49:40,720: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.07s (doc_id=50152c46-5320-4d1c-bb94-3087993c8ca7 batch=1)
-2026-01-16T13:49:49.615705082Z [err]  [2026-01-16 13:49:40,720: INFO/MainProcess] ✅ Inserted 3 chunks for document 50152c46-5320-4d1c-bb94-3087993c8ca7
-2026-01-16T13:49:49.615710679Z [err]  [2026-01-16 13:49:40,754: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6e0cce9b-d095-4d81-bfe8-47d7f899cebf "HTTP/2 200 OK"
-2026-01-16T13:49:49.615716040Z [err]  [2026-01-16 13:49:40,862: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:49.615721049Z [err]  [2026-01-16 13:49:40,870: INFO/MainProcess] 📊 [Job:01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6] Status: processing, Processed: 1
-2026-01-16T13:49:49.615727209Z [err]  [2026-01-16 13:49:40,895: INFO/MainProcess] [IndexTask:76598d17-d210-4c5b-8fba-34ebbe7513eb] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=50152c46-5320-4d1c-bb94-3087993c8ca7)
-2026-01-16T13:49:49.615732099Z [err]  [2026-01-16 13:49:40,895: INFO/MainProcess] Task worker.tasks.index_chunks_task[76598d17-d210-4c5b-8fba-34ebbe7513eb] succeeded in 0.4068196602165699s: None
-2026-01-16T13:49:49.615738723Z [err]  [2026-01-16 13:49:40,896: INFO/MainProcess] Task finalize_job_task[fd4bc8b0-2ab4-46cf-a072-d51ce95d34ac] received
-2026-01-16T13:49:49.615743756Z [err]  [2026-01-16 13:49:40,898: INFO/MainProcess] [FinalizeJob:fd4bc8b0-2ab4-46cf-a072-d51ce95d34ac] Finalizing job 01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6
-2026-01-16T13:49:49.615836428Z [err]  [2026-01-16 13:49:40,646: INFO/MainProcess] 📄 Created document 50152c46-5320-4d1c-bb94-3087993c8ca7: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T13:49:49.615847579Z [err]  [2026-01-16 13:49:40,717: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T13:49:49.622094433Z [err]  [2026-01-16 13:49:40,931: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:49.622100498Z [err]  [2026-01-16 13:49:40,977: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:49.622106452Z [err]  [2026-01-16 13:49:40,979: INFO/MainProcess] [FinalizeJob:fd4bc8b0-2ab4-46cf-a072-d51ce95d34ac] Job 01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 status updates: job=1 file=8 source=redis
-2026-01-16T13:49:49.622113105Z [err]  [2026-01-16 13:49:41,018: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T13:49:49.622119065Z [err]  [2026-01-16 13:49:41,052: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%2850152c46-5320-4d1c-bb94-3087993c8ca7%29 "HTTP/2 200 OK"
-2026-01-16T13:49:49.622125456Z [err]  [2026-01-16 13:49:41,092: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T13:49:49.622131985Z [err]  [2026-01-16 13:49:41,131: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T13:49:49.622138473Z [err]  [2026-01-16 13:49:41,133: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T13:49:49.629593653Z [err]  [2026-01-16 13:49:42,058: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T13:49:49.629599528Z [err]  [2026-01-16 13:49:42,062: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.93s (1.1/sec)
-2026-01-16T13:49:49.629605036Z [err]  [2026-01-16 13:49:42,063: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.1/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T13:49:49.629609732Z [err]  [2026-01-16 13:49:42,103: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T13:49:49.629613481Z [err]  [2026-01-16 13:49:42,151: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6 "HTTP/2 200 OK"
-2026-01-16T13:49:49.629617290Z [err]  [2026-01-16 13:49:42,214: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T13:49:49.629621126Z [err]  [2026-01-16 13:49:42,216: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T13:49:49.629625876Z [err]  [2026-01-16 13:49:42,264: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T13:49:49.629630260Z [err]  [2026-01-16 13:49:42,325: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T13:49:49.629634214Z [err]  [2026-01-16 13:49:42,360: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T13:49:49.635234404Z [err]  [2026-01-16 13:49:42,526: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=c6e1477a-68dd-4d95-b2bc-17d96352b78b
-2026-01-16T13:49:49.635240381Z [err]  [2026-01-16 13:49:42,527: INFO/MainProcess] [FinalizeJob:fd4bc8b0-2ab4-46cf-a072-d51ce95d34ac] ✅ Job 01980ce7-a7f9-4065-a3d6-3b0bd0b9ebb6: Processed 1/1 files
-2026-01-16T13:49:49.635246958Z [err]  [2026-01-16 13:49:42,546: INFO/MainProcess] Task finalize_job_task[fd4bc8b0-2ab4-46cf-a072-d51ce95d34ac] succeeded in 1.648463025689125s: None
-2026-01-16T13:59:49.066041143Z [inf]  Fri Jan 16 13:59:39 2026 -> SelfCheck: Database status OK.
-2026-01-16T14:09:47.842991077Z [inf]  Fri Jan 16 14:09:39 2026 -> SelfCheck: Database status OK.
-2026-01-16T14:19:49.721877002Z [inf]  Fri Jan 16 14:19:39 2026 -> SelfCheck: Database status OK.
-2026-01-16T14:29:44.505951966Z [inf]  Fri Jan 16 14:29:39 2026 -> SelfCheck: Database status OK.
-2026-01-16T14:39:46.830815278Z [inf]  Fri Jan 16 14:39:39 2026 -> SelfCheck: Database status OK.
-2026-01-16T14:49:40.187135579Z [inf]  Fri Jan 16 14:49:39 2026 -> SelfCheck: Database status OK.
-2026-01-16T14:59:50.012415968Z [inf]  Fri Jan 16 14:59:39 2026 -> SelfCheck: Database status OK.
-2026-01-16T15:09:40.258776406Z [inf]  Fri Jan 16 15:09:40 2026 -> SelfCheck: Database status OK.
-2026-01-16T15:19:41.288803001Z [inf]  Fri Jan 16 15:19:40 2026 -> SelfCheck: Database status OK.
-2026-01-16T15:29:44.710030598Z [inf]  Fri Jan 16 15:29:40 2026 -> SelfCheck: Database status OK.
-2026-01-16T15:36:48.485730239Z [err]  [2026-01-16 15:36:38,578: INFO/MainProcess] Task unified_ingest_task[394f18fa-a4eb-44ac-b0c5-49e02c460987] received
-2026-01-16T15:36:48.485740385Z [err]  [2026-01-16 15:36:38,580: INFO/MainProcess] [UnifiedIngest:394f18fa-a4eb-44ac-b0c5-49e02c460987] Starting FAN-OUT: file_upload, Job: 11037a27-8eb8-4f38-b8b9-6c18c0a76adb, Plan: enterprise_large
-2026-01-16T15:36:48.485747867Z [err]  [2026-01-16 15:36:38,644: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:48.485757148Z [err]  [2026-01-16 15:36:38,693: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:48.485765583Z [err]  [2026-01-16 15:36:38,733: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:48.485774469Z [err]  [2026-01-16 15:36:38,802: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:48.485783592Z [err]  [2026-01-16 15:36:38,871: INFO/MainProcess] 📊 [Job:11037a27-8eb8-4f38-b8b9-6c18c0a76adb] Status: processing, Processed: None
-2026-01-16T15:36:48.485790653Z [err]  [2026-01-16 15:36:38,906: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:48.485800193Z [err]  [2026-01-16 15:36:38,943: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T15:36:48.485808703Z [err]  [2026-01-16 15:36:38,944: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T15:36:49.813203060Z [err]  [2026-01-16 15:36:38,945: INFO/MainProcess] [UnifiedIngest:394f18fa-a4eb-44ac-b0c5-49e02c460987] Streaming documents from file_upload...
-2026-01-16T15:36:49.813210600Z [err]  [2026-01-16 15:36:39,011: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:49.813222382Z [err]  [2026-01-16 15:36:39,080: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T15:36:49.813229848Z [err]  [2026-01-16 15:36:39,084: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/71f7ff84-ec93-4241-aea8-c027552fa656/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T15:36:49.813239093Z [err]  [2026-01-16 15:36:39,354: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/71f7ff84-ec93-4241-aea8-c027552fa656/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T15:36:49.813246419Z [err]  [2026-01-16 15:36:39,400: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T15:36:49.813258593Z [err]  [2026-01-16 15:36:39,434: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T15:36:49.813265820Z [err]  [2026-01-16 15:36:39,436: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T15:36:49.813279973Z [err]  [2026-01-16 15:36:39,493: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:49.813287006Z [err]  [2026-01-16 15:36:39,531: INFO/MainProcess] Task process_file_task[838ef529-fb02-4eff-ae07-8cb50ed7440d] received
-2026-01-16T15:36:51.043830742Z [err]  [2026-01-16 15:36:39,534: INFO/MainProcess] [ProcessFile:838ef529-fb02-4eff-ae07-8cb50ed7440d] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 11037a27-8eb8-4f38-b8b9-6c18c0a76adb)
-2026-01-16T15:36:51.043837033Z [err]  [2026-01-16 15:36:39,548: INFO/MainProcess] [UnifiedIngest:394f18fa-a4eb-44ac-b0c5-49e02c460987] ✅ Dispatched batch with 1 tasks, group_id: af9d8ebc-1f93-4044-a4ec-1f781bc048e2
-2026-01-16T15:36:51.043843662Z [err]  [2026-01-16 15:36:39,565: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.f2588a76-3cf1-4c76-9bac-94ed99449fe3 "HTTP/2 200 OK"
-2026-01-16T15:36:51.043851147Z [err]  [2026-01-16 15:36:39,596: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:51.043857496Z [err]  [2026-01-16 15:36:39,605: INFO/MainProcess] Task unified_ingest_task[394f18fa-a4eb-44ac-b0c5-49e02c460987] succeeded in 1.0251498222351074s: {'status': 'dispatched', 'job_id': '11037a27-8eb8-4f38-b8b9-6c18c0a76adb', 'total_files': 1, 'group_id': 'af9d8ebc-1f93-4044-a4ec-1f781bc048e2'}
-2026-01-16T15:36:51.043864722Z [err]  [2026-01-16 15:36:39,630: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/71f7ff84-ec93-4241-aea8-c027552fa656/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T15:36:51.043871386Z [err]  [2026-01-16 15:36:39,680: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.f2588a76-3cf1-4c76-9bac-94ed99449fe3 "HTTP/2 200 OK"
-2026-01-16T15:36:51.043878220Z [err]  [2026-01-16 15:36:39,749: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.f2588a76-3cf1-4c76-9bac-94ed99449fe3 "HTTP/2 200 OK"
-2026-01-16T15:36:51.043885007Z [err]  [2026-01-16 15:36:39,801: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F71f7ff84-ec93-4241-aea8-c027552fa656%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T15:36:52.459790481Z [err]  [2026-01-16 15:36:39,860: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.f2588a76-3cf1-4c76-9bac-94ed99449fe3 "HTTP/2 200 OK"
-2026-01-16T15:36:52.459799324Z [err]  [2026-01-16 15:36:39,874: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T15:36:52.459811178Z [err]  [2026-01-16 15:36:39,874: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T15:36:52.459819817Z [err]  [2026-01-16 15:36:39,916: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.f2588a76-3cf1-4c76-9bac-94ed99449fe3 "HTTP/2 200 OK"
-2026-01-16T15:36:52.459824065Z [err]  [2026-01-16 15:36:40,128: INFO/MainProcess] [ProcessFile:838ef529-fb02-4eff-ae07-8cb50ed7440d] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/71f7ff84-ec93-4241-aea8-c027552fa656/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T15:36:52.459837763Z [err]  [2026-01-16 15:36:40,128: INFO/MainProcess] Task process_file_task[838ef529-fb02-4eff-ae07-8cb50ed7440d] succeeded in 0.5948427766561508s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T15:36:52.459883291Z [err]  [2026-01-16 15:36:39,942: INFO/MainProcess] [ProcessFile:838ef529-fb02-4eff-ae07-8cb50ed7440d] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 11037a27-8eb8-4f38-b8b9-6c18c0a76adb, plan=enterprise_large)
-2026-01-16T15:36:52.459891439Z [err]  [2026-01-16 15:36:39,946: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[c7919a3c-c42d-4091-a9b7-bcad165b6893] received
-2026-01-16T15:36:52.459898122Z [err]  [2026-01-16 15:36:39,978: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.f2588a76-3cf1-4c76-9bac-94ed99449fe3 "HTTP/2 200 OK"
-2026-01-16T15:36:52.459905585Z [err]  [2026-01-16 15:36:40,125: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T15:36:53.711231788Z [err]  [2026-01-16 15:36:41,090: INFO/MainProcess] [EmbedTask:c7919a3c-c42d-4091-a9b7-bcad165b6893] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 11037a27-8eb8-4f38-b8b9-6c18c0a76adb, plan=enterprise_large)
-2026-01-16T15:36:53.711237602Z [err]  [2026-01-16 15:36:41,024: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 1.04s (2.9/sec)
-2026-01-16T15:36:53.711244482Z [err]  [2026-01-16 15:36:41,091: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[c7919a3c-c42d-4091-a9b7-bcad165b6893] succeeded in 1.1435189992189407s: None
-2026-01-16T15:36:53.711251990Z [err]  [2026-01-16 15:36:41,025: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (2.9/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T15:36:53.711254230Z [err]  [2026-01-16 15:36:41,109: INFO/MainProcess] Task worker.tasks.index_chunks_task[9299bb88-5ff7-42d8-bd66-7442b7f767d8] received
-2026-01-16T15:36:53.711278025Z [err]  [2026-01-16 15:36:41,158: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.f2588a76-3cf1-4c76-9bac-94ed99449fe3 "HTTP/2 200 OK"
-2026-01-16T15:36:53.711287536Z [err]  [2026-01-16 15:36:41,274: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T15:36:53.711294855Z [err]  [2026-01-16 15:36:41,337: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F71f7ff84-ec93-4241-aea8-c027552fa656%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T15:36:53.711302525Z [err]  [2026-01-16 15:36:41,366: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T15:36:53.711323974Z [err]  [2026-01-16 15:36:41,020: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T15:36:54.636055939Z [err]  [2026-01-16 15:36:41,368: INFO/MainProcess] 📄 Created document f1ef6703-9c68-4a62-89c5-955661137f92: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T15:36:54.636059994Z [err]  [2026-01-16 15:36:41,599: INFO/MainProcess] Task worker.tasks.index_chunks_task[9299bb88-5ff7-42d8-bd66-7442b7f767d8] succeeded in 0.4821306802332401s: None
-2026-01-16T15:36:54.636069385Z [err]  [2026-01-16 15:36:41,431: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T15:36:54.636069986Z [err]  [2026-01-16 15:36:41,601: INFO/MainProcess] Task finalize_job_task[36246e4a-d7bd-4bab-8e40-d7ad29d0e54c] received
-2026-01-16T15:36:54.636080401Z [err]  [2026-01-16 15:36:41,605: INFO/MainProcess] [FinalizeJob:36246e4a-d7bd-4bab-8e40-d7ad29d0e54c] Finalizing job 11037a27-8eb8-4f38-b8b9-6c18c0a76adb
-2026-01-16T15:36:54.636080642Z [err]  [2026-01-16 15:36:41,436: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.07s (doc_id=f1ef6703-9c68-4a62-89c5-955661137f92 batch=1)
-2026-01-16T15:36:54.636094689Z [err]  [2026-01-16 15:36:41,437: INFO/MainProcess] ✅ Inserted 3 chunks for document f1ef6703-9c68-4a62-89c5-955661137f92
-2026-01-16T15:36:54.636108858Z [err]  [2026-01-16 15:36:41,482: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.f2588a76-3cf1-4c76-9bac-94ed99449fe3 "HTTP/2 200 OK"
-2026-01-16T15:36:54.636119327Z [err]  [2026-01-16 15:36:41,543: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:54.636128837Z [err]  [2026-01-16 15:36:41,560: INFO/MainProcess] 📊 [Job:11037a27-8eb8-4f38-b8b9-6c18c0a76adb] Status: processing, Processed: 1
-2026-01-16T15:36:54.636137652Z [err]  [2026-01-16 15:36:41,598: INFO/MainProcess] [IndexTask:9299bb88-5ff7-42d8-bd66-7442b7f767d8] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=f1ef6703-9c68-4a62-89c5-955661137f92)
-2026-01-16T15:36:54.682513359Z [err]  [2026-01-16 15:36:41,634: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:54.682519630Z [err]  [2026-01-16 15:36:41,673: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:54.682525931Z [err]  [2026-01-16 15:36:41,677: INFO/MainProcess] [FinalizeJob:36246e4a-d7bd-4bab-8e40-d7ad29d0e54c] Job 11037a27-8eb8-4f38-b8b9-6c18c0a76adb status updates: job=1 file=8 source=redis
-2026-01-16T15:36:54.682534322Z [err]  [2026-01-16 15:36:41,729: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T15:36:54.682541835Z [err]  [2026-01-16 15:36:41,810: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%28f1ef6703-9c68-4a62-89c5-955661137f92%29 "HTTP/2 200 OK"
-2026-01-16T15:36:54.682548676Z [err]  [2026-01-16 15:36:41,846: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T15:36:54.682555964Z [err]  [2026-01-16 15:36:41,912: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T15:36:54.682563178Z [err]  [2026-01-16 15:36:41,916: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T15:36:54.689184558Z [err]  [2026-01-16 15:36:42,745: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T15:36:54.689197334Z [err]  [2026-01-16 15:36:42,747: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.83s (1.2/sec)
-2026-01-16T15:36:54.689204139Z [err]  [2026-01-16 15:36:42,748: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.2/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T15:36:54.689210612Z [err]  [2026-01-16 15:36:42,809: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T15:36:54.689217120Z [err]  [2026-01-16 15:36:42,864: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.11037a27-8eb8-4f38-b8b9-6c18c0a76adb "HTTP/2 200 OK"
-2026-01-16T15:36:54.689223598Z [err]  [2026-01-16 15:36:42,914: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T15:36:54.689229860Z [err]  [2026-01-16 15:36:42,917: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T15:36:54.689236593Z [err]  [2026-01-16 15:36:42,971: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T15:36:54.689242973Z [err]  [2026-01-16 15:36:43,082: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T15:36:54.689249231Z [err]  [2026-01-16 15:36:43,117: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T15:36:54.696137238Z [err]  [2026-01-16 15:36:43,328: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=305268e9-033d-428e-8e77-684088c793a4
-2026-01-16T15:36:54.696143219Z [err]  [2026-01-16 15:36:43,329: INFO/MainProcess] [FinalizeJob:36246e4a-d7bd-4bab-8e40-d7ad29d0e54c] ✅ Job 11037a27-8eb8-4f38-b8b9-6c18c0a76adb: Processed 1/1 files
-2026-01-16T15:36:54.696149918Z [err]  [2026-01-16 15:36:43,352: INFO/MainProcess] Task finalize_job_task[36246e4a-d7bd-4bab-8e40-d7ad29d0e54c] succeeded in 1.7474579848349094s: None
-2026-01-16T15:46:49.603858322Z [inf]  Fri Jan 16 15:46:39 2026 -> SelfCheck: Database status OK.
-2026-01-16T15:56:24.839376175Z [err]  [2026-01-16 15:56:20,041: INFO/MainProcess] Task unified_ingest_task[72a579e6-a71a-44e4-8b46-ec8e7292d2e5] received
-2026-01-16T15:56:24.839385289Z [err]  [2026-01-16 15:56:20,044: INFO/MainProcess] [UnifiedIngest:72a579e6-a71a-44e4-8b46-ec8e7292d2e5] Starting FAN-OUT: file_upload, Job: 6791d199-b5f2-4004-9d58-7fb4314eb3e1, Plan: enterprise_large
-2026-01-16T15:56:24.839392618Z [err]  [2026-01-16 15:56:20,123: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:24.839399801Z [err]  [2026-01-16 15:56:20,173: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:24.839406952Z [err]  [2026-01-16 15:56:20,221: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:24.839414080Z [err]  [2026-01-16 15:56:20,268: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:24.839422881Z [err]  [2026-01-16 15:56:20,339: INFO/MainProcess] 📊 [Job:6791d199-b5f2-4004-9d58-7fb4314eb3e1] Status: processing, Processed: None
-2026-01-16T15:56:24.839429637Z [err]  [2026-01-16 15:56:20,391: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:24.839435781Z [err]  [2026-01-16 15:56:20,470: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T15:56:24.839440918Z [err]  [2026-01-16 15:56:20,472: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T15:56:25.722670757Z [err]  [2026-01-16 15:56:20,473: INFO/MainProcess] [UnifiedIngest:72a579e6-a71a-44e4-8b46-ec8e7292d2e5] Streaming documents from file_upload...
-2026-01-16T15:56:25.722679171Z [err]  [2026-01-16 15:56:20,556: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.722696334Z [err]  [2026-01-16 15:56:20,601: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T15:56:25.722781620Z [err]  [2026-01-16 15:56:20,603: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/bac841ed-5c36-424e-85e7-73831481464a/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T15:56:25.722788732Z [err]  [2026-01-16 15:56:20,831: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/bac841ed-5c36-424e-85e7-73831481464a/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T15:56:25.722795500Z [err]  [2026-01-16 15:56:20,883: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T15:56:25.722801917Z [err]  [2026-01-16 15:56:20,925: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T15:56:25.722808315Z [err]  [2026-01-16 15:56:20,926: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T15:56:25.722814675Z [err]  [2026-01-16 15:56:20,987: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.722822249Z [err]  [2026-01-16 15:56:21,006: INFO/MainProcess] Task process_file_task[4893a25f-d68c-4f5e-814e-6da45f632120] received
-2026-01-16T15:56:25.736826106Z [err]  [2026-01-16 15:56:21,061: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.4c6e8ccf-1c1a-42c3-8bd4-93c90760f012 "HTTP/2 200 OK"
-2026-01-16T15:56:25.736839261Z [err]  [2026-01-16 15:56:21,066: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.736848190Z [err]  [2026-01-16 15:56:21,082: INFO/MainProcess] Task unified_ingest_task[72a579e6-a71a-44e4-8b46-ec8e7292d2e5] succeeded in 1.0391425043344498s: {'status': 'dispatched', 'job_id': '6791d199-b5f2-4004-9d58-7fb4314eb3e1', 'total_files': 1, 'group_id': '00c56451-d4fe-4037-99d5-3f3e2f6a85c8'}
-2026-01-16T15:56:25.736855837Z [err]  [2026-01-16 15:56:21,125: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/bac841ed-5c36-424e-85e7-73831481464a/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T15:56:25.736864093Z [err]  [2026-01-16 15:56:21,176: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.4c6e8ccf-1c1a-42c3-8bd4-93c90760f012 "HTTP/2 200 OK"
-2026-01-16T15:56:25.736876819Z [err]  [2026-01-16 15:56:21,227: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.4c6e8ccf-1c1a-42c3-8bd4-93c90760f012 "HTTP/2 200 OK"
-2026-01-16T15:56:25.736885150Z [err]  [2026-01-16 15:56:21,281: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fbac841ed-5c36-424e-85e7-73831481464a%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.738400531Z [err]  [2026-01-16 15:56:21,008: INFO/MainProcess] [ProcessFile:4893a25f-d68c-4f5e-814e-6da45f632120] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 6791d199-b5f2-4004-9d58-7fb4314eb3e1)
-2026-01-16T15:56:25.738407124Z [err]  [2026-01-16 15:56:21,017: INFO/MainProcess] [UnifiedIngest:72a579e6-a71a-44e4-8b46-ec8e7292d2e5] ✅ Dispatched batch with 1 tasks, group_id: 00c56451-d4fe-4037-99d5-3f3e2f6a85c8
-2026-01-16T15:56:25.744110863Z [err]  [2026-01-16 15:56:21,324: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.4c6e8ccf-1c1a-42c3-8bd4-93c90760f012 "HTTP/2 200 OK"
-2026-01-16T15:56:25.744117429Z [err]  [2026-01-16 15:56:21,333: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T15:56:25.744123854Z [err]  [2026-01-16 15:56:21,333: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T15:56:25.744131266Z [err]  [2026-01-16 15:56:21,366: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.4c6e8ccf-1c1a-42c3-8bd4-93c90760f012 "HTTP/2 200 OK"
-2026-01-16T15:56:25.744139458Z [err]  [2026-01-16 15:56:21,395: INFO/MainProcess] [ProcessFile:4893a25f-d68c-4f5e-814e-6da45f632120] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 6791d199-b5f2-4004-9d58-7fb4314eb3e1, plan=enterprise_large)
-2026-01-16T15:56:25.744169443Z [err]  [2026-01-16 15:56:21,398: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[5ebbaf58-a182-4dfa-bfa0-168c6f5b350a] received
-2026-01-16T15:56:25.744187930Z [err]  [2026-01-16 15:56:21,431: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.4c6e8ccf-1c1a-42c3-8bd4-93c90760f012 "HTTP/2 200 OK"
-2026-01-16T15:56:25.744196559Z [err]  [2026-01-16 15:56:21,747: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T15:56:25.744203845Z [err]  [2026-01-16 15:56:21,748: INFO/MainProcess] [ProcessFile:4893a25f-d68c-4f5e-814e-6da45f632120] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/bac841ed-5c36-424e-85e7-73831481464a/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T15:56:25.744212702Z [err]  [2026-01-16 15:56:21,749: INFO/MainProcess] Task process_file_task[4893a25f-d68c-4f5e-814e-6da45f632120] succeeded in 0.741145096719265s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T15:56:25.750315483Z [err]  [2026-01-16 15:56:22,071: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T15:56:25.750323513Z [err]  [2026-01-16 15:56:22,074: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 0.63s (4.7/sec)
-2026-01-16T15:56:25.750331574Z [err]  [2026-01-16 15:56:22,074: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (4.7/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T15:56:25.750339127Z [err]  [2026-01-16 15:56:22,099: INFO/MainProcess] [EmbedTask:5ebbaf58-a182-4dfa-bfa0-168c6f5b350a] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 6791d199-b5f2-4004-9d58-7fb4314eb3e1, plan=enterprise_large)
-2026-01-16T15:56:25.750347905Z [err]  [2026-01-16 15:56:22,100: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[5ebbaf58-a182-4dfa-bfa0-168c6f5b350a] succeeded in 0.6995667293667793s: None
-2026-01-16T15:56:25.750355040Z [err]  [2026-01-16 15:56:22,112: INFO/MainProcess] Task worker.tasks.index_chunks_task[5aae3fb5-73ad-4c33-b5f7-d739aa1df4bd] received
-2026-01-16T15:56:25.750377176Z [err]  [2026-01-16 15:56:22,155: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.4c6e8ccf-1c1a-42c3-8bd4-93c90760f012 "HTTP/2 200 OK"
-2026-01-16T15:56:25.750385190Z [err]  [2026-01-16 15:56:22,197: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T15:56:25.750392118Z [err]  [2026-01-16 15:56:22,234: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fbac841ed-5c36-424e-85e7-73831481464a%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.750400871Z [err]  [2026-01-16 15:56:22,290: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T15:56:25.789639949Z [err]  [2026-01-16 15:56:22,292: INFO/MainProcess] 📄 Created document 41d03596-9b69-4b72-9c01-ebf6162ffa5e: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T15:56:25.789653324Z [err]  [2026-01-16 15:56:22,381: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T15:56:25.789665013Z [err]  [2026-01-16 15:56:22,383: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.09s (doc_id=41d03596-9b69-4b72-9c01-ebf6162ffa5e batch=1)
-2026-01-16T15:56:25.789672511Z [err]  [2026-01-16 15:56:22,383: INFO/MainProcess] ✅ Inserted 3 chunks for document 41d03596-9b69-4b72-9c01-ebf6162ffa5e
-2026-01-16T15:56:25.789678846Z [err]  [2026-01-16 15:56:22,462: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.4c6e8ccf-1c1a-42c3-8bd4-93c90760f012 "HTTP/2 200 OK"
-2026-01-16T15:56:25.789685810Z [err]  [2026-01-16 15:56:22,606: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.789693134Z [err]  [2026-01-16 15:56:22,613: INFO/MainProcess] 📊 [Job:6791d199-b5f2-4004-9d58-7fb4314eb3e1] Status: processing, Processed: 1
-2026-01-16T15:56:25.789699927Z [err]  [2026-01-16 15:56:22,639: INFO/MainProcess] [IndexTask:5aae3fb5-73ad-4c33-b5f7-d739aa1df4bd] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=41d03596-9b69-4b72-9c01-ebf6162ffa5e)
-2026-01-16T15:56:25.789706490Z [err]  [2026-01-16 15:56:22,640: INFO/MainProcess] Task worker.tasks.index_chunks_task[5aae3fb5-73ad-4c33-b5f7-d739aa1df4bd] succeeded in 0.5238707289099693s: None
-2026-01-16T15:56:25.789714023Z [err]  [2026-01-16 15:56:22,673: INFO/MainProcess] Task finalize_job_task[163efc4f-abab-4124-85a1-b7282408bb20] received
-2026-01-16T15:56:25.789719882Z [err]  [2026-01-16 15:56:22,676: INFO/MainProcess] [FinalizeJob:163efc4f-abab-4124-85a1-b7282408bb20] Finalizing job 6791d199-b5f2-4004-9d58-7fb4314eb3e1
-2026-01-16T15:56:25.796873098Z [err]  [2026-01-16 15:56:22,707: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.796882218Z [err]  [2026-01-16 15:56:22,767: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.796891734Z [err]  [2026-01-16 15:56:22,807: INFO/MainProcess] [FinalizeJob:163efc4f-abab-4124-85a1-b7282408bb20] Job 6791d199-b5f2-4004-9d58-7fb4314eb3e1 status updates: job=1 file=8 source=redis
-2026-01-16T15:56:25.796902058Z [err]  [2026-01-16 15:56:22,837: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T15:56:25.796911164Z [err]  [2026-01-16 15:56:22,884: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%2841d03596-9b69-4b72-9c01-ebf6162ffa5e%29 "HTTP/2 200 OK"
-2026-01-16T15:56:25.796919647Z [err]  [2026-01-16 15:56:22,936: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.796928642Z [err]  [2026-01-16 15:56:22,985: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T15:56:25.796937905Z [err]  [2026-01-16 15:56:22,987: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T15:56:25.800514197Z [err]  [2026-01-16 15:56:23,688: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T15:56:25.800589568Z [err]  [2026-01-16 15:56:23,691: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.70s (1.4/sec)
-2026-01-16T15:56:25.800597993Z [err]  [2026-01-16 15:56:23,691: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.4/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T15:56:25.800603735Z [err]  [2026-01-16 15:56:23,745: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T15:56:25.800611423Z [err]  [2026-01-16 15:56:23,782: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.6791d199-b5f2-4004-9d58-7fb4314eb3e1 "HTTP/2 200 OK"
-2026-01-16T15:56:25.800617700Z [err]  [2026-01-16 15:56:23,841: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T15:56:25.800623950Z [err]  [2026-01-16 15:56:23,842: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T15:56:25.800629354Z [err]  [2026-01-16 15:56:23,872: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T15:56:25.800635312Z [err]  [2026-01-16 15:56:23,942: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T15:56:25.800641316Z [err]  [2026-01-16 15:56:23,974: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T15:56:25.806495537Z [err]  [2026-01-16 15:56:24,114: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=6e33d4c0-2bb7-4b84-a519-2e18eac3ff89
-2026-01-16T15:56:25.806502699Z [err]  [2026-01-16 15:56:24,115: INFO/MainProcess] [FinalizeJob:163efc4f-abab-4124-85a1-b7282408bb20] ✅ Job 6791d199-b5f2-4004-9d58-7fb4314eb3e1: Processed 1/1 files
-2026-01-16T15:56:25.806509847Z [err]  [2026-01-16 15:56:24,130: INFO/MainProcess] Task finalize_job_task[163efc4f-abab-4124-85a1-b7282408bb20] succeeded in 1.4543392658233643s: None
-2026-01-16T16:06:31.210042557Z [inf]  Fri Jan 16 16:06:21 2026 -> SelfCheck: Database status OK.
-2026-01-16T16:16:22.859233737Z [inf]  Fri Jan 16 16:16:21 2026 -> SelfCheck: Database status OK.
-2026-01-16T16:26:24.451784525Z [inf]  Fri Jan 16 16:26:21 2026 -> SelfCheck: Database status OK.
-2026-01-16T16:33:32.996173686Z [err]  [2026-01-16 16:33:27,152: INFO/MainProcess] Task unified_ingest_task[9faea87d-4429-436b-8239-452fc56f3250] received
-2026-01-16T16:33:32.996180899Z [err]  [2026-01-16 16:33:27,156: INFO/MainProcess] [UnifiedIngest:9faea87d-4429-436b-8239-452fc56f3250] Starting FAN-OUT: file_upload, Job: dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5, Plan: enterprise_large
-2026-01-16T16:33:32.996190950Z [err]  [2026-01-16 16:33:27,242: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:32.996197878Z [err]  [2026-01-16 16:33:27,272: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:32.996204985Z [err]  [2026-01-16 16:33:27,300: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:32.996212167Z [err]  [2026-01-16 16:33:27,354: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:32.996219467Z [err]  [2026-01-16 16:33:27,418: INFO/MainProcess] 📊 [Job:dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5] Status: processing, Processed: None
-2026-01-16T16:33:32.996227066Z [err]  [2026-01-16 16:33:27,451: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:32.996236652Z [err]  [2026-01-16 16:33:27,484: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T16:33:32.996244527Z [err]  [2026-01-16 16:33:27,485: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T16:33:34.183375395Z [err]  [2026-01-16 16:33:27,486: INFO/MainProcess] [UnifiedIngest:9faea87d-4429-436b-8239-452fc56f3250] Streaming documents from file_upload...
-2026-01-16T16:33:34.183382589Z [err]  [2026-01-16 16:33:27,525: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:34.183389297Z [err]  [2026-01-16 16:33:27,562: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T16:33:34.183395694Z [err]  [2026-01-16 16:33:27,563: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/7dbd2cf5-6000-4298-9dca-1e23fe1430f1/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T16:33:34.183402371Z [err]  [2026-01-16 16:33:27,944: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/7dbd2cf5-6000-4298-9dca-1e23fe1430f1/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T16:33:34.183410363Z [err]  [2026-01-16 16:33:27,984: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T16:33:34.183417391Z [err]  [2026-01-16 16:33:28,030: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T16:33:34.183424758Z [err]  [2026-01-16 16:33:28,032: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T16:33:34.183434792Z [err]  [2026-01-16 16:33:28,080: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:34.183440952Z [err]  [2026-01-16 16:33:28,102: INFO/MainProcess] Task process_file_task[c55d6aac-12ea-4433-8e0a-1cf85bd72ad0] received
-2026-01-16T16:33:35.355859549Z [err]  [2026-01-16 16:33:28,104: INFO/MainProcess] [ProcessFile:c55d6aac-12ea-4433-8e0a-1cf85bd72ad0] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5)
-2026-01-16T16:33:35.355866321Z [err]  [2026-01-16 16:33:28,110: INFO/MainProcess] [UnifiedIngest:9faea87d-4429-436b-8239-452fc56f3250] ✅ Dispatched batch with 1 tasks, group_id: f914639e-27e6-41a5-8231-63f6d2a003ed
-2026-01-16T16:33:35.355873194Z [err]  [2026-01-16 16:33:28,139: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3892e9b0-3752-4b6c-9e16-52e4f44ed89e "HTTP/2 200 OK"
-2026-01-16T16:33:35.355884879Z [err]  [2026-01-16 16:33:28,153: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:35.355891014Z [err]  [2026-01-16 16:33:28,160: INFO/MainProcess] Task unified_ingest_task[9faea87d-4429-436b-8239-452fc56f3250] succeeded in 1.004714958369732s: {'status': 'dispatched', 'job_id': 'dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5', 'total_files': 1, 'group_id': 'f914639e-27e6-41a5-8231-63f6d2a003ed'}
-2026-01-16T16:33:35.355896281Z [err]  [2026-01-16 16:33:28,209: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/7dbd2cf5-6000-4298-9dca-1e23fe1430f1/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T16:33:35.355902278Z [err]  [2026-01-16 16:33:28,240: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3892e9b0-3752-4b6c-9e16-52e4f44ed89e "HTTP/2 200 OK"
-2026-01-16T16:33:35.355907355Z [err]  [2026-01-16 16:33:28,295: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3892e9b0-3752-4b6c-9e16-52e4f44ed89e "HTTP/2 200 OK"
-2026-01-16T16:33:35.355913019Z [err]  [2026-01-16 16:33:28,352: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F7dbd2cf5-6000-4298-9dca-1e23fe1430f1%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T16:33:36.339409101Z [err]  [2026-01-16 16:33:28,399: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3892e9b0-3752-4b6c-9e16-52e4f44ed89e "HTTP/2 200 OK"
-2026-01-16T16:33:36.339414316Z [err]  [2026-01-16 16:33:28,412: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T16:33:36.339418740Z [err]  [2026-01-16 16:33:28,412: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T16:33:36.339423379Z [err]  [2026-01-16 16:33:28,467: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3892e9b0-3752-4b6c-9e16-52e4f44ed89e "HTTP/2 200 OK"
-2026-01-16T16:33:36.339428501Z [err]  [2026-01-16 16:33:28,491: INFO/MainProcess] [ProcessFile:c55d6aac-12ea-4433-8e0a-1cf85bd72ad0] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5, plan=enterprise_large)
-2026-01-16T16:33:36.339433371Z [err]  [2026-01-16 16:33:28,494: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[cca1a2fc-0bf3-44e1-a890-7e431e7475ab] received
-2026-01-16T16:33:36.339438089Z [err]  [2026-01-16 16:33:28,531: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3892e9b0-3752-4b6c-9e16-52e4f44ed89e "HTTP/2 200 OK"
-2026-01-16T16:33:36.339442509Z [err]  [2026-01-16 16:33:28,619: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T16:33:36.339447463Z [err]  [2026-01-16 16:33:28,621: INFO/MainProcess] [ProcessFile:c55d6aac-12ea-4433-8e0a-1cf85bd72ad0] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/7dbd2cf5-6000-4298-9dca-1e23fe1430f1/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T16:33:36.339452887Z [err]  [2026-01-16 16:33:28,621: INFO/MainProcess] Task process_file_task[c55d6aac-12ea-4433-8e0a-1cf85bd72ad0] succeeded in 0.5177391171455383s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T16:33:36.352542847Z [err]  [2026-01-16 16:33:30,336: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T16:33:36.352550234Z [err]  [2026-01-16 16:33:30,348: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 1.81s (1.7/sec)
-2026-01-16T16:33:36.352559543Z [err]  [2026-01-16 16:33:30,348: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (1.7/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T16:33:36.352565571Z [err]  [2026-01-16 16:33:30,373: INFO/MainProcess] [EmbedTask:cca1a2fc-0bf3-44e1-a890-7e431e7475ab] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5, plan=enterprise_large)
-2026-01-16T16:33:36.352574170Z [err]  [2026-01-16 16:33:30,374: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[cca1a2fc-0bf3-44e1-a890-7e431e7475ab] succeeded in 1.8778128139674664s: None
-2026-01-16T16:33:36.352583012Z [err]  [2026-01-16 16:33:30,386: INFO/MainProcess] Task worker.tasks.index_chunks_task[c3db1452-ec39-4cea-8b1d-b50ada9e5222] received
-2026-01-16T16:33:36.352589215Z [err]  [2026-01-16 16:33:30,425: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3892e9b0-3752-4b6c-9e16-52e4f44ed89e "HTTP/2 200 OK"
-2026-01-16T16:33:36.352595273Z [err]  [2026-01-16 16:33:30,527: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T16:33:36.352601158Z [err]  [2026-01-16 16:33:30,561: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F7dbd2cf5-6000-4298-9dca-1e23fe1430f1%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T16:33:36.352607273Z [err]  [2026-01-16 16:33:30,603: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T16:33:36.355153094Z [err]  [2026-01-16 16:33:30,604: INFO/MainProcess] 📄 Created document c664943b-a0d3-4307-acf1-31d3d24267fb: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T16:33:36.355161974Z [err]  [2026-01-16 16:33:30,695: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T16:33:36.355170423Z [err]  [2026-01-16 16:33:30,698: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.09s (doc_id=c664943b-a0d3-4307-acf1-31d3d24267fb batch=1)
-2026-01-16T16:33:36.355176992Z [err]  [2026-01-16 16:33:30,699: INFO/MainProcess] ✅ Inserted 3 chunks for document c664943b-a0d3-4307-acf1-31d3d24267fb
-2026-01-16T16:33:36.355183577Z [err]  [2026-01-16 16:33:30,741: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3892e9b0-3752-4b6c-9e16-52e4f44ed89e "HTTP/2 200 OK"
-2026-01-16T16:33:36.355189602Z [err]  [2026-01-16 16:33:30,799: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:36.355195521Z [err]  [2026-01-16 16:33:30,809: INFO/MainProcess] 📊 [Job:dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5] Status: processing, Processed: 1
-2026-01-16T16:33:36.355202006Z [err]  [2026-01-16 16:33:30,829: INFO/MainProcess] [IndexTask:c3db1452-ec39-4cea-8b1d-b50ada9e5222] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=c664943b-a0d3-4307-acf1-31d3d24267fb)
-2026-01-16T16:33:36.355208087Z [err]  [2026-01-16 16:33:30,830: INFO/MainProcess] Task worker.tasks.index_chunks_task[c3db1452-ec39-4cea-8b1d-b50ada9e5222] succeeded in 0.4400395452976227s: None
-2026-01-16T16:33:36.355214278Z [err]  [2026-01-16 16:33:30,857: INFO/MainProcess] Task finalize_job_task[103e8b42-e0cd-4167-bf33-18a50249e76a] received
-2026-01-16T16:33:36.355220203Z [err]  [2026-01-16 16:33:30,860: INFO/MainProcess] [FinalizeJob:103e8b42-e0cd-4167-bf33-18a50249e76a] Finalizing job dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5
-2026-01-16T16:33:36.359257018Z [err]  [2026-01-16 16:33:30,894: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:36.359262231Z [err]  [2026-01-16 16:33:30,928: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:36.359377785Z [err]  [2026-01-16 16:33:30,929: INFO/MainProcess] [FinalizeJob:103e8b42-e0cd-4167-bf33-18a50249e76a] Job dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 status updates: job=1 file=8 source=redis
-2026-01-16T16:33:36.359383730Z [err]  [2026-01-16 16:33:30,959: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T16:33:36.359388290Z [err]  [2026-01-16 16:33:30,999: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%28c664943b-a0d3-4307-acf1-31d3d24267fb%29 "HTTP/2 200 OK"
-2026-01-16T16:33:36.359393072Z [err]  [2026-01-16 16:33:31,048: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T16:33:36.359397658Z [err]  [2026-01-16 16:33:31,103: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T16:33:36.359404702Z [err]  [2026-01-16 16:33:31,105: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T16:33:37.296905997Z [err]  [2026-01-16 16:33:31,834: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T16:33:37.296913435Z [err]  [2026-01-16 16:33:31,836: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.73s (1.4/sec)
-2026-01-16T16:33:37.296921398Z [err]  [2026-01-16 16:33:31,837: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.4/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T16:33:37.296931677Z [err]  [2026-01-16 16:33:31,882: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T16:33:37.296937991Z [err]  [2026-01-16 16:33:31,913: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5 "HTTP/2 200 OK"
-2026-01-16T16:33:37.296945946Z [err]  [2026-01-16 16:33:31,948: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T16:33:37.296955997Z [err]  [2026-01-16 16:33:31,950: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T16:33:37.296961154Z [err]  [2026-01-16 16:33:31,981: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T16:33:37.296969252Z [err]  [2026-01-16 16:33:32,040: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T16:33:37.296974302Z [err]  [2026-01-16 16:33:32,073: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T16:33:37.307953345Z [err]  [2026-01-16 16:33:32,226: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=46de456d-8c5a-43d0-8c97-e00b843e9b12
-2026-01-16T16:33:37.307962120Z [err]  [2026-01-16 16:33:32,227: INFO/MainProcess] [FinalizeJob:103e8b42-e0cd-4167-bf33-18a50249e76a] ✅ Job dc4d1dbf-197a-4a30-afe4-5cfd4975a6c5: Processed 1/1 files
-2026-01-16T16:33:37.307972936Z [err]  [2026-01-16 16:33:32,241: INFO/MainProcess] Task finalize_job_task[103e8b42-e0cd-4167-bf33-18a50249e76a] succeeded in 1.3819432854652405s: None
-2026-01-16T16:43:37.814947364Z [inf]  Fri Jan 16 16:43:28 2026 -> SelfCheck: Database status OK.
-2026-01-16T16:53:35.319420760Z [inf]  Fri Jan 16 16:53:28 2026 -> SelfCheck: Database status OK.
-2026-01-16T17:03:37.136715658Z [inf]  Fri Jan 16 17:03:28 2026 -> SelfCheck: Database status OK.
-2026-01-16T17:13:28.968123641Z [inf]  Fri Jan 16 17:13:28 2026 -> SelfCheck: Database status OK.
-2026-01-16T17:18:02.058236309Z [err]  [2026-01-16 17:17:56,064: INFO/MainProcess] Task unified_ingest_task[1029cd61-d52c-4480-89e6-1cbfb533b7d3] received
-2026-01-16T17:18:02.058242506Z [err]  [2026-01-16 17:17:56,066: INFO/MainProcess] [UnifiedIngest:1029cd61-d52c-4480-89e6-1cbfb533b7d3] Starting FAN-OUT: file_upload, Job: 79cb9511-d584-4bc3-a32b-2cdf44de3a90, Plan: enterprise_large
-2026-01-16T17:18:02.058369785Z [err]  [2026-01-16 17:17:56,177: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:02.058376616Z [err]  [2026-01-16 17:17:56,238: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:02.058382389Z [err]  [2026-01-16 17:17:56,284: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:02.058388299Z [err]  [2026-01-16 17:17:56,324: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:02.058394888Z [err]  [2026-01-16 17:17:56,390: INFO/MainProcess] 📊 [Job:79cb9511-d584-4bc3-a32b-2cdf44de3a90] Status: processing, Processed: None
-2026-01-16T17:18:02.058400993Z [err]  [2026-01-16 17:17:56,460: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:02.058413143Z [err]  [2026-01-16 17:17:56,498: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T17:18:02.058419196Z [err]  [2026-01-16 17:17:56,499: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T17:18:03.345875909Z [err]  [2026-01-16 17:17:56,500: INFO/MainProcess] [UnifiedIngest:1029cd61-d52c-4480-89e6-1cbfb533b7d3] Streaming documents from file_upload...
-2026-01-16T17:18:03.345885037Z [err]  [2026-01-16 17:17:56,538: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:03.345893347Z [err]  [2026-01-16 17:17:56,573: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T17:18:03.345904198Z [err]  [2026-01-16 17:17:56,575: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/b3b880ac-fee4-4b71-8c71-edfc01dcf36e/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T17:18:03.345913299Z [err]  [2026-01-16 17:17:56,793: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/b3b880ac-fee4-4b71-8c71-edfc01dcf36e/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T17:18:03.345922543Z [err]  [2026-01-16 17:17:56,842: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T17:18:03.345931257Z [err]  [2026-01-16 17:17:56,880: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T17:18:03.345938710Z [err]  [2026-01-16 17:17:56,881: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T17:18:03.345946560Z [err]  [2026-01-16 17:17:56,949: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:03.345955151Z [err]  [2026-01-16 17:17:56,970: INFO/MainProcess] Task process_file_task[4b50bd77-6b41-432a-9eeb-fda1d4798e55] received
-2026-01-16T17:18:04.608184379Z [err]  [2026-01-16 17:17:56,971: INFO/MainProcess] [ProcessFile:4b50bd77-6b41-432a-9eeb-fda1d4798e55] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 79cb9511-d584-4bc3-a32b-2cdf44de3a90)
-2026-01-16T17:18:04.608194969Z [err]  [2026-01-16 17:17:56,978: INFO/MainProcess] [UnifiedIngest:1029cd61-d52c-4480-89e6-1cbfb533b7d3] ✅ Dispatched batch with 1 tasks, group_id: 7c8ccfc5-b375-42ce-8c0c-36431644d887
-2026-01-16T17:18:04.608200296Z [err]  [2026-01-16 17:17:57,001: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cb67ad0f-2fcb-4658-8d0f-2c62ed610cdf "HTTP/2 200 OK"
-2026-01-16T17:18:04.608204724Z [err]  [2026-01-16 17:17:57,015: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:04.608209229Z [err]  [2026-01-16 17:17:57,022: INFO/MainProcess] Task unified_ingest_task[1029cd61-d52c-4480-89e6-1cbfb533b7d3] succeeded in 0.9569416679441929s: {'status': 'dispatched', 'job_id': '79cb9511-d584-4bc3-a32b-2cdf44de3a90', 'total_files': 1, 'group_id': '7c8ccfc5-b375-42ce-8c0c-36431644d887'}
-2026-01-16T17:18:04.608218025Z [err]  [2026-01-16 17:17:57,065: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/b3b880ac-fee4-4b71-8c71-edfc01dcf36e/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T17:18:04.608222705Z [err]  [2026-01-16 17:17:57,094: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cb67ad0f-2fcb-4658-8d0f-2c62ed610cdf "HTTP/2 200 OK"
-2026-01-16T17:18:04.608228632Z [err]  [2026-01-16 17:17:57,150: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cb67ad0f-2fcb-4658-8d0f-2c62ed610cdf "HTTP/2 200 OK"
-2026-01-16T17:18:04.608233143Z [err]  [2026-01-16 17:17:57,198: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fb3b880ac-fee4-4b71-8c71-edfc01dcf36e%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T17:18:05.668154608Z [err]  [2026-01-16 17:17:57,228: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cb67ad0f-2fcb-4658-8d0f-2c62ed610cdf "HTTP/2 200 OK"
-2026-01-16T17:18:05.668161392Z [err]  [2026-01-16 17:17:57,239: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T17:18:05.668168057Z [err]  [2026-01-16 17:17:57,239: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T17:18:05.668176498Z [err]  [2026-01-16 17:17:57,272: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cb67ad0f-2fcb-4658-8d0f-2c62ed610cdf "HTTP/2 200 OK"
-2026-01-16T17:18:05.668183857Z [err]  [2026-01-16 17:17:57,294: INFO/MainProcess] [ProcessFile:4b50bd77-6b41-432a-9eeb-fda1d4798e55] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 79cb9511-d584-4bc3-a32b-2cdf44de3a90, plan=enterprise_large)
-2026-01-16T17:18:05.668193066Z [err]  [2026-01-16 17:17:57,296: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[8da4f4b0-e291-459f-99bc-7ec37f5c041e] received
-2026-01-16T17:18:05.668201450Z [err]  [2026-01-16 17:17:57,335: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cb67ad0f-2fcb-4658-8d0f-2c62ed610cdf "HTTP/2 200 OK"
-2026-01-16T17:18:05.668210021Z [err]  [2026-01-16 17:17:57,487: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T17:18:05.668217115Z [err]  [2026-01-16 17:17:57,488: INFO/MainProcess] [ProcessFile:4b50bd77-6b41-432a-9eeb-fda1d4798e55] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/b3b880ac-fee4-4b71-8c71-edfc01dcf36e/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T17:18:05.668224434Z [err]  [2026-01-16 17:17:57,489: INFO/MainProcess] Task process_file_task[4b50bd77-6b41-432a-9eeb-fda1d4798e55] succeeded in 0.5177085511386395s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T17:18:06.729943617Z [err]  [2026-01-16 17:17:58,267: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T17:18:06.729950281Z [err]  [2026-01-16 17:17:58,270: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 0.93s (3.2/sec)
-2026-01-16T17:18:06.729957572Z [err]  [2026-01-16 17:17:58,270: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (3.2/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T17:18:06.729960662Z [err]  [2026-01-16 17:17:58,412: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T17:18:06.729964919Z [err]  [2026-01-16 17:17:58,303: INFO/MainProcess] [EmbedTask:8da4f4b0-e291-459f-99bc-7ec37f5c041e] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 79cb9511-d584-4bc3-a32b-2cdf44de3a90, plan=enterprise_large)
-2026-01-16T17:18:06.729972128Z [err]  [2026-01-16 17:17:58,439: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fb3b880ac-fee4-4b71-8c71-edfc01dcf36e%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T17:18:06.729973085Z [err]  [2026-01-16 17:17:58,304: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[8da4f4b0-e291-459f-99bc-7ec37f5c041e] succeeded in 1.006590347737074s: None
-2026-01-16T17:18:06.729982014Z [err]  [2026-01-16 17:17:58,474: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T17:18:06.729985080Z [err]  [2026-01-16 17:17:58,325: INFO/MainProcess] Task worker.tasks.index_chunks_task[11ceaa5e-0896-4c56-a29c-5f08e63f409c] received
-2026-01-16T17:18:06.729994006Z [err]  [2026-01-16 17:17:58,364: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cb67ad0f-2fcb-4658-8d0f-2c62ed610cdf "HTTP/2 200 OK"
-2026-01-16T17:18:07.620558606Z [err]  [2026-01-16 17:17:58,478: INFO/MainProcess] 📄 Created document 3769a79d-0b26-4d86-9f38-98dc934df0ff: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T17:18:07.620564502Z [err]  [2026-01-16 17:17:58,569: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T17:18:07.620569954Z [err]  [2026-01-16 17:17:58,573: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.09s (doc_id=3769a79d-0b26-4d86-9f38-98dc934df0ff batch=1)
-2026-01-16T17:18:07.620575561Z [err]  [2026-01-16 17:17:58,574: INFO/MainProcess] ✅ Inserted 3 chunks for document 3769a79d-0b26-4d86-9f38-98dc934df0ff
-2026-01-16T17:18:07.620581308Z [err]  [2026-01-16 17:17:58,627: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cb67ad0f-2fcb-4658-8d0f-2c62ed610cdf "HTTP/2 200 OK"
-2026-01-16T17:18:07.620587432Z [err]  [2026-01-16 17:17:58,759: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:07.620593503Z [err]  [2026-01-16 17:17:58,770: INFO/MainProcess] 📊 [Job:79cb9511-d584-4bc3-a32b-2cdf44de3a90] Status: processing, Processed: 1
-2026-01-16T17:18:07.620599476Z [err]  [2026-01-16 17:17:58,795: INFO/MainProcess] [IndexTask:11ceaa5e-0896-4c56-a29c-5f08e63f409c] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=3769a79d-0b26-4d86-9f38-98dc934df0ff)
-2026-01-16T17:18:07.620605257Z [err]  [2026-01-16 17:17:58,795: INFO/MainProcess] Task worker.tasks.index_chunks_task[11ceaa5e-0896-4c56-a29c-5f08e63f409c] succeeded in 0.46477000042796135s: None
-2026-01-16T17:18:07.620610674Z [err]  [2026-01-16 17:17:58,840: INFO/MainProcess] Task finalize_job_task[1c68ed58-1ce8-4261-b684-bf85b6280b3c] received
-2026-01-16T17:18:07.620616766Z [err]  [2026-01-16 17:17:58,843: INFO/MainProcess] [FinalizeJob:1c68ed58-1ce8-4261-b684-bf85b6280b3c] Finalizing job 79cb9511-d584-4bc3-a32b-2cdf44de3a90
-2026-01-16T17:18:07.702989449Z [err]  [2026-01-16 17:17:58,869: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:07.702993417Z [err]  [2026-01-16 17:17:58,911: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:07.702997309Z [err]  [2026-01-16 17:17:58,912: INFO/MainProcess] [FinalizeJob:1c68ed58-1ce8-4261-b684-bf85b6280b3c] Job 79cb9511-d584-4bc3-a32b-2cdf44de3a90 status updates: job=1 file=8 source=redis
-2026-01-16T17:18:07.703001380Z [err]  [2026-01-16 17:17:58,974: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T17:18:07.703005486Z [err]  [2026-01-16 17:17:59,009: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%283769a79d-0b26-4d86-9f38-98dc934df0ff%29 "HTTP/2 200 OK"
-2026-01-16T17:18:07.703009272Z [err]  [2026-01-16 17:17:59,041: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T17:18:07.703013181Z [err]  [2026-01-16 17:17:59,078: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T17:18:07.703018138Z [err]  [2026-01-16 17:17:59,080: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T17:18:07.723382474Z [err]  [2026-01-16 17:17:59,803: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T17:18:07.723389162Z [err]  [2026-01-16 17:17:59,810: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.73s (1.4/sec)
-2026-01-16T17:18:07.723396070Z [err]  [2026-01-16 17:17:59,810: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.4/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T17:18:07.723402251Z [err]  [2026-01-16 17:17:59,876: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T17:18:07.723409907Z [err]  [2026-01-16 17:17:59,922: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.79cb9511-d584-4bc3-a32b-2cdf44de3a90 "HTTP/2 200 OK"
-2026-01-16T17:18:07.723417175Z [err]  [2026-01-16 17:17:59,977: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T17:18:07.723422699Z [err]  [2026-01-16 17:17:59,978: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T17:18:07.723427725Z [err]  [2026-01-16 17:18:00,028: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T17:18:07.723432510Z [err]  [2026-01-16 17:18:00,166: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T17:18:07.723438266Z [err]  [2026-01-16 17:18:00,198: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T17:18:07.729990550Z [err]  [2026-01-16 17:18:00,343: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=903ecae8-ebb5-48d6-8c79-5ee60b5bfa7d
-2026-01-16T17:18:07.730003028Z [err]  [2026-01-16 17:18:00,343: INFO/MainProcess] [FinalizeJob:1c68ed58-1ce8-4261-b684-bf85b6280b3c] ✅ Job 79cb9511-d584-4bc3-a32b-2cdf44de3a90: Processed 1/1 files
-2026-01-16T17:18:07.730010239Z [err]  [2026-01-16 17:18:00,354: INFO/MainProcess] Task finalize_job_task[1c68ed58-1ce8-4261-b684-bf85b6280b3c] succeeded in 1.5119039416313171s: None
-2026-01-16T17:27:59.394738302Z [inf]  Fri Jan 16 17:27:57 2026 -> SelfCheck: Database status OK.
-2026-01-16T17:38:02.455506639Z [inf]  Fri Jan 16 17:37:57 2026 -> SelfCheck: Database status OK.
-2026-01-16T17:48:03.476844740Z [inf]  Fri Jan 16 17:47:57 2026 -> SelfCheck: Database status OK.
-2026-01-16T17:57:58.496907432Z [inf]  Fri Jan 16 17:57:57 2026 -> SelfCheck: Database status OK.
-2026-01-16T18:08:00.596152980Z [inf]  Fri Jan 16 18:07:57 2026 -> SelfCheck: Database status OK.
-2026-01-16T18:18:07.686593262Z [inf]  Fri Jan 16 18:17:57 2026 -> SelfCheck: Database status OK.
-2026-01-16T18:28:06.615969858Z [inf]  Fri Jan 16 18:27:57 2026 -> SelfCheck: Database status OK.
-2026-01-16T18:36:49.342307183Z [err]  [2026-01-16 18:36:41,498: INFO/MainProcess] Task unified_ingest_task[00790682-2ddf-4812-8a4e-394910ace2c6] received
-2026-01-16T18:36:49.342312302Z [err]  [2026-01-16 18:36:41,500: INFO/MainProcess] [UnifiedIngest:00790682-2ddf-4812-8a4e-394910ace2c6] Starting FAN-OUT: file_upload, Job: 2402509e-0485-44ba-9953-8928dd84137e, Plan: enterprise_large
-2026-01-16T18:36:49.342316423Z [err]  [2026-01-16 18:36:41,569: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:49.342322709Z [err]  [2026-01-16 18:36:41,622: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:49.342327548Z [err]  [2026-01-16 18:36:41,666: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:49.342331642Z [err]  [2026-01-16 18:36:41,704: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:49.342335528Z [err]  [2026-01-16 18:36:41,775: INFO/MainProcess] 📊 [Job:2402509e-0485-44ba-9953-8928dd84137e] Status: processing, Processed: None
-2026-01-16T18:36:49.342342250Z [err]  [2026-01-16 18:36:41,831: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:49.342346144Z [err]  [2026-01-16 18:36:41,881: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T18:36:49.342350490Z [err]  [2026-01-16 18:36:41,882: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T18:36:50.600764409Z [err]  [2026-01-16 18:36:41,882: INFO/MainProcess] [UnifiedIngest:00790682-2ddf-4812-8a4e-394910ace2c6] Streaming documents from file_upload...
-2026-01-16T18:36:50.600772111Z [err]  [2026-01-16 18:36:41,926: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:50.600779712Z [err]  [2026-01-16 18:36:41,977: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T18:36:50.600788141Z [err]  [2026-01-16 18:36:41,979: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/43eb8184-75db-4f39-8fbc-948d509b6ada/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T18:36:50.600796142Z [err]  [2026-01-16 18:36:43,164: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/43eb8184-75db-4f39-8fbc-948d509b6ada/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T18:36:50.600804183Z [err]  [2026-01-16 18:36:43,221: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T18:36:50.600811770Z [err]  [2026-01-16 18:36:43,280: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T18:36:50.600819333Z [err]  [2026-01-16 18:36:43,282: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T18:36:50.600827591Z [err]  [2026-01-16 18:36:43,338: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:50.600835407Z [err]  [2026-01-16 18:36:43,367: INFO/MainProcess] Task process_file_task[41f1e3e4-9386-4c24-8da9-3b4ba9c413a5] received
-2026-01-16T18:36:51.578277599Z [err]  [2026-01-16 18:36:43,372: INFO/MainProcess] [ProcessFile:41f1e3e4-9386-4c24-8da9-3b4ba9c413a5] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 2402509e-0485-44ba-9953-8928dd84137e)
-2026-01-16T18:36:51.578287787Z [err]  [2026-01-16 18:36:43,381: INFO/MainProcess] [UnifiedIngest:00790682-2ddf-4812-8a4e-394910ace2c6] ✅ Dispatched batch with 1 tasks, group_id: 86fc30bf-5f96-4968-a32f-9b6e09809829
-2026-01-16T18:36:51.578294414Z [err]  [2026-01-16 18:36:43,418: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.05571c5b-50e7-4dbf-ad24-405007c8f3f2 "HTTP/2 200 OK"
-2026-01-16T18:36:51.578302672Z [err]  [2026-01-16 18:36:43,444: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:51.578309811Z [err]  [2026-01-16 18:36:43,454: INFO/MainProcess] Task unified_ingest_task[00790682-2ddf-4812-8a4e-394910ace2c6] succeeded in 1.9542640037834644s: {'status': 'dispatched', 'job_id': '2402509e-0485-44ba-9953-8928dd84137e', 'total_files': 1, 'group_id': '86fc30bf-5f96-4968-a32f-9b6e09809829'}
-2026-01-16T18:36:51.578316012Z [err]  [2026-01-16 18:36:43,487: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/43eb8184-75db-4f39-8fbc-948d509b6ada/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T18:36:51.578322635Z [err]  [2026-01-16 18:36:43,543: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.05571c5b-50e7-4dbf-ad24-405007c8f3f2 "HTTP/2 200 OK"
-2026-01-16T18:36:51.578329055Z [err]  [2026-01-16 18:36:43,622: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.05571c5b-50e7-4dbf-ad24-405007c8f3f2 "HTTP/2 200 OK"
-2026-01-16T18:36:51.578335291Z [err]  [2026-01-16 18:36:43,683: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F43eb8184-75db-4f39-8fbc-948d509b6ada%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T18:36:52.472069179Z [err]  [2026-01-16 18:36:43,735: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.05571c5b-50e7-4dbf-ad24-405007c8f3f2 "HTTP/2 200 OK"
-2026-01-16T18:36:52.472075364Z [err]  [2026-01-16 18:36:43,752: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T18:36:52.472085790Z [err]  [2026-01-16 18:36:43,753: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T18:36:52.472093243Z [err]  [2026-01-16 18:36:43,798: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.05571c5b-50e7-4dbf-ad24-405007c8f3f2 "HTTP/2 200 OK"
-2026-01-16T18:36:52.472098824Z [err]  [2026-01-16 18:36:43,895: INFO/MainProcess] [ProcessFile:41f1e3e4-9386-4c24-8da9-3b4ba9c413a5] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 2402509e-0485-44ba-9953-8928dd84137e, plan=enterprise_large)
-2026-01-16T18:36:52.472108667Z [err]  [2026-01-16 18:36:43,899: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[a33cd6a1-b68b-4a8a-b5f6-b7f59db432a1] received
-2026-01-16T18:36:52.472114506Z [err]  [2026-01-16 18:36:43,960: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.05571c5b-50e7-4dbf-ad24-405007c8f3f2 "HTTP/2 200 OK"
-2026-01-16T18:36:52.472120436Z [err]  [2026-01-16 18:36:44,042: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T18:36:52.472126405Z [err]  [2026-01-16 18:36:44,044: INFO/MainProcess] [ProcessFile:41f1e3e4-9386-4c24-8da9-3b4ba9c413a5] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/43eb8184-75db-4f39-8fbc-948d509b6ada/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T18:36:52.472134955Z [err]  [2026-01-16 18:36:44,044: INFO/MainProcess] Task process_file_task[41f1e3e4-9386-4c24-8da9-3b4ba9c413a5] succeeded in 0.6726224012672901s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T18:36:52.482603769Z [err]  [2026-01-16 18:36:45,257: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T18:36:52.482610120Z [err]  [2026-01-16 18:36:45,261: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 1.29s (2.3/sec)
-2026-01-16T18:36:52.482619274Z [err]  [2026-01-16 18:36:45,262: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (2.3/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T18:36:52.482625446Z [err]  [2026-01-16 18:36:45,289: INFO/MainProcess] [EmbedTask:a33cd6a1-b68b-4a8a-b5f6-b7f59db432a1] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 2402509e-0485-44ba-9953-8928dd84137e, plan=enterprise_large)
-2026-01-16T18:36:52.482631840Z [err]  [2026-01-16 18:36:45,289: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[a33cd6a1-b68b-4a8a-b5f6-b7f59db432a1] succeeded in 1.388024065643549s: None
-2026-01-16T18:36:52.482641358Z [err]  [2026-01-16 18:36:45,305: INFO/MainProcess] Task worker.tasks.index_chunks_task[8a87b82a-aa57-4043-808b-398c201cd22e] received
-2026-01-16T18:36:52.482648403Z [err]  [2026-01-16 18:36:45,347: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.05571c5b-50e7-4dbf-ad24-405007c8f3f2 "HTTP/2 200 OK"
-2026-01-16T18:36:52.482654114Z [err]  [2026-01-16 18:36:45,410: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T18:36:52.482660647Z [err]  [2026-01-16 18:36:45,456: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F43eb8184-75db-4f39-8fbc-948d509b6ada%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T18:36:52.482667387Z [err]  [2026-01-16 18:36:45,545: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T18:36:52.493740578Z [err]  [2026-01-16 18:36:45,546: INFO/MainProcess] 📄 Created document 86212cee-3f5c-4c8f-a998-bb70f4ad8a00: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T18:36:52.493744784Z [err]  [2026-01-16 18:36:45,628: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T18:36:52.493748785Z [err]  [2026-01-16 18:36:45,631: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.08s (doc_id=86212cee-3f5c-4c8f-a998-bb70f4ad8a00 batch=1)
-2026-01-16T18:36:52.493752555Z [err]  [2026-01-16 18:36:45,632: INFO/MainProcess] ✅ Inserted 3 chunks for document 86212cee-3f5c-4c8f-a998-bb70f4ad8a00
-2026-01-16T18:36:52.493756440Z [err]  [2026-01-16 18:36:45,673: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.05571c5b-50e7-4dbf-ad24-405007c8f3f2 "HTTP/2 200 OK"
-2026-01-16T18:36:52.493760768Z [err]  [2026-01-16 18:36:45,756: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:52.493764849Z [err]  [2026-01-16 18:36:45,771: INFO/MainProcess] 📊 [Job:2402509e-0485-44ba-9953-8928dd84137e] Status: processing, Processed: 1
-2026-01-16T18:36:52.493769224Z [err]  [2026-01-16 18:36:45,802: INFO/MainProcess] [IndexTask:8a87b82a-aa57-4043-808b-398c201cd22e] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=86212cee-3f5c-4c8f-a998-bb70f4ad8a00)
-2026-01-16T18:36:52.493773514Z [err]  [2026-01-16 18:36:45,802: INFO/MainProcess] Task worker.tasks.index_chunks_task[8a87b82a-aa57-4043-808b-398c201cd22e] succeeded in 0.49373238906264305s: None
-2026-01-16T18:36:52.493777920Z [err]  [2026-01-16 18:36:45,803: INFO/MainProcess] Task finalize_job_task[eb50094b-8dea-4232-a216-c189afa14c2b] received
-2026-01-16T18:36:52.493784157Z [err]  [2026-01-16 18:36:45,805: INFO/MainProcess] [FinalizeJob:eb50094b-8dea-4232-a216-c189afa14c2b] Finalizing job 2402509e-0485-44ba-9953-8928dd84137e
-2026-01-16T18:36:52.501517325Z [err]  [2026-01-16 18:36:45,842: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:52.501522231Z [err]  [2026-01-16 18:36:45,893: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:52.501528864Z [err]  [2026-01-16 18:36:45,894: INFO/MainProcess] [FinalizeJob:eb50094b-8dea-4232-a216-c189afa14c2b] Job 2402509e-0485-44ba-9953-8928dd84137e status updates: job=1 file=8 source=redis
-2026-01-16T18:36:52.501535562Z [err]  [2026-01-16 18:36:45,927: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.2402509e-0485-44ba-9953-8928dd84137e&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T18:36:52.501542518Z [err]  [2026-01-16 18:36:45,990: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%2886212cee-3f5c-4c8f-a998-bb70f4ad8a00%29 "HTTP/2 200 OK"
-2026-01-16T18:36:52.501549109Z [err]  [2026-01-16 18:36:46,037: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T18:36:52.501555844Z [err]  [2026-01-16 18:36:46,091: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T18:36:52.501564326Z [err]  [2026-01-16 18:36:46,092: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T18:36:52.513077441Z [err]  [2026-01-16 18:36:46,791: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T18:36:52.513086201Z [err]  [2026-01-16 18:36:46,794: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.70s (1.4/sec)
-2026-01-16T18:36:52.513092405Z [err]  [2026-01-16 18:36:46,794: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.4/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T18:36:52.513098606Z [err]  [2026-01-16 18:36:46,849: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T18:36:52.513105463Z [err]  [2026-01-16 18:36:46,899: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.2402509e-0485-44ba-9953-8928dd84137e "HTTP/2 200 OK"
-2026-01-16T18:36:52.513111418Z [err]  [2026-01-16 18:36:47,016: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T18:36:52.513121189Z [err]  [2026-01-16 18:36:47,020: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T18:36:52.513127603Z [err]  [2026-01-16 18:36:47,061: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T18:36:52.513133722Z [err]  [2026-01-16 18:36:47,164: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T18:36:52.513139592Z [err]  [2026-01-16 18:36:47,207: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T18:36:52.523729789Z [err]  [2026-01-16 18:36:47,363: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=7436f860-294f-444f-9a0a-fd88133c1a52
-2026-01-16T18:36:52.523736754Z [err]  [2026-01-16 18:36:47,364: INFO/MainProcess] [FinalizeJob:eb50094b-8dea-4232-a216-c189afa14c2b] ✅ Job 2402509e-0485-44ba-9953-8928dd84137e: Processed 1/1 files
-2026-01-16T18:36:52.523742783Z [err]  [2026-01-16 18:36:47,375: INFO/MainProcess] Task finalize_job_task[eb50094b-8dea-4232-a216-c189afa14c2b] succeeded in 1.5709631219506264s: None
-2026-01-16T18:46:45.410754238Z [inf]  Fri Jan 16 18:46:43 2026 -> SelfCheck: Database status OK.
-2026-01-16T18:56:43.935897919Z [inf]  Fri Jan 16 18:56:43 2026 -> SelfCheck: Database status OK.
-2026-01-16T19:06:53.858890438Z [inf]  Fri Jan 16 19:06:43 2026 -> SelfCheck: Database status OK.
-2026-01-16T19:16:48.855846350Z [inf]  Fri Jan 16 19:16:43 2026 -> SelfCheck: Database status OK.
-2026-01-16T19:26:48.397988215Z [inf]  Fri Jan 16 19:26:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T19:36:45.180803717Z [inf]  Fri Jan 16 19:36:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T19:46:44.428643604Z [inf]  Fri Jan 16 19:46:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T19:56:45.106987245Z [inf]  Fri Jan 16 19:56:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T20:06:52.122262942Z [inf]  Fri Jan 16 20:06:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T20:16:51.763553292Z [inf]  Fri Jan 16 20:16:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T20:26:49.467777778Z [inf]  Fri Jan 16 20:26:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T20:36:55.464224782Z [inf]  Fri Jan 16 20:36:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T20:46:54.831149981Z [inf]  Fri Jan 16 20:46:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T20:56:52.829466531Z [inf]  Fri Jan 16 20:56:44 2026 -> SelfCheck: Database status OK.
-2026-01-16T21:06:55.770474521Z [inf]  Fri Jan 16 21:06:45 2026 -> SelfCheck: Database status OK.
-2026-01-16T21:16:55.874750408Z [inf]  Fri Jan 16 21:16:45 2026 -> SelfCheck: Database status OK.
-2026-01-16T21:26:52.958271814Z [inf]  Fri Jan 16 21:26:45 2026 -> SelfCheck: Database status OK.
-2026-01-16T21:28:57.493379409Z [err]  [2026-01-16 21:28:50,400: INFO/MainProcess] Task unified_ingest_task[061e61dd-5170-428b-a300-7e20f15e392f] received
-2026-01-16T21:28:57.493385730Z [err]  [2026-01-16 21:28:50,402: INFO/MainProcess] [UnifiedIngest:061e61dd-5170-428b-a300-7e20f15e392f] Starting FAN-OUT: file_upload, Job: ff70412e-256f-4df0-957f-5857ba493cc9, Plan: enterprise_large
-2026-01-16T21:28:57.493392374Z [err]  [2026-01-16 21:28:50,480: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.493399665Z [err]  [2026-01-16 21:28:50,521: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.493406304Z [err]  [2026-01-16 21:28:50,544: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.493412468Z [err]  [2026-01-16 21:28:50,590: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.493418594Z [err]  [2026-01-16 21:28:50,655: INFO/MainProcess] 📊 [Job:ff70412e-256f-4df0-957f-5857ba493cc9] Status: processing, Processed: None
-2026-01-16T21:28:57.493433212Z [err]  [2026-01-16 21:28:50,683: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.493441348Z [err]  [2026-01-16 21:28:50,714: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T21:28:57.493447935Z [err]  [2026-01-16 21:28:50,716: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T21:28:57.500557019Z [err]  [2026-01-16 21:28:50,716: INFO/MainProcess] [UnifiedIngest:061e61dd-5170-428b-a300-7e20f15e392f] Streaming documents from file_upload...
-2026-01-16T21:28:57.500561772Z [err]  [2026-01-16 21:28:50,757: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.500566789Z [err]  [2026-01-16 21:28:50,801: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:28:57.500571780Z [err]  [2026-01-16 21:28:50,803: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/1f57adb4-7cd4-45f4-87b4-f4abb8242146/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:28:57.500577270Z [err]  [2026-01-16 21:28:50,978: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/1f57adb4-7cd4-45f4-87b4-f4abb8242146/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:28:57.500582860Z [err]  [2026-01-16 21:28:51,016: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T21:28:57.500587531Z [err]  [2026-01-16 21:28:51,058: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T21:28:57.500593147Z [err]  [2026-01-16 21:28:51,060: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T21:28:57.500598727Z [err]  [2026-01-16 21:28:51,104: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.500603600Z [err]  [2026-01-16 21:28:51,127: INFO/MainProcess] Task process_file_task[00652e7b-ab15-4b7b-a8eb-badab34ed11e] received
-2026-01-16T21:28:57.507803967Z [err]  [2026-01-16 21:28:51,129: INFO/MainProcess] [ProcessFile:00652e7b-ab15-4b7b-a8eb-badab34ed11e] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: ff70412e-256f-4df0-957f-5857ba493cc9)
-2026-01-16T21:28:57.507811667Z [err]  [2026-01-16 21:28:51,133: INFO/MainProcess] [UnifiedIngest:061e61dd-5170-428b-a300-7e20f15e392f] ✅ Dispatched batch with 1 tasks, group_id: 5cc2456f-6fff-4dfd-98cb-bd8ab1571017
-2026-01-16T21:28:57.507818441Z [err]  [2026-01-16 21:28:51,155: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3228d264-000b-498d-9466-af738c320a81 "HTTP/2 200 OK"
-2026-01-16T21:28:57.507825361Z [err]  [2026-01-16 21:28:51,167: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.507832265Z [err]  [2026-01-16 21:28:51,174: INFO/MainProcess] Task unified_ingest_task[061e61dd-5170-428b-a300-7e20f15e392f] succeeded in 0.7727186195552349s: {'status': 'dispatched', 'job_id': 'ff70412e-256f-4df0-957f-5857ba493cc9', 'total_files': 1, 'group_id': '5cc2456f-6fff-4dfd-98cb-bd8ab1571017'}
-2026-01-16T21:28:57.507839350Z [err]  [2026-01-16 21:28:51,212: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/1f57adb4-7cd4-45f4-87b4-f4abb8242146/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:28:57.507846502Z [err]  [2026-01-16 21:28:51,238: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3228d264-000b-498d-9466-af738c320a81 "HTTP/2 200 OK"
-2026-01-16T21:28:57.507857454Z [err]  [2026-01-16 21:28:51,285: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3228d264-000b-498d-9466-af738c320a81 "HTTP/2 200 OK"
-2026-01-16T21:28:57.507864764Z [err]  [2026-01-16 21:28:51,335: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F1f57adb4-7cd4-45f4-87b4-f4abb8242146%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:28:57.512323903Z [err]  [2026-01-16 21:28:51,366: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3228d264-000b-498d-9466-af738c320a81 "HTTP/2 200 OK"
-2026-01-16T21:28:57.512330022Z [err]  [2026-01-16 21:28:51,376: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T21:28:57.512335649Z [err]  [2026-01-16 21:28:51,376: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T21:28:57.512341527Z [err]  [2026-01-16 21:28:51,405: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3228d264-000b-498d-9466-af738c320a81 "HTTP/2 200 OK"
-2026-01-16T21:28:57.513033900Z [err]  [2026-01-16 21:28:51,427: INFO/MainProcess] [ProcessFile:00652e7b-ab15-4b7b-a8eb-badab34ed11e] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: ff70412e-256f-4df0-957f-5857ba493cc9, plan=enterprise_large)
-2026-01-16T21:28:57.513043592Z [err]  [2026-01-16 21:28:51,429: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[6139483e-5048-4082-895e-30e06dde9a2a] received
-2026-01-16T21:28:57.513050099Z [err]  [2026-01-16 21:28:51,467: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3228d264-000b-498d-9466-af738c320a81 "HTTP/2 200 OK"
-2026-01-16T21:28:57.513056514Z [err]  [2026-01-16 21:28:51,549: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T21:28:57.513062320Z [err]  [2026-01-16 21:28:51,550: INFO/MainProcess] [ProcessFile:00652e7b-ab15-4b7b-a8eb-badab34ed11e] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/1f57adb4-7cd4-45f4-87b4-f4abb8242146/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:28:57.513069297Z [err]  [2026-01-16 21:28:51,550: INFO/MainProcess] Task process_file_task[00652e7b-ab15-4b7b-a8eb-badab34ed11e] succeeded in 0.42192041873931885s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T21:28:57.633283708Z [err]  [2026-01-16 21:28:52,337: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T21:28:57.633291143Z [err]  [2026-01-16 21:28:52,340: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 0.87s (3.5/sec)
-2026-01-16T21:28:57.633298431Z [err]  [2026-01-16 21:28:52,341: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (3.5/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T21:28:57.633305754Z [err]  [2026-01-16 21:28:52,370: INFO/MainProcess] [EmbedTask:6139483e-5048-4082-895e-30e06dde9a2a] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: ff70412e-256f-4df0-957f-5857ba493cc9, plan=enterprise_large)
-2026-01-16T21:28:57.633314640Z [err]  [2026-01-16 21:28:52,371: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[6139483e-5048-4082-895e-30e06dde9a2a] succeeded in 0.9400714747607708s: None
-2026-01-16T21:28:57.633322789Z [err]  [2026-01-16 21:28:52,383: INFO/MainProcess] Task worker.tasks.index_chunks_task[b0c12d8d-046a-47d0-a1ab-5d3811a3fdd4] received
-2026-01-16T21:28:57.633330301Z [err]  [2026-01-16 21:28:52,431: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3228d264-000b-498d-9466-af738c320a81 "HTTP/2 200 OK"
-2026-01-16T21:28:57.633337670Z [err]  [2026-01-16 21:28:52,472: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T21:28:57.633446666Z [err]  [2026-01-16 21:28:52,516: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F1f57adb4-7cd4-45f4-87b4-f4abb8242146%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:28:57.633455623Z [err]  [2026-01-16 21:28:52,554: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T21:28:57.638846200Z [err]  [2026-01-16 21:28:52,556: INFO/MainProcess] 📄 Created document ce1bdaab-2eff-4919-adbe-7235bd0c7bc9: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:28:57.638858294Z [err]  [2026-01-16 21:28:52,620: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T21:28:57.638869445Z [err]  [2026-01-16 21:28:52,623: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.07s (doc_id=ce1bdaab-2eff-4919-adbe-7235bd0c7bc9 batch=1)
-2026-01-16T21:28:57.638878813Z [err]  [2026-01-16 21:28:52,624: INFO/MainProcess] ✅ Inserted 3 chunks for document ce1bdaab-2eff-4919-adbe-7235bd0c7bc9
-2026-01-16T21:28:57.638886110Z [err]  [2026-01-16 21:28:52,651: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.3228d264-000b-498d-9466-af738c320a81 "HTTP/2 200 OK"
-2026-01-16T21:28:57.638892302Z [err]  [2026-01-16 21:28:52,755: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.638900278Z [err]  [2026-01-16 21:28:52,767: INFO/MainProcess] 📊 [Job:ff70412e-256f-4df0-957f-5857ba493cc9] Status: processing, Processed: 1
-2026-01-16T21:28:57.638906027Z [err]  [2026-01-16 21:28:52,794: INFO/MainProcess] [IndexTask:b0c12d8d-046a-47d0-a1ab-5d3811a3fdd4] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=ce1bdaab-2eff-4919-adbe-7235bd0c7bc9)
-2026-01-16T21:28:57.638913294Z [err]  [2026-01-16 21:28:52,794: INFO/MainProcess] Task worker.tasks.index_chunks_task[b0c12d8d-046a-47d0-a1ab-5d3811a3fdd4] succeeded in 0.40737801417708397s: None
-2026-01-16T21:28:57.638919163Z [err]  [2026-01-16 21:28:52,795: INFO/MainProcess] Task finalize_job_task[a522ff5f-096d-4495-9be9-cf3427b12cb8] received
-2026-01-16T21:28:57.638925517Z [err]  [2026-01-16 21:28:52,797: INFO/MainProcess] [FinalizeJob:a522ff5f-096d-4495-9be9-cf3427b12cb8] Finalizing job ff70412e-256f-4df0-957f-5857ba493cc9
-2026-01-16T21:28:57.643708078Z [err]  [2026-01-16 21:28:52,839: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.643715035Z [err]  [2026-01-16 21:28:52,873: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.643722248Z [err]  [2026-01-16 21:28:52,874: INFO/MainProcess] [FinalizeJob:a522ff5f-096d-4495-9be9-cf3427b12cb8] Job ff70412e-256f-4df0-957f-5857ba493cc9 status updates: job=1 file=8 source=redis
-2026-01-16T21:28:57.644017625Z [err]  [2026-01-16 21:28:52,910: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.ff70412e-256f-4df0-957f-5857ba493cc9&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T21:28:57.644026510Z [err]  [2026-01-16 21:28:52,938: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%28ce1bdaab-2eff-4919-adbe-7235bd0c7bc9%29 "HTTP/2 200 OK"
-2026-01-16T21:28:57.644033691Z [err]  [2026-01-16 21:28:52,973: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:28:57.644039989Z [err]  [2026-01-16 21:28:53,005: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T21:28:57.644046758Z [err]  [2026-01-16 21:28:53,007: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T21:28:57.649692793Z [err]  [2026-01-16 21:28:53,685: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T21:28:57.649697232Z [err]  [2026-01-16 21:28:53,688: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.68s (1.5/sec)
-2026-01-16T21:28:57.649701635Z [err]  [2026-01-16 21:28:53,688: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.5/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T21:28:57.649706088Z [err]  [2026-01-16 21:28:53,735: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T21:28:57.649710925Z [err]  [2026-01-16 21:28:53,771: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.ff70412e-256f-4df0-957f-5857ba493cc9 "HTTP/2 200 OK"
-2026-01-16T21:28:57.649715531Z [err]  [2026-01-16 21:28:53,807: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T21:28:57.649720657Z [err]  [2026-01-16 21:28:53,811: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T21:28:57.650048694Z [err]  [2026-01-16 21:28:53,849: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T21:28:57.650064430Z [err]  [2026-01-16 21:28:53,908: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:28:57.650073967Z [err]  [2026-01-16 21:28:53,956: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T21:28:57.655283915Z [err]  [2026-01-16 21:28:54,102: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=077f773a-2ffd-4b30-bead-9aa3a1ff64e6
-2026-01-16T21:28:57.655292247Z [err]  [2026-01-16 21:28:54,103: INFO/MainProcess] [FinalizeJob:a522ff5f-096d-4495-9be9-cf3427b12cb8] ✅ Job ff70412e-256f-4df0-957f-5857ba493cc9: Processed 1/1 files
-2026-01-16T21:28:57.655297696Z [err]  [2026-01-16 21:28:54,114: INFO/MainProcess] Task finalize_job_task[a522ff5f-096d-4495-9be9-cf3427b12cb8] succeeded in 1.3177592977881432s: None
-2026-01-16T21:32:38.568801523Z [err]  [2026-01-16 21:32:29,610: INFO/MainProcess] Task unified_ingest_task[3ac3253a-609c-4804-986a-33ecc86240ad] received
-2026-01-16T21:32:38.568808936Z [err]  [2026-01-16 21:32:29,611: INFO/MainProcess] [UnifiedIngest:3ac3253a-609c-4804-986a-33ecc86240ad] Starting FAN-OUT: file_upload, Job: 3ac22768-9c27-40fb-b2fe-072a23cc26db, Plan: enterprise_large
-2026-01-16T21:32:38.568816531Z [err]  [2026-01-16 21:32:29,798: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:38.568823779Z [err]  [2026-01-16 21:32:29,842: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:38.569293345Z [err]  [2026-01-16 21:32:29,888: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:38.569302317Z [err]  [2026-01-16 21:32:29,941: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:38.569311064Z [err]  [2026-01-16 21:32:30,014: INFO/MainProcess] 📊 [Job:3ac22768-9c27-40fb-b2fe-072a23cc26db] Status: processing, Processed: None
-2026-01-16T21:32:38.569319651Z [err]  [2026-01-16 21:32:30,057: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:38.569333399Z [err]  [2026-01-16 21:32:30,100: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T21:32:38.569340855Z [err]  [2026-01-16 21:32:30,102: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T21:32:39.533791606Z [err]  [2026-01-16 21:32:30,103: INFO/MainProcess] [UnifiedIngest:3ac3253a-609c-4804-986a-33ecc86240ad] Streaming documents from file_upload...
-2026-01-16T21:32:39.533798060Z [err]  [2026-01-16 21:32:30,153: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:39.533805076Z [err]  [2026-01-16 21:32:30,195: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:32:39.533812294Z [err]  [2026-01-16 21:32:30,196: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/2c3c6efa-b316-4308-91e5-2dda39be43bd/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:32:39.533819168Z [err]  [2026-01-16 21:32:30,396: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/2c3c6efa-b316-4308-91e5-2dda39be43bd/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:32:39.533905941Z [err]  [2026-01-16 21:32:30,430: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T21:32:39.533913130Z [err]  [2026-01-16 21:32:30,471: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T21:32:39.533920205Z [err]  [2026-01-16 21:32:30,472: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T21:32:39.533927772Z [err]  [2026-01-16 21:32:30,533: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:39.533935439Z [err]  [2026-01-16 21:32:30,552: INFO/MainProcess] Task process_file_task[16f89233-a5f2-4fc2-85a6-56ee99b4d515] received
-2026-01-16T21:32:39.545641605Z [err]  [2026-01-16 21:32:30,554: INFO/MainProcess] [ProcessFile:16f89233-a5f2-4fc2-85a6-56ee99b4d515] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 3ac22768-9c27-40fb-b2fe-072a23cc26db)
-2026-01-16T21:32:39.545647402Z [err]  [2026-01-16 21:32:30,564: INFO/MainProcess] [UnifiedIngest:3ac3253a-609c-4804-986a-33ecc86240ad] ✅ Dispatched batch with 1 tasks, group_id: 312033f2-ddee-427e-a94e-523e345be2f4
-2026-01-16T21:32:39.545651585Z [err]  [2026-01-16 21:32:30,602: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cf737e23-c2ec-4399-b9e3-fbc88479850a "HTTP/2 200 OK"
-2026-01-16T21:32:39.545656472Z [err]  [2026-01-16 21:32:30,612: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:39.545661880Z [err]  [2026-01-16 21:32:30,622: INFO/MainProcess] Task unified_ingest_task[3ac3253a-609c-4804-986a-33ecc86240ad] succeeded in 1.0110370144248009s: {'status': 'dispatched', 'job_id': '3ac22768-9c27-40fb-b2fe-072a23cc26db', 'total_files': 1, 'group_id': '312033f2-ddee-427e-a94e-523e345be2f4'}
-2026-01-16T21:32:39.545666400Z [err]  [2026-01-16 21:32:30,685: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/2c3c6efa-b316-4308-91e5-2dda39be43bd/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:32:39.545670523Z [err]  [2026-01-16 21:32:30,721: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cf737e23-c2ec-4399-b9e3-fbc88479850a "HTTP/2 200 OK"
-2026-01-16T21:32:39.545675062Z [err]  [2026-01-16 21:32:30,778: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cf737e23-c2ec-4399-b9e3-fbc88479850a "HTTP/2 200 OK"
-2026-01-16T21:32:39.545689109Z [err]  [2026-01-16 21:32:30,823: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F2c3c6efa-b316-4308-91e5-2dda39be43bd%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:32:40.376147604Z [err]  [2026-01-16 21:32:31,106: INFO/MainProcess] Task process_file_task[16f89233-a5f2-4fc2-85a6-56ee99b4d515] succeeded in 0.5530735217034817s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T21:32:40.376278516Z [err]  [2026-01-16 21:32:30,865: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cf737e23-c2ec-4399-b9e3-fbc88479850a "HTTP/2 200 OK"
-2026-01-16T21:32:40.376286345Z [err]  [2026-01-16 21:32:30,880: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T21:32:40.376295540Z [err]  [2026-01-16 21:32:30,880: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T21:32:40.376303117Z [err]  [2026-01-16 21:32:30,925: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cf737e23-c2ec-4399-b9e3-fbc88479850a "HTTP/2 200 OK"
-2026-01-16T21:32:40.376310505Z [err]  [2026-01-16 21:32:30,960: INFO/MainProcess] [ProcessFile:16f89233-a5f2-4fc2-85a6-56ee99b4d515] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 3ac22768-9c27-40fb-b2fe-072a23cc26db, plan=enterprise_large)
-2026-01-16T21:32:40.376317816Z [err]  [2026-01-16 21:32:30,965: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[ad0cb322-29f2-45d8-8eda-d6fc4ad5ba57] received
-2026-01-16T21:32:40.376324988Z [err]  [2026-01-16 21:32:31,021: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cf737e23-c2ec-4399-b9e3-fbc88479850a "HTTP/2 200 OK"
-2026-01-16T21:32:40.376332911Z [err]  [2026-01-16 21:32:31,103: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T21:32:40.376340756Z [err]  [2026-01-16 21:32:31,105: INFO/MainProcess] [ProcessFile:16f89233-a5f2-4fc2-85a6-56ee99b4d515] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/2c3c6efa-b316-4308-91e5-2dda39be43bd/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:32:40.389208180Z [err]  [2026-01-16 21:32:32,545: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T21:32:40.389214397Z [err]  [2026-01-16 21:32:32,548: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 1.52s (2.0/sec)
-2026-01-16T21:32:40.389219695Z [err]  [2026-01-16 21:32:32,549: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (2.0/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T21:32:40.389227875Z [err]  [2026-01-16 21:32:32,578: INFO/MainProcess] [EmbedTask:ad0cb322-29f2-45d8-8eda-d6fc4ad5ba57] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 3ac22768-9c27-40fb-b2fe-072a23cc26db, plan=enterprise_large)
-2026-01-16T21:32:40.389234156Z [err]  [2026-01-16 21:32:32,578: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[ad0cb322-29f2-45d8-8eda-d6fc4ad5ba57] succeeded in 1.6115756146609783s: None
-2026-01-16T21:32:40.389240560Z [err]  [2026-01-16 21:32:32,596: INFO/MainProcess] Task worker.tasks.index_chunks_task[54a516e4-68a2-4401-a79a-0909149bdadf] received
-2026-01-16T21:32:40.389248306Z [err]  [2026-01-16 21:32:32,642: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cf737e23-c2ec-4399-b9e3-fbc88479850a "HTTP/2 200 OK"
-2026-01-16T21:32:40.389253803Z [err]  [2026-01-16 21:32:32,761: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T21:32:40.389269888Z [err]  [2026-01-16 21:32:32,811: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F2c3c6efa-b316-4308-91e5-2dda39be43bd%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:32:40.389276153Z [err]  [2026-01-16 21:32:32,857: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T21:32:40.394880601Z [err]  [2026-01-16 21:32:32,862: INFO/MainProcess] 📄 Created document 746a0224-26b5-4c4c-98a2-7203fda7d378: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:32:40.394886733Z [err]  [2026-01-16 21:32:32,942: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T21:32:40.394892911Z [err]  [2026-01-16 21:32:32,944: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.08s (doc_id=746a0224-26b5-4c4c-98a2-7203fda7d378 batch=1)
-2026-01-16T21:32:40.394901267Z [err]  [2026-01-16 21:32:32,945: INFO/MainProcess] ✅ Inserted 3 chunks for document 746a0224-26b5-4c4c-98a2-7203fda7d378
-2026-01-16T21:32:40.394907119Z [err]  [2026-01-16 21:32:32,989: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.cf737e23-c2ec-4399-b9e3-fbc88479850a "HTTP/2 200 OK"
-2026-01-16T21:32:40.394913798Z [err]  [2026-01-16 21:32:33,046: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:40.394920455Z [err]  [2026-01-16 21:32:33,061: INFO/MainProcess] 📊 [Job:3ac22768-9c27-40fb-b2fe-072a23cc26db] Status: processing, Processed: 1
-2026-01-16T21:32:40.394941285Z [err]  [2026-01-16 21:32:33,102: INFO/MainProcess] [IndexTask:54a516e4-68a2-4401-a79a-0909149bdadf] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=746a0224-26b5-4c4c-98a2-7203fda7d378)
-2026-01-16T21:32:40.394949532Z [err]  [2026-01-16 21:32:33,103: INFO/MainProcess] Task worker.tasks.index_chunks_task[54a516e4-68a2-4401-a79a-0909149bdadf] succeeded in 0.5023593232035637s: None
-2026-01-16T21:32:40.394956372Z [err]  [2026-01-16 21:32:33,136: INFO/MainProcess] Task finalize_job_task[e3ac0774-179f-4137-b312-6b2442f404d0] received
-2026-01-16T21:32:40.394963439Z [err]  [2026-01-16 21:32:33,138: INFO/MainProcess] [FinalizeJob:e3ac0774-179f-4137-b312-6b2442f404d0] Finalizing job 3ac22768-9c27-40fb-b2fe-072a23cc26db
-2026-01-16T21:32:40.401639352Z [err]  [2026-01-16 21:32:33,187: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:40.401646919Z [err]  [2026-01-16 21:32:33,255: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:40.401654351Z [err]  [2026-01-16 21:32:33,257: INFO/MainProcess] [FinalizeJob:e3ac0774-179f-4137-b312-6b2442f404d0] Job 3ac22768-9c27-40fb-b2fe-072a23cc26db status updates: job=1 file=8 source=redis
-2026-01-16T21:32:40.401661613Z [err]  [2026-01-16 21:32:33,301: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T21:32:40.401668773Z [err]  [2026-01-16 21:32:33,356: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%28746a0224-26b5-4c4c-98a2-7203fda7d378%29 "HTTP/2 200 OK"
-2026-01-16T21:32:40.401675889Z [err]  [2026-01-16 21:32:33,394: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:32:40.401684249Z [err]  [2026-01-16 21:32:33,442: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T21:32:40.401691682Z [err]  [2026-01-16 21:32:33,443: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T21:32:40.412860103Z [err]  [2026-01-16 21:32:34,162: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T21:32:40.412871270Z [err]  [2026-01-16 21:32:34,165: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.72s (1.4/sec)
-2026-01-16T21:32:40.412877370Z [err]  [2026-01-16 21:32:34,165: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.4/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T21:32:40.412883024Z [err]  [2026-01-16 21:32:34,231: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T21:32:40.412888911Z [err]  [2026-01-16 21:32:34,267: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.3ac22768-9c27-40fb-b2fe-072a23cc26db "HTTP/2 200 OK"
-2026-01-16T21:32:40.412894205Z [err]  [2026-01-16 21:32:34,316: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T21:32:40.412899548Z [err]  [2026-01-16 21:32:34,318: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T21:32:40.412904972Z [err]  [2026-01-16 21:32:34,360: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T21:32:40.412910926Z [err]  [2026-01-16 21:32:34,414: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:32:40.412915660Z [err]  [2026-01-16 21:32:34,530: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T21:32:40.418769927Z [err]  [2026-01-16 21:32:34,677: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=b28ee996-183e-47bb-a48a-c781d3070b87
-2026-01-16T21:32:40.418787718Z [err]  [2026-01-16 21:32:34,677: INFO/MainProcess] [FinalizeJob:e3ac0774-179f-4137-b312-6b2442f404d0] ✅ Job 3ac22768-9c27-40fb-b2fe-072a23cc26db: Processed 1/1 files
-2026-01-16T21:32:40.418795402Z [err]  [2026-01-16 21:32:34,687: INFO/MainProcess] Task finalize_job_task[e3ac0774-179f-4137-b312-6b2442f404d0] succeeded in 1.5490122772753239s: None
-2026-01-16T21:37:06.019385513Z [err]  [2026-01-16 21:36:57,125: INFO/MainProcess] Task unified_ingest_task[bfb2caee-8072-48cd-8b60-3431eab70efc] received
-2026-01-16T21:37:06.019395440Z [err]  [2026-01-16 21:36:57,127: INFO/MainProcess] [UnifiedIngest:bfb2caee-8072-48cd-8b60-3431eab70efc] Starting FAN-OUT: file_upload, Job: dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4, Plan: enterprise_large
-2026-01-16T21:37:06.019402702Z [err]  [2026-01-16 21:36:57,215: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:06.019409545Z [err]  [2026-01-16 21:36:57,265: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:06.019417580Z [err]  [2026-01-16 21:36:57,313: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:06.019424655Z [err]  [2026-01-16 21:36:57,359: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:06.019683792Z [err]  [2026-01-16 21:36:57,429: INFO/MainProcess] 📊 [Job:dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4] Status: processing, Processed: None
-2026-01-16T21:37:06.019695883Z [err]  [2026-01-16 21:36:57,471: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:06.019706321Z [err]  [2026-01-16 21:36:57,518: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T21:37:06.019713655Z [err]  [2026-01-16 21:36:57,519: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T21:37:07.530623753Z [err]  [2026-01-16 21:36:57,520: INFO/MainProcess] [UnifiedIngest:bfb2caee-8072-48cd-8b60-3431eab70efc] Streaming documents from file_upload...
-2026-01-16T21:37:07.530629361Z [err]  [2026-01-16 21:36:57,577: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:07.530636443Z [err]  [2026-01-16 21:36:57,630: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:37:07.530643271Z [err]  [2026-01-16 21:36:57,633: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/522fea47-98ce-498a-a909-afedc71001e8/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:37:07.530649894Z [err]  [2026-01-16 21:36:57,918: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/522fea47-98ce-498a-a909-afedc71001e8/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:37:07.530656010Z [err]  [2026-01-16 21:36:57,960: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T21:37:07.530661800Z [err]  [2026-01-16 21:36:58,001: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T21:37:07.530667407Z [err]  [2026-01-16 21:36:58,002: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T21:37:07.530672601Z [err]  [2026-01-16 21:36:58,052: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:07.530679531Z [err]  [2026-01-16 21:36:58,077: INFO/MainProcess] Task process_file_task[31349d2b-809f-4699-ac33-c86b5fce92fc] received
-2026-01-16T21:37:08.893875694Z [err]  [2026-01-16 21:36:58,079: INFO/MainProcess] [ProcessFile:31349d2b-809f-4699-ac33-c86b5fce92fc] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4)
-2026-01-16T21:37:08.893882836Z [err]  [2026-01-16 21:36:58,095: INFO/MainProcess] [UnifiedIngest:bfb2caee-8072-48cd-8b60-3431eab70efc] ✅ Dispatched batch with 1 tasks, group_id: c2ec094e-4ef4-4424-a7b2-10114c1ae33e
-2026-01-16T21:37:08.893889254Z [err]  [2026-01-16 21:36:58,121: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.865e7f40-7888-4f4a-a1ad-0f8c34f9070d "HTTP/2 200 OK"
-2026-01-16T21:37:08.893903212Z [err]  [2026-01-16 21:36:58,174: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/522fea47-98ce-498a-a909-afedc71001e8/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:37:08.893910130Z [err]  [2026-01-16 21:36:58,220: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:08.893915314Z [err]  [2026-01-16 21:36:58,227: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.865e7f40-7888-4f4a-a1ad-0f8c34f9070d "HTTP/2 200 OK"
-2026-01-16T21:37:08.893928743Z [err]  [2026-01-16 21:36:58,234: INFO/MainProcess] Task unified_ingest_task[bfb2caee-8072-48cd-8b60-3431eab70efc] succeeded in 1.1072831451892853s: {'status': 'dispatched', 'job_id': 'dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4', 'total_files': 1, 'group_id': 'c2ec094e-4ef4-4424-a7b2-10114c1ae33e'}
-2026-01-16T21:37:08.893935045Z [inf]  Fri Jan 16 21:36:58 2026 -> SelfCheck: Database status OK.
-2026-01-16T21:37:08.893941124Z [err]  [2026-01-16 21:36:58,296: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.865e7f40-7888-4f4a-a1ad-0f8c34f9070d "HTTP/2 200 OK"
-2026-01-16T21:37:09.828944518Z [err]  [2026-01-16 21:36:58,346: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F522fea47-98ce-498a-a909-afedc71001e8%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:37:09.828951984Z [err]  [2026-01-16 21:36:58,394: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.865e7f40-7888-4f4a-a1ad-0f8c34f9070d "HTTP/2 200 OK"
-2026-01-16T21:37:09.828958765Z [err]  [2026-01-16 21:36:58,405: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T21:37:09.828966871Z [err]  [2026-01-16 21:36:58,405: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T21:37:09.828996100Z [err]  [2026-01-16 21:36:58,447: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.865e7f40-7888-4f4a-a1ad-0f8c34f9070d "HTTP/2 200 OK"
-2026-01-16T21:37:09.829003502Z [err]  [2026-01-16 21:36:58,476: INFO/MainProcess] [ProcessFile:31349d2b-809f-4699-ac33-c86b5fce92fc] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4, plan=enterprise_large)
-2026-01-16T21:37:09.829010558Z [err]  [2026-01-16 21:36:58,479: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[f40d77d3-1069-4dad-98ba-464861b647da] received
-2026-01-16T21:37:09.829017237Z [err]  [2026-01-16 21:36:58,520: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.865e7f40-7888-4f4a-a1ad-0f8c34f9070d "HTTP/2 200 OK"
-2026-01-16T21:37:09.829023929Z [err]  [2026-01-16 21:36:58,596: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T21:37:09.842608267Z [err]  [2026-01-16 21:36:58,599: INFO/MainProcess] [ProcessFile:31349d2b-809f-4699-ac33-c86b5fce92fc] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/522fea47-98ce-498a-a909-afedc71001e8/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:37:09.842617659Z [err]  [2026-01-16 21:36:58,600: INFO/MainProcess] Task process_file_task[31349d2b-809f-4699-ac33-c86b5fce92fc] succeeded in 0.5215942077338696s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T21:37:09.842624387Z [err]  [2026-01-16 21:36:58,707: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T21:37:09.842631545Z [err]  [2026-01-16 21:36:58,712: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 0.18s (16.9/sec)
-2026-01-16T21:37:09.842638118Z [err]  [2026-01-16 21:36:58,712: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (16.9/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T21:37:09.842650866Z [err]  [2026-01-16 21:36:58,753: INFO/MainProcess] [EmbedTask:f40d77d3-1069-4dad-98ba-464861b647da] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4, plan=enterprise_large)
-2026-01-16T21:37:09.842658094Z [err]  [2026-01-16 21:36:58,753: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[f40d77d3-1069-4dad-98ba-464861b647da] succeeded in 0.2724490985274315s: None
-2026-01-16T21:37:09.842666402Z [err]  [2026-01-16 21:36:58,796: INFO/MainProcess] Task worker.tasks.index_chunks_task[c91fdc0b-c91d-4bd6-9fa2-2e0920bea5dd] received
-2026-01-16T21:37:09.842673054Z [err]  [2026-01-16 21:36:58,862: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.865e7f40-7888-4f4a-a1ad-0f8c34f9070d "HTTP/2 200 OK"
-2026-01-16T21:37:09.842679801Z [err]  [2026-01-16 21:36:58,915: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T21:37:09.851589418Z [err]  [2026-01-16 21:36:59,092: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T21:37:09.851593932Z [err]  [2026-01-16 21:36:59,212: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:09.851600722Z [err]  [2026-01-16 21:36:59,096: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.10s (doc_id=39c2696a-b4cc-4ec9-b70d-72422ed4fa77 batch=1)
-2026-01-16T21:37:09.851606416Z [err]  [2026-01-16 21:36:59,221: INFO/MainProcess] 📊 [Job:dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4] Status: processing, Processed: 1
-2026-01-16T21:37:09.851611466Z [err]  [2026-01-16 21:36:59,096: INFO/MainProcess] ✅ Inserted 3 chunks for document 39c2696a-b4cc-4ec9-b70d-72422ed4fa77
-2026-01-16T21:37:09.851619318Z [err]  [2026-01-16 21:36:59,258: INFO/MainProcess] [IndexTask:c91fdc0b-c91d-4bd6-9fa2-2e0920bea5dd] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=39c2696a-b4cc-4ec9-b70d-72422ed4fa77)
-2026-01-16T21:37:09.851621522Z [err]  [2026-01-16 21:36:59,138: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.865e7f40-7888-4f4a-a1ad-0f8c34f9070d "HTTP/2 200 OK"
-2026-01-16T21:37:09.851691277Z [err]  [2026-01-16 21:36:58,952: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F522fea47-98ce-498a-a909-afedc71001e8%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:37:09.851698868Z [err]  [2026-01-16 21:36:58,993: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T21:37:09.851707118Z [err]  [2026-01-16 21:36:58,996: INFO/MainProcess] 📄 Created document 39c2696a-b4cc-4ec9-b70d-72422ed4fa77: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:37:09.863317502Z [err]  [2026-01-16 21:36:59,454: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T21:37:09.863333848Z [err]  [2026-01-16 21:36:59,496: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%2839c2696a-b4cc-4ec9-b70d-72422ed4fa77%29 "HTTP/2 200 OK"
-2026-01-16T21:37:09.863343977Z [err]  [2026-01-16 21:36:59,532: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:37:09.863647031Z [err]  [2026-01-16 21:36:59,259: INFO/MainProcess] Task worker.tasks.index_chunks_task[c91fdc0b-c91d-4bd6-9fa2-2e0920bea5dd] succeeded in 0.44513386115431786s: None
-2026-01-16T21:37:09.863654436Z [err]  [2026-01-16 21:36:59,297: INFO/MainProcess] Task finalize_job_task[cde9e2cf-e4ec-4f62-b2bd-d2c0d1bd6f01] received
-2026-01-16T21:37:09.863661358Z [err]  [2026-01-16 21:36:59,300: INFO/MainProcess] [FinalizeJob:cde9e2cf-e4ec-4f62-b2bd-d2c0d1bd6f01] Finalizing job dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4
-2026-01-16T21:37:09.863668643Z [err]  [2026-01-16 21:36:59,351: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:09.863676865Z [err]  [2026-01-16 21:36:59,414: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:09.863684073Z [err]  [2026-01-16 21:36:59,416: INFO/MainProcess] [FinalizeJob:cde9e2cf-e4ec-4f62-b2bd-d2c0d1bd6f01] Job dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 status updates: job=1 file=8 source=redis
-2026-01-16T21:37:09.873723493Z [err]  [2026-01-16 21:36:59,581: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T21:37:09.873730838Z [err]  [2026-01-16 21:36:59,584: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T21:37:09.873741243Z [err]  [2026-01-16 21:37:00,350: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T21:37:09.873746730Z [err]  [2026-01-16 21:37:00,353: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.77s (1.3/sec)
-2026-01-16T21:37:09.873751923Z [err]  [2026-01-16 21:37:00,354: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.3/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T21:37:09.873758112Z [err]  [2026-01-16 21:37:00,419: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T21:37:09.873762983Z [err]  [2026-01-16 21:37:00,468: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4 "HTTP/2 200 OK"
-2026-01-16T21:37:09.873768385Z [err]  [2026-01-16 21:37:00,580: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T21:37:09.873773065Z [err]  [2026-01-16 21:37:00,582: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T21:37:09.873786910Z [err]  [2026-01-16 21:37:00,641: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T21:37:09.873792804Z [err]  [2026-01-16 21:37:00,691: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:37:09.883192252Z [err]  [2026-01-16 21:37:00,757: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T21:37:09.883204912Z [err]  [2026-01-16 21:37:00,902: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=4c92f3f0-dd86-4bdd-96e6-346d824c55ab
-2026-01-16T21:37:09.883213902Z [err]  [2026-01-16 21:37:00,904: INFO/MainProcess] [FinalizeJob:cde9e2cf-e4ec-4f62-b2bd-d2c0d1bd6f01] ✅ Job dd3bc9f5-f16e-47fa-a6d2-b6cca06992b4: Processed 1/1 files
-2026-01-16T21:37:09.883222844Z [err]  [2026-01-16 21:37:00,917: INFO/MainProcess] Task finalize_job_task[cde9e2cf-e4ec-4f62-b2bd-d2c0d1bd6f01] succeeded in 1.6174610555171967s: None
-2026-01-16T21:41:40.996158762Z [err]  [2026-01-16 21:41:37,306: INFO/MainProcess] Task unified_ingest_task[7dd6a28f-b9b2-4b24-94c6-f982588fb076] received
-2026-01-16T21:41:40.996166135Z [err]  [2026-01-16 21:41:37,308: INFO/MainProcess] [UnifiedIngest:7dd6a28f-b9b2-4b24-94c6-f982588fb076] Starting FAN-OUT: file_upload, Job: 390a5069-15c5-432c-8a1a-10f2a85d8116, Plan: enterprise_large
-2026-01-16T21:41:40.996172358Z [err]  [2026-01-16 21:41:37,391: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:40.996179729Z [err]  [2026-01-16 21:41:37,444: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:40.996186071Z [err]  [2026-01-16 21:41:37,486: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:40.996192393Z [err]  [2026-01-16 21:41:37,552: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:40.996200232Z [err]  [2026-01-16 21:41:37,618: INFO/MainProcess] 📊 [Job:390a5069-15c5-432c-8a1a-10f2a85d8116] Status: processing, Processed: None
-2026-01-16T21:41:40.996206825Z [err]  [2026-01-16 21:41:37,657: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:40.996214009Z [err]  [2026-01-16 21:41:37,701: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T21:41:40.996220798Z [err]  [2026-01-16 21:41:37,702: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
-2026-01-16T21:41:42.373071132Z [err]  [2026-01-16 21:41:37,703: INFO/MainProcess] [UnifiedIngest:7dd6a28f-b9b2-4b24-94c6-f982588fb076] Streaming documents from file_upload...
-2026-01-16T21:41:42.373086525Z [err]  [2026-01-16 21:41:37,748: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:42.373098969Z [err]  [2026-01-16 21:41:37,794: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:42.373106645Z [err]  [2026-01-16 21:41:37,795: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/45439328-71df-4cde-8fef-72a568375fb6/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:41:42.373113437Z [err]  [2026-01-16 21:41:38,055: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/45439328-71df-4cde-8fef-72a568375fb6/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:41:42.373140258Z [err]  [2026-01-16 21:41:38,100: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
-2026-01-16T21:41:42.373148214Z [err]  [2026-01-16 21:41:38,150: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T21:41:42.373162932Z [err]  [2026-01-16 21:41:38,151: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
-2026-01-16T21:41:42.373170068Z [err]  [2026-01-16 21:41:38,209: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:42.373183289Z [err]  [2026-01-16 21:41:38,233: INFO/MainProcess] Task process_file_task[303e5b07-c404-4295-a1d1-f147bf19c92c] received
-2026-01-16T21:41:43.862913767Z [err]  [2026-01-16 21:41:38,235: INFO/MainProcess] [ProcessFile:303e5b07-c404-4295-a1d1-f147bf19c92c] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 390a5069-15c5-432c-8a1a-10f2a85d8116)
-2026-01-16T21:41:43.862922917Z [err]  [2026-01-16 21:41:38,243: INFO/MainProcess] [UnifiedIngest:7dd6a28f-b9b2-4b24-94c6-f982588fb076] ✅ Dispatched batch with 1 tasks, group_id: dba8b743-4250-4957-907b-d820799a00f2
-2026-01-16T21:41:43.862931799Z [err]  [2026-01-16 21:41:38,284: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6ab0dfd8-d630-46fe-ae18-8809c9e41d42 "HTTP/2 200 OK"
-2026-01-16T21:41:43.862942133Z [err]  [2026-01-16 21:41:38,286: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:43.862952139Z [err]  [2026-01-16 21:41:38,295: INFO/MainProcess] Task unified_ingest_task[7dd6a28f-b9b2-4b24-94c6-f982588fb076] succeeded in 0.9874598905444145s: {'status': 'dispatched', 'job_id': '390a5069-15c5-432c-8a1a-10f2a85d8116', 'total_files': 1, 'group_id': 'dba8b743-4250-4957-907b-d820799a00f2'}
-2026-01-16T21:41:43.862961008Z [err]  [2026-01-16 21:41:38,362: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/45439328-71df-4cde-8fef-72a568375fb6/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:41:43.863103140Z [err]  [2026-01-16 21:41:38,420: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6ab0dfd8-d630-46fe-ae18-8809c9e41d42 "HTTP/2 200 OK"
-2026-01-16T21:41:43.863112948Z [err]  [2026-01-16 21:41:38,475: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6ab0dfd8-d630-46fe-ae18-8809c9e41d42 "HTTP/2 200 OK"
-2026-01-16T21:41:43.863120764Z [err]  [2026-01-16 21:41:38,530: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F45439328-71df-4cde-8fef-72a568375fb6%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:45.166784723Z [err]  [2026-01-16 21:41:38,754: INFO/MainProcess] Task process_file_task[303e5b07-c404-4295-a1d1-f147bf19c92c] succeeded in 0.5198550745844841s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
-2026-01-16T21:41:45.166968008Z [err]  [2026-01-16 21:41:38,570: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6ab0dfd8-d630-46fe-ae18-8809c9e41d42 "HTTP/2 200 OK"
-2026-01-16T21:41:45.166974721Z [err]  [2026-01-16 21:41:38,579: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
-2026-01-16T21:41:45.166983391Z [err]  [2026-01-16 21:41:38,581: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
-2026-01-16T21:41:45.166990512Z [err]  [2026-01-16 21:41:38,628: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6ab0dfd8-d630-46fe-ae18-8809c9e41d42 "HTTP/2 200 OK"
-2026-01-16T21:41:45.166997516Z [err]  [2026-01-16 21:41:38,649: INFO/MainProcess] [ProcessFile:303e5b07-c404-4295-a1d1-f147bf19c92c] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 390a5069-15c5-432c-8a1a-10f2a85d8116, plan=enterprise_large)
-2026-01-16T21:41:45.167004735Z [err]  [2026-01-16 21:41:38,652: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[6d4b5818-ad5e-4e6b-ab7b-cb44db50c7a9] received
-2026-01-16T21:41:45.167012951Z [err]  [2026-01-16 21:41:38,691: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6ab0dfd8-d630-46fe-ae18-8809c9e41d42 "HTTP/2 200 OK"
-2026-01-16T21:41:45.167038139Z [err]  [2026-01-16 21:41:38,752: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T21:41:45.167046629Z [err]  [2026-01-16 21:41:38,753: INFO/MainProcess] [ProcessFile:303e5b07-c404-4295-a1d1-f147bf19c92c] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/45439328-71df-4cde-8fef-72a568375fb6/CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:41:46.530932967Z [err]  [2026-01-16 21:41:38,893: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T21:41:46.530938504Z [err]  [2026-01-16 21:41:38,896: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 0.20s (15.2/sec)
-2026-01-16T21:41:46.530947316Z [err]  [2026-01-16 21:41:38,896: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (15.2/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T21:41:46.530952975Z [err]  [2026-01-16 21:41:38,920: INFO/MainProcess] [EmbedTask:6d4b5818-ad5e-4e6b-ab7b-cb44db50c7a9] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 390a5069-15c5-432c-8a1a-10f2a85d8116, plan=enterprise_large)
-2026-01-16T21:41:46.530958116Z [err]  [2026-01-16 21:41:38,921: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[6d4b5818-ad5e-4e6b-ab7b-cb44db50c7a9] succeeded in 0.26699528098106384s: None
-2026-01-16T21:41:46.530963626Z [err]  [2026-01-16 21:41:38,934: INFO/MainProcess] Task worker.tasks.index_chunks_task[abb6c09f-80de-4985-92fc-d1c19bc2d7a4] received
-2026-01-16T21:41:46.530970304Z [err]  [2026-01-16 21:41:38,980: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6ab0dfd8-d630-46fe-ae18-8809c9e41d42 "HTTP/2 200 OK"
-2026-01-16T21:41:46.530975241Z [err]  [2026-01-16 21:41:39,041: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
-2026-01-16T21:41:46.530982676Z [err]  [2026-01-16 21:41:39,083: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F45439328-71df-4cde-8fef-72a568375fb6%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:46.530987860Z [err]  [2026-01-16 21:41:39,125: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
-2026-01-16T21:41:47.649515821Z [err]  [2026-01-16 21:41:39,126: INFO/MainProcess] 📄 Created document 11edd7d1-0b56-4351-87dd-b11609754b3b: CONFIDENTIAL_PROJECT_OMEGA.txt
-2026-01-16T21:41:47.649523956Z [err]  [2026-01-16 21:41:39,215: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22content%22%2C%22chunk_index%22%2C%22embedding%22%2C%22document_id%22 "HTTP/2 201 Created"
-2026-01-16T21:41:47.649554805Z [err]  [2026-01-16 21:41:39,217: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.09s (doc_id=11edd7d1-0b56-4351-87dd-b11609754b3b batch=1)
-2026-01-16T21:41:47.649573262Z [err]  [2026-01-16 21:41:39,218: INFO/MainProcess] ✅ Inserted 3 chunks for document 11edd7d1-0b56-4351-87dd-b11609754b3b
-2026-01-16T21:41:47.649582811Z [err]  [2026-01-16 21:41:39,254: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.6ab0dfd8-d630-46fe-ae18-8809c9e41d42 "HTTP/2 200 OK"
-2026-01-16T21:41:47.649590662Z [err]  [2026-01-16 21:41:39,308: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:47.649598594Z [err]  [2026-01-16 21:41:39,317: INFO/MainProcess] 📊 [Job:390a5069-15c5-432c-8a1a-10f2a85d8116] Status: processing, Processed: 1
-2026-01-16T21:41:47.649606239Z [err]  [2026-01-16 21:41:39,343: INFO/MainProcess] [IndexTask:abb6c09f-80de-4985-92fc-d1c19bc2d7a4] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=11edd7d1-0b56-4351-87dd-b11609754b3b)
-2026-01-16T21:41:47.649624609Z [err]  [2026-01-16 21:41:39,343: INFO/MainProcess] Task worker.tasks.index_chunks_task[abb6c09f-80de-4985-92fc-d1c19bc2d7a4] succeeded in 0.40494946762919426s: None
-2026-01-16T21:41:47.649633005Z [err]  [2026-01-16 21:41:39,393: INFO/MainProcess] Task finalize_job_task[61303920-5ce1-4044-b083-9c0401800a8c] received
-2026-01-16T21:41:47.649640519Z [err]  [2026-01-16 21:41:39,399: INFO/MainProcess] [FinalizeJob:61303920-5ce1-4044-b083-9c0401800a8c] Finalizing job 390a5069-15c5-432c-8a1a-10f2a85d8116
-2026-01-16T21:41:48.777880407Z [err]  [2026-01-16 21:41:39,443: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:48.777887126Z [err]  [2026-01-16 21:41:39,488: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:48.777893226Z [err]  [2026-01-16 21:41:39,491: INFO/MainProcess] [FinalizeJob:61303920-5ce1-4044-b083-9c0401800a8c] Job 390a5069-15c5-432c-8a1a-10f2a85d8116 status updates: job=1 file=8 source=redis
-2026-01-16T21:41:48.777900070Z [err]  [2026-01-16 21:41:39,530: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116&status=eq.completed "HTTP/2 200 OK"
-2026-01-16T21:41:48.777907997Z [err]  [2026-01-16 21:41:39,582: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%2811edd7d1-0b56-4351-87dd-b11609754b3b%29 "HTTP/2 200 OK"
-2026-01-16T21:41:48.777915087Z [err]  [2026-01-16 21:41:39,629: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:48.777921587Z [err]  [2026-01-16 21:41:39,673: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
-2026-01-16T21:41:48.777927732Z [err]  [2026-01-16 21:41:39,675: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
-2026-01-16T21:41:49.921788735Z [err]  [2026-01-16 21:41:41,432: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
-2026-01-16T21:41:49.921796108Z [err]  [2026-01-16 21:41:41,487: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
-2026-01-16T21:41:49.921807200Z [err]  [2026-01-16 21:41:41,551: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:49.921815479Z [err]  [2026-01-16 21:41:41,590: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
-2026-01-16T21:41:49.921841367Z [err]  [2026-01-16 21:41:41,202: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
-2026-01-16T21:41:49.921849148Z [err]  [2026-01-16 21:41:41,207: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 1.53s (0.7/sec)
-2026-01-16T21:41:49.921861121Z [err]  [2026-01-16 21:41:41,208: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (0.7/sec, rate_limit_hits=0, error_batches=0)
-2026-01-16T21:41:49.921869970Z [err]  [2026-01-16 21:41:41,280: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
-2026-01-16T21:41:49.921877419Z [err]  [2026-01-16 21:41:41,322: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.390a5069-15c5-432c-8a1a-10f2a85d8116 "HTTP/2 200 OK"
-2026-01-16T21:41:49.921886683Z [err]  [2026-01-16 21:41:41,431: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
-2026-01-16T21:41:51.246172165Z [err]  [2026-01-16 21:41:41,730: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=34a55208-aa0a-40c5-809e-4993b7513bd2
-2026-01-16T21:41:51.246179985Z [err]  [2026-01-16 21:41:41,733: INFO/MainProcess] [FinalizeJob:61303920-5ce1-4044-b083-9c0401800a8c] ✅ Job 390a5069-15c5-432c-8a1a-10f2a85d8116: Processed 1/1 files
-2026-01-16T21:41:51.246186554Z [err]  [2026-01-16 21:41:41,754: INFO/MainProcess] Task finalize_job_task[61303920-5ce1-4044-b083-9c0401800a8c] succeeded in 2.3580877110362053s: None
+2026-01-16T23:00:40.000000000Z [inf]  Starting Container
+2026-01-16T23:00:41.143786929Z [inf]  Fri Jan 16 23:00:40 2026 -> ClamAV update process started at Fri Jan 16 23:00:40 2026
+2026-01-16T23:00:41.143790846Z [inf]  Fri Jan 16 23:00:40 2026 -> daily database available for update (local version: 27880, remote version: 27882)
+2026-01-16T23:00:41.153596313Z [inf]  Fri Jan 16 23:00:41 2026 -> Testing database: '/var/lib/clamav/tmp.4ebe51d61c/clamav-78d604dbb56294b5c7df742e0e27595a.tmp-daily.cld' ...
+2026-01-16T23:00:44.837023839Z [inf]  Fri Jan 16 23:00:44 2026 -> Database test passed.
+2026-01-16T23:00:44.837033280Z [inf]  Fri Jan 16 23:00:44 2026 -> daily.cld updated (version: 27882, sigs: 354806, f-level: 90, builder: svc.clamav-publisher)
+2026-01-16T23:00:44.853170759Z [inf]  Fri Jan 16 23:00:44 2026 -> main.cvd database is up-to-date (version: 63, sigs: 3287027, f-level: 90, builder: tomjudge)
+2026-01-16T23:00:44.853180159Z [inf]  Fri Jan 16 23:00:44 2026 -> bytecode.cvd database is up-to-date (version: 339, sigs: 80, f-level: 90, builder: nrandolp)
+2026-01-16T23:00:44.853185781Z [inf]  WARNING: Fri Jan 16 23:00:44 2026 -> Clamd was NOT notified: Can't connect to clamd through /var/run/clamav/clamd.ctl: No such file or directory
+2026-01-16T23:00:44.854655200Z [inf]  🛡️ Starting ClamAV daemon...
+2026-01-16T23:00:54.267338211Z [err]  /usr/local/lib/python3.11/site-packages/clamd/__init__.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+2026-01-16T23:00:54.267343252Z [err]    __version__ = __import__('pkg_resources').get_distribution('clamd').version
+2026-01-16T23:00:54.390818506Z [inf]   
+2026-01-16T23:00:54.390823317Z [inf]  --- ***** ----- 
+2026-01-16T23:00:54.390833191Z [inf]   -------------- celery@c4701f4f4512 v5.3.6 (emerald-rush)
+2026-01-16T23:00:54.390838724Z [inf]   -------------- [queues]
+2026-01-16T23:00:54.390843428Z [inf]  --- ***** ----- 
+2026-01-16T23:00:54.390851308Z [inf]                  .> celery           exchange=celery(direct) key=celery
+2026-01-16T23:00:54.390852182Z [inf]  -- ******* ---- Linux-6.1.0-40-cloud-amd64-x86_64-with-glibc2.41 2026-01-16 23:00:54
+2026-01-16T23:00:54.390861031Z [inf]  - *** --- * --- 
+2026-01-16T23:00:54.390862178Z [inf]                  .> queues.embedding exchange=celery(direct) key=celery
+2026-01-16T23:00:54.390871718Z [inf]                  .> queues.indexing  exchange=celery(direct) key=celery
+2026-01-16T23:00:54.390882603Z [inf]                  .> queues.parsing   exchange=celery(direct) key=celery
+2026-01-16T23:00:54.390892191Z [inf]  
+2026-01-16T23:00:54.390894627Z [inf]  - ** ---------- [config]
+2026-01-16T23:00:54.390901578Z [inf]  [tasks]
+2026-01-16T23:00:54.390905075Z [inf]  - ** ---------- .> app:         axial_worker:0x7f62648e7490
+2026-01-16T23:00:54.390913284Z [inf]    . finalize_job_task
+2026-01-16T23:00:54.390915384Z [inf]  - ** ---------- .> transport:   redis://default:**@redis.railway.internal:6379//
+2026-01-16T23:00:54.390924707Z [inf]    . process_file_task
+2026-01-16T23:00:54.390927144Z [inf]  - ** ---------- .> results:     redis://default:**@redis.railway.internal:6379/
+2026-01-16T23:00:54.390934709Z [inf]    . unified_ingest_task
+2026-01-16T23:00:54.390941347Z [inf]    . worker.tasks.check_scheduled_crawls
+2026-01-16T23:00:54.390949925Z [inf]    . worker.tasks.cleanup_old_jobs
+2026-01-16T23:00:54.390968044Z [inf]  - *** --- * --- .> concurrency: 10 (gevent)
+2026-01-16T23:00:54.390976446Z [inf]  -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+2026-01-16T23:00:54.391820915Z [inf]    . worker.tasks.health_check_task
+2026-01-16T23:00:54.391833976Z [inf]    . worker.tasks.index_chunks_task
+2026-01-16T23:00:54.391843937Z [inf]    . worker.tasks.crawl_discovery_task
+2026-01-16T23:00:54.391845532Z [inf]    . worker.tasks.process_page_task
+2026-01-16T23:00:54.391853558Z [inf]    . worker.tasks.finalize_crawl_task
+2026-01-16T23:00:54.391858806Z [inf]  
+2026-01-16T23:00:54.391864550Z [inf]    . worker.tasks.generate_embeddings_task
+2026-01-16T23:00:54.469615167Z [err]  [2026-01-16 23:00:54,457: INFO/MainProcess] Connected to redis://default:**@redis.railway.internal:6379//
+2026-01-16T23:00:54.486825386Z [err]  [2026-01-16 23:00:54,483: INFO/MainProcess] mingle: searching for neighbors
+2026-01-16T23:00:55.582648672Z [err]  [2026-01-16 23:00:55,580: INFO/MainProcess] mingle: sync with 1 nodes
+2026-01-16T23:00:55.582657739Z [err]  [2026-01-16 23:00:55,582: INFO/MainProcess] mingle: sync complete
+2026-01-16T23:00:55.616115731Z [err]  [2026-01-16 23:00:55,614: INFO/MainProcess] pidbox: Connected to redis://default:**@redis.railway.internal:6379//.
+2026-01-16T23:00:55.641263439Z [err]  [2026-01-16 23:00:55,635: INFO/MainProcess] celery@c4701f4f4512 ready.
+2026-01-16T23:00:56.365334613Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: Global time limit set to 120000 milliseconds.
+2026-01-16T23:00:56.365348050Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: Global size limit set to 1048576000 bytes.
+2026-01-16T23:00:56.365355697Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: File size limit set to 1048576000 bytes.
+2026-01-16T23:00:56.365362274Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: Recursion level limit set to 17.
+2026-01-16T23:00:56.365368979Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: Files limit set to 10000.
+2026-01-16T23:00:56.365374577Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: Core-dump limit is 0.
+2026-01-16T23:00:56.365380919Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: MaxEmbeddedPE limit set to 41943040 bytes.
+2026-01-16T23:00:56.365387627Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: MaxHTMLNormalize limit set to 41943040 bytes.
+2026-01-16T23:00:56.365393900Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: MaxHTMLNoTags limit set to 8388608 bytes.
+2026-01-16T23:00:56.365400487Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: MaxScriptNormalize limit set to 20971520 bytes.
+2026-01-16T23:00:56.365407077Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: MaxZipTypeRcg limit set to 1048576 bytes.
+2026-01-16T23:00:56.365415404Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: MaxPartitions limit set to 50.
+2026-01-16T23:00:56.365424176Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: MaxIconsPE limit set to 100.
+2026-01-16T23:00:56.365432760Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: MaxRecHWP3 limit set to 16.
+2026-01-16T23:00:56.365441431Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: PCREMatchLimit limit set to 100000.
+2026-01-16T23:00:56.365450277Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: PCRERecMatchLimit limit set to 2000.
+2026-01-16T23:00:56.365467364Z [inf]  Fri Jan 16 23:00:56 2026 -> Limits: PCREMaxFileSize limit set to 104857600.
+2026-01-16T23:00:56.365472901Z [inf]  Fri Jan 16 23:00:56 2026 -> Archive support enabled.
+2026-01-16T23:00:56.366839902Z [inf]  Fri Jan 16 23:00:56 2026 -> HTML support enabled.
+2026-01-16T23:00:56.366848344Z [inf]  Fri Jan 16 23:00:56 2026 -> Image (graphics) scanning support enabled.
+2026-01-16T23:00:56.366857902Z [inf]  Fri Jan 16 23:00:56 2026 -> XMLDOCS support enabled.
+2026-01-16T23:00:56.366860751Z [inf]  Fri Jan 16 23:00:56 2026 -> Detection using image fuzzy hash enabled.
+2026-01-16T23:00:56.366870249Z [inf]  Fri Jan 16 23:00:56 2026 -> AlertExceedsMax heuristic detection disabled.
+2026-01-16T23:00:56.366875595Z [inf]  Fri Jan 16 23:00:56 2026 -> HWP3 support enabled.
+2026-01-16T23:00:56.366879913Z [inf]  Fri Jan 16 23:00:56 2026 -> Heuristic alerts enabled.
+2026-01-16T23:00:56.366889077Z [inf]  Fri Jan 16 23:00:56 2026 -> Portable Executable support enabled.
+2026-01-16T23:00:56.366892700Z [inf]  Fri Jan 16 23:00:56 2026 -> OneNote support enabled.
+2026-01-16T23:00:56.366897329Z [inf]  Fri Jan 16 23:00:56 2026 -> ELF support enabled.
+2026-01-16T23:00:56.366906249Z [inf]  Fri Jan 16 23:00:56 2026 -> Mail files support enabled.
+2026-01-16T23:00:56.366908059Z [inf]  Fri Jan 16 23:00:56 2026 -> Self checking every 600 seconds.
+2026-01-16T23:00:56.366913601Z [inf]  Fri Jan 16 23:00:56 2026 -> OLE2 support enabled.
+2026-01-16T23:00:56.366923512Z [inf]  Fri Jan 16 23:00:56 2026 -> PDF support enabled.
+2026-01-16T23:00:56.366924481Z [inf]  Fri Jan 16 23:00:56 2026 -> Listening daemon: PID: 15
+2026-01-16T23:00:56.366930897Z [inf]  Fri Jan 16 23:00:56 2026 -> SWF support enabled.
+2026-01-16T23:00:56.366937138Z [inf]  Fri Jan 16 23:00:56 2026 -> MaxQueue set to: 100
+2026-01-16T23:10:58.482174314Z [inf]  Fri Jan 16 23:10:56 2026 -> SelfCheck: Database status OK.
+2026-01-16T23:21:00.325058129Z [inf]  Fri Jan 16 23:20:56 2026 -> SelfCheck: Database status OK.
+2026-01-16T23:31:01.325791309Z [inf]  Fri Jan 16 23:30:56 2026 -> SelfCheck: Database status OK.
+2026-01-16T23:41:02.395064078Z [inf]  Fri Jan 16 23:40:56 2026 -> SelfCheck: Database status OK.
+2026-01-16T23:43:02.337031962Z [err]  [2026-01-16 23:42:52,982: INFO/MainProcess] Task unified_ingest_task[0f89e356-5fd2-4329-a7e5-4ec5c90b2f66] received
+2026-01-16T23:43:02.337042458Z [err]  [2026-01-16 23:42:52,987: INFO/MainProcess] [UnifiedIngest:0f89e356-5fd2-4329-a7e5-4ec5c90b2f66] Starting FAN-OUT: file_upload, Job: 8f864d5c-7abd-40a5-acf1-0f02a5b590dd, Plan: enterprise_large
+2026-01-16T23:43:02.337048632Z [err]  [2026-01-16 23:42:52,987: INFO/MainProcess] 🔌 Initializing Supabase client with connection pool
+2026-01-16T23:43:02.337053758Z [err]  [2026-01-16 23:42:53,000: INFO/MainProcess] ✅ Supabase client initialized successfully
+2026-01-16T23:43:02.337060434Z [err]  [2026-01-16 23:42:53,100: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=organization_id&id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.337066188Z [err]  [2026-01-16 23:42:53,152: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.337071399Z [err]  [2026-01-16 23:42:53,194: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status&id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.337075785Z [err]  [2026-01-16 23:42:53,234: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.337080386Z [err]  [2026-01-16 23:42:53,307: INFO/MainProcess] 📊 [Job:8f864d5c-7abd-40a5-acf1-0f02a5b590dd] Status: processing, Processed: None
+2026-01-16T23:43:02.337085494Z [err]  [2026-01-16 23:42:53,343: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.337089837Z [err]  [2026-01-16 23:42:53,388: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
+2026-01-16T23:43:02.337795377Z [err]  [2026-01-16 23:42:53,389: INFO/MainProcess] 🔔 [Notification] Created info: Processing Started
+2026-01-16T23:43:02.337801154Z [err]  [2026-01-16 23:42:53,390: INFO/MainProcess] [UnifiedIngest:0f89e356-5fd2-4329-a7e5-4ec5c90b2f66] Streaming documents from file_upload...
+2026-01-16T23:43:02.337805253Z [err]  [2026-01-16 23:42:53,480: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.337809918Z [err]  [2026-01-16 23:42:53,532: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_effective_plan "HTTP/2 400 Bad Request"
+2026-01-16T23:43:02.337813728Z [err]  [2026-01-16 23:42:53,533: WARNING/MainProcess] [TeamService] RPC failed, trying direct query: {'message': 'column "subscription_status" does not exist', 'code': '42703', 'hint': None, 'details': None}
+2026-01-16T23:43:02.337817732Z [err]  [2026-01-16 23:42:53,578: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_user_team_data "HTTP/2 404 Not Found"
+2026-01-16T23:43:02.337821437Z [err]  [2026-01-16 23:42:53,579: WARNING/MainProcess] [TeamService] RPC call failed, falling back to sequential queries: {'message': 'Could not find the function public.get_user_team_data(target_user_id) in the schema cache', 'code': 'PGRST202', 'hint': 'Perhaps you meant to call the function public.get_user_team_data(p_user_id)', 'details': 'Searched for the function public.get_user_team_data with parameter target_user_id or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache.'}
+2026-01-16T23:43:02.337825536Z [err]  [2026-01-16 23:42:53,626: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:43:02.337830126Z [err]  [2026-01-16 23:42:53,675: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=plan_type%2Cstatus&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:43:02.338701563Z [err]  [2026-01-16 23:42:53,677: INFO/MainProcess] [TeamService] User 94e02b27... has active subscription: enterprise
+2026-01-16T23:43:02.338706609Z [err]  [2026-01-16 23:42:53,725: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:43:02.338711054Z [err]  [2026-01-16 23:42:53,727: INFO/MainProcess] [FileUpload] Fetching: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/61a619d2-faeb-4f29-b38d-14bbce77a603/CONFIDENTIAL_PROJECT_OMEGA.txt
+2026-01-16T23:43:02.338715177Z [err]  [2026-01-16 23:42:53,740: WARNING/MainProcess] Storage endpoint URL should have a trailing slash.
+2026-01-16T23:43:02.338719524Z [err]  [2026-01-16 23:42:54,160: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/61a619d2-faeb-4f29-b38d-14bbce77a603/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
+2026-01-16T23:43:02.338723902Z [err]  [2026-01-16 23:42:54,195: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status "HTTP/2 201 Created"
+2026-01-16T23:43:02.338727770Z [err]  [2026-01-16 23:42:54,239: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
+2026-01-16T23:43:02.338731388Z [err]  [2026-01-16 23:42:54,240: INFO/MainProcess] [FileUpload] Fetched CONFIDENTIAL_PROJECT_OMEGA.txt (2175 bytes)
+2026-01-16T23:43:02.338749088Z [err]  [2026-01-16 23:42:54,286: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.338754478Z [err]  [2026-01-16 23:42:54,311: INFO/MainProcess] Task process_file_task[fcccef43-0ccc-46db-89f4-f24076934b58] received
+2026-01-16T23:43:02.338758205Z [err]  [2026-01-16 23:42:54,312: INFO/MainProcess] [ProcessFile:fcccef43-0ccc-46db-89f4-f24076934b58] Starting: CONFIDENTIAL_PROJECT_OMEGA.txt (job: 8f864d5c-7abd-40a5-acf1-0f02a5b590dd)
+2026-01-16T23:43:02.339740839Z [err]  [2026-01-16 23:42:54,320: INFO/MainProcess] [UnifiedIngest:0f89e356-5fd2-4329-a7e5-4ec5c90b2f66] ✅ Dispatched batch with 1 tasks, group_id: b326e76f-9a49-4557-b040-be08f69d97e6
+2026-01-16T23:43:02.339747634Z [err]  [2026-01-16 23:42:54,367: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.18de5ebf-24de-4f0c-a23b-389c493b0aa4 "HTTP/2 200 OK"
+2026-01-16T23:43:02.339753718Z [err]  [2026-01-16 23:42:54,377: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.339759462Z [err]  [2026-01-16 23:42:54,389: INFO/MainProcess] Task unified_ingest_task[0f89e356-5fd2-4329-a7e5-4ec5c90b2f66] succeeded in 1.403697095811367s: {'status': 'dispatched', 'job_id': '8f864d5c-7abd-40a5-acf1-0f02a5b590dd', 'total_files': 1, 'group_id': 'b326e76f-9a49-4557-b040-be08f69d97e6'}
+2026-01-16T23:43:02.339764557Z [err]  [2026-01-16 23:42:54,423: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/61a619d2-faeb-4f29-b38d-14bbce77a603/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
+2026-01-16T23:43:02.339769523Z [err]  [2026-01-16 23:42:54,461: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.18de5ebf-24de-4f0c-a23b-389c493b0aa4 "HTTP/2 200 OK"
+2026-01-16T23:43:02.339774608Z [err]  [2026-01-16 23:42:54,529: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.18de5ebf-24de-4f0c-a23b-389c493b0aa4 "HTTP/2 200 OK"
+2026-01-16T23:43:02.339779302Z [err]  [2026-01-16 23:42:54,583: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F61a619d2-faeb-4f29-b38d-14bbce77a603%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:43:02.340574727Z [err]  [2026-01-16 23:42:54,621: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.18de5ebf-24de-4f0c-a23b-389c493b0aa4 "HTTP/2 200 OK"
+2026-01-16T23:43:02.340583596Z [err]  [2026-01-16 23:42:54,639: INFO/MainProcess] [PlainTextProcessor] CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks
+2026-01-16T23:43:02.340589377Z [err]  [2026-01-16 23:42:54,639: INFO/MainProcess] [Factory] Processed CONFIDENTIAL_PROJECT_OMEGA.txt: 3 chunks, type=text
+2026-01-16T23:43:02.340593851Z [err]  [2026-01-16 23:42:54,673: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.18de5ebf-24de-4f0c-a23b-389c493b0aa4 "HTTP/2 200 OK"
+2026-01-16T23:43:02.340597998Z [err]  [2026-01-16 23:42:54,705: INFO/MainProcess] [ProcessFile:fcccef43-0ccc-46db-89f4-f24076934b58] ✅ Dispatched embedding task for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 8f864d5c-7abd-40a5-acf1-0f02a5b590dd, plan=enterprise_large)
+2026-01-16T23:43:02.340602003Z [err]  [2026-01-16 23:42:54,707: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[491fd691-31b6-4d6c-ba6f-ad6bb7a64478] received
+2026-01-16T23:43:02.340608883Z [err]  [2026-01-16 23:42:54,748: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.18de5ebf-24de-4f0c-a23b-389c493b0aa4 "HTTP/2 200 OK"
+2026-01-16T23:43:02.340614234Z [err]  [2026-01-16 23:42:54,780: INFO/MainProcess] 📊 [Embeddings] Initialized OpenAI embeddings model (text-embedding-3-small)
+2026-01-16T23:43:02.340618269Z [err]  [2026-01-16 23:42:54,800: INFO/MainProcess] HTTP Request: DELETE https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/ephemeral-staging "HTTP/2 200 OK"
+2026-01-16T23:43:02.340622090Z [err]  [2026-01-16 23:42:54,801: INFO/MainProcess] [ProcessFile:fcccef43-0ccc-46db-89f4-f24076934b58] 🧹 Removed staged upload: uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/61a619d2-faeb-4f29-b38d-14bbce77a603/CONFIDENTIAL_PROJECT_OMEGA.txt
+2026-01-16T23:43:02.341665389Z [err]  [2026-01-16 23:42:54,801: INFO/MainProcess] Task process_file_task[fcccef43-0ccc-46db-89f4-f24076934b58] succeeded in 0.48973059095442295s: {'status': 'queued_embedding', 'filename': 'CONFIDENTIAL_PROJECT_OMEGA.txt'}
+2026-01-16T23:43:02.341672835Z [err]  [2026-01-16 23:42:55,552: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+2026-01-16T23:43:02.341678372Z [err]  [2026-01-16 23:42:55,563: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 3 texts in 0.78s (3.8/sec)
+2026-01-16T23:43:02.341685214Z [err]  [2026-01-16 23:42:55,563: INFO/MainProcess] 📊 [Embeddings] Generated 3 embeddings in 1 batches (3.8/sec, rate_limit_hits=0, error_batches=0)
+2026-01-16T23:43:02.341691550Z [err]  [2026-01-16 23:42:55,597: INFO/MainProcess] [EmbedTask:491fd691-31b6-4d6c-ba6f-ad6bb7a64478] ✅ Dispatched indexing for CONFIDENTIAL_PROJECT_OMEGA.txt (job: 8f864d5c-7abd-40a5-acf1-0f02a5b590dd, plan=enterprise_large)
+2026-01-16T23:43:02.341698479Z [err]  [2026-01-16 23:42:55,597: INFO/MainProcess] Task worker.tasks.generate_embeddings_task[491fd691-31b6-4d6c-ba6f-ad6bb7a64478] succeeded in 0.8892653998918831s: None
+2026-01-16T23:43:02.341705044Z [err]  [2026-01-16 23:42:55,616: INFO/MainProcess] Task worker.tasks.index_chunks_task[46102bbe-56fb-4d92-97ab-125279a3817c] received
+2026-01-16T23:43:02.341712122Z [err]  [2026-01-16 23:42:55,656: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.18de5ebf-24de-4f0c-a23b-389c493b0aa4 "HTTP/2 200 OK"
+2026-01-16T23:43:02.341717840Z [err]  [2026-01-16 23:42:55,760: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/try_create_scope_placeholder "HTTP/2 200 OK"
+2026-01-16T23:43:02.341722452Z [err]  [2026-01-16 23:42:55,795: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ccontent_hash&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_id=eq.uploads%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2F61a619d2-faeb-4f29-b38d-14bbce77a603%2FCONFIDENTIAL_PROJECT_OMEGA.txt&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:43:02.342410909Z [err]  [2026-01-16 23:42:55,831: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents "HTTP/2 201 Created"
+2026-01-16T23:43:02.342417207Z [err]  [2026-01-16 23:42:55,832: INFO/MainProcess] 📄 Created document 94f07db8-a68b-43e1-8135-763b82f8c453: CONFIDENTIAL_PROJECT_OMEGA.txt
+2026-01-16T23:43:02.342422210Z [err]  [2026-01-16 23:42:55,909: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/document_chunks?columns=%22document_id%22%2C%22chunk_index%22%2C%22embedding%22%2C%22content%22 "HTTP/2 201 Created"
+2026-01-16T23:43:02.342425989Z [err]  [2026-01-16 23:42:55,910: INFO/MainProcess] 🧩 [DB] Inserted 3 rows into document_chunks in 0.08s (doc_id=94f07db8-a68b-43e1-8135-763b82f8c453 batch=1)
+2026-01-16T23:43:02.342430089Z [err]  [2026-01-16 23:42:55,910: INFO/MainProcess] ✅ Inserted 3 chunks for document 94f07db8-a68b-43e1-8135-763b82f8c453
+2026-01-16T23:43:02.342434848Z [err]  [2026-01-16 23:42:55,941: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?id=eq.18de5ebf-24de-4f0c-a23b-389c493b0aa4 "HTTP/2 200 OK"
+2026-01-16T23:43:02.342438984Z [err]  [2026-01-16 23:42:56,006: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.342442592Z [err]  [2026-01-16 23:42:56,019: INFO/MainProcess] 📊 [Job:8f864d5c-7abd-40a5-acf1-0f02a5b590dd] Status: processing, Processed: 1
+2026-01-16T23:43:02.342446678Z [err]  [2026-01-16 23:42:56,047: INFO/MainProcess] [IndexTask:46102bbe-56fb-4d92-97ab-125279a3817c] ✅ Stored 3 chunks for CONFIDENTIAL_PROJECT_OMEGA.txt (doc=94f07db8-a68b-43e1-8135-763b82f8c453)
+2026-01-16T23:43:02.342451520Z [err]  [2026-01-16 23:42:56,047: INFO/MainProcess] Task worker.tasks.index_chunks_task[46102bbe-56fb-4d92-97ab-125279a3817c] succeeded in 0.4278089590370655s: None
+2026-01-16T23:43:02.343406994Z [err]  [2026-01-16 23:42:56,069: INFO/MainProcess] Task finalize_job_task[39c40bd2-cb80-4a8f-83e0-6f52e7fc25cb] received
+2026-01-16T23:43:02.343412549Z [err]  [2026-01-16 23:42:56,071: INFO/MainProcess] [FinalizeJob:39c40bd2-cb80-4a8f-83e0-6f52e7fc25cb] Finalizing job 8f864d5c-7abd-40a5-acf1-0f02a5b590dd
+2026-01-16T23:43:02.343416919Z [err]  [2026-01-16 23:42:56,101: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=status%2Ctotal_files%2Corganization_id&id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.343420628Z [err]  [2026-01-16 23:42:56,142: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=status&job_id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.343424584Z [err]  [2026-01-16 23:42:56,143: INFO/MainProcess] [FinalizeJob:39c40bd2-cb80-4a8f-83e0-6f52e7fc25cb] Job 8f864d5c-7abd-40a5-acf1-0f02a5b590dd status updates: job=1 file=8 source=redis
+2026-01-16T23:43:02.343428388Z [err]  [2026-01-16 23:42:56,190: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=document_id%2Cfilename%2Cfile_size_bytes&job_id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd&status=eq.completed "HTTP/2 200 OK"
+2026-01-16T23:43:02.343431980Z [err]  [2026-01-16 23:42:56,224: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Ctitle%2Cmetadata%2Cfile_size_bytes%2Csource_type%2Cscope_id&id=in.%2894f07db8-a68b-43e1-8135-763b82f8c453%29 "HTTP/2 200 OK"
+2026-01-16T23:43:02.343435993Z [err]  [2026-01-16 23:42:56,264: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?select=id%2Cstatus%2Cattributes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&id=eq.upload%3A%2F%2F94e02b27-3523-42ff-a0c2-858dd8e77f85%2Fmanual&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:43:02.344663879Z [err]  [2026-01-16 23:42:56,301: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/scope_identities?on_conflict=organization_id%2Cid "HTTP/2 200 OK"
+2026-01-16T23:43:02.344673412Z [err]  [2026-01-16 23:42:56,302: INFO/MainProcess] [ScopeIdentity] ✅ Updated identity for upload://94e02b27-3523-42ff-a0c2-858dd8e77f85/manu... (1 files, file_upload)
+2026-01-16T23:43:02.344680728Z [err]  [2026-01-16 23:42:57,049: INFO/MainProcess] HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+2026-01-16T23:43:02.344699539Z [err]  [2026-01-16 23:42:57,051: INFO/MainProcess] 📊 [Embeddings] Batch 1/1: 1 texts in 0.75s (1.3/sec)
+2026-01-16T23:43:02.344705687Z [err]  [2026-01-16 23:42:57,051: INFO/MainProcess] 📊 [Embeddings] Generated 1 embeddings in 1 batches (1.3/sec, rate_limit_hits=0, error_batches=0)
+2026-01-16T23:43:02.344716371Z [err]  [2026-01-16 23:42:57,102: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/upsert_scope_identity_document "HTTP/2 200 OK"
+2026-01-16T23:43:02.344722419Z [err]  [2026-01-16 23:42:57,139: INFO/MainProcess] HTTP Request: PATCH https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?id=eq.8f864d5c-7abd-40a5-acf1-0f02a5b590dd "HTTP/2 200 OK"
+2026-01-16T23:43:02.344728515Z [err]  [2026-01-16 23:42:57,219: INFO/MainProcess] HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications "HTTP/2 201 Created"
+2026-01-16T23:43:02.344734277Z [err]  [2026-01-16 23:42:57,220: INFO/MainProcess] 🔔 [Notification] Created success: Ingestion Complete
+2026-01-16T23:43:02.344740868Z [err]  [2026-01-16 23:42:57,265: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=display_name%2Cfull_name&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 400 Bad Request"
+2026-01-16T23:43:02.344746852Z [err]  [2026-01-16 23:42:57,374: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/auth/v1/admin/users/94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:43:02.345495283Z [err]  [2026-01-16 23:42:57,428: INFO/MainProcess] HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_notification_settings?select=enabled&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&setting_key=eq.email_on_ingestion_complete "HTTP/2 200 OK"
+2026-01-16T23:43:02.345500231Z [err]  [2026-01-16 23:42:57,577: INFO/MainProcess] 📧 Sent ingestion complete email to o.onder@fittechs.com, id=dc5bd5d4-65a4-4ac7-8ef6-bb29c046af34
+2026-01-16T23:43:02.345504035Z [err]  [2026-01-16 23:42:57,578: INFO/MainProcess] [FinalizeJob:39c40bd2-cb80-4a8f-83e0-6f52e7fc25cb] ✅ Job 8f864d5c-7abd-40a5-acf1-0f02a5b590dd: Processed 1/1 files
+2026-01-16T23:43:02.345509161Z [err]  [2026-01-16 23:42:57,588: INFO/MainProcess] Task finalize_job_task[39c40bd2-cb80-4a8f-83e0-6f52e7fc25cb] succeeded in 1.5170559389516711s: None
 
 
-2026-01-16T21:38:01.211172540Z [err]  2026-01-16 21:38:01,207 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:01.259240602Z [err]  2026-01-16 21:38:01,248 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:01.951300444Z [err]  2026-01-16 21:38:01,288 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:38:01.951317548Z [err]  2026-01-16 21:38:01,290 - core.tracing - INFO - ✅ [ef20cf02] GET /api/v1/conversations → 200 (238.6ms)
-2026-01-16T21:38:01.951323942Z [inf]  INFO:     100.64.0.8:58408 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:38:01.951330258Z [err]  2026-01-16 21:38:01,333 - core.tracing - INFO - ➡️  [df25cb67] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:38:01.951336921Z [err]  2026-01-16 21:38:01,372 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:01.951342891Z [err]  2026-01-16 21:38:01,409 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:01.951348733Z [err]  2026-01-16 21:38:01,456 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:01.951355080Z [err]  2026-01-16 21:38:01,502 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:01.951361077Z [err]  2026-01-16 21:38:01,504 - core.tracing - INFO - ➡️  [17bb8d91] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:38:01.951367609Z [err]  2026-01-16 21:38:01,550 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:01.957747393Z [err]  2026-01-16 21:38:01,588 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:01.957761271Z [err]  2026-01-16 21:38:01,634 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:01.957771231Z [err]  2026-01-16 21:38:01,683 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:01.957778057Z [err]  2026-01-16 21:38:01,734 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:38:01.957785011Z [err]  2026-01-16 21:38:01,777 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:38:01.957792104Z [err]  2026-01-16 21:38:01,779 - core.tracing - INFO - ✅ [df25cb67] GET /api/v1/settings/profile → 200 (446.3ms)
-2026-01-16T21:38:01.957804627Z [err]  2026-01-16 21:38:01,780 - core.tracing - INFO - ➡️  [086a5f14] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:38:01.957811049Z [err]  2026-01-16 21:38:01,780 - core.tracing - INFO - ✅ [17bb8d91] GET /api/v1/documents → 200 (275.9ms)
-2026-01-16T21:38:01.957817809Z [err]  2026-01-16 21:38:01,827 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:01.957887580Z [err]  2026-01-16 21:38:01,863 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:01.957894618Z [err]  2026-01-16 21:38:01,901 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:38:01.957901917Z [inf]  INFO:     100.64.0.3:31688 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:38:01.957909420Z [inf]  INFO:     100.64.0.6:55698 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:38:01.957916770Z [err]  2026-01-16 21:38:01,907 - core.tracing - INFO - ✅ [086a5f14] GET /api/v1/notifications/unread-count → 200 (127.6ms)
-2026-01-16T21:38:01.957926370Z [err]  2026-01-16 21:38:01,908 - core.tracing - INFO - ➡️  [1409e2a9] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:38:01.957932703Z [err]  2026-01-16 21:38:01,909 - core.tracing - INFO - ➡️  [cc661cab] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:38:01.957938960Z [err]  2026-01-16 21:38:01,951 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:02.001527518Z [err]  2026-01-16 21:38:01,995 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:02.054925737Z [err]  2026-01-16 21:38:02,045 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:02.110948056Z [err]  2026-01-16 21:38:02,094 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:02.144416888Z [err]  2026-01-16 21:38:02,141 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:02.196777976Z [err]  2026-01-16 21:38:02,180 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:38:02.196787100Z [inf]  INFO:     100.64.0.8:58392 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:38:02.196792958Z [err]  2026-01-16 21:38:02,184 - core.tracing - INFO - ✅ [1409e2a9] GET /api/v1/integrations/status → 200 (275.6ms)
-2026-01-16T21:38:02.196799014Z [err]  2026-01-16 21:38:02,184 - core.tracing - INFO - ✅ [cc661cab] GET /api/v1/integrations/available → 200 (275.2ms)
-2026-01-16T21:38:02.196805373Z [inf]  INFO:     100.64.0.2:33834 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:38:02.196811665Z [inf]  INFO:     100.64.0.3:31704 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:38:02.837533790Z [err]  2026-01-16 21:38:02,495 - core.tracing - INFO - ➡️  [e2ce4007] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:38:02.837537694Z [err]  2026-01-16 21:38:02,531 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:02.837541787Z [err]  2026-01-16 21:38:02,563 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:02.837546215Z [err]  2026-01-16 21:38:02,597 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:38:02.837551732Z [err]  2026-01-16 21:38:02,598 - core.tracing - INFO - ✅ [e2ce4007] GET /api/v1/notifications/unread-count → 200 (102.7ms)
-2026-01-16T21:38:02.837558374Z [inf]  INFO:     100.64.0.6:55698 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:38:10.976813256Z [err]  2026-01-16 21:38:10,974 - core.tracing - INFO - ➡️  [ba853b4c] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:38:11.050712293Z [err]  2026-01-16 21:38:11,047 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:11.095385228Z [err]  2026-01-16 21:38:11,093 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:11.109110381Z [err]  2026-01-16 21:38:11,106 - core.tracing - INFO - ➡️  [9f04bfd6] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:38:11.109120284Z [err]  2026-01-16 21:38:11,106 - core.tracing - INFO - ➡️  [39f58960] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:38:11.110866352Z [err]  2026-01-16 21:38:11,107 - core.tracing - INFO - ➡️  [fb611692] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:38:11.155760853Z [err]  2026-01-16 21:38:11,152 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:11.194036650Z [err]  2026-01-16 21:38:11,190 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:11.232704397Z [err]  2026-01-16 21:38:11,231 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:11.283485830Z [err]  2026-01-16 21:38:11,278 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:11.328891702Z [err]  2026-01-16 21:38:11,327 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:11.372494395Z [err]  2026-01-16 21:38:11,371 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:11.974972687Z [err]  2026-01-16 21:38:11,568 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:11.974984702Z [err]  2026-01-16 21:38:11,619 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:11.974991857Z [err]  2026-01-16 21:38:11,676 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:11.974999222Z [err]  2026-01-16 21:38:11,728 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:11.975004916Z [err]  2026-01-16 21:38:11,800 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:38:11.975058941Z [err]  2026-01-16 21:38:11,419 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:11.975064543Z [err]  2026-01-16 21:38:11,461 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:11.975071688Z [err]  2026-01-16 21:38:11,515 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:12.010512677Z [err]  2026-01-16 21:38:11,802 - core.tracing - INFO - ✅ [9f04bfd6] GET /api/v1/settings/profile → 200 (695.7ms)
-2026-01-16T21:38:12.010526474Z [err]  2026-01-16 21:38:11,802 - core.tracing - INFO - ✅ [39f58960] GET /api/v1/team/effective-plan → 200 (695.5ms)
-2026-01-16T21:38:12.010534200Z [err]  2026-01-16 21:38:11,803 - core.tracing - INFO - ✅ [fb611692] GET /api/v1/usage → 200 (695.4ms)
-2026-01-16T21:38:12.010540275Z [inf]  INFO:     100.64.0.6:57256 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:38:12.010546964Z [inf]  INFO:     100.64.0.2:13114 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:38:12.010558341Z [inf]  INFO:     100.64.0.3:10046 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:38:12.010565122Z [err]  2026-01-16 21:38:11,871 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:38:12.010571398Z [err]  2026-01-16 21:38:11,937 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:38:12.010577597Z [err]  2026-01-16 21:38:11,939 - core.tracing - INFO - ✅ [ba853b4c] GET /api/v1/billing/plans → 200 (965.1ms)
-2026-01-16T21:38:12.010584217Z [inf]  INFO:     100.64.0.3:10038 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:38:12.141185260Z [err]  2026-01-16 21:38:12,139 - core.tracing - INFO - ➡️  [7d5b03b3] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:38:12.213298018Z [err]  2026-01-16 21:38:12,209 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:12.295045687Z [err]  2026-01-16 21:38:12,289 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:12.362502543Z [err]  2026-01-16 21:38:12,360 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:12.877752166Z [err]  2026-01-16 21:38:12,429 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:12.877758877Z [err]  2026-01-16 21:38:12,506 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:38:12.877764895Z [err]  2026-01-16 21:38:12,509 - core.tracing - INFO - ✅ [7d5b03b3] GET /api/v1/conversations → 200 (369.9ms)
-2026-01-16T21:38:12.877771156Z [err]  2026-01-16 21:38:12,510 - core.tracing - INFO - ➡️  [2f050fe5] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:38:12.877777424Z [err]  2026-01-16 21:38:12,514 - core.tracing - INFO - ➡️  [583f65bd] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:38:12.877783510Z [err]  2026-01-16 21:38:12,583 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:12.877790192Z [err]  2026-01-16 21:38:12,644 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:12.877795897Z [err]  2026-01-16 21:38:12,758 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:12.877801764Z [err]  2026-01-16 21:38:12,834 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:12.914759495Z [err]  2026-01-16 21:38:12,912 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:38:12.994697368Z [err]  2026-01-16 21:38:12,991 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:38:13.082549804Z [err]  2026-01-16 21:38:13,080 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:13.176901751Z [err]  2026-01-16 21:38:13,173 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:13.251700873Z [err]  2026-01-16 21:38:13,249 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:38:13.253645478Z [inf]  INFO:     100.64.0.3:10038 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:38:13.255738570Z [err]  2026-01-16 21:38:13,253 - core.tracing - INFO - ✅ [2f050fe5] GET /api/v1/documents → 200 (742.1ms)
-2026-01-16T21:38:13.255747716Z [err]  2026-01-16 21:38:13,253 - core.tracing - INFO - ✅ [583f65bd] GET /api/v1/notifications/unread-count → 200 (739.1ms)
-2026-01-16T21:38:13.255753516Z [err]  2026-01-16 21:38:13,254 - core.tracing - INFO - ➡️  [5dcf63da] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:38:13.257700452Z [err]  2026-01-16 21:38:13,254 - core.tracing - INFO - ➡️  [b1e17d41] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:38:13.257708049Z [err]  2026-01-16 21:38:13,255 - core.tracing - INFO - ➡️  [b4efbb0a] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:38:13.328097381Z [err]  2026-01-16 21:38:13,324 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:13.927832691Z [err]  2026-01-16 21:38:13,402 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:13.927839050Z [err]  2026-01-16 21:38:13,494 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:13.927844688Z [err]  2026-01-16 21:38:13,575 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:13.927850156Z [err]  2026-01-16 21:38:13,659 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:13.927855760Z [err]  2026-01-16 21:38:13,740 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:13.927861419Z [err]  2026-01-16 21:38:13,867 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:13.954235288Z [err]  2026-01-16 21:38:13,952 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:14.025523773Z [err]  2026-01-16 21:38:14,022 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:14.122206152Z [err]  2026-01-16 21:38:14,119 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:38:14.126592609Z [inf]  INFO:     100.64.0.6:57256 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:38:14.126599580Z [inf]  INFO:     100.64.0.2:13114 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:38:14.128120306Z [err]  2026-01-16 21:38:14,125 - core.tracing - INFO - ✅ [5dcf63da] GET /api/v1/integrations/status → 200 (871.1ms)
-2026-01-16T21:38:14.128128985Z [err]  2026-01-16 21:38:14,125 - core.tracing - INFO - ✅ [b1e17d41] GET /api/v1/settings/profile → 200 (870.9ms)
-2026-01-16T21:38:14.128134986Z [err]  2026-01-16 21:38:14,125 - core.tracing - INFO - ✅ [b4efbb0a] GET /api/v1/integrations/available → 200 (870.0ms)
-2026-01-16T21:38:14.129740004Z [inf]  INFO:     100.64.0.3:10046 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:38:14.133523422Z [inf]  INFO:     100.64.0.8:16920 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:38:14.133531073Z [inf]  INFO:     100.64.0.8:16930 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:38:14.955980620Z [err]  2026-01-16 21:38:14,783 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:38:14.955989117Z [err]  2026-01-16 21:38:14,785 - core.tracing - INFO - ✅ [6ebd76b4] GET /api/v1/notifications/unread-count → 200 (260.7ms)
-2026-01-16T21:38:14.955997182Z [inf]  INFO:     100.64.0.3:10046 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:38:14.956060587Z [err]  2026-01-16 21:38:14,524 - core.tracing - INFO - ➡️  [6ebd76b4] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:38:14.956068058Z [err]  2026-01-16 21:38:14,610 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:14.956075157Z [err]  2026-01-16 21:38:14,706 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:18.877346780Z [err]  2026-01-16 21:38:18,440 - core.tracing - INFO - ➡️  [d64c41d6] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:38:18.877351890Z [err]  2026-01-16 21:38:18,495 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:18.877356705Z [err]  2026-01-16 21:38:18,552 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:18.877361705Z [err]  2026-01-16 21:38:18,603 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:18.877366264Z [err]  2026-01-16 21:38:18,654 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:18.877371434Z [err]  2026-01-16 21:38:18,656 - core.tracing - INFO - ✅ [d64c41d6] GET /api/v1/team/effective-plan → 200 (215.9ms)
-2026-01-16T21:38:18.877376177Z [inf]  INFO:     100.64.0.3:10046 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:38:18.877380963Z [err]  2026-01-16 21:38:18,659 - core.tracing - INFO - ➡️  [435a9d65] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:38:18.877386016Z [err]  2026-01-16 21:38:18,659 - core.tracing - INFO - ➡️  [0ddf5034] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:38:18.877390261Z [err]  2026-01-16 21:38:18,660 - core.tracing - INFO - ➡️  [c3c65ddc] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:38:18.877394883Z [err]  2026-01-16 21:38:18,704 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.091485834Z [err]  2026-01-16 21:38:18,753 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:19.091499522Z [err]  2026-01-16 21:38:18,826 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.091551778Z [err]  2026-01-16 21:38:18,879 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:19.091581418Z [err]  2026-01-16 21:38:18,917 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:19.091723358Z [err]  2026-01-16 21:38:18,980 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.091734246Z [err]  2026-01-16 21:38:19,029 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.093495667Z [err]  2026-01-16 21:38:19,089 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:38:19.139001683Z [err]  2026-01-16 21:38:19,137 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.189057763Z [err]  2026-01-16 21:38:19,181 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:19.237540790Z [err]  2026-01-16 21:38:19,227 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:19.275498785Z [err]  2026-01-16 21:38:19,268 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.275510054Z [err]  2026-01-16 21:38:19,270 - core.tracing - INFO - ✅ [0ddf5034] GET /api/v1/usage → 200 (610.7ms)
-2026-01-16T21:38:19.275516454Z [err]  2026-01-16 21:38:19,271 - core.tracing - INFO - ✅ [c3c65ddc] GET /api/v1/settings/profile → 200 (610.8ms)
-2026-01-16T21:38:19.275523015Z [inf]  INFO:     100.64.0.4:10278 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:38:19.275529685Z [inf]  INFO:     100.64.0.8:48994 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:38:19.350366914Z [err]  2026-01-16 21:38:19,346 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:38:19.935880097Z [err]  2026-01-16 21:38:19,425 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:38:19.935884199Z [err]  2026-01-16 21:38:19,428 - core.tracing - INFO - ✅ [435a9d65] GET /api/v1/billing/plans → 200 (769.0ms)
-2026-01-16T21:38:19.935888130Z [inf]  INFO:     100.64.0.8:48988 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:38:19.935892541Z [err]  2026-01-16 21:38:19,601 - core.tracing - INFO - ➡️  [50380c3e] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:38:19.935896610Z [err]  2026-01-16 21:38:19,651 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.935901175Z [err]  2026-01-16 21:38:19,718 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:19.935905613Z [err]  2026-01-16 21:38:19,763 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.935911200Z [err]  2026-01-16 21:38:19,813 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:19.935915024Z [err]  2026-01-16 21:38:19,854 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:38:19.935918925Z [err]  2026-01-16 21:38:19,856 - core.tracing - INFO - ✅ [50380c3e] GET /api/v1/conversations → 200 (255.0ms)
-2026-01-16T21:38:19.936053223Z [err]  2026-01-16 21:38:19,857 - core.tracing - INFO - ➡️  [4333ab6f] GET /api/v1/documents/stats (user: eyJhbGci...)
-2026-01-16T21:38:19.936058197Z [err]  2026-01-16 21:38:19,858 - core.tracing - INFO - ➡️  [1d357482] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:38:19.936065240Z [err]  2026-01-16 21:38:19,859 - core.tracing - INFO - ➡️  [e011d56c] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:38:19.936071709Z [err]  2026-01-16 21:38:19,904 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:19.942969505Z [err]  2026-01-16 21:38:19,939 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:19.995193490Z [err]  2026-01-16 21:38:19,975 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.023931441Z [err]  2026-01-16 21:38:20,020 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:20.070617906Z [err]  2026-01-16 21:38:20,059 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:38:20.122093344Z [err]  2026-01-16 21:38:20,109 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=created_at&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.167498534Z [err]  2026-01-16 21:38:20,162 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.212260571Z [err]  2026-01-16 21:38:20,202 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:20.257376810Z [err]  2026-01-16 21:38:20,244 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:20.287275372Z [err]  2026-01-16 21:38:20,282 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.327823574Z [err]  2026-01-16 21:38:20,320 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.359497032Z [err]  2026-01-16 21:38:20,357 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:20.404679819Z [err]  2026-01-16 21:38:20,395 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:38:20.404701724Z [inf]  INFO:     100.64.0.8:48988 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:38:20.404709146Z [err]  2026-01-16 21:38:20,399 - core.tracing - INFO - ✅ [4333ab6f] GET /api/v1/documents/stats → 200 (541.6ms)
-2026-01-16T21:38:20.404715254Z [err]  2026-01-16 21:38:20,399 - core.tracing - INFO - ✅ [1d357482] GET /api/v1/settings/profile → 200 (541.4ms)
-2026-01-16T21:38:20.404720748Z [err]  2026-01-16 21:38:20,400 - core.tracing - INFO - ✅ [e011d56c] GET /api/v1/integrations/available → 200 (541.0ms)
-2026-01-16T21:38:20.404730027Z [inf]  INFO:     100.64.0.4:10278 - "GET /api/v1/documents/stats HTTP/1.1" 200 OK
-2026-01-16T21:38:20.404735477Z [inf]  INFO:     100.64.0.3:10046 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:38:20.404744281Z [inf]  INFO:     100.64.0.8:48994 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:38:20.405938601Z [err]  2026-01-16 21:38:20,403 - core.tracing - INFO - ➡️  [46194eb0] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:38:20.405946509Z [err]  2026-01-16 21:38:20,404 - core.tracing - INFO - ➡️  [124959ce] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:38:20.887800544Z [err]  2026-01-16 21:38:20,449 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.887811226Z [err]  2026-01-16 21:38:20,495 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:20.887817753Z [err]  2026-01-16 21:38:20,534 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:38:20.887823704Z [err]  2026-01-16 21:38:20,579 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.887830037Z [err]  2026-01-16 21:38:20,620 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:20.887835856Z [err]  2026-01-16 21:38:20,656 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:38:20.887841566Z [err]  2026-01-16 21:38:20,658 - core.tracing - INFO - ✅ [46194eb0] GET /api/v1/notifications/unread-count → 200 (254.7ms)
-2026-01-16T21:38:20.887847712Z [err]  2026-01-16 21:38:20,658 - core.tracing - INFO - ✅ [124959ce] GET /api/v1/integrations/status → 200 (254.5ms)
-2026-01-16T21:38:20.887853377Z [inf]  INFO:     100.64.0.3:37626 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:38:20.891023926Z [inf]  INFO:     100.64.0.2:12700 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:38:20.891033639Z [err]  2026-01-16 21:38:20,686 - core.tracing - INFO - ➡️  [0af78936] GET /api/v1/documents/stats (user: eyJhbGci...)
-2026-01-16T21:38:20.891039172Z [err]  2026-01-16 21:38:20,726 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.891045311Z [err]  2026-01-16 21:38:20,774 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:20.891050883Z [err]  2026-01-16 21:38:20,811 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.891056371Z [err]  2026-01-16 21:38:20,845 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:20.908835623Z [err]  2026-01-16 21:38:20,905 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:38:20.965959985Z [err]  2026-01-16 21:38:20,960 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=created_at&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:20.965969457Z [err]  2026-01-16 21:38:20,961 - core.tracing - INFO - ✅ [0af78936] GET /api/v1/documents/stats → 200 (274.6ms)
-2026-01-16T21:38:20.965977581Z [inf]  INFO:     100.64.0.8:48994 - "GET /api/v1/documents/stats HTTP/1.1" 200 OK
-2026-01-16T21:38:21.048992786Z [err]  2026-01-16 21:38:21,040 - core.tracing - INFO - ➡️  [6466bc44] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:38:21.094201629Z [err]  2026-01-16 21:38:21,090 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:21.141394271Z [err]  2026-01-16 21:38:21,137 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:21.186967633Z [err]  2026-01-16 21:38:21,178 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:38:21.186978303Z [err]  2026-01-16 21:38:21,180 - core.tracing - INFO - ✅ [6466bc44] GET /api/v1/notifications/unread-count → 200 (139.9ms)
-2026-01-16T21:38:21.186985482Z [inf]  INFO:     100.64.0.6:42182 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:38:22.945332637Z [err]  2026-01-16 21:38:22,453 - core.tracing - INFO - ➡️  [f2697508] POST /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:38:22.945338108Z [err]  2026-01-16 21:38:22,499 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:22.945343588Z [err]  2026-01-16 21:38:22,557 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:22.945349108Z [err]  2026-01-16 21:38:22,611 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:22.945354842Z [err]  2026-01-16 21:38:22,656 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:22.945360705Z [err]  2026-01-16 21:38:22,700 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations "HTTP/2 201 Created"
-2026-01-16T21:38:22.945366967Z [err]  2026-01-16 21:38:22,701 - core.tracing - INFO - ✅ [f2697508] POST /api/v1/conversations → 200 (248.7ms)
-2026-01-16T21:38:22.945373392Z [inf]  INFO:     100.64.0.6:42182 - "POST /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:38:23.074851344Z [err]  2026-01-16 21:38:23,040 - core.tracing - INFO - ➡️  [1daf1e90] POST /api/v1/chat (user: eyJhbGci...)
-2026-01-16T21:38:23.101326096Z [err]  2026-01-16 21:38:23,099 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:23.164433031Z [err]  2026-01-16 21:38:23,157 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:23.209924195Z [err]  2026-01-16 21:38:23,202 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:23.251492865Z [err]  2026-01-16 21:38:23,250 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:38:23.303294109Z [err]  2026-01-16 21:38:23,297 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=llm_token_balance&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:23.356385495Z [err]  2026-01-16 21:38:23,348 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?select=llm_tokens_used&org_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:38:24.004284841Z [err]  2026-01-16 21:38:23,638 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
-2026-01-16T21:38:24.004291089Z [err]  2026-01-16 21:38:23,640 - api.v1.chat - INFO - 🛡️ [Chat] Guardrails: lang=en safe=False intent=OFF_TOPIC complexity=SIMPLE
-2026-01-16T21:38:24.004297070Z [err]  2026-01-16 21:38:23,641 - core.tracing - INFO - ✅ [1daf1e90] POST /api/v1/chat → 200 (600.7ms)
-2026-01-16T21:38:24.004302738Z [inf]  INFO:     100.64.0.3:37626 - "POST /api/v1/chat HTTP/1.1" 200 OK
-2026-01-16T21:38:24.004309560Z [err]  2026-01-16 21:38:23,709 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/audit_logs "HTTP/2 201 Created"
-2026-01-16T21:41:29.493047597Z [err]  2026-01-16 21:41:28,065 - core.tracing - INFO - ➡️  [7b6d452f] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:41:29.493057093Z [err]  2026-01-16 21:41:28,249 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:29.493067124Z [err]  2026-01-16 21:41:28,296 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:29.493076323Z [err]  2026-01-16 21:41:28,360 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:29.493090911Z [err]  2026-01-16 21:41:28,426 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:29.493098900Z [err]  2026-01-16 21:41:28,428 - core.tracing - INFO - ✅ [7b6d452f] GET /api/v1/settings/profile → 200 (363.2ms)
-2026-01-16T21:41:29.493106928Z [inf]  INFO:     100.64.0.4:26078 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:41:29.493114652Z [err]  2026-01-16 21:41:28,434 - core.tracing - INFO - ➡️  [b89cfebc] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:41:29.493121319Z [err]  2026-01-16 21:41:28,436 - core.tracing - INFO - ➡️  [18a3b807] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:41:29.493127783Z [err]  2026-01-16 21:41:28,436 - core.tracing - INFO - ➡️  [1afca10f] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:41:29.493133750Z [err]  2026-01-16 21:41:28,437 - core.tracing - INFO - ➡️  [9273ee27] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:41:30.321614574Z [err]  2026-01-16 21:41:28,438 - core.tracing - INFO - ➡️  [628db23e] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:41:30.321622557Z [err]  2026-01-16 21:41:28,439 - core.tracing - INFO - ➡️  [cd711113] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:41:30.321630119Z [err]  2026-01-16 21:41:28,440 - core.tracing - INFO - ➡️  [5deca65a] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:41:30.321636900Z [err]  2026-01-16 21:41:28,440 - core.tracing - INFO - ➡️  [957d03a1] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:41:30.321645651Z [err]  2026-01-16 21:41:28,441 - core.tracing - INFO - ➡️  [925b44ad] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:41:30.321653943Z [err]  2026-01-16 21:41:28,442 - core.tracing - INFO - ➡️  [10d591c8] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:41:30.321661346Z [err]  2026-01-16 21:41:28,482 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.321668690Z [err]  2026-01-16 21:41:28,516 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.321676553Z [err]  2026-01-16 21:41:28,565 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.321684146Z [err]  2026-01-16 21:41:28,591 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.321690701Z [err]  2026-01-16 21:41:28,617 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:30.326701314Z [err]  2026-01-16 21:41:28,648 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.326707727Z [err]  2026-01-16 21:41:28,683 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.326723085Z [err]  2026-01-16 21:41:28,735 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.326729535Z [err]  2026-01-16 21:41:28,771 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.326734738Z [err]  2026-01-16 21:41:28,800 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:30.326740192Z [err]  2026-01-16 21:41:28,835 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.326745381Z [err]  2026-01-16 21:41:28,882 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.326750100Z [err]  2026-01-16 21:41:28,918 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.327478619Z [err]  2026-01-16 21:41:28,944 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.327482829Z [err]  2026-01-16 21:41:28,972 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.327486493Z [err]  2026-01-16 21:41:29,001 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.327489881Z [err]  2026-01-16 21:41:29,048 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:30.327493778Z [err]  2026-01-16 21:41:29,081 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.327498006Z [err]  2026-01-16 21:41:29,122 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.327502009Z [err]  2026-01-16 21:41:29,175 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.327506104Z [err]  2026-01-16 21:41:29,210 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.331827338Z [err]  2026-01-16 21:41:29,234 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.331832759Z [err]  2026-01-16 21:41:29,273 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.331838131Z [err]  2026-01-16 21:41:29,302 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.331843942Z [err]  2026-01-16 21:41:29,332 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:30.331849067Z [err]  2026-01-16 21:41:29,365 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.331853856Z [err]  2026-01-16 21:41:29,393 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.331858809Z [err]  2026-01-16 21:41:29,420 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.331864018Z [err]  2026-01-16 21:41:29,470 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.331869626Z [err]  2026-01-16 21:41:29,498 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:30.335096066Z [err]  2026-01-16 21:41:29,526 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.335103170Z [err]  2026-01-16 21:41:29,585 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.335109409Z [err]  2026-01-16 21:41:29,626 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.335115946Z [err]  2026-01-16 21:41:29,667 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_effective_plan "HTTP/2 400 Bad Request"
-2026-01-16T21:41:30.335124223Z [err]  2026-01-16 21:41:29,668 - services.team_service - WARNING - [TeamService] RPC failed, trying direct query: {'message': 'column "subscription_status" does not exist', 'code': '42703', 'hint': None, 'details': None}
-2026-01-16T21:41:30.335132346Z [err]  2026-01-16 21:41:29,694 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_user_team_data "HTTP/2 404 Not Found"
-2026-01-16T21:41:30.335140789Z [err]  2026-01-16 21:41:29,695 - services.team_service - WARNING - [TeamService] RPC call failed, falling back to sequential queries: {'message': 'Could not find the function public.get_user_team_data(target_user_id) in the schema cache', 'code': 'PGRST202', 'hint': 'Perhaps you meant to call the function public.get_user_team_data(p_user_id)', 'details': 'Searched for the function public.get_user_team_data with parameter target_user_id or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache.'}
-2026-01-16T21:41:30.335177022Z [err]  2026-01-16 21:41:29,719 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.338251560Z [err]  2026-01-16 21:41:29,782 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=plan_type%2Cstatus&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.338257267Z [err]  2026-01-16 21:41:29,784 - services.team_service - INFO - [TeamService] User 94e02b27... has active subscription: enterprise
-2026-01-16T21:41:30.338262949Z [err]  2026-01-16 21:41:29,785 - core.tracing - INFO - ✅ [628db23e] GET /api/v1/settings/profile → 200 (1347.6ms)
-2026-01-16T21:41:30.338268726Z [err]  2026-01-16 21:41:29,786 - core.tracing - INFO - ✅ [925b44ad] GET /api/v1/settings/profile → 200 (1344.9ms)
-2026-01-16T21:41:30.338275214Z [err]  2026-01-16 21:41:29,823 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:41:30.338280827Z [err]  2026-01-16 21:41:29,855 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:41:30.338286894Z [err]  2026-01-16 21:41:29,883 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.338292749Z [err]  2026-01-16 21:41:29,917 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.338300624Z [err]  2026-01-16 21:41:29,951 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.343514029Z [err]  2026-01-16 21:41:29,992 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.343520270Z [err]  2026-01-16 21:41:30,024 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:41:30.343526598Z [err]  2026-01-16 21:41:30,055 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.343532789Z [err]  2026-01-16 21:41:30,104 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.343538416Z [inf]  INFO:     100.64.0.5:22522 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:41:30.343544656Z [inf]  INFO:     100.64.0.8:49546 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:41:30.343552437Z [err]  2026-01-16 21:41:30,111 - core.tracing - INFO - ➡️  [d7ddaf66] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:41:30.343559349Z [err]  2026-01-16 21:41:30,112 - core.tracing - INFO - ✅ [18a3b807] GET /api/v1/usage → 200 (1676.0ms)
-2026-01-16T21:41:30.343565763Z [err]  2026-01-16 21:41:30,112 - core.tracing - INFO - ✅ [1afca10f] GET /api/v1/usage → 200 (1675.8ms)
-2026-01-16T21:41:30.343571987Z [err]  2026-01-16 21:41:30,113 - core.tracing - INFO - ✅ [9273ee27] GET /api/v1/team/effective-plan → 200 (1675.8ms)
-2026-01-16T21:41:30.343578467Z [err]  2026-01-16 21:41:30,113 - core.tracing - INFO - ✅ [cd711113] GET /api/v1/team/effective-plan → 200 (1674.1ms)
-2026-01-16T21:41:30.345419954Z [inf]  INFO:     100.64.0.7:58174 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:41:30.345430655Z [inf]  INFO:     100.64.0.3:58038 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:41:30.345439526Z [inf]  INFO:     100.64.0.10:45704 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:41:30.345448700Z [inf]  INFO:     100.64.0.8:56646 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:41:30.345470005Z [inf]  INFO:     100.64.0.5:22550 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:41:30.345479564Z [err]  2026-01-16 21:41:30,294 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:41:30.345487695Z [err]  2026-01-16 21:41:30,299 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:41:30.345495892Z [err]  2026-01-16 21:41:30,302 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:41:30.345593927Z [err]  2026-01-16 21:41:30,113 - core.tracing - INFO - ✅ [957d03a1] GET /api/v1/usage → 200 (1672.9ms)
-2026-01-16T21:41:30.345600623Z [err]  2026-01-16 21:41:30,114 - core.tracing - INFO - ✅ [10d591c8] GET /api/v1/team/effective-plan → 200 (1672.6ms)
-2026-01-16T21:41:30.345607940Z [err]  2026-01-16 21:41:30,150 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:30.345622714Z [err]  2026-01-16 21:41:30,181 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:30.345629959Z [inf]  INFO:     100.64.0.6:50148 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:41:30.392093204Z [err]  2026-01-16 21:41:30,390 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:41:30.395426783Z [err]  2026-01-16 21:41:30,392 - core.tracing - INFO - ✅ [d7ddaf66] GET /api/v1/billing/plans → 200 (281.1ms)
-2026-01-16T21:41:30.399033471Z [inf]  INFO:     100.64.0.7:58182 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:41:30.399041852Z [err]  2026-01-16 21:41:30,396 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:41:30.407735819Z [err]  2026-01-16 21:41:30,400 - core.tracing - INFO - ✅ [b89cfebc] GET /api/v1/billing/plans → 200 (1965.6ms)
-2026-01-16T21:41:30.407748090Z [inf]  INFO:     100.64.0.6:50142 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:41:30.411231111Z [err]  2026-01-16 21:41:30,406 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:41:30.414762249Z [err]  2026-01-16 21:41:30,409 - core.tracing - INFO - ✅ [5deca65a] GET /api/v1/billing/plans → 200 (1969.6ms)
-2026-01-16T21:41:30.414771197Z [inf]  INFO:     100.64.0.5:22536 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:41:31.017232299Z [err]  2026-01-16 21:41:30,503 - core.tracing - INFO - ➡️  [26147953] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:41:31.017237244Z [err]  2026-01-16 21:41:30,547 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.017241992Z [err]  2026-01-16 21:41:30,593 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:31.017246742Z [err]  2026-01-16 21:41:30,620 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.017256071Z [err]  2026-01-16 21:41:30,670 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:31.017260219Z [err]  2026-01-16 21:41:30,699 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:41:31.017264359Z [err]  2026-01-16 21:41:30,701 - core.tracing - INFO - ✅ [26147953] GET /api/v1/conversations → 200 (197.8ms)
-2026-01-16T21:41:31.017268350Z [inf]  INFO:     100.64.0.7:58182 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:41:31.017272837Z [err]  2026-01-16 21:41:30,710 - core.tracing - INFO - ➡️  [f63890cd] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:41:31.017277201Z [err]  2026-01-16 21:41:30,740 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.021005106Z [err]  2026-01-16 21:41:30,785 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:31.021017513Z [err]  2026-01-16 21:41:30,815 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:31.021025233Z [err]  2026-01-16 21:41:30,843 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.021032380Z [err]  2026-01-16 21:41:30,846 - core.tracing - INFO - ✅ [f63890cd] GET /api/v1/settings/profile → 200 (136.1ms)
-2026-01-16T21:41:31.021040820Z [err]  2026-01-16 21:41:30,847 - core.tracing - INFO - ➡️  [017aada5] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:41:31.021047982Z [err]  2026-01-16 21:41:30,847 - core.tracing - INFO - ➡️  [cbcf2b88] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:41:31.021053643Z [err]  2026-01-16 21:41:30,848 - core.tracing - INFO - ➡️  [1b77e2dc] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:41:31.021060288Z [err]  2026-01-16 21:41:30,849 - core.tracing - INFO - ➡️  [2e416fab] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:41:31.021066558Z [err]  2026-01-16 21:41:30,882 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.021072381Z [err]  2026-01-16 21:41:30,909 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:31.021584800Z [err]  2026-01-16 21:41:30,943 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.021596912Z [err]  2026-01-16 21:41:30,975 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:31.021603467Z [err]  2026-01-16 21:41:31,006 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:41:31.050347131Z [err]  2026-01-16 21:41:31,043 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:41:31.105260580Z [err]  2026-01-16 21:41:31,102 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.151777408Z [err]  2026-01-16 21:41:31,143 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:31.173738395Z [err]  2026-01-16 21:41:31,171 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:41:31.223058395Z [err]  2026-01-16 21:41:31,203 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.238916378Z [err]  2026-01-16 21:41:31,231 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:31.273401820Z [err]  2026-01-16 21:41:31,269 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:31.329685504Z [err]  2026-01-16 21:41:31,313 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:31.347018144Z [err]  2026-01-16 21:41:31,342 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:31.378372528Z [err]  2026-01-16 21:41:31,376 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:41:31.388418693Z [inf]  INFO:     100.64.0.5:22536 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:41:31.388423942Z [err]  2026-01-16 21:41:31,381 - core.tracing - INFO - ✅ [017aada5] GET /api/v1/documents → 200 (533.6ms)
-2026-01-16T21:41:31.388428084Z [err]  2026-01-16 21:41:31,381 - core.tracing - INFO - ✅ [cbcf2b88] GET /api/v1/notifications/unread-count → 200 (533.8ms)
-2026-01-16T21:41:31.388432730Z [err]  2026-01-16 21:41:31,382 - core.tracing - INFO - ✅ [1b77e2dc] GET /api/v1/integrations/status → 200 (533.5ms)
-2026-01-16T21:41:31.388436825Z [err]  2026-01-16 21:41:31,382 - core.tracing - INFO - ✅ [2e416fab] GET /api/v1/integrations/available → 200 (533.2ms)
-2026-01-16T21:41:31.388440974Z [inf]  INFO:     100.64.0.6:50142 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:41:31.388445072Z [inf]  INFO:     100.64.0.4:26078 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:41:31.388448978Z [inf]  INFO:     100.64.0.7:58174 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:41:31.388452998Z [inf]  INFO:     100.64.0.8:56646 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:41:32.223905564Z [err]  2026-01-16 21:41:31,740 - core.tracing - INFO - ➡️  [540cbbdb] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:41:32.223910710Z [err]  2026-01-16 21:41:31,769 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:32.223916370Z [err]  2026-01-16 21:41:31,796 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:32.223921663Z [err]  2026-01-16 21:41:31,836 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:41:32.223926706Z [err]  2026-01-16 21:41:31,839 - core.tracing - INFO - ✅ [540cbbdb] GET /api/v1/notifications/unread-count → 200 (98.8ms)
-2026-01-16T21:41:32.223931444Z [inf]  INFO:     100.64.0.4:26078 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:41:35.323292136Z [err]  2026-01-16 21:41:35,076 - core.tracing - INFO - ➡️  [1ec99d54] POST /api/v1/uploads/upload-url (user: eyJhbGci...)
-2026-01-16T21:41:35.323297579Z [err]  2026-01-16 21:41:35,101 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:35.323304078Z [err]  2026-01-16 21:41:35,131 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:35.323486503Z [err]  2026-01-16 21:41:35,160 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:35.323494249Z [err]  2026-01-16 21:41:35,186 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:35.323519275Z [err]  2026-01-16 21:41:35,237 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:35.323527381Z [err]  2026-01-16 21:41:35,267 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:35.323537326Z [err]  2026-01-16 21:41:35,293 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:35.328797893Z [err]  2026-01-16 21:41:35,323 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:35.351925493Z [err]  2026-01-16 21:41:35,348 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:35.381882379Z [err]  2026-01-16 21:41:35,379 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:41:35.418023690Z [err]  2026-01-16 21:41:35,410 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?select=storage_used_mb%2Cjob_count_cycle&org_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:35.447458258Z [err]  2026-01-16 21:41:35,442 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:35.476448430Z [err]  2026-01-16 21:41:35,466 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=member_user_id&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:35.498687577Z [err]  2026-01-16 21:41:35,494 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=id&user_id=in.%283cbf4dbe-c5a4-4253-b72b-6b89a15859ab%2C94e02b27-3523-42ff-a0c2-858dd8e77f85%29&status=in.%28pending%2Cprocessing%29 "HTTP/2 200 OK"
-2026-01-16T21:41:35.561334628Z [err]  2026-01-16 21:41:35,557 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/upload/sign/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/45439328-71df-4cde-8fef-72a568375fb6/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
-2026-01-16T21:41:35.561347555Z [err]  2026-01-16 21:41:35,558 - api.v1.uploads - INFO - [Upload] Generated presigned URL for CONFIDENTIAL_PROJECT_OMEGA.txt (uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/45439328-71df-4cde-8fef-72a568375fb6/CONFIDENTIAL_PROJECT_OMEGA.txt)
-2026-01-16T21:41:35.561356604Z [err]  2026-01-16 21:41:35,558 - core.tracing - INFO - ✅ [1ec99d54] POST /api/v1/uploads/upload-url → 200 (482.4ms)
-2026-01-16T21:41:35.561392758Z [inf]  INFO:     100.64.0.7:58174 - "POST /api/v1/uploads/upload-url HTTP/1.1" 200 OK
-2026-01-16T21:41:37.301930449Z [err]  2026-01-16 21:41:36,644 - core.tracing - INFO - ➡️  [3cfa2af6] POST /api/v1/uploads/file/reference (user: eyJhbGci...)
-2026-01-16T21:41:37.301937367Z [err]  2026-01-16 21:41:36,682 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:37.301945161Z [err]  2026-01-16 21:41:36,710 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:37.301951625Z [err]  2026-01-16 21:41:36,737 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:37.301957527Z [err]  2026-01-16 21:41:36,763 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:37.301963694Z [err]  2026-01-16 21:41:36,792 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:37.301969716Z [err]  2026-01-16 21:41:36,818 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:37.301975449Z [err]  2026-01-16 21:41:36,909 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/list/ephemeral-staging "HTTP/2 200 OK"
-2026-01-16T21:41:37.301981044Z [err]  2026-01-16 21:41:36,933 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:37.303710918Z [err]  2026-01-16 21:41:36,956 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:37.303717957Z [err]  2026-01-16 21:41:36,988 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:37.303722540Z [err]  2026-01-16 21:41:37,026 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:41:37.303726718Z [err]  2026-01-16 21:41:37,058 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?select=storage_used_mb%2Cjob_count_cycle&org_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:37.303730612Z [err]  2026-01-16 21:41:37,105 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:37.303734853Z [err]  2026-01-16 21:41:37,136 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=member_user_id&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:37.303739416Z [err]  2026-01-16 21:41:37,167 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=id&user_id=in.%283cbf4dbe-c5a4-4253-b72b-6b89a15859ab%2C94e02b27-3523-42ff-a0c2-858dd8e77f85%29&status=in.%28pending%2Cprocessing%29 "HTTP/2 200 OK"
-2026-01-16T21:41:37.303743887Z [err]  2026-01-16 21:41:37,204 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs "HTTP/2 201 Created"
-2026-01-16T21:41:37.305712890Z [err]  2026-01-16 21:41:37,235 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/audit_logs "HTTP/2 201 Created"
-2026-01-16T21:41:37.305722964Z [err]  2026-01-16 21:41:37,267 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?select=storage_used_mb%2Cjob_count_cycle&org_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:37.305734147Z [err]  2026-01-16 21:41:37,295 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?on_conflict=org_id "HTTP/2 200 OK"
-2026-01-16T21:41:37.305740603Z [err]  2026-01-16 21:41:37,296 - services.quotas - INFO - ✅ [Quotas] Incremented usage org=3cbf4dbe-c5a4-4253-b72b-6b89a15859ab storage+=0.00MB jobs+=1
-2026-01-16T21:41:37.305746632Z [err]  2026-01-16 21:41:37,300 - api.v1.uploads - INFO - [Upload] Unified task queued: CONFIDENTIAL_PROJECT_OMEGA.txt, task=7dd6a28f-b9b2-4b24-94c6-f982588fb076
-2026-01-16T21:41:37.305752909Z [err]  2026-01-16 21:41:37,301 - core.tracing - INFO - ✅ [3cfa2af6] POST /api/v1/uploads/file/reference → 200 (656.9ms)
-2026-01-16T21:41:37.305758021Z [inf]  INFO:     100.64.0.4:46776 - "POST /api/v1/uploads/file/reference HTTP/1.1" 200 OK
-2026-01-16T21:41:57.292346623Z [inf]  Fri Jan 16 21:41:55 2026 -> SelfCheck: Database status OK.
-2026-01-16T21:41:57.292352902Z [err]  2026-01-16 21:41:55,504 - core.tracing - INFO - ➡️  [fb11089f] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:41:57.292359922Z [err]  2026-01-16 21:41:55,565 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.292366993Z [err]  2026-01-16 21:41:55,612 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.292374266Z [err]  2026-01-16 21:41:55,639 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:57.292380550Z [err]  2026-01-16 21:41:55,671 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.292388501Z [err]  2026-01-16 21:41:55,702 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.292394578Z [err]  2026-01-16 21:41:55,740 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:41:57.292400301Z [err]  2026-01-16 21:41:55,743 - core.tracing - INFO - ✅ [fb11089f] GET /api/v1/usage → 200 (238.9ms)
-2026-01-16T21:41:57.292406946Z [inf]  INFO:     100.64.0.4:42060 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:41:57.306280377Z [err]  2026-01-16 21:41:55,748 - core.tracing - INFO - ➡️  [ed68687c] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:41:57.306288176Z [err]  2026-01-16 21:41:55,749 - core.tracing - INFO - ➡️  [f2d5cb61] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:41:57.306295505Z [err]  2026-01-16 21:41:55,751 - core.tracing - INFO - ➡️  [4c639e21] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:41:57.306304459Z [err]  2026-01-16 21:41:55,779 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306309374Z [err]  2026-01-16 21:41:57,082 - core.tracing - INFO - ✅ [3a81763a] GET /api/v1/documents → 200 (344.0ms)
-2026-01-16T21:41:57.306310879Z [err]  2026-01-16 21:41:55,826 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306320601Z [err]  2026-01-16 21:41:55,891 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306323498Z [err]  2026-01-16 21:41:57,083 - core.tracing - INFO - ➡️  [e51db77a] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:41:57.306333935Z [err]  2026-01-16 21:41:55,921 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306336239Z [err]  2026-01-16 21:41:57,083 - core.tracing - INFO - ✅ [25b29b61] GET /api/v1/notifications/unread-count → 200 (105.2ms)
-2026-01-16T21:41:57.306342237Z [err]  2026-01-16 21:41:55,952 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306348106Z [err]  2026-01-16 21:41:57,112 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306352308Z [err]  2026-01-16 21:41:55,986 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306360658Z [err]  2026-01-16 21:41:56,023 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306361523Z [err]  2026-01-16 21:41:57,155 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306371408Z [err]  2026-01-16 21:41:57,211 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:41:57.306529809Z [inf]  INFO:     100.64.0.7:25266 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:41:57.306539613Z [inf]  INFO:     100.64.0.8:24104 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:41:57.306545018Z [err]  2026-01-16 21:41:57,219 - core.tracing - INFO - ✅ [e51db77a] GET /api/v1/integrations/available → 200 (135.7ms)
-2026-01-16T21:41:57.306550195Z [err]  2026-01-16 21:41:57,219 - core.tracing - INFO - ➡️  [f08abc0c] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:41:57.306554762Z [err]  2026-01-16 21:41:57,220 - core.tracing - INFO - ➡️  [d1ce8971] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:41:57.306559191Z [err]  2026-01-16 21:41:57,258 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306660757Z [err]  2026-01-16 21:41:56,060 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306667811Z [err]  2026-01-16 21:41:56,099 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306674655Z [err]  2026-01-16 21:41:56,215 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306681846Z [err]  2026-01-16 21:41:56,220 - core.tracing - INFO - ✅ [f2d5cb61] GET /api/v1/settings/profile → 200 (470.0ms)
-2026-01-16T21:41:57.306688285Z [err]  2026-01-16 21:41:56,221 - core.tracing - INFO - ✅ [4c639e21] GET /api/v1/team/effective-plan → 200 (470.3ms)
-2026-01-16T21:41:57.306695014Z [inf]  INFO:     100.64.0.7:25266 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:41:57.306702598Z [inf]  INFO:     100.64.0.5:36450 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:41:57.306708739Z [err]  2026-01-16 21:41:56,299 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:41:57.306715799Z [err]  2026-01-16 21:41:56,410 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:41:57.306723226Z [err]  2026-01-16 21:41:56,415 - core.tracing - INFO - ✅ [ed68687c] GET /api/v1/billing/plans → 200 (666.7ms)
-2026-01-16T21:41:57.306730278Z [inf]  INFO:     100.64.0.8:24104 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:41:57.306737606Z [err]  2026-01-16 21:41:56,529 - core.tracing - INFO - ➡️  [2122cf33] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:41:57.306853190Z [err]  2026-01-16 21:41:56,559 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306860222Z [err]  2026-01-16 21:41:56,593 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306868846Z [err]  2026-01-16 21:41:56,625 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306879987Z [err]  2026-01-16 21:41:56,662 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306887643Z [err]  2026-01-16 21:41:56,732 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:41:57.306894749Z [inf]  INFO:     100.64.0.4:42060 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:41:57.306902923Z [err]  2026-01-16 21:41:56,734 - core.tracing - INFO - ✅ [2122cf33] GET /api/v1/conversations → 200 (205.0ms)
-2026-01-16T21:41:57.306910164Z [err]  2026-01-16 21:41:56,738 - core.tracing - INFO - ➡️  [3a81763a] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:41:57.306916384Z [err]  2026-01-16 21:41:56,773 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306923542Z [err]  2026-01-16 21:41:56,832 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306958454Z [err]  2026-01-16 21:41:56,870 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306965943Z [err]  2026-01-16 21:41:56,904 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.306975022Z [err]  2026-01-16 21:41:56,937 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:41:57.306982217Z [err]  2026-01-16 21:41:56,976 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:41:57.306989299Z [err]  2026-01-16 21:41:56,978 - core.tracing - INFO - ➡️  [25b29b61] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:41:57.306996834Z [err]  2026-01-16 21:41:57,012 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:57.307003865Z [err]  2026-01-16 21:41:57,049 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.307011444Z [err]  2026-01-16 21:41:57,079 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:41:57.308768850Z [err]  2026-01-16 21:41:57,294 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:57.341053629Z [err]  2026-01-16 21:41:57,332 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:57.373366879Z [err]  2026-01-16 21:41:57,370 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:58.188340615Z [err]  2026-01-16 21:41:57,424 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:58.188348686Z [err]  2026-01-16 21:41:57,455 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:58.188356320Z [err]  2026-01-16 21:41:57,485 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:41:58.188363664Z [inf]  INFO:     100.64.0.5:36450 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:41:58.188371635Z [err]  2026-01-16 21:41:57,488 - core.tracing - INFO - ✅ [f08abc0c] GET /api/v1/settings/profile → 200 (268.1ms)
-2026-01-16T21:41:58.188378775Z [err]  2026-01-16 21:41:57,488 - core.tracing - INFO - ✅ [d1ce8971] GET /api/v1/integrations/status → 200 (267.9ms)
-2026-01-16T21:41:58.188385741Z [inf]  INFO:     100.64.0.6:35896 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:41:58.188395974Z [inf]  INFO:     100.64.0.6:35898 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:41:58.188402780Z [err]  2026-01-16 21:41:57,851 - core.tracing - INFO - ➡️  [1299fcfa] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:41:58.188410990Z [err]  2026-01-16 21:41:57,881 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:41:58.188419649Z [err]  2026-01-16 21:41:57,915 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:41:58.201720733Z [err]  2026-01-16 21:41:57,945 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:41:58.201737843Z [err]  2026-01-16 21:41:57,947 - core.tracing - INFO - ✅ [1299fcfa] GET /api/v1/notifications/unread-count → 200 (96.0ms)
-2026-01-16T21:41:58.201748967Z [inf]  INFO:     100.64.0.5:36450 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:07.240937773Z [err]  2026-01-16 21:42:06,576 - core.tracing - INFO - ➡️  [c9c09cc7] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:42:07.240945850Z [err]  2026-01-16 21:42:06,636 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:07.240952482Z [err]  2026-01-16 21:42:06,686 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:07.240977447Z [err]  2026-01-16 21:42:06,699 - core.tracing - INFO - ➡️  [1d326383] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:42:07.240993622Z [err]  2026-01-16 21:42:06,699 - core.tracing - INFO - ➡️  [a33bef83] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:07.241001482Z [err]  2026-01-16 21:42:06,700 - core.tracing - INFO - ➡️  [49b75265] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:42:07.241012534Z [err]  2026-01-16 21:42:06,748 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:07.241019397Z [err]  2026-01-16 21:42:06,774 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:07.241026670Z [err]  2026-01-16 21:42:06,813 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:07.241035396Z [err]  2026-01-16 21:42:06,845 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:07.255608560Z [err]  2026-01-16 21:42:06,873 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:07.255628076Z [err]  2026-01-16 21:42:06,903 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:42:07.255635856Z [err]  2026-01-16 21:42:06,935 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:07.255651272Z [err]  2026-01-16 21:42:06,964 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:07.255658029Z [err]  2026-01-16 21:42:07,002 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:07.255665324Z [err]  2026-01-16 21:42:07,026 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:07.255672604Z [err]  2026-01-16 21:42:07,056 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:07.255678376Z [err]  2026-01-16 21:42:07,085 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:07.255708920Z [err]  2026-01-16 21:42:07,113 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:07.255715264Z [err]  2026-01-16 21:42:07,141 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:07.255721916Z [err]  2026-01-16 21:42:07,143 - core.tracing - INFO - ✅ [1d326383] GET /api/v1/usage → 200 (444.1ms)
-2026-01-16T21:42:07.255729412Z [err]  2026-01-16 21:42:07,143 - core.tracing - INFO - ✅ [a33bef83] GET /api/v1/settings/profile → 200 (443.9ms)
-2026-01-16T21:42:07.255736438Z [err]  2026-01-16 21:42:07,144 - core.tracing - INFO - ✅ [49b75265] GET /api/v1/team/effective-plan → 200 (443.6ms)
-2026-01-16T21:42:07.255744069Z [inf]  INFO:     100.64.0.4:51580 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:42:07.255752828Z [inf]  INFO:     100.64.0.6:37814 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:07.255760760Z [inf]  INFO:     100.64.0.7:50538 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:42:07.255774063Z [err]  2026-01-16 21:42:07,243 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:42:07.326819782Z [err]  2026-01-16 21:42:07,321 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:42:07.326828744Z [err]  2026-01-16 21:42:07,322 - core.tracing - INFO - ✅ [c9c09cc7] GET /api/v1/billing/plans → 200 (746.5ms)
-2026-01-16T21:42:07.326836223Z [inf]  INFO:     100.64.0.6:37802 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:42:08.086034968Z [err]  2026-01-16 21:42:07,535 - core.tracing - INFO - ➡️  [e2478171] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:42:08.086047913Z [err]  2026-01-16 21:42:07,559 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.086056533Z [err]  2026-01-16 21:42:07,584 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:08.086062918Z [err]  2026-01-16 21:42:07,609 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.086070807Z [err]  2026-01-16 21:42:07,640 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:08.086076863Z [err]  2026-01-16 21:42:07,669 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:42:08.086082736Z [err]  2026-01-16 21:42:07,671 - core.tracing - INFO - ✅ [e2478171] GET /api/v1/conversations → 200 (136.3ms)
-2026-01-16T21:42:08.086088737Z [err]  2026-01-16 21:42:07,672 - core.tracing - INFO - ➡️  [9188636f] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:42:08.086094299Z [err]  2026-01-16 21:42:07,702 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.103309513Z [err]  2026-01-16 21:42:07,826 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:42:08.103318667Z [err]  2026-01-16 21:42:07,861 - core.tracing - INFO - ➡️  [ff5927fc] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:42:08.103350502Z [err]  2026-01-16 21:42:07,857 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:42:08.103366308Z [inf]  INFO:     100.64.0.5:20882 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:42:08.103370116Z [err]  2026-01-16 21:42:07,902 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.103382501Z [err]  2026-01-16 21:42:07,731 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:08.103398541Z [err]  2026-01-16 21:42:07,860 - core.tracing - INFO - ✅ [9188636f] GET /api/v1/documents → 200 (188.2ms)
-2026-01-16T21:42:08.103403491Z [err]  2026-01-16 21:42:07,761 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.103410359Z [err]  2026-01-16 21:42:07,799 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:08.109229118Z [err]  2026-01-16 21:42:07,929 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:08.109240903Z [err]  2026-01-16 21:42:07,968 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:42:08.109248365Z [inf]  INFO:     100.64.0.7:50538 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:42:08.109256104Z [err]  2026-01-16 21:42:07,974 - core.tracing - INFO - ✅ [ff5927fc] GET /api/v1/integrations/available → 200 (113.1ms)
-2026-01-16T21:42:08.109262865Z [err]  2026-01-16 21:42:07,976 - core.tracing - INFO - ➡️  [b86446d2] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:08.109270607Z [err]  2026-01-16 21:42:07,976 - core.tracing - INFO - ➡️  [d49d14db] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:42:08.109277741Z [err]  2026-01-16 21:42:07,977 - core.tracing - INFO - ➡️  [a966c2ab] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:08.109288766Z [err]  2026-01-16 21:42:08,016 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.109295327Z [err]  2026-01-16 21:42:08,054 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:08.109304845Z [err]  2026-01-16 21:42:08,100 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:08.163421352Z [err]  2026-01-16 21:42:08,140 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.174964142Z [err]  2026-01-16 21:42:08,172 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.211804205Z [err]  2026-01-16 21:42:08,199 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:08.249634435Z [err]  2026-01-16 21:42:08,240 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:08.276780050Z [err]  2026-01-16 21:42:08,268 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:08.305423769Z [err]  2026-01-16 21:42:08,294 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:08.335379585Z [err]  2026-01-16 21:42:08,326 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:08.335392845Z [inf]  INFO:     100.64.0.6:37802 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:42:08.335402605Z [err]  2026-01-16 21:42:08,330 - core.tracing - INFO - ✅ [b86446d2] GET /api/v1/settings/profile → 200 (354.4ms)
-2026-01-16T21:42:08.335412990Z [err]  2026-01-16 21:42:08,331 - core.tracing - INFO - ✅ [d49d14db] GET /api/v1/integrations/status → 200 (354.3ms)
-2026-01-16T21:42:08.335422855Z [err]  2026-01-16 21:42:08,331 - core.tracing - INFO - ✅ [a966c2ab] GET /api/v1/notifications/unread-count → 200 (354.1ms)
-2026-01-16T21:42:08.335434524Z [inf]  INFO:     100.64.0.8:21658 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:08.335444806Z [inf]  INFO:     100.64.0.5:20892 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:42:08.340099595Z [inf]  INFO:     100.64.0.8:21662 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:09.272547677Z [err]  2026-01-16 21:42:08,707 - core.tracing - INFO - ➡️  [57b293c7] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:09.272561222Z [err]  2026-01-16 21:42:08,742 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:09.272569437Z [err]  2026-01-16 21:42:08,769 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:09.272582214Z [err]  2026-01-16 21:42:08,821 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:09.272591668Z [err]  2026-01-16 21:42:08,823 - core.tracing - INFO - ✅ [57b293c7] GET /api/v1/notifications/unread-count → 200 (115.9ms)
-2026-01-16T21:42:09.272599246Z [inf]  INFO:     100.64.0.6:37802 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:17.836048437Z [err]  2026-01-16 21:42:17,629 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:17.836059786Z [err]  2026-01-16 21:42:17,643 - core.tracing - INFO - ➡️  [4a54103b] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:42:17.836067427Z [err]  2026-01-16 21:42:17,643 - core.tracing - INFO - ➡️  [924345f9] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:42:17.836078877Z [err]  2026-01-16 21:42:17,644 - core.tracing - INFO - ➡️  [ab2084fd] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:17.836085531Z [err]  2026-01-16 21:42:17,678 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:17.836092134Z [err]  2026-01-16 21:42:17,715 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:17.836116012Z [err]  2026-01-16 21:42:17,539 - core.tracing - INFO - ➡️  [a617cbb3] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:42:17.836121162Z [err]  2026-01-16 21:42:17,595 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:17.836143271Z [err]  2026-01-16 21:42:17,743 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:17.836152253Z [err]  2026-01-16 21:42:17,770 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:17.839606174Z [err]  2026-01-16 21:42:17,797 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:17.839617828Z [err]  2026-01-16 21:42:17,826 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:17.866758417Z [err]  2026-01-16 21:42:17,855 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:17.918330303Z [err]  2026-01-16 21:42:17,913 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.652080248Z [err]  2026-01-16 21:42:17,989 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.652084890Z [err]  2026-01-16 21:42:18,022 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:42:18.652089538Z [err]  2026-01-16 21:42:18,054 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.652094328Z [err]  2026-01-16 21:42:18,089 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:18.652099152Z [err]  2026-01-16 21:42:18,131 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:18.652103898Z [err]  2026-01-16 21:42:18,167 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.652108664Z [err]  2026-01-16 21:42:18,170 - core.tracing - INFO - ✅ [4a54103b] GET /api/v1/team/effective-plan → 200 (526.9ms)
-2026-01-16T21:42:18.652113597Z [err]  2026-01-16 21:42:18,170 - core.tracing - INFO - ✅ [924345f9] GET /api/v1/usage → 200 (526.5ms)
-2026-01-16T21:42:18.652117970Z [err]  2026-01-16 21:42:18,170 - core.tracing - INFO - ✅ [ab2084fd] GET /api/v1/settings/profile → 200 (526.2ms)
-2026-01-16T21:42:18.652125958Z [inf]  INFO:     100.64.0.5:35932 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:42:18.655502497Z [inf]  INFO:     100.64.0.8:42732 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:42:18.655515380Z [inf]  INFO:     100.64.0.8:42740 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:18.655528796Z [err]  2026-01-16 21:42:18,263 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:42:18.655536314Z [err]  2026-01-16 21:42:18,370 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:42:18.655542572Z [err]  2026-01-16 21:42:18,372 - core.tracing - INFO - ✅ [a617cbb3] GET /api/v1/billing/plans → 200 (833.2ms)
-2026-01-16T21:42:18.655549562Z [inf]  INFO:     100.64.0.6:11054 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:42:18.655555890Z [err]  2026-01-16 21:42:18,464 - core.tracing - INFO - ➡️  [cab13ca6] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:42:18.655563040Z [err]  2026-01-16 21:42:18,493 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.655570023Z [err]  2026-01-16 21:42:18,555 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:18.655578293Z [err]  2026-01-16 21:42:18,589 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.655583371Z [err]  2026-01-16 21:42:18,620 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:18.655902621Z [err]  2026-01-16 21:42:18,648 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:42:18.655910096Z [err]  2026-01-16 21:42:18,649 - core.tracing - INFO - ✅ [cab13ca6] GET /api/v1/conversations → 200 (185.2ms)
-2026-01-16T21:42:18.655915907Z [inf]  INFO:     100.64.0.8:42740 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:42:18.704206711Z [err]  2026-01-16 21:42:18,689 - core.tracing - INFO - ➡️  [a63c7437] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:18.732623320Z [err]  2026-01-16 21:42:18,721 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.752920035Z [err]  2026-01-16 21:42:18,751 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:18.799758092Z [err]  2026-01-16 21:42:18,783 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:18.799765450Z [err]  2026-01-16 21:42:18,788 - core.tracing - INFO - ➡️  [17a03a3f] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:18.829613629Z [err]  2026-01-16 21:42:18,819 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.857412527Z [err]  2026-01-16 21:42:18,854 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:18.907511659Z [err]  2026-01-16 21:42:18,899 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:18.939470266Z [err]  2026-01-16 21:42:18,927 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:18.939478890Z [err]  2026-01-16 21:42:18,929 - core.tracing - INFO - ✅ [a63c7437] GET /api/v1/notifications/unread-count → 200 (239.4ms)
-2026-01-16T21:42:18.939485027Z [err]  2026-01-16 21:42:18,930 - core.tracing - INFO - ➡️  [1aeb9917] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:42:18.939491292Z [err]  2026-01-16 21:42:18,930 - core.tracing - INFO - ✅ [17a03a3f] GET /api/v1/settings/profile → 200 (142.6ms)
-2026-01-16T21:42:19.614823337Z [err]  2026-01-16 21:42:18,972 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:19.614829133Z [err]  2026-01-16 21:42:19,017 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:19.614912703Z [err]  2026-01-16 21:42:19,072 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:42:19.614931730Z [inf]  INFO:     100.64.0.6:11054 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:19.614945126Z [inf]  INFO:     100.64.0.5:35932 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:19.614951480Z [err]  2026-01-16 21:42:19,077 - core.tracing - INFO - ✅ [1aeb9917] GET /api/v1/integrations/available → 200 (147.0ms)
-2026-01-16T21:42:19.614957319Z [err]  2026-01-16 21:42:19,078 - core.tracing - INFO - ➡️  [1b670b79] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:42:19.614962958Z [err]  2026-01-16 21:42:19,079 - core.tracing - INFO - ➡️  [a5c8d980] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:42:19.614968688Z [err]  2026-01-16 21:42:19,106 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:19.614974605Z [err]  2026-01-16 21:42:19,144 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:19.614981362Z [err]  2026-01-16 21:42:19,179 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:19.617614202Z [err]  2026-01-16 21:42:19,206 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:19.617627127Z [err]  2026-01-16 21:42:19,239 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:42:19.617635984Z [err]  2026-01-16 21:42:19,276 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:42:19.617642488Z [err]  2026-01-16 21:42:19,308 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:19.617648920Z [err]  2026-01-16 21:42:19,381 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:19.617656228Z [err]  2026-01-16 21:42:19,418 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:19.617662590Z [inf]  INFO:     100.64.0.8:42732 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:42:19.617669471Z [err]  2026-01-16 21:42:19,421 - core.tracing - INFO - ✅ [1b670b79] GET /api/v1/documents → 200 (343.8ms)
-2026-01-16T21:42:19.619441400Z [err]  2026-01-16 21:42:19,422 - core.tracing - INFO - ✅ [a5c8d980] GET /api/v1/integrations/status → 200 (342.8ms)
-2026-01-16T21:42:19.619452320Z [inf]  INFO:     100.64.0.6:11060 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:42:19.619459056Z [inf]  INFO:     100.64.0.4:47984 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:42:19.619464496Z [err]  2026-01-16 21:42:19,429 - core.tracing - INFO - ➡️  [9616de26] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:19.619470081Z [err]  2026-01-16 21:42:19,459 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:19.619476193Z [err]  2026-01-16 21:42:19,499 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:19.619481656Z [err]  2026-01-16 21:42:19,540 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:19.619487389Z [err]  2026-01-16 21:42:19,542 - core.tracing - INFO - ✅ [9616de26] GET /api/v1/notifications/unread-count → 200 (113.0ms)
-2026-01-16T21:42:19.619492732Z [inf]  INFO:     100.64.0.6:11054 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:29.322972056Z [err]  2026-01-16 21:42:28,506 - core.tracing - INFO - ➡️  [9b61dea2] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:42:29.322976975Z [err]  2026-01-16 21:42:28,605 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:29.322982387Z [err]  2026-01-16 21:42:28,654 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:29.322988675Z [err]  2026-01-16 21:42:28,693 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:29.322993609Z [err]  2026-01-16 21:42:28,732 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:29.322998621Z [err]  2026-01-16 21:42:28,774 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:29.323003363Z [err]  2026-01-16 21:42:28,816 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:42:29.323009660Z [err]  2026-01-16 21:42:28,818 - core.tracing - INFO - ✅ [9b61dea2] GET /api/v1/usage → 200 (311.9ms)
-2026-01-16T21:42:29.323014744Z [inf]  INFO:     100.64.0.6:53752 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:42:29.323019537Z [err]  2026-01-16 21:42:28,822 - core.tracing - INFO - ➡️  [ffab9620] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:42:29.388254674Z [err]  2026-01-16 21:42:28,823 - core.tracing - INFO - ➡️  [7711b3a6] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:42:29.388268249Z [err]  2026-01-16 21:42:28,824 - core.tracing - INFO - ➡️  [a1845a31] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:29.388318469Z [err]  2026-01-16 21:42:28,860 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:29.388325915Z [err]  2026-01-16 21:42:28,917 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:29.388331048Z [err]  2026-01-16 21:42:28,967 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:29.388336123Z [err]  2026-01-16 21:42:29,006 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:29.388341036Z [err]  2026-01-16 21:42:29,051 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:29.388346394Z [err]  2026-01-16 21:42:29,091 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:29.388351562Z [err]  2026-01-16 21:42:29,131 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:29.388415589Z [err]  2026-01-16 21:42:29,166 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:29.388422856Z [err]  2026-01-16 21:42:29,234 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:29.388429508Z [err]  2026-01-16 21:42:29,273 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:29.388435966Z [err]  2026-01-16 21:42:29,274 - core.tracing - INFO - ✅ [7711b3a6] GET /api/v1/team/effective-plan → 200 (451.3ms)
-2026-01-16T21:42:29.388442355Z [err]  2026-01-16 21:42:29,275 - core.tracing - INFO - ✅ [a1845a31] GET /api/v1/settings/profile → 200 (451.1ms)
-2026-01-16T21:42:29.388451985Z [inf]  INFO:     100.64.0.8:49408 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:42:29.388459994Z [inf]  INFO:     100.64.0.5:30234 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:29.388891658Z [err]  2026-01-16 21:42:29,357 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:42:30.199994990Z [err]  2026-01-16 21:42:29,458 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:42:30.200001466Z [err]  2026-01-16 21:42:29,460 - core.tracing - INFO - ✅ [ffab9620] GET /api/v1/billing/plans → 200 (637.9ms)
-2026-01-16T21:42:30.200007044Z [inf]  INFO:     100.64.0.6:53764 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:42:30.200012439Z [err]  2026-01-16 21:42:29,601 - core.tracing - INFO - ➡️  [f565dc0a] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:42:30.200018095Z [err]  2026-01-16 21:42:29,635 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.200025467Z [err]  2026-01-16 21:42:29,672 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:30.200030896Z [err]  2026-01-16 21:42:29,711 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.200036209Z [err]  2026-01-16 21:42:29,747 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:30.200041706Z [err]  2026-01-16 21:42:29,788 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:42:30.200047757Z [err]  2026-01-16 21:42:29,791 - core.tracing - INFO - ✅ [f565dc0a] GET /api/v1/conversations → 200 (189.8ms)
-2026-01-16T21:42:30.252560927Z [err]  2026-01-16 21:42:29,792 - core.tracing - INFO - ➡️  [0d81f06e] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:42:30.252574366Z [err]  2026-01-16 21:42:29,793 - core.tracing - INFO - ➡️  [dea07b47] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:30.252583140Z [err]  2026-01-16 21:42:29,794 - core.tracing - INFO - ➡️  [6ce4c9b4] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:30.252590139Z [err]  2026-01-16 21:42:29,830 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.252598090Z [err]  2026-01-16 21:42:29,864 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:30.252605370Z [err]  2026-01-16 21:42:29,898 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.252614136Z [err]  2026-01-16 21:42:29,951 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:30.252622614Z [err]  2026-01-16 21:42:29,990 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.252629618Z [err]  2026-01-16 21:42:30,038 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:30.252636436Z [err]  2026-01-16 21:42:30,077 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:30.252760837Z [err]  2026-01-16 21:42:30,133 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.252768051Z [inf]  INFO:     100.64.0.8:49408 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:42:30.252776664Z [err]  2026-01-16 21:42:30,181 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_effective_plan "HTTP/2 400 Bad Request"
-2026-01-16T21:42:30.252783683Z [err]  2026-01-16 21:42:30,182 - services.team_service - WARNING - [TeamService] RPC failed, trying direct query: {'message': 'column "subscription_status" does not exist', 'code': '42703', 'hint': None, 'details': None}
-2026-01-16T21:42:30.270755630Z [err]  2026-01-16 21:42:30,232 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_user_team_data "HTTP/2 404 Not Found"
-2026-01-16T21:42:30.270765479Z [err]  2026-01-16 21:42:30,233 - services.team_service - WARNING - [TeamService] RPC call failed, falling back to sequential queries: {'message': 'Could not find the function public.get_user_team_data(target_user_id) in the schema cache', 'code': 'PGRST202', 'hint': 'Perhaps you meant to call the function public.get_user_team_data(p_user_id)', 'details': 'Searched for the function public.get_user_team_data with parameter target_user_id or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache.'}
-2026-01-16T21:42:30.273210835Z [err]  2026-01-16 21:42:30,271 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.331223659Z [err]  2026-01-16 21:42:30,309 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=plan_type%2Cstatus&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.331233219Z [err]  2026-01-16 21:42:30,310 - services.team_service - INFO - [TeamService] User 94e02b27... has active subscription: enterprise
-2026-01-16T21:42:30.331242409Z [err]  2026-01-16 21:42:30,311 - core.tracing - INFO - ✅ [6ce4c9b4] GET /api/v1/settings/profile → 200 (517.0ms)
-2026-01-16T21:42:30.363044173Z [err]  2026-01-16 21:42:30,356 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.401089440Z [err]  2026-01-16 21:42:30,395 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:30.903453194Z [err]  2026-01-16 21:42:30,438 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:42:30.903459173Z [err]  2026-01-16 21:42:30,479 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:42:30.903464699Z [err]  2026-01-16 21:42:30,520 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:30.903470785Z [inf]  INFO:     100.64.0.6:53752 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:30.903476278Z [err]  2026-01-16 21:42:30,524 - core.tracing - INFO - ➡️  [fd4ec37b] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:42:30.903481673Z [err]  2026-01-16 21:42:30,524 - core.tracing - INFO - ➡️  [c615fb81] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:42:30.903488330Z [err]  2026-01-16 21:42:30,524 - core.tracing - INFO - ✅ [0d81f06e] GET /api/v1/documents → 200 (732.4ms)
-2026-01-16T21:42:30.903494262Z [err]  2026-01-16 21:42:30,525 - core.tracing - INFO - ✅ [dea07b47] GET /api/v1/notifications/unread-count → 200 (732.0ms)
-2026-01-16T21:42:30.903500452Z [err]  2026-01-16 21:42:30,557 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.903505778Z [err]  2026-01-16 21:42:30,595 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:30.905927144Z [err]  2026-01-16 21:42:30,647 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:30.905934933Z [err]  2026-01-16 21:42:30,685 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:30.905939657Z [err]  2026-01-16 21:42:30,720 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:30.905943622Z [err]  2026-01-16 21:42:30,755 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:42:30.905947785Z [inf]  INFO:     100.64.0.5:30234 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:42:30.905952434Z [inf]  INFO:     100.64.0.6:53764 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:30.905957138Z [err]  2026-01-16 21:42:30,759 - core.tracing - INFO - ✅ [fd4ec37b] GET /api/v1/integrations/status → 200 (235.8ms)
-2026-01-16T21:42:30.905961832Z [err]  2026-01-16 21:42:30,760 - core.tracing - INFO - ✅ [c615fb81] GET /api/v1/integrations/available → 200 (235.7ms)
-2026-01-16T21:42:30.905966845Z [inf]  INFO:     100.64.0.5:30244 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:42:30.905971862Z [inf]  INFO:     100.64.0.4:42646 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:42:31.027997295Z [err]  2026-01-16 21:42:31,026 - core.tracing - INFO - ➡️  [d60201a3] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:31.070825222Z [err]  2026-01-16 21:42:31,061 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:31.114772853Z [err]  2026-01-16 21:42:31,097 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:31.156199306Z [err]  2026-01-16 21:42:31,144 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:31.156207045Z [err]  2026-01-16 21:42:31,146 - core.tracing - INFO - ✅ [d60201a3] GET /api/v1/notifications/unread-count → 200 (120.2ms)
-2026-01-16T21:42:31.156212042Z [inf]  INFO:     100.64.0.5:30244 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:40.057946988Z [err]  2026-01-16 21:42:39,582 - core.tracing - INFO - ➡️  [444805a4] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:42:40.057955957Z [err]  2026-01-16 21:42:39,652 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.057961469Z [err]  2026-01-16 21:42:39,696 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:40.057967122Z [err]  2026-01-16 21:42:39,710 - core.tracing - INFO - ➡️  [61515c13] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:42:40.057973560Z [err]  2026-01-16 21:42:39,711 - core.tracing - INFO - ➡️  [1a244ea4] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:40.057978424Z [err]  2026-01-16 21:42:39,712 - core.tracing - INFO - ➡️  [116c9b0b] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:42:40.057983413Z [err]  2026-01-16 21:42:39,750 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.057988592Z [err]  2026-01-16 21:42:39,794 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:40.057993173Z [err]  2026-01-16 21:42:39,837 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.057997438Z [err]  2026-01-16 21:42:39,877 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:40.061446437Z [err]  2026-01-16 21:42:39,917 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.061455033Z [err]  2026-01-16 21:42:39,956 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:40.061462584Z [err]  2026-01-16 21:42:39,993 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:40.061468721Z [err]  2026-01-16 21:42:40,044 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.098090730Z [err]  2026-01-16 21:42:40,096 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.180467772Z [err]  2026-01-16 21:42:40,149 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:40.187970204Z [err]  2026-01-16 21:42:40,184 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:40.224927345Z [err]  2026-01-16 21:42:40,222 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.271029968Z [err]  2026-01-16 21:42:40,266 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.317628305Z [err]  2026-01-16 21:42:40,304 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:42:40.317638148Z [err]  2026-01-16 21:42:40,306 - core.tracing - INFO - ✅ [61515c13] GET /api/v1/team/effective-plan → 200 (596.0ms)
-2026-01-16T21:42:40.317645454Z [err]  2026-01-16 21:42:40,306 - core.tracing - INFO - ✅ [1a244ea4] GET /api/v1/settings/profile → 200 (595.2ms)
-2026-01-16T21:42:40.317652147Z [err]  2026-01-16 21:42:40,307 - core.tracing - INFO - ✅ [116c9b0b] GET /api/v1/usage → 200 (594.7ms)
-2026-01-16T21:42:40.317658661Z [inf]  INFO:     100.64.0.6:43678 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:42:40.317666449Z [inf]  INFO:     100.64.0.5:50086 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:40.317673206Z [inf]  INFO:     100.64.0.8:10572 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:42:40.379953740Z [err]  2026-01-16 21:42:40,375 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:42:40.452745696Z [err]  2026-01-16 21:42:40,441 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:42:40.452753448Z [err]  2026-01-16 21:42:40,443 - core.tracing - INFO - ✅ [444805a4] GET /api/v1/billing/plans → 200 (860.5ms)
-2026-01-16T21:42:40.452758806Z [inf]  INFO:     100.64.0.4:61474 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:42:40.943518355Z [err]  2026-01-16 21:42:40,604 - core.tracing - INFO - ➡️  [d7b7c804] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:42:40.943530051Z [err]  2026-01-16 21:42:40,702 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.943537758Z [err]  2026-01-16 21:42:40,767 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:40.943544500Z [err]  2026-01-16 21:42:40,806 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.943551574Z [err]  2026-01-16 21:42:40,851 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:40.943558283Z [err]  2026-01-16 21:42:40,887 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:42:40.943564246Z [err]  2026-01-16 21:42:40,890 - core.tracing - INFO - ✅ [d7b7c804] GET /api/v1/conversations → 200 (286.1ms)
-2026-01-16T21:42:40.943571895Z [err]  2026-01-16 21:42:40,891 - core.tracing - INFO - ➡️  [9a105fb1] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:40.943578768Z [err]  2026-01-16 21:42:40,892 - core.tracing - INFO - ➡️  [2af3abd8] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:42:40.943587005Z [err]  2026-01-16 21:42:40,894 - core.tracing - INFO - ➡️  [7ce01c29] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:40.945560288Z [err]  2026-01-16 21:42:40,938 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:40.980252377Z [err]  2026-01-16 21:42:40,977 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:41.021277343Z [err]  2026-01-16 21:42:41,013 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:41.089568575Z [err]  2026-01-16 21:42:41,053 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:41.106914011Z [err]  2026-01-16 21:42:41,099 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:41.143946740Z [err]  2026-01-16 21:42:41,140 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:41.190036676Z [err]  2026-01-16 21:42:41,182 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:41.237436165Z [err]  2026-01-16 21:42:41,233 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:42:41.318315083Z [err]  2026-01-16 21:42:41,301 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:42:41.344222920Z [err]  2026-01-16 21:42:41,342 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:42.200609430Z [err]  2026-01-16 21:42:41,609 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:42.200615418Z [err]  2026-01-16 21:42:41,645 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:42.200656860Z [inf]  INFO:     100.64.0.4:61474 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:42:42.200663615Z [err]  2026-01-16 21:42:41,484 - core.tracing - INFO - ➡️  [aa037164] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:42:42.200670698Z [err]  2026-01-16 21:42:41,483 - core.tracing - INFO - ✅ [9a105fb1] GET /api/v1/notifications/unread-count → 200 (592.1ms)
-2026-01-16T21:42:42.200674088Z [err]  2026-01-16 21:42:41,396 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:42.200676969Z [err]  2026-01-16 21:42:41,485 - core.tracing - INFO - ➡️  [4b51e083] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:42:42.200683557Z [err]  2026-01-16 21:42:41,436 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:42.200689719Z [err]  2026-01-16 21:42:41,528 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:42.200690758Z [err]  2026-01-16 21:42:41,483 - core.tracing - INFO - ✅ [2af3abd8] GET /api/v1/documents → 200 (591.7ms)
-2026-01-16T21:42:42.200695236Z [err]  2026-01-16 21:42:41,480 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:42.200700095Z [err]  2026-01-16 21:42:41,565 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:42.200706028Z [err]  2026-01-16 21:42:41,483 - core.tracing - INFO - ✅ [7ce01c29] GET /api/v1/settings/profile → 200 (589.6ms)
-2026-01-16T21:42:42.203411956Z [err]  2026-01-16 21:42:41,685 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:42.203422029Z [err]  2026-01-16 21:42:41,731 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:42:42.203427443Z [inf]  INFO:     100.64.0.5:50086 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:42.203432295Z [inf]  INFO:     100.64.0.6:43678 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:42:42.203439173Z [inf]  INFO:     100.64.0.8:10572 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:42.203445202Z [err]  2026-01-16 21:42:41,736 - core.tracing - INFO - ✅ [aa037164] GET /api/v1/integrations/status → 200 (251.6ms)
-2026-01-16T21:42:42.203450930Z [err]  2026-01-16 21:42:41,736 - core.tracing - INFO - ✅ [4b51e083] GET /api/v1/integrations/available → 200 (251.5ms)
-2026-01-16T21:42:42.203456379Z [inf]  INFO:     100.64.0.8:10588 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:42:42.203461470Z [inf]  INFO:     100.64.0.5:50092 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:42:42.203466496Z [err]  2026-01-16 21:42:42,117 - core.tracing - INFO - ➡️  [1e068769] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:42.203519574Z [err]  2026-01-16 21:42:42,153 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:42.203526163Z [err]  2026-01-16 21:42:42,190 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:42.237960719Z [err]  2026-01-16 21:42:42,231 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:42.237969619Z [err]  2026-01-16 21:42:42,232 - core.tracing - INFO - ✅ [1e068769] GET /api/v1/notifications/unread-count → 200 (114.9ms)
-2026-01-16T21:42:42.237975583Z [inf]  INFO:     100.64.0.4:61474 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:51.696187702Z [err]  2026-01-16 21:42:51,157 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:51.696194351Z [err]  2026-01-16 21:42:51,169 - core.tracing - INFO - ➡️  [6a96bd23] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:42:51.696201128Z [err]  2026-01-16 21:42:51,170 - core.tracing - INFO - ➡️  [11da4042] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:42:51.696206781Z [err]  2026-01-16 21:42:51,170 - core.tracing - INFO - ➡️  [b78fa106] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:51.696216077Z [err]  2026-01-16 21:42:51,212 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:51.696223020Z [err]  2026-01-16 21:42:51,257 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:51.696232574Z [err]  2026-01-16 21:42:51,292 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:51.696239404Z [err]  2026-01-16 21:42:51,323 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:51.696266663Z [err]  2026-01-16 21:42:51,026 - core.tracing - INFO - ➡️  [afe815bb] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:42:51.696273344Z [err]  2026-01-16 21:42:51,096 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:51.700861539Z [err]  2026-01-16 21:42:51,356 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:51.700866057Z [err]  2026-01-16 21:42:51,386 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:51.700870548Z [err]  2026-01-16 21:42:51,422 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:51.700875075Z [err]  2026-01-16 21:42:51,462 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:51.700879413Z [err]  2026-01-16 21:42:51,496 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:51.700885128Z [err]  2026-01-16 21:42:51,530 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:42:51.700890564Z [err]  2026-01-16 21:42:51,565 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:51.700894978Z [err]  2026-01-16 21:42:51,598 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:51.700923520Z [err]  2026-01-16 21:42:51,641 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:51.700928309Z [err]  2026-01-16 21:42:51,677 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:51.700932772Z [err]  2026-01-16 21:42:51,679 - core.tracing - INFO - ✅ [6a96bd23] GET /api/v1/team/effective-plan → 200 (509.7ms)
-2026-01-16T21:42:51.700937564Z [err]  2026-01-16 21:42:51,679 - core.tracing - INFO - ✅ [11da4042] GET /api/v1/usage → 200 (509.4ms)
-2026-01-16T21:42:51.700942060Z [err]  2026-01-16 21:42:51,679 - core.tracing - INFO - ✅ [b78fa106] GET /api/v1/settings/profile → 200 (509.1ms)
-2026-01-16T21:42:51.700946653Z [inf]  INFO:     100.64.0.5:28020 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:42:51.700951083Z [inf]  INFO:     100.64.0.8:20286 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:42:51.700956043Z [inf]  INFO:     100.64.0.4:33692 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:51.749327648Z [err]  2026-01-16 21:42:51,742 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:42:51.825228175Z [err]  2026-01-16 21:42:51,818 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:42:51.825239262Z [err]  2026-01-16 21:42:51,820 - core.tracing - INFO - ✅ [afe815bb] GET /api/v1/billing/plans → 200 (793.8ms)
-2026-01-16T21:42:51.825246577Z [inf]  INFO:     100.64.0.8:20280 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:42:51.980257197Z [err]  2026-01-16 21:42:51,976 - core.tracing - INFO - ➡️  [04c4daf6] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:42:52.015677076Z [err]  2026-01-16 21:42:52,010 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.062087159Z [err]  2026-01-16 21:42:52,043 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:52.076604264Z [err]  2026-01-16 21:42:52,073 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.620846249Z [err]  2026-01-16 21:42:52,104 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:52.620851033Z [err]  2026-01-16 21:42:52,138 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:42:52.620856301Z [err]  2026-01-16 21:42:52,139 - core.tracing - INFO - ✅ [04c4daf6] GET /api/v1/conversations → 200 (163.5ms)
-2026-01-16T21:42:52.620861755Z [err]  2026-01-16 21:42:52,140 - core.tracing - INFO - ➡️  [b315244f] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:52.620866294Z [err]  2026-01-16 21:42:52,173 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.620870675Z [err]  2026-01-16 21:42:52,206 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:52.620875081Z [err]  2026-01-16 21:42:52,237 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:52.620880996Z [inf]  INFO:     100.64.0.8:20280 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:42:52.620885784Z [err]  2026-01-16 21:42:52,240 - core.tracing - INFO - ✅ [b315244f] GET /api/v1/notifications/unread-count → 200 (99.8ms)
-2026-01-16T21:42:52.620894040Z [err]  2026-01-16 21:42:52,241 - core.tracing - INFO - ➡️  [259e6471] GET /api/v1/documents (user: eyJhbGci...)
-2026-01-16T21:42:52.623470989Z [err]  2026-01-16 21:42:52,241 - core.tracing - INFO - ➡️  [1d0354cf] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:42:52.623479140Z [err]  2026-01-16 21:42:52,286 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.623483810Z [err]  2026-01-16 21:42:52,315 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:52.623487909Z [err]  2026-01-16 21:42:52,345 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.623491697Z [err]  2026-01-16 21:42:52,375 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:52.623496159Z [err]  2026-01-16 21:42:52,418 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
-2026-01-16T21:42:52.623500199Z [err]  2026-01-16 21:42:52,494 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
-2026-01-16T21:42:52.623504223Z [err]  2026-01-16 21:42:52,528 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.623941695Z [err]  2026-01-16 21:42:52,557 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:52.623950893Z [err]  2026-01-16 21:42:52,607 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:52.623957086Z [inf]  INFO:     100.64.0.4:33692 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:52.623964759Z [err]  2026-01-16 21:42:52,610 - core.tracing - INFO - ✅ [259e6471] GET /api/v1/documents → 200 (369.1ms)
-2026-01-16T21:42:52.623970971Z [err]  2026-01-16 21:42:52,611 - core.tracing - INFO - ✅ [1d0354cf] GET /api/v1/integrations/status → 200 (369.2ms)
-2026-01-16T21:42:52.623977165Z [err]  2026-01-16 21:42:52,611 - core.tracing - INFO - ➡️  [98a326f5] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:52.656026305Z [err]  2026-01-16 21:42:52,652 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.689352887Z [err]  2026-01-16 21:42:52,685 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:52.726886247Z [err]  2026-01-16 21:42:52,719 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:52.756823722Z [err]  2026-01-16 21:42:52,754 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.758934324Z [inf]  INFO:     100.64.0.8:20286 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
-2026-01-16T21:42:52.761294523Z [inf]  INFO:     100.64.0.5:28020 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:42:52.761302373Z [err]  2026-01-16 21:42:52,759 - core.tracing - INFO - ✅ [98a326f5] GET /api/v1/settings/profile → 200 (147.8ms)
-2026-01-16T21:42:52.763198294Z [err]  2026-01-16 21:42:52,760 - core.tracing - INFO - ➡️  [c374da74] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:42:52.811817658Z [err]  2026-01-16 21:42:52,796 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:52.829773142Z [err]  2026-01-16 21:42:52,825 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:52.880318774Z [err]  2026-01-16 21:42:52,878 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:42:52.887769102Z [inf]  INFO:     100.64.0.6:33734 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:52.887778021Z [err]  2026-01-16 21:42:52,884 - core.tracing - INFO - ✅ [c374da74] GET /api/v1/integrations/available → 200 (123.7ms)
-2026-01-16T21:42:52.896269754Z [inf]  INFO:     100.64.0.6:33742 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:42:53.584803247Z [err]  2026-01-16 21:42:53,226 - core.tracing - INFO - ➡️  [9cc4dfed] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:53.584826302Z [err]  2026-01-16 21:42:53,261 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:53.584837306Z [err]  2026-01-16 21:42:53,296 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:53.584856326Z [err]  2026-01-16 21:42:53,336 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:53.584869396Z [err]  2026-01-16 21:42:53,338 - core.tracing - INFO - ✅ [9cc4dfed] GET /api/v1/notifications/unread-count → 200 (112.0ms)
-2026-01-16T21:42:53.584881558Z [inf]  INFO:     100.64.0.6:33742 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:57.699718871Z [err]  2026-01-16 21:42:57,301 - core.tracing - INFO - ➡️  [540cd742] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:57.699729711Z [err]  2026-01-16 21:42:57,335 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:57.699737417Z [err]  2026-01-16 21:42:57,376 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:57.699744084Z [err]  2026-01-16 21:42:57,420 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:57.699753012Z [err]  2026-01-16 21:42:57,461 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:57.699759550Z [err]  2026-01-16 21:42:57,463 - core.tracing - INFO - ✅ [540cd742] GET /api/v1/settings/profile → 200 (161.9ms)
-2026-01-16T21:42:57.699765929Z [inf]  INFO:     100.64.0.6:33742 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:57.699772658Z [err]  2026-01-16 21:42:57,466 - core.tracing - INFO - ➡️  [be6d7167] GET /api/v1/team/effective-plan (user: eyJhbGci...)
-2026-01-16T21:42:57.699779036Z [err]  2026-01-16 21:42:57,467 - core.tracing - INFO - ➡️  [2ab7331c] GET /api/v1/usage (user: eyJhbGci...)
-2026-01-16T21:42:57.699786053Z [err]  2026-01-16 21:42:57,508 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:57.703140267Z [err]  2026-01-16 21:42:57,545 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:57.703152476Z [err]  2026-01-16 21:42:57,578 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:57.703161579Z [err]  2026-01-16 21:42:57,608 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:57.703167939Z [err]  2026-01-16 21:42:57,639 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:57.703178352Z [err]  2026-01-16 21:42:57,675 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:57.720538210Z [err]  2026-01-16 21:42:57,716 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:57.772248557Z [err]  2026-01-16 21:42:57,761 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:57.802312484Z [err]  2026-01-16 21:42:57,793 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:57.828980385Z [err]  2026-01-16 21:42:57,824 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:42:57.828989317Z [err]  2026-01-16 21:42:57,826 - core.tracing - INFO - ✅ [be6d7167] GET /api/v1/team/effective-plan → 200 (359.8ms)
-2026-01-16T21:42:57.828995261Z [err]  2026-01-16 21:42:57,827 - core.tracing - INFO - ✅ [2ab7331c] GET /api/v1/usage → 200 (359.7ms)
-2026-01-16T21:42:57.830878413Z [inf]  INFO:     100.64.0.8:20306 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
-2026-01-16T21:42:57.830886235Z [inf]  INFO:     100.64.0.5:62518 - "GET /api/v1/usage HTTP/1.1" 200 OK
-2026-01-16T21:42:57.833053223Z [err]  2026-01-16 21:42:57,830 - core.tracing - INFO - ➡️  [c58c9e3b] GET /api/v1/billing/plans (user: eyJhbGci...)
-2026-01-16T21:42:57.878728546Z [err]  2026-01-16 21:42:57,866 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:57.900439227Z [err]  2026-01-16 21:42:57,896 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:57.981441613Z [err]  2026-01-16 21:42:57,969 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
-2026-01-16T21:42:58.047779435Z [err]  2026-01-16 21:42:58,037 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
-2026-01-16T21:42:58.047791858Z [err]  2026-01-16 21:42:58,040 - core.tracing - INFO - ✅ [c58c9e3b] GET /api/v1/billing/plans → 200 (210.0ms)
-2026-01-16T21:42:58.047807513Z [inf]  INFO:     100.64.0.4:33698 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
-2026-01-16T21:42:59.099750149Z [err]  2026-01-16 21:42:58,169 - core.tracing - INFO - ➡️  [0fd2123e] GET /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:42:59.099759548Z [err]  2026-01-16 21:42:58,207 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.099769031Z [err]  2026-01-16 21:42:58,244 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.099776390Z [err]  2026-01-16 21:42:58,285 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.099783855Z [err]  2026-01-16 21:42:58,324 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.099791701Z [err]  2026-01-16 21:42:58,373 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
-2026-01-16T21:42:59.099797982Z [err]  2026-01-16 21:42:58,377 - core.tracing - INFO - ✅ [0fd2123e] GET /api/v1/conversations → 200 (207.0ms)
-2026-01-16T21:42:59.099805099Z [err]  2026-01-16 21:42:58,378 - core.tracing - INFO - ➡️  [853c87cc] GET /api/v1/settings/profile (user: eyJhbGci...)
-2026-01-16T21:42:59.099812122Z [err]  2026-01-16 21:42:58,411 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103271530Z [err]  2026-01-16 21:42:58,453 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.103282818Z [err]  2026-01-16 21:42:58,486 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103289509Z [err]  2026-01-16 21:42:58,518 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103299357Z [inf]  INFO:     100.64.0.6:33742 - "GET /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:42:59.103311502Z [err]  2026-01-16 21:42:58,521 - core.tracing - INFO - ✅ [853c87cc] GET /api/v1/settings/profile → 200 (143.7ms)
-2026-01-16T21:42:59.103317872Z [err]  2026-01-16 21:42:58,522 - core.tracing - INFO - ➡️  [3fb25f28] GET /api/v1/integrations/available (user: eyJhbGci...)
-2026-01-16T21:42:59.103323507Z [err]  2026-01-16 21:42:58,552 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103329476Z [err]  2026-01-16 21:42:58,583 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.103335550Z [err]  2026-01-16 21:42:58,617 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
-2026-01-16T21:42:59.103341426Z [inf]  INFO:     100.64.0.4:33698 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
-2026-01-16T21:42:59.103347480Z [err]  2026-01-16 21:42:58,623 - core.tracing - INFO - ✅ [3fb25f28] GET /api/v1/integrations/available → 200 (100.8ms)
-2026-01-16T21:42:59.103445432Z [err]  2026-01-16 21:42:58,624 - core.tracing - INFO - ➡️  [d17baa37] GET /api/v1/documents/stats (user: eyJhbGci...)
-2026-01-16T21:42:59.103451362Z [err]  2026-01-16 21:42:58,625 - core.tracing - INFO - ➡️  [e8244182] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:42:59.103457230Z [err]  2026-01-16 21:42:58,626 - core.tracing - INFO - ➡️  [00d3122a] GET /api/v1/integrations/status (user: eyJhbGci...)
-2026-01-16T21:42:59.103463700Z [err]  2026-01-16 21:42:58,661 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103470555Z [err]  2026-01-16 21:42:58,696 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.103476104Z [err]  2026-01-16 21:42:58,734 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103481953Z [err]  2026-01-16 21:42:58,764 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.103489214Z [err]  2026-01-16 21:42:58,810 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:42:59.103496628Z [err]  2026-01-16 21:42:58,860 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=created_at&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103800018Z [err]  2026-01-16 21:42:58,904 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103808291Z [err]  2026-01-16 21:42:58,936 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.103814449Z [err]  2026-01-16 21:42:58,964 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:42:59.103820274Z [err]  2026-01-16 21:42:58,996 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103826635Z [err]  2026-01-16 21:42:59,024 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.103834638Z [err]  2026-01-16 21:42:59,084 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
-2026-01-16T21:42:59.103841037Z [inf]  INFO:     100.64.0.5:62518 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
-2026-01-16T21:42:59.103848297Z [err]  2026-01-16 21:42:59,087 - core.tracing - INFO - ✅ [d17baa37] GET /api/v1/documents/stats → 200 (462.3ms)
-2026-01-16T21:42:59.103855714Z [err]  2026-01-16 21:42:59,087 - core.tracing - INFO - ✅ [e8244182] GET /api/v1/notifications/unread-count → 200 (461.6ms)
-2026-01-16T21:42:59.105530997Z [err]  2026-01-16 21:42:59,087 - core.tracing - INFO - ✅ [00d3122a] GET /api/v1/integrations/status → 200 (461.2ms)
-2026-01-16T21:42:59.105537907Z [inf]  INFO:     100.64.0.6:37978 - "GET /api/v1/documents/stats HTTP/1.1" 200 OK
-2026-01-16T21:42:59.105542527Z [inf]  INFO:     100.64.0.4:33702 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:42:59.105546935Z [inf]  INFO:     100.64.0.5:62528 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
-2026-01-16T21:42:59.390872472Z [err]  2026-01-16 21:42:59,383 - core.tracing - INFO - ➡️  [b1d6df84] GET /api/v1/documents/stats (user: eyJhbGci...)
-2026-01-16T21:42:59.424019246Z [err]  2026-01-16 21:42:59,413 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:42:59.451675730Z [err]  2026-01-16 21:42:59,449 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:42:59.511271034Z [err]  2026-01-16 21:42:59,506 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:00.155169881Z [err]  2026-01-16 21:42:59,541 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:43:00.155180909Z [err]  2026-01-16 21:42:59,574 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
-2026-01-16T21:43:00.155187432Z [err]  2026-01-16 21:42:59,609 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=created_at&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:00.155194234Z [err]  2026-01-16 21:42:59,611 - core.tracing - INFO - ➡️  [844ed1a3] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
-2026-01-16T21:43:00.155200755Z [err]  2026-01-16 21:42:59,612 - core.tracing - INFO - ✅ [b1d6df84] GET /api/v1/documents/stats → 200 (228.5ms)
-2026-01-16T21:43:00.155206272Z [err]  2026-01-16 21:42:59,649 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:00.155212207Z [err]  2026-01-16 21:42:59,680 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:43:00.155219517Z [err]  2026-01-16 21:42:59,713 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
-2026-01-16T21:43:00.155226396Z [inf]  INFO:     100.64.0.4:33702 - "GET /api/v1/documents/stats HTTP/1.1" 200 OK
-2026-01-16T21:43:00.160069136Z [err]  2026-01-16 21:42:59,716 - core.tracing - INFO - ✅ [844ed1a3] GET /api/v1/notifications/unread-count → 200 (104.8ms)
-2026-01-16T21:43:00.160084469Z [inf]  INFO:     100.64.0.5:62518 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
-2026-01-16T21:43:01.071554336Z [err]  2026-01-16 21:43:01,066 - core.tracing - INFO - ➡️  [f7061984] POST /api/v1/conversations (user: eyJhbGci...)
-2026-01-16T21:43:01.114540451Z [err]  2026-01-16 21:43:01,097 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:01.139766616Z [err]  2026-01-16 21:43:01,137 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:43:01.187088517Z [err]  2026-01-16 21:43:01,173 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:01.232172597Z [err]  2026-01-16 21:43:01,212 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:43:01.257804790Z [err]  2026-01-16 21:43:01,248 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations "HTTP/2 201 Created"
-2026-01-16T21:43:01.257813166Z [err]  2026-01-16 21:43:01,250 - core.tracing - INFO - ✅ [f7061984] POST /api/v1/conversations → 200 (183.6ms)
-2026-01-16T21:43:01.257822715Z [inf]  INFO:     100.64.0.4:33702 - "POST /api/v1/conversations HTTP/1.1" 200 OK
-2026-01-16T21:43:02.214608840Z [err]  2026-01-16 21:43:02,199 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
-2026-01-16T21:43:02.214620279Z [err]  2026-01-16 21:43:02,202 - api.v1.chat - INFO - 🛡️ [Chat] Guardrails: lang=en safe=False intent=OFF_TOPIC complexity=SIMPLE
-2026-01-16T21:43:02.214636611Z [err]  2026-01-16 21:43:01,682 - core.tracing - INFO - ➡️  [e6b32d8d] POST /api/v1/chat (user: eyJhbGci...)
-2026-01-16T21:43:02.214640977Z [err]  2026-01-16 21:43:01,732 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:02.214645647Z [err]  2026-01-16 21:43:01,770 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:43:02.214650668Z [err]  2026-01-16 21:43:01,817 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:02.214654931Z [err]  2026-01-16 21:43:01,864 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
-2026-01-16T21:43:02.214659508Z [err]  2026-01-16 21:43:01,921 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=llm_token_balance&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:02.214663599Z [err]  2026-01-16 21:43:01,952 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?select=llm_tokens_used&org_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
-2026-01-16T21:43:02.217868212Z [err]  2026-01-16 21:43:02,202 - core.tracing - INFO - ✅ [e6b32d8d] POST /api/v1/chat → 200 (520.7ms)
-2026-01-16T21:43:02.217883533Z [inf]  INFO:     100.64.0.5:62518 - "POST /api/v1/chat HTTP/1.1" 200 OK
-2026-01-16T21:43:02.248067945Z [err]  2026-01-16 21:43:02,237 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/audit_logs "HTTP/2 201 Created"
+2026-01-16T23:12:57.000000000Z [inf]  Starting Container
+2026-01-16T23:12:58.534933966Z [inf]  Fri Jan 16 23:12:57 2026 -> ClamAV update process started at Fri Jan 16 23:12:57 2026
+2026-01-16T23:12:58.534939464Z [inf]  Fri Jan 16 23:12:57 2026 -> daily database available for update (local version: 27880, remote version: 27882)
+2026-01-16T23:12:58.643730617Z [inf]  Fri Jan 16 23:12:58 2026 -> Testing database: '/var/lib/clamav/tmp.9ac1e9c6d4/clamav-99b377fd8c0d5995fb1bb4edb29d8bbd.tmp-daily.cld' ...
+2026-01-16T23:13:03.604658968Z [inf]  Fri Jan 16 23:13:02 2026 -> Database test passed.
+2026-01-16T23:13:03.604665609Z [inf]  Fri Jan 16 23:13:02 2026 -> daily.cld updated (version: 27882, sigs: 354806, f-level: 90, builder: svc.clamav-publisher)
+2026-01-16T23:13:03.604671496Z [inf]  Fri Jan 16 23:13:02 2026 -> main.cvd database is up-to-date (version: 63, sigs: 3287027, f-level: 90, builder: tomjudge)
+2026-01-16T23:13:03.604677792Z [inf]  Fri Jan 16 23:13:02 2026 -> bytecode.cvd database is up-to-date (version: 339, sigs: 80, f-level: 90, builder: nrandolp)
+2026-01-16T23:13:03.604684125Z [inf]  WARNING: Fri Jan 16 23:13:02 2026 -> Clamd was NOT notified: Can't connect to clamd through /var/run/clamav/clamd.ctl: No such file or directory
+2026-01-16T23:13:03.604691117Z [inf]  🛡️ Starting ClamAV daemon...
+2026-01-16T23:13:10.592653201Z [err]  2026-01-16 23:13:10,156 - main - INFO - 🔭 Sentry initialized with logging and error tracking
+2026-01-16T23:13:10.592660460Z [err]  2026-01-16 23:13:10,266 - core.resilience - INFO - 🔌 Circuit breakers initialized for: OpenAI, LlamaParse, Supabase
+2026-01-16T23:13:10.592667633Z [err]  2026-01-16 23:13:10,266 - core.resilience - INFO - ✅ Retry configurations loaded: OpenAI, Supabase, LlamaParse
+2026-01-16T23:13:10.911155199Z [err]  2026-01-16 23:13:10,909 - main - INFO - 🔒 CORS: Loaded 2 origin(s) from ALLOWED_ORIGINS
+2026-01-16T23:13:10.914661360Z [err]  2026-01-16 23:13:10,909 - main - INFO - 🔒 CORS: Production mode - 2 strict origin(s)
+2026-01-16T23:13:11.675564244Z [err]  2026-01-16 23:13:11,029 - core.metrics - INFO - 📊 Prometheus metrics initialized
+2026-01-16T23:13:11.675570400Z [err]  2026-01-16 23:13:11,051 - services.email - INFO - 📧 EmailService initialized with Resend API
+2026-01-16T23:13:11.811353880Z [err]  2026-01-16 23:13:11,779 - worker.tasks - INFO - ✅ Worker tasks module loaded - Cache buster 001
+2026-01-16T23:13:11.811515993Z [err]  /usr/local/lib/python3.11/site-packages/clamd/__init__.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+2026-01-16T23:13:11.811521876Z [err]    __version__ = __import__('pkg_resources').get_distribution('clamd').version
+2026-01-16T23:13:12.737885589Z [err]  INFO:     Started server process [1]
+2026-01-16T23:13:12.737890931Z [err]  INFO:     Waiting for application startup.
+2026-01-16T23:13:12.737896982Z [err]  2026-01-16 23:13:12,014 - main - INFO - 🚀 Starting Axio Hub API...
+2026-01-16T23:13:12.737903470Z [err]  2026-01-16 23:13:12,014 - core.db - INFO - 🔌 Initializing Supabase client with connection pool
+2026-01-16T23:13:12.737909779Z [err]  2026-01-16 23:13:12,022 - core.db - INFO - ✅ Supabase client initialized successfully
+2026-01-16T23:13:12.737915464Z [err]  2026-01-16 23:13:12,187 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id&limit=1 "HTTP/2 206 Partial Content"
+2026-01-16T23:13:12.737921524Z [err]  2026-01-16 23:13:12,188 - main - INFO - ✅ Database connection verified
+2026-01-16T23:13:12.737927207Z [err]  INFO:     Application startup complete.
+2026-01-16T23:13:12.737932989Z [err]  INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+2026-01-16T23:13:15.781549254Z [inf]  Fri Jan 16 23:13:15 2026 -> Detection using image fuzzy hash enabled.
+2026-01-16T23:13:15.781564901Z [inf]  Fri Jan 16 23:13:15 2026 -> AlertExceedsMax heuristic detection disabled.
+2026-01-16T23:13:15.781588645Z [inf]  Fri Jan 16 23:13:15 2026 -> XMLDOCS support enabled.
+2026-01-16T23:13:15.781588809Z [inf]  Fri Jan 16 23:13:15 2026 -> Listening daemon: PID: 15
+2026-01-16T23:13:15.781593332Z [inf]  Fri Jan 16 23:13:15 2026 -> Heuristic alerts enabled.
+2026-01-16T23:13:15.781595060Z [inf]  Fri Jan 16 23:13:15 2026 -> ELF support enabled.
+2026-01-16T23:13:15.781595105Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: Global time limit set to 120000 milliseconds.
+2026-01-16T23:13:15.781604902Z [inf]  Fri Jan 16 23:13:15 2026 -> Image (graphics) scanning support enabled.
+2026-01-16T23:13:15.781605445Z [inf]  Fri Jan 16 23:13:15 2026 -> HWP3 support enabled.
+2026-01-16T23:13:15.781605723Z [inf]  Fri Jan 16 23:13:15 2026 -> MaxQueue set to: 100
+2026-01-16T23:13:15.781608832Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: Global size limit set to 1048576000 bytes.
+2026-01-16T23:13:15.781616747Z [inf]  Fri Jan 16 23:13:15 2026 -> Mail files support enabled.
+2026-01-16T23:13:15.781618847Z [inf]  Fri Jan 16 23:13:15 2026 -> Portable Executable support enabled.
+2026-01-16T23:13:15.781621357Z [inf]  Fri Jan 16 23:13:15 2026 -> OneNote support enabled.
+2026-01-16T23:13:15.781622337Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: File size limit set to 1048576000 bytes.
+2026-01-16T23:13:15.781628804Z [inf]  Fri Jan 16 23:13:15 2026 -> OLE2 support enabled.
+2026-01-16T23:13:15.781636547Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: Recursion level limit set to 17.
+2026-01-16T23:13:15.781636807Z [inf]  Fri Jan 16 23:13:15 2026 -> Self checking every 600 seconds.
+2026-01-16T23:13:15.781640442Z [inf]  Fri Jan 16 23:13:15 2026 -> PDF support enabled.
+2026-01-16T23:13:15.781648649Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: Files limit set to 10000.
+2026-01-16T23:13:15.781651080Z [inf]  Fri Jan 16 23:13:15 2026 -> SWF support enabled.
+2026-01-16T23:13:15.781656315Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: Core-dump limit is 0.
+2026-01-16T23:13:15.781662039Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: MaxEmbeddedPE limit set to 41943040 bytes.
+2026-01-16T23:13:15.781669154Z [inf]  Fri Jan 16 23:13:15 2026 -> HTML support enabled.
+2026-01-16T23:13:15.781676674Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: MaxHTMLNormalize limit set to 41943040 bytes.
+2026-01-16T23:13:15.781686057Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: MaxHTMLNoTags limit set to 8388608 bytes.
+2026-01-16T23:13:15.781692473Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: MaxScriptNormalize limit set to 20971520 bytes.
+2026-01-16T23:13:15.781697500Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: MaxZipTypeRcg limit set to 1048576 bytes.
+2026-01-16T23:13:15.781702766Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: MaxPartitions limit set to 50.
+2026-01-16T23:13:15.781708974Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: MaxIconsPE limit set to 100.
+2026-01-16T23:13:15.781714560Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: MaxRecHWP3 limit set to 16.
+2026-01-16T23:13:15.781720280Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: PCREMatchLimit limit set to 100000.
+2026-01-16T23:13:15.781726804Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: PCRERecMatchLimit limit set to 2000.
+2026-01-16T23:13:15.781731744Z [inf]  Fri Jan 16 23:13:15 2026 -> Limits: PCREMaxFileSize limit set to 104857600.
+2026-01-16T23:13:15.781737431Z [inf]  Fri Jan 16 23:13:15 2026 -> Archive support enabled.
+2026-01-16T23:23:19.312352936Z [inf]  Fri Jan 16 23:23:15 2026 -> SelfCheck: Database status OK.
+2026-01-16T23:33:22.850262792Z [inf]  Fri Jan 16 23:33:15 2026 -> SelfCheck: Database status OK.
+2026-01-16T23:42:45.965011947Z [err]  2026-01-16 23:42:39,836 - core.tracing - INFO - ➡️  [d7e06767] GET /api/v1/billing/plans (user: eyJhbGci...)
+2026-01-16T23:42:45.965015675Z [err]  2026-01-16 23:42:40,067 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:45.965019657Z [err]  2026-01-16 23:42:40,100 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:45.965023436Z [err]  2026-01-16 23:42:40,118 - core.tracing - INFO - ➡️  [bd0ce527] GET /api/v1/team/effective-plan (user: eyJhbGci...)
+2026-01-16T23:42:45.965026984Z [err]  2026-01-16 23:42:40,163 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:45.965031032Z [err]  2026-01-16 23:42:40,191 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:45.965034883Z [err]  2026-01-16 23:42:40,231 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_effective_plan "HTTP/2 400 Bad Request"
+2026-01-16T23:42:45.965038712Z [err]  2026-01-16 23:42:40,232 - services.team_service - WARNING - [TeamService] RPC failed, trying direct query: {'message': 'column "subscription_status" does not exist', 'code': '42703', 'hint': None, 'details': None}
+2026-01-16T23:42:45.965042538Z [err]  2026-01-16 23:42:40,265 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/rpc/get_user_team_data "HTTP/2 404 Not Found"
+2026-01-16T23:42:45.965046885Z [err]  2026-01-16 23:42:40,268 - services.team_service - WARNING - [TeamService] RPC call failed, falling back to sequential queries: {'message': 'Could not find the function public.get_user_team_data(target_user_id) in the schema cache', 'code': 'PGRST202', 'hint': 'Perhaps you meant to call the function public.get_user_team_data(p_user_id)', 'details': 'Searched for the function public.get_user_team_data with parameter target_user_id or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache.'}
+2026-01-16T23:42:46.003860585Z [err]  2026-01-16 23:42:42,196 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.003871531Z [err]  2026-01-16 23:42:40,303 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.003875213Z [err]  2026-01-16 23:42:42,237 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.003880666Z [err]  2026-01-16 23:42:40,337 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=plan_type%2Cstatus&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.003890390Z [err]  2026-01-16 23:42:40,338 - services.team_service - INFO - [TeamService] User 94e02b27... has active subscription: enterprise
+2026-01-16T23:42:46.003894753Z [err]  2026-01-16 23:42:42,417 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.003905088Z [err]  2026-01-16 23:42:40,370 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.003906415Z [err]  2026-01-16 23:42:42,444 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.003917343Z [err]  2026-01-16 23:42:42,471 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.003921229Z [err]  2026-01-16 23:42:40,416 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.003924623Z [err]  2026-01-16 23:42:42,305 - core.tracing - INFO - ➡️  [5d4bbf3c] GET /api/v1/team/effective-plan (user: eyJhbGci...)
+2026-01-16T23:42:46.003932880Z [err]  2026-01-16 23:42:40,417 - core.tracing - INFO - ✅ [bd0ce527] GET /api/v1/team/effective-plan → 200 (299.0ms)
+2026-01-16T23:42:46.003933531Z [err]  2026-01-16 23:42:42,473 - core.tracing - INFO - ✅ [5d4bbf3c] GET /api/v1/team/effective-plan → 200 (167.7ms)
+2026-01-16T23:42:46.003942290Z [inf]  INFO:     100.64.0.3:21360 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
+2026-01-16T23:42:46.003947575Z [err]  2026-01-16 23:42:42,307 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
+2026-01-16T23:42:46.003952966Z [err]  2026-01-16 23:42:40,440 - core.tracing - INFO - ➡️  [45d8cbe2] GET /api/v1/usage (user: eyJhbGci...)
+2026-01-16T23:42:46.003958270Z [err]  2026-01-16 23:42:42,365 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.003964687Z [err]  2026-01-16 23:42:40,486 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.003977082Z [err]  2026-01-16 23:42:40,524 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.004103013Z [inf]  INFO:     100.64.0.2:32048 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
+2026-01-16T23:42:46.004116046Z [err]  2026-01-16 23:42:42,651 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.004122779Z [err]  2026-01-16 23:42:42,682 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.004129108Z [err]  2026-01-16 23:42:42,713 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:46.004138298Z [err]  2026-01-16 23:42:42,477 - core.tracing - INFO - ➡️  [ac427e5e] GET /api/v1/settings/profile (user: eyJhbGci...)
+2026-01-16T23:42:46.004145341Z [err]  2026-01-16 23:42:42,478 - core.tracing - INFO - ➡️  [3c4bb73a] GET /api/v1/usage (user: eyJhbGci...)
+2026-01-16T23:42:46.004151384Z [err]  2026-01-16 23:42:42,511 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.004166276Z [err]  2026-01-16 23:42:42,551 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.004174815Z [err]  2026-01-16 23:42:42,588 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:46.004181155Z [err]  2026-01-16 23:42:42,623 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.004420731Z [err]  2026-01-16 23:42:40,557 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:46.004426244Z [err]  2026-01-16 23:42:40,627 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.004431957Z [err]  2026-01-16 23:42:40,658 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.004437768Z [err]  2026-01-16 23:42:40,689 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
+2026-01-16T23:42:46.004443625Z [err]  2026-01-16 23:42:40,691 - core.tracing - INFO - ✅ [45d8cbe2] GET /api/v1/usage → 200 (251.6ms)
+2026-01-16T23:42:46.004449902Z [err]  2026-01-16 23:42:40,692 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
+2026-01-16T23:42:46.004457038Z [inf]  INFO:     100.64.0.2:32060 - "GET /api/v1/usage HTTP/1.1" 200 OK
+2026-01-16T23:42:46.004463034Z [err]  2026-01-16 23:42:40,778 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
+2026-01-16T23:42:46.004469327Z [err]  2026-01-16 23:42:40,781 - core.tracing - INFO - ✅ [d7e06767] GET /api/v1/billing/plans → 200 (945.4ms)
+2026-01-16T23:42:46.004474980Z [inf]  INFO:     100.64.0.2:32048 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
+2026-01-16T23:42:46.004481276Z [err]  2026-01-16 23:42:42,158 - core.tracing - INFO - ➡️  [943468cf] GET /api/v1/billing/plans (user: eyJhbGci...)
+2026-01-16T23:42:46.005276486Z [err]  2026-01-16 23:42:42,745 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.005281972Z [err]  2026-01-16 23:42:42,803 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.005288256Z [err]  2026-01-16 23:42:42,832 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
+2026-01-16T23:42:46.005293501Z [err]  2026-01-16 23:42:42,835 - core.tracing - INFO - ✅ [ac427e5e] GET /api/v1/settings/profile → 200 (358.2ms)
+2026-01-16T23:42:46.005300134Z [err]  2026-01-16 23:42:42,836 - core.tracing - INFO - ✅ [3c4bb73a] GET /api/v1/usage → 200 (357.2ms)
+2026-01-16T23:42:46.005305188Z [err]  2026-01-16 23:42:42,836 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
+2026-01-16T23:42:46.005310864Z [inf]  INFO:     100.64.0.4:16020 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
+2026-01-16T23:42:46.005316739Z [inf]  INFO:     100.64.0.4:16026 - "GET /api/v1/usage HTTP/1.1" 200 OK
+2026-01-16T23:42:46.005322307Z [err]  2026-01-16 23:42:42,844 - core.tracing - INFO - ✅ [943468cf] GET /api/v1/billing/plans → 200 (686.3ms)
+2026-01-16T23:42:46.005328382Z [inf]  INFO:     100.64.0.3:21360 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
+2026-01-16T23:42:46.005334668Z [err]  2026-01-16 23:42:42,931 - core.tracing - INFO - ➡️  [cfacdeb8] GET /api/v1/team/effective-plan (user: eyJhbGci...)
+2026-01-16T23:42:46.005340759Z [err]  2026-01-16 23:42:42,981 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.005533780Z [err]  2026-01-16 23:42:43,019 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.005539633Z [err]  2026-01-16 23:42:43,051 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.005548190Z [err]  2026-01-16 23:42:43,077 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.005553267Z [err]  2026-01-16 23:42:43,080 - core.tracing - INFO - ✅ [cfacdeb8] GET /api/v1/team/effective-plan → 200 (148.5ms)
+2026-01-16T23:42:46.005558458Z [err]  2026-01-16 23:42:43,082 - core.tracing - INFO - ➡️  [7d777b32] GET /api/v1/usage (user: eyJhbGci...)
+2026-01-16T23:42:46.005563940Z [err]  2026-01-16 23:42:43,083 - core.tracing - INFO - ➡️  [20d26aad] GET /api/v1/settings/profile (user: eyJhbGci...)
+2026-01-16T23:42:46.005569103Z [err]  2026-01-16 23:42:43,111 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.005575141Z [err]  2026-01-16 23:42:43,139 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.005580557Z [err]  2026-01-16 23:42:43,166 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:46.005585381Z [err]  2026-01-16 23:42:43,200 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.008510766Z [err]  2026-01-16 23:42:43,227 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.008516436Z [err]  2026-01-16 23:42:43,258 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
+2026-01-16T23:42:46.008522416Z [err]  2026-01-16 23:42:43,295 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.008527229Z [err]  2026-01-16 23:42:43,321 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.008532317Z [err]  2026-01-16 23:42:43,363 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:46.008537764Z [err]  2026-01-16 23:42:43,409 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.008544180Z [inf]  INFO:     100.64.0.4:16026 - "GET /api/v1/team/effective-plan HTTP/1.1" 200 OK
+2026-01-16T23:42:46.008549224Z [err]  2026-01-16 23:42:43,415 - core.tracing - INFO - ✅ [7d777b32] GET /api/v1/usage → 200 (333.0ms)
+2026-01-16T23:42:46.008554362Z [err]  2026-01-16 23:42:43,415 - core.tracing - INFO - ✅ [20d26aad] GET /api/v1/settings/profile → 200 (332.3ms)
+2026-01-16T23:42:46.008560083Z [inf]  INFO:     100.64.0.2:32048 - "GET /api/v1/usage HTTP/1.1" 200 OK
+2026-01-16T23:42:46.008665957Z [inf]  INFO:     100.64.0.2:32060 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
+2026-01-16T23:42:46.008672535Z [err]  2026-01-16 23:42:43,418 - core.tracing - INFO - ➡️  [11f3dc0a] GET /api/v1/billing/plans (user: eyJhbGci...)
+2026-01-16T23:42:46.008677907Z [err]  2026-01-16 23:42:43,460 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.008683826Z [err]  2026-01-16 23:42:43,490 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.008689636Z [err]  2026-01-16 23:42:43,573 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products?is_archived=false "HTTP/1.1 307 Temporary Redirect"
+2026-01-16T23:42:46.008695471Z [err]  2026-01-16 23:42:43,665 - httpx - INFO - HTTP Request: GET https://api.polar.sh/v1/products/?is_archived=false "HTTP/1.1 200 OK"
+2026-01-16T23:42:46.008701599Z [err]  2026-01-16 23:42:43,667 - core.tracing - INFO - ✅ [11f3dc0a] GET /api/v1/billing/plans → 200 (249.2ms)
+2026-01-16T23:42:46.008708107Z [inf]  INFO:     100.64.0.5:43004 - "GET /api/v1/billing/plans HTTP/1.1" 200 OK
+2026-01-16T23:42:46.008715096Z [err]  2026-01-16 23:42:43,704 - core.tracing - INFO - ➡️  [e1874b49] GET /api/v1/conversations (user: eyJhbGci...)
+2026-01-16T23:42:46.008722863Z [err]  2026-01-16 23:42:43,734 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.008728778Z [err]  2026-01-16 23:42:43,763 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.009568551Z [err]  2026-01-16 23:42:43,794 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.009574933Z [err]  2026-01-16 23:42:43,826 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.009580670Z [err]  2026-01-16 23:42:43,863 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/conversations?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&order=updated_at.desc "HTTP/2 200 OK"
+2026-01-16T23:42:46.010025502Z [err]  2026-01-16 23:42:43,865 - core.tracing - INFO - ✅ [e1874b49] GET /api/v1/conversations → 200 (160.1ms)
+2026-01-16T23:42:46.010036737Z [inf]  INFO:     100.64.0.2:32060 - "GET /api/v1/conversations HTTP/1.1" 200 OK
+2026-01-16T23:42:46.010048477Z [err]  2026-01-16 23:42:43,969 - core.tracing - INFO - ➡️  [b2efbd61] GET /api/v1/settings/profile (user: eyJhbGci...)
+2026-01-16T23:42:46.010056753Z [err]  2026-01-16 23:42:44,001 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.010063541Z [err]  2026-01-16 23:42:44,037 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.010071203Z [err]  2026-01-16 23:42:44,069 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=%2A&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:46.010078594Z [err]  2026-01-16 23:42:44,103 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.011805202Z [err]  2026-01-16 23:42:44,105 - core.tracing - INFO - ✅ [b2efbd61] GET /api/v1/settings/profile → 200 (135.9ms)
+2026-01-16T23:42:46.011811373Z [err]  2026-01-16 23:42:44,106 - core.tracing - INFO - ➡️  [ea21efb6] GET /api/v1/documents (user: eyJhbGci...)
+2026-01-16T23:42:46.011816688Z [err]  2026-01-16 23:42:44,106 - core.tracing - INFO - ➡️  [2e4d6627] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
+2026-01-16T23:42:46.011822638Z [err]  2026-01-16 23:42:44,137 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.011827814Z [err]  2026-01-16 23:42:44,167 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.011838278Z [err]  2026-01-16 23:42:44,232 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.011843419Z [err]  2026-01-16 23:42:44,257 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.011848405Z [err]  2026-01-16 23:42:44,304 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity&order=created_at.desc&offset=0&limit=10 "HTTP/2 206 Partial Content"
+2026-01-16T23:42:46.011853031Z [err]  2026-01-16 23:42:44,338 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_file_status?select=%2A&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&status=eq.failed&document_id=is.null&order=created_at.desc&limit=10 "HTTP/2 200 OK"
+2026-01-16T23:42:46.014795172Z [err]  2026-01-16 23:42:44,437 - core.tracing - INFO - ✅ [ea21efb6] GET /api/v1/documents → 200 (331.3ms)
+2026-01-16T23:42:46.014807361Z [err]  2026-01-16 23:42:44,437 - core.tracing - INFO - ✅ [2e4d6627] GET /api/v1/notifications/unread-count → 200 (330.9ms)
+2026-01-16T23:42:46.014814781Z [err]  2026-01-16 23:42:44,438 - core.tracing - INFO - ➡️  [001621ff] GET /api/v1/integrations/status (user: eyJhbGci...)
+2026-01-16T23:42:46.014822756Z [err]  2026-01-16 23:42:44,470 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.014830420Z [err]  2026-01-16 23:42:44,500 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.014838377Z [err]  2026-01-16 23:42:44,537 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_integrations?select=id%2Cconnector_definition_id%2Clast_sync_at%2Cconnector_definitions%28type%2Cname%2Cicon_path%2Ccategory%29&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:46.014857454Z [err]  2026-01-16 23:42:44,373 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.014862148Z [err]  2026-01-16 23:42:44,403 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.014867683Z [err]  2026-01-16 23:42:44,434 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
+2026-01-16T23:42:46.014872113Z [inf]  INFO:     100.64.0.3:21360 - "GET /api/v1/settings/profile HTTP/1.1" 200 OK
+2026-01-16T23:42:46.017276590Z [err]  2026-01-16 23:42:44,859 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.017309698Z [inf]  INFO:     100.64.0.5:43004 - "GET /api/v1/documents?limit=10&offset=0&q= HTTP/1.1" 200 OK
+2026-01-16T23:42:46.017316574Z [inf]  INFO:     100.64.0.4:16026 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
+2026-01-16T23:42:46.017327775Z [err]  2026-01-16 23:42:44,541 - core.tracing - INFO - ✅ [001621ff] GET /api/v1/integrations/status → 200 (102.2ms)
+2026-01-16T23:42:46.017333227Z [err]  2026-01-16 23:42:44,541 - core.tracing - INFO - ➡️  [c5d812ab] GET /api/v1/integrations/available (user: eyJhbGci...)
+2026-01-16T23:42:46.017338979Z [err]  2026-01-16 23:42:44,570 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:46.017344512Z [err]  2026-01-16 23:42:44,611 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.017350065Z [err]  2026-01-16 23:42:44,643 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/connector_definitions?select=%2A&is_active=eq.True "HTTP/2 200 OK"
+2026-01-16T23:42:46.017353969Z [inf]  INFO:     100.64.0.4:16020 - "GET /api/v1/integrations/status HTTP/1.1" 200 OK
+2026-01-16T23:42:46.017359784Z [err]  2026-01-16 23:42:44,653 - core.tracing - INFO - ✅ [c5d812ab] GET /api/v1/integrations/available → 200 (111.2ms)
+2026-01-16T23:42:46.017366580Z [inf]  INFO:     100.64.0.4:16050 - "GET /api/v1/integrations/available HTTP/1.1" 200 OK
+2026-01-16T23:42:46.017371774Z [err]  2026-01-16 23:42:44,816 - core.tracing - INFO - ➡️  [399b253a] GET /api/v1/notifications/unread-count (user: eyJhbGci...)
+2026-01-16T23:42:46.025043671Z [err]  2026-01-16 23:42:44,916 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:46.025049903Z [err]  2026-01-16 23:42:44,943 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/notifications?select=id&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&is_read=eq.False "HTTP/2 200 OK"
+2026-01-16T23:42:46.025055346Z [err]  2026-01-16 23:42:44,945 - core.tracing - INFO - ✅ [399b253a] GET /api/v1/notifications/unread-count → 200 (128.8ms)
+2026-01-16T23:42:46.025061469Z [inf]  INFO:     100.64.0.2:32060 - "GET /api/v1/notifications/unread-count HTTP/1.1" 200 OK
+2026-01-16T23:42:51.132549666Z [err]  2026-01-16 23:42:50,324 - core.tracing - INFO - ➡️  [33fa21fe] POST /api/v1/uploads/upload-url (user: eyJhbGci...)
+2026-01-16T23:42:51.132556404Z [err]  2026-01-16 23:42:50,392 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:51.132563278Z [err]  2026-01-16 23:42:50,434 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:51.132569821Z [err]  2026-01-16 23:42:50,468 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:51.132577510Z [err]  2026-01-16 23:42:50,515 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:51.132585112Z [err]  2026-01-16 23:42:50,552 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:51.132591119Z [err]  2026-01-16 23:42:50,584 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:51.132598356Z [err]  2026-01-16 23:42:50,625 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:51.132604428Z [err]  2026-01-16 23:42:50,668 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:51.133018972Z [err]  2026-01-16 23:42:50,796 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?select=storage_used_mb%2Cjob_count_cycle&org_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:51.133028963Z [err]  2026-01-16 23:42:50,835 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:51.133036803Z [err]  2026-01-16 23:42:50,880 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=member_user_id&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:51.133042210Z [err]  2026-01-16 23:42:50,917 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=id&user_id=in.%2894e02b27-3523-42ff-a0c2-858dd8e77f85%2C3cbf4dbe-c5a4-4253-b72b-6b89a15859ab%29&status=in.%28pending%2Cprocessing%29 "HTTP/2 200 OK"
+2026-01-16T23:42:51.133047904Z [inf]  Storage endpoint URL should have a trailing slash.
+2026-01-16T23:42:51.133125074Z [err]  2026-01-16 23:42:51,031 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/upload/sign/ephemeral-staging/uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/61a619d2-faeb-4f29-b38d-14bbce77a603/CONFIDENTIAL_PROJECT_OMEGA.txt "HTTP/2 200 OK"
+2026-01-16T23:42:51.133130841Z [err]  2026-01-16 23:42:50,699 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:51.133145447Z [err]  2026-01-16 23:42:50,735 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
+2026-01-16T23:42:51.135928203Z [err]  2026-01-16 23:42:51,032 - api.v1.uploads - INFO - [Upload] Generated presigned URL for CONFIDENTIAL_PROJECT_OMEGA.txt (uploads/94e02b27-3523-42ff-a0c2-858dd8e77f85/61a619d2-faeb-4f29-b38d-14bbce77a603/CONFIDENTIAL_PROJECT_OMEGA.txt)
+2026-01-16T23:42:51.135932889Z [err]  2026-01-16 23:42:51,033 - core.tracing - INFO - ✅ [33fa21fe] POST /api/v1/uploads/upload-url → 200 (709.3ms)
+2026-01-16T23:42:51.135938477Z [inf]  INFO:     100.64.0.4:50950 - "POST /api/v1/uploads/upload-url HTTP/1.1" 200 OK
+2026-01-16T23:42:51.972096278Z [err]  2026-01-16 23:42:51,965 - core.tracing - INFO - ➡️  [ebdda500] POST /api/v1/uploads/file/reference (user: eyJhbGci...)
+2026-01-16T23:42:52.031105077Z [err]  2026-01-16 23:42:52,023 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&status=neq.removed&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:52.075180905Z [err]  2026-01-16 23:42:52,072 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:52.107892024Z [err]  2026-01-16 23:42:52,102 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:52.154826147Z [err]  2026-01-16 23:42:52,149 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:52.243545878Z [err]  2026-01-16 23:42:52,218 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id%2Crole%2Cjoined_at&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:52.251979877Z [err]  2026-01-16 23:42:52,249 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=id%2Cname%2Cslug%2Cowner_id%2Ccreated_at%2Cplan&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:53.119153711Z [err]  2026-01-16 23:42:52,544 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/documents?select=id%2Cfile_size_bytes&organization_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&source_type=neq.identity&source_type=neq.scope_identity "HTTP/2 200 OK"
+2026-01-16T23:42:53.119164684Z [err]  2026-01-16 23:42:52,591 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?select=storage_used_mb%2Cjob_count_cycle&org_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:53.119171701Z [err]  2026-01-16 23:42:52,627 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/teams?select=owner_id&id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:53.119266319Z [err]  2026-01-16 23:42:52,674 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=member_user_id&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab "HTTP/2 200 OK"
+2026-01-16T23:42:53.119276277Z [err]  2026-01-16 23:42:52,716 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs?select=id&user_id=in.%2894e02b27-3523-42ff-a0c2-858dd8e77f85%2C3cbf4dbe-c5a4-4253-b72b-6b89a15859ab%29&status=in.%28pending%2Cprocessing%29 "HTTP/2 200 OK"
+2026-01-16T23:42:53.119317028Z [err]  2026-01-16 23:42:52,305 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/storage/v1/object/list/ephemeral-staging "HTTP/2 200 OK"
+2026-01-16T23:42:53.119327370Z [err]  2026-01-16 23:42:52,359 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/user_profiles?select=plan&user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85 "HTTP/2 200 OK"
+2026-01-16T23:42:53.119335186Z [err]  2026-01-16 23:42:52,409 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/team_members?select=team_id&member_user_id=eq.94e02b27-3523-42ff-a0c2-858dd8e77f85&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:53.119343344Z [err]  2026-01-16 23:42:52,452 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/subscriptions?select=status&team_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:42:53.127102103Z [err]  2026-01-16 23:42:52,987 - core.tracing - INFO - ✅ [ebdda500] POST /api/v1/uploads/file/reference → 200 (1021.7ms)
+2026-01-16T23:42:53.127239679Z [err]  2026-01-16 23:42:52,884 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?on_conflict=org_id "HTTP/2 200 OK"
+2026-01-16T23:42:53.127249107Z [err]  2026-01-16 23:42:52,886 - services.quotas - INFO - ✅ [Quotas] Incremented usage org=3cbf4dbe-c5a4-4253-b72b-6b89a15859ab storage+=0.00MB jobs+=1
+2026-01-16T23:42:53.127258984Z [inf]  INFO:     100.64.0.4:50950 - "POST /api/v1/uploads/file/reference HTTP/1.1" 200 OK
+2026-01-16T23:42:53.127267293Z [err]  2026-01-16 23:42:52,986 - api.v1.uploads - INFO - [Upload] Unified task queued: CONFIDENTIAL_PROJECT_OMEGA.txt, task=0f89e356-5fd2-4329-a7e5-4ec5c90b2f66
+2026-01-16T23:42:53.127306845Z [err]  2026-01-16 23:42:52,755 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/ingestion_jobs "HTTP/2 201 Created"
+2026-01-16T23:42:53.127313513Z [err]  2026-01-16 23:42:52,810 - httpx - INFO - HTTP Request: POST https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/audit_logs "HTTP/2 201 Created"
+2026-01-16T23:42:53.127319057Z [err]  2026-01-16 23:42:52,846 - httpx - INFO - HTTP Request: GET https://jxvcxmqqxwnracluelwq.supabase.co/rest/v1/org_usage?select=storage_used_mb%2Cjob_count_cycle&org_id=eq.3cbf4dbe-c5a4-4253-b72b-6b89a15859ab&limit=1 "HTTP/2 200 OK"
+2026-01-16T23:43:23.140463643Z [inf]  Fri Jan 16 23:43:15 2026 -> SelfCheck: Database status OK.
 
 
-
-| id                                   | title                          | indexing_status | chunk_count |
-| ------------------------------------ | ------------------------------ | --------------- | ----------- |
-| 11edd7d1-0b56-4351-87dd-b11609754b3b | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| 3769a79d-0b26-4d86-9f38-98dc934df0ff | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| 39c2696a-b4cc-4ec9-b70d-72422ed4fa77 | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| 41d03596-9b69-4b72-9c01-ebf6162ffa5e | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| 50152c46-5320-4d1c-bb94-3087993c8ca7 | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| 746a0224-26b5-4c4c-98a2-7203fda7d378 | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| 86212cee-3f5c-4c8f-a998-bb70f4ad8a00 | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| c664943b-a0d3-4307-acf1-31d3d24267fb | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| ce1bdaab-2eff-4919-adbe-7235bd0c7bc9 | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| e6987814-02df-4a49-a39e-465090e7098b | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
-| f1ef6703-9c68-4a62-89c5-955661137f92 | CONFIDENTIAL_PROJECT_OMEGA.txt | pending         | 3           |
+2026-01-12T20:41:45.471995742Z [inf]  1:M 12 Jan 2026 20:41:44.164 * 1 changes in 60 seconds. Saving...
+2026-01-12T20:41:45.472001255Z [inf]  1:M 12 Jan 2026 20:41:44.165 * Background saving started by pid 298
+2026-01-12T20:41:45.472005878Z [inf]  298:C 12 Jan 2026 20:41:44.202 * DB saved on disk
+2026-01-12T20:41:45.472011438Z [inf]  298:C 12 Jan 2026 20:41:44.203 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-12T20:41:45.472017869Z [inf]  1:M 12 Jan 2026 20:41:44.266 * Background saving terminated with success
+2026-01-12T20:42:45.485921923Z [inf]  1:M 12 Jan 2026 20:42:45.054 * 1 changes in 60 seconds. Saving...
+2026-01-12T20:42:45.485928208Z [inf]  1:M 12 Jan 2026 20:42:45.056 * Background saving started by pid 299
+2026-01-12T20:42:45.485932980Z [inf]  299:C 12 Jan 2026 20:42:45.069 * DB saved on disk
+2026-01-12T20:42:45.485936983Z [inf]  299:C 12 Jan 2026 20:42:45.070 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-12T20:42:45.485942239Z [inf]  1:M 12 Jan 2026 20:42:45.156 * Background saving terminated with success
+2026-01-12T21:05:57.264141673Z [inf]  1:M 12 Jan 2026 21:05:52.439 * 1 changes in 60 seconds. Saving...
+2026-01-12T21:05:57.264153109Z [inf]  1:M 12 Jan 2026 21:05:52.440 * Background saving started by pid 300
+2026-01-12T21:05:57.264160391Z [inf]  300:C 12 Jan 2026 21:05:52.463 * DB saved on disk
+2026-01-12T21:05:57.264166766Z [inf]  300:C 12 Jan 2026 21:05:52.464 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-12T21:05:57.264172707Z [inf]  1:M 12 Jan 2026 21:05:52.541 * Background saving terminated with success
+2026-01-12T21:06:57.264218479Z [inf]  1:M 12 Jan 2026 21:06:53.063 * 1 changes in 60 seconds. Saving...
+2026-01-12T21:06:57.264227147Z [inf]  1:M 12 Jan 2026 21:06:53.064 * Background saving started by pid 301
+2026-01-12T21:06:57.264234010Z [inf]  301:C 12 Jan 2026 21:06:53.105 * DB saved on disk
+2026-01-12T21:06:57.264240765Z [inf]  301:C 12 Jan 2026 21:06:53.107 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-12T21:06:57.264246883Z [inf]  1:M 12 Jan 2026 21:06:53.166 * Background saving terminated with success
+2026-01-12T21:39:19.008805110Z [inf]  1:M 12 Jan 2026 21:39:17.606 * 1 changes in 60 seconds. Saving...
+2026-01-12T21:39:19.008812170Z [inf]  1:M 12 Jan 2026 21:39:17.607 * Background saving started by pid 302
+2026-01-12T21:39:19.008817051Z [inf]  302:C 12 Jan 2026 21:39:17.630 * DB saved on disk
+2026-01-12T21:39:19.008824043Z [inf]  302:C 12 Jan 2026 21:39:17.631 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-12T21:39:19.008828901Z [inf]  1:M 12 Jan 2026 21:39:17.708 * Background saving terminated with success
+2026-01-12T21:40:19.016784446Z [inf]  1:M 12 Jan 2026 21:40:18.010 * 1 changes in 60 seconds. Saving...
+2026-01-12T21:40:19.016792895Z [inf]  1:M 12 Jan 2026 21:40:18.011 * Background saving started by pid 303
+2026-01-12T21:40:19.016799124Z [inf]  303:C 12 Jan 2026 21:40:18.024 * DB saved on disk
+2026-01-12T21:40:19.016804468Z [inf]  303:C 12 Jan 2026 21:40:18.025 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-12T21:40:19.016808797Z [inf]  1:M 12 Jan 2026 21:40:18.112 * Background saving terminated with success
+2026-01-13T05:38:09.392858339Z [inf]  1:M 13 Jan 2026 05:38:07.133 * 1 changes in 60 seconds. Saving...
+2026-01-13T05:38:09.392866508Z [inf]  1:M 13 Jan 2026 05:38:07.134 * Background saving started by pid 304
+2026-01-13T05:38:09.392873403Z [inf]  304:C 13 Jan 2026 05:38:07.147 * DB saved on disk
+2026-01-13T05:38:09.392879741Z [inf]  304:C 13 Jan 2026 05:38:07.148 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T05:38:09.392884461Z [inf]  1:M 13 Jan 2026 05:38:07.235 * Background saving terminated with success
+2026-01-13T05:39:09.341245780Z [inf]  1:M 13 Jan 2026 05:39:08.030 * 1 changes in 60 seconds. Saving...
+2026-01-13T05:39:09.341256778Z [inf]  1:M 13 Jan 2026 05:39:08.031 * Background saving started by pid 305
+2026-01-13T05:39:09.341263024Z [inf]  305:C 13 Jan 2026 05:39:08.064 * DB saved on disk
+2026-01-13T05:39:09.341272592Z [inf]  305:C 13 Jan 2026 05:39:08.065 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T05:39:09.341278373Z [inf]  1:M 13 Jan 2026 05:39:08.132 * Background saving terminated with success
+2026-01-13T09:14:35.442197422Z [inf]  306:C 13 Jan 2026 09:14:31.267 * DB saved on disk
+2026-01-13T09:14:35.442202065Z [inf]  1:M 13 Jan 2026 09:14:31.215 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:14:35.442208631Z [inf]  1:M 13 Jan 2026 09:14:31.216 * Background saving started by pid 306
+2026-01-13T09:14:35.442210164Z [inf]  306:C 13 Jan 2026 09:14:31.267 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:14:35.442216693Z [inf]  1:M 13 Jan 2026 09:14:31.316 * Background saving terminated with success
+2026-01-13T09:15:35.429418474Z [inf]  1:M 13 Jan 2026 09:15:32.015 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:15:35.429422404Z [inf]  1:M 13 Jan 2026 09:15:32.016 * Background saving started by pid 307
+2026-01-13T09:15:35.429426494Z [inf]  307:C 13 Jan 2026 09:15:32.040 * DB saved on disk
+2026-01-13T09:15:35.429430763Z [inf]  307:C 13 Jan 2026 09:15:32.041 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:15:35.429434956Z [inf]  1:M 13 Jan 2026 09:15:32.117 * Background saving terminated with success
+2026-01-13T09:21:25.450537053Z [inf]  1:M 13 Jan 2026 09:21:22.106 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:21:25.450544020Z [inf]  1:M 13 Jan 2026 09:21:22.107 * Background saving started by pid 308
+2026-01-13T09:21:25.450553085Z [inf]  308:C 13 Jan 2026 09:21:22.127 * DB saved on disk
+2026-01-13T09:21:25.450560427Z [inf]  308:C 13 Jan 2026 09:21:22.128 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:21:25.450565286Z [inf]  1:M 13 Jan 2026 09:21:22.207 * Background saving terminated with success
+2026-01-13T09:22:25.450559361Z [inf]  1:M 13 Jan 2026 09:22:23.008 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:22:25.450565015Z [inf]  1:M 13 Jan 2026 09:22:23.009 * Background saving started by pid 309
+2026-01-13T09:22:25.450569599Z [inf]  309:C 13 Jan 2026 09:22:23.021 * DB saved on disk
+2026-01-13T09:22:25.450575366Z [inf]  309:C 13 Jan 2026 09:22:23.022 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:22:25.450579669Z [inf]  1:M 13 Jan 2026 09:22:23.110 * Background saving terminated with success
+2026-01-13T09:48:17.862485338Z [inf]  1:M 13 Jan 2026 09:48:16.607 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:48:17.862496296Z [inf]  1:M 13 Jan 2026 09:48:16.609 * Background saving started by pid 310
+2026-01-13T09:48:17.862501890Z [inf]  310:C 13 Jan 2026 09:48:16.621 * DB saved on disk
+2026-01-13T09:48:17.862506540Z [inf]  310:C 13 Jan 2026 09:48:16.621 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:48:17.862511417Z [inf]  1:M 13 Jan 2026 09:48:16.710 * Background saving terminated with success
+2026-01-13T09:49:17.863764725Z [inf]  1:M 13 Jan 2026 09:49:17.011 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:49:17.863772869Z [inf]  1:M 13 Jan 2026 09:49:17.012 * Background saving started by pid 311
+2026-01-13T09:49:17.863778098Z [inf]  311:C 13 Jan 2026 09:49:17.038 * DB saved on disk
+2026-01-13T09:49:17.863783287Z [inf]  311:C 13 Jan 2026 09:49:17.039 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:49:17.863788981Z [inf]  1:M 13 Jan 2026 09:49:17.114 * Background saving terminated with success
+2026-01-13T09:50:27.877091354Z [inf]  1:M 13 Jan 2026 09:50:18.009 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:50:27.877102158Z [inf]  1:M 13 Jan 2026 09:50:18.010 * Background saving started by pid 312
+2026-01-13T09:50:27.877108839Z [inf]  312:C 13 Jan 2026 09:50:18.042 * DB saved on disk
+2026-01-13T09:50:27.877114633Z [inf]  312:C 13 Jan 2026 09:50:18.043 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:50:27.877119578Z [inf]  1:M 13 Jan 2026 09:50:18.111 * Background saving terminated with success
+2026-01-13T09:51:27.882843267Z [inf]  1:M 13 Jan 2026 09:51:25.341 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:51:27.882850063Z [inf]  1:M 13 Jan 2026 09:51:25.342 * Background saving started by pid 313
+2026-01-13T09:51:27.882855367Z [inf]  313:C 13 Jan 2026 09:51:25.360 * DB saved on disk
+2026-01-13T09:51:27.882860005Z [inf]  313:C 13 Jan 2026 09:51:25.361 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:51:27.882864048Z [inf]  1:M 13 Jan 2026 09:51:25.443 * Background saving terminated with success
+2026-01-13T09:52:27.887092163Z [inf]  1:M 13 Jan 2026 09:52:26.100 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:52:27.887103306Z [inf]  1:M 13 Jan 2026 09:52:26.101 * Background saving started by pid 314
+2026-01-13T09:52:27.887108957Z [inf]  314:C 13 Jan 2026 09:52:26.345 * DB saved on disk
+2026-01-13T09:52:27.887114662Z [inf]  314:C 13 Jan 2026 09:52:26.346 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-13T09:52:27.887120168Z [inf]  1:M 13 Jan 2026 09:52:26.404 * Background saving terminated with success
+2026-01-13T09:55:07.907507522Z [inf]  1:M 13 Jan 2026 09:55:04.672 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:55:07.907517745Z [inf]  1:M 13 Jan 2026 09:55:04.674 * Background saving started by pid 315
+2026-01-13T09:55:07.907523717Z [inf]  315:C 13 Jan 2026 09:55:04.694 * DB saved on disk
+2026-01-13T09:55:07.907528776Z [inf]  315:C 13 Jan 2026 09:55:04.695 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:55:07.907533701Z [inf]  1:M 13 Jan 2026 09:55:04.775 * Background saving terminated with success
+2026-01-13T09:56:07.937780748Z [inf]  1:M 13 Jan 2026 09:56:05.020 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:56:07.937796151Z [inf]  1:M 13 Jan 2026 09:56:05.021 * Background saving started by pid 316
+2026-01-13T09:56:07.937805645Z [inf]  316:C 13 Jan 2026 09:56:05.039 * DB saved on disk
+2026-01-13T09:56:07.937813271Z [inf]  316:C 13 Jan 2026 09:56:05.040 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:56:07.937822001Z [inf]  1:M 13 Jan 2026 09:56:05.122 * Background saving terminated with success
+2026-01-13T09:57:37.874643100Z [inf]  1:M 13 Jan 2026 09:57:37.257 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:57:37.874648252Z [inf]  1:M 13 Jan 2026 09:57:37.258 * Background saving started by pid 317
+2026-01-13T09:57:37.874652466Z [inf]  317:C 13 Jan 2026 09:57:37.323 * DB saved on disk
+2026-01-13T09:57:37.874656848Z [inf]  317:C 13 Jan 2026 09:57:37.324 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:57:37.874661604Z [inf]  1:M 13 Jan 2026 09:57:37.359 * Background saving terminated with success
+2026-01-13T09:58:47.885745502Z [inf]  1:M 13 Jan 2026 09:58:38.078 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:58:47.885755321Z [inf]  1:M 13 Jan 2026 09:58:38.079 * Background saving started by pid 318
+2026-01-13T09:58:47.885761536Z [inf]  318:C 13 Jan 2026 09:58:38.108 * DB saved on disk
+2026-01-13T09:58:47.885768234Z [inf]  318:C 13 Jan 2026 09:58:38.109 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:58:47.885774765Z [inf]  1:M 13 Jan 2026 09:58:38.180 * Background saving terminated with success
+2026-01-13T09:59:47.889264950Z [inf]  1:M 13 Jan 2026 09:59:39.031 * 1 changes in 60 seconds. Saving...
+2026-01-13T09:59:47.889272112Z [inf]  1:M 13 Jan 2026 09:59:39.032 * Background saving started by pid 319
+2026-01-13T09:59:47.889276778Z [inf]  319:C 13 Jan 2026 09:59:39.068 * DB saved on disk
+2026-01-13T09:59:47.889282159Z [inf]  319:C 13 Jan 2026 09:59:39.068 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T09:59:47.889287591Z [inf]  1:M 13 Jan 2026 09:59:39.133 * Background saving terminated with success
+2026-01-13T10:00:47.902205002Z [inf]  1:M 13 Jan 2026 10:00:40.039 * 1 changes in 60 seconds. Saving...
+2026-01-13T10:00:47.902211691Z [inf]  1:M 13 Jan 2026 10:00:40.040 * Background saving started by pid 320
+2026-01-13T10:00:47.902216053Z [inf]  320:C 13 Jan 2026 10:00:40.124 * DB saved on disk
+2026-01-13T10:00:47.902220077Z [inf]  320:C 13 Jan 2026 10:00:40.125 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T10:00:47.902224304Z [inf]  1:M 13 Jan 2026 10:00:40.141 * Background saving terminated with success
+2026-01-13T10:04:17.951822376Z [inf]  1:M 13 Jan 2026 10:04:09.063 * 1 changes in 60 seconds. Saving...
+2026-01-13T10:04:17.951831714Z [inf]  1:M 13 Jan 2026 10:04:09.064 * Background saving started by pid 321
+2026-01-13T10:04:17.951837589Z [inf]  321:C 13 Jan 2026 10:04:09.092 * DB saved on disk
+2026-01-13T10:04:17.951843057Z [inf]  321:C 13 Jan 2026 10:04:09.093 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T10:04:17.951848099Z [inf]  1:M 13 Jan 2026 10:04:09.164 * Background saving terminated with success
+2026-01-13T10:05:18.049169567Z [inf]  1:M 13 Jan 2026 10:05:10.077 * 1 changes in 60 seconds. Saving...
+2026-01-13T10:05:18.049175900Z [inf]  1:M 13 Jan 2026 10:05:10.078 * Background saving started by pid 322
+2026-01-13T10:05:18.049180559Z [inf]  322:C 13 Jan 2026 10:05:10.091 * DB saved on disk
+2026-01-13T10:05:18.049184936Z [inf]  322:C 13 Jan 2026 10:05:10.092 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T10:05:18.049190338Z [inf]  1:M 13 Jan 2026 10:05:10.179 * Background saving terminated with success
+2026-01-13T10:06:17.998259386Z [inf]  1:M 13 Jan 2026 10:06:11.078 * 1 changes in 60 seconds. Saving...
+2026-01-13T10:06:17.998266788Z [inf]  1:M 13 Jan 2026 10:06:11.078 * Background saving started by pid 323
+2026-01-13T10:06:17.998271895Z [inf]  323:C 13 Jan 2026 10:06:11.106 * DB saved on disk
+2026-01-13T10:06:17.998278094Z [inf]  323:C 13 Jan 2026 10:06:11.107 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T10:06:17.998283644Z [inf]  1:M 13 Jan 2026 10:06:11.180 * Background saving terminated with success
+2026-01-13T10:07:18.006781013Z [inf]  1:M 13 Jan 2026 10:07:12.089 * 1 changes in 60 seconds. Saving...
+2026-01-13T10:07:18.006789802Z [inf]  1:M 13 Jan 2026 10:07:12.090 * Background saving started by pid 324
+2026-01-13T10:07:18.006794369Z [inf]  324:C 13 Jan 2026 10:07:12.105 * DB saved on disk
+2026-01-13T10:07:18.006798691Z [inf]  324:C 13 Jan 2026 10:07:12.106 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T10:07:18.006802745Z [inf]  1:M 13 Jan 2026 10:07:12.191 * Background saving terminated with success
+2026-01-13T10:11:18.048470298Z [inf]  1:M 13 Jan 2026 10:11:14.048 * 1 changes in 60 seconds. Saving...
+2026-01-13T10:11:18.048478635Z [inf]  1:M 13 Jan 2026 10:11:14.048 * Background saving started by pid 325
+2026-01-13T10:11:18.048484908Z [inf]  325:C 13 Jan 2026 10:11:14.070 * DB saved on disk
+2026-01-13T10:11:18.048491271Z [inf]  325:C 13 Jan 2026 10:11:14.071 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T10:11:18.048497214Z [inf]  1:M 13 Jan 2026 10:11:14.149 * Background saving terminated with success
+2026-01-13T10:12:18.052423112Z [inf]  1:M 13 Jan 2026 10:12:15.066 * 1 changes in 60 seconds. Saving...
+2026-01-13T10:12:18.052429572Z [inf]  1:M 13 Jan 2026 10:12:15.067 * Background saving started by pid 326
+2026-01-13T10:12:18.052434034Z [inf]  326:C 13 Jan 2026 10:12:15.077 * DB saved on disk
+2026-01-13T10:12:18.052438094Z [inf]  326:C 13 Jan 2026 10:12:15.078 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T10:12:18.052441736Z [inf]  1:M 13 Jan 2026 10:12:15.167 * Background saving terminated with success
+2026-01-13T11:28:23.454722494Z [inf]  1:M 13 Jan 2026 11:28:13.653 * 1 changes in 60 seconds. Saving...
+2026-01-13T11:28:23.454729116Z [inf]  1:M 13 Jan 2026 11:28:13.654 * Background saving started by pid 327
+2026-01-13T11:28:23.454733625Z [inf]  327:C 13 Jan 2026 11:28:13.673 * DB saved on disk
+2026-01-13T11:28:23.454739545Z [inf]  327:C 13 Jan 2026 11:28:13.674 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T11:28:23.454743540Z [inf]  1:M 13 Jan 2026 11:28:13.754 * Background saving terminated with success
+2026-01-13T11:29:23.468947245Z [inf]  1:M 13 Jan 2026 11:29:14.070 * 1 changes in 60 seconds. Saving...
+2026-01-13T11:29:23.468960667Z [inf]  1:M 13 Jan 2026 11:29:14.071 * Background saving started by pid 328
+2026-01-13T11:29:23.468967973Z [inf]  328:C 13 Jan 2026 11:29:14.092 * DB saved on disk
+2026-01-13T11:29:23.468974581Z [inf]  328:C 13 Jan 2026 11:29:14.092 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T11:29:23.468979549Z [inf]  1:M 13 Jan 2026 11:29:14.171 * Background saving terminated with success
+2026-01-13T12:32:29.420280645Z [inf]  1:M 13 Jan 2026 12:32:20.234 * 1 changes in 60 seconds. Saving...
+2026-01-13T12:32:29.420287785Z [inf]  1:M 13 Jan 2026 12:32:20.235 * Background saving started by pid 329
+2026-01-13T12:32:29.420292851Z [inf]  329:C 13 Jan 2026 12:32:20.264 * DB saved on disk
+2026-01-13T12:32:29.420297218Z [inf]  329:C 13 Jan 2026 12:32:20.265 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T12:32:29.420300950Z [inf]  1:M 13 Jan 2026 12:32:20.336 * Background saving terminated with success
+2026-01-13T12:33:29.429118758Z [inf]  1:M 13 Jan 2026 12:33:21.037 * 1 changes in 60 seconds. Saving...
+2026-01-13T12:33:29.429129237Z [inf]  1:M 13 Jan 2026 12:33:21.038 * Background saving started by pid 330
+2026-01-13T12:33:29.429135538Z [inf]  330:C 13 Jan 2026 12:33:21.074 * DB saved on disk
+2026-01-13T12:33:29.429141165Z [inf]  330:C 13 Jan 2026 12:33:21.075 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T12:33:29.429148356Z [inf]  1:M 13 Jan 2026 12:33:21.139 * Background saving terminated with success
+2026-01-13T12:41:59.893437956Z [inf]  1:M 13 Jan 2026 12:41:51.500 * 1 changes in 60 seconds. Saving...
+2026-01-13T12:41:59.893448169Z [inf]  1:M 13 Jan 2026 12:41:51.500 * Background saving started by pid 331
+2026-01-13T12:41:59.893453927Z [inf]  331:C 13 Jan 2026 12:41:51.514 * DB saved on disk
+2026-01-13T12:41:59.893460670Z [inf]  331:C 13 Jan 2026 12:41:51.515 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T12:41:59.893466567Z [inf]  1:M 13 Jan 2026 12:41:51.601 * Background saving terminated with success
+2026-01-13T12:42:59.797306784Z [inf]  1:M 13 Jan 2026 12:42:52.093 * 1 changes in 60 seconds. Saving...
+2026-01-13T12:42:59.797315090Z [inf]  1:M 13 Jan 2026 12:42:52.094 * Background saving started by pid 332
+2026-01-13T12:42:59.797321499Z [inf]  332:C 13 Jan 2026 12:42:52.131 * DB saved on disk
+2026-01-13T12:42:59.797327465Z [inf]  332:C 13 Jan 2026 12:42:52.132 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T12:42:59.797333030Z [inf]  1:M 13 Jan 2026 12:42:52.195 * Background saving terminated with success
+2026-01-13T12:51:20.079245159Z [inf]  1:M 13 Jan 2026 12:51:14.808 * 1 changes in 60 seconds. Saving...
+2026-01-13T12:51:20.079257361Z [inf]  1:M 13 Jan 2026 12:51:14.809 * Background saving started by pid 333
+2026-01-13T12:51:20.079264361Z [inf]  333:C 13 Jan 2026 12:51:14.821 * DB saved on disk
+2026-01-13T12:51:20.079270699Z [inf]  333:C 13 Jan 2026 12:51:14.822 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T12:51:20.079276212Z [inf]  1:M 13 Jan 2026 12:51:14.910 * Background saving terminated with success
+2026-01-13T12:52:20.177405902Z [inf]  1:M 13 Jan 2026 12:52:15.097 * 1 changes in 60 seconds. Saving...
+2026-01-13T12:52:20.177413285Z [inf]  1:M 13 Jan 2026 12:52:15.098 * Background saving started by pid 334
+2026-01-13T12:52:20.177419343Z [inf]  334:C 13 Jan 2026 12:52:15.111 * DB saved on disk
+2026-01-13T12:52:20.177423500Z [inf]  334:C 13 Jan 2026 12:52:15.112 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T12:52:20.177427999Z [inf]  1:M 13 Jan 2026 12:52:15.199 * Background saving terminated with success
+2026-01-13T13:09:20.823003482Z [inf]  1:M 13 Jan 2026 13:09:13.949 * 1 changes in 60 seconds. Saving...
+2026-01-13T13:09:20.823008430Z [inf]  1:M 13 Jan 2026 13:09:13.950 * Background saving started by pid 335
+2026-01-13T13:09:20.823014231Z [inf]  335:C 13 Jan 2026 13:09:14.004 * DB saved on disk
+2026-01-13T13:09:20.823019344Z [inf]  335:C 13 Jan 2026 13:09:14.005 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T13:09:20.823023884Z [inf]  1:M 13 Jan 2026 13:09:14.051 * Background saving terminated with success
+2026-01-13T13:10:20.749924536Z [inf]  1:M 13 Jan 2026 13:10:15.051 * 1 changes in 60 seconds. Saving...
+2026-01-13T13:10:20.749931213Z [inf]  1:M 13 Jan 2026 13:10:15.052 * Background saving started by pid 336
+2026-01-13T13:10:20.749937413Z [inf]  336:C 13 Jan 2026 13:10:15.067 * DB saved on disk
+2026-01-13T13:10:20.749943069Z [inf]  336:C 13 Jan 2026 13:10:15.067 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T13:10:20.749947892Z [inf]  1:M 13 Jan 2026 13:10:15.153 * Background saving terminated with success
+2026-01-13T15:24:01.544213295Z [inf]  1:M 13 Jan 2026 15:23:56.082 * 1 changes in 60 seconds. Saving...
+2026-01-13T15:24:01.544223284Z [inf]  1:M 13 Jan 2026 15:23:56.083 * Background saving started by pid 337
+2026-01-13T15:24:01.544230133Z [inf]  337:C 13 Jan 2026 15:23:56.102 * DB saved on disk
+2026-01-13T15:24:01.544238863Z [inf]  337:C 13 Jan 2026 15:23:56.103 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T15:24:01.544244530Z [inf]  1:M 13 Jan 2026 15:23:56.184 * Background saving terminated with success
+2026-01-13T15:25:01.481677023Z [inf]  1:M 13 Jan 2026 15:24:57.092 * 1 changes in 60 seconds. Saving...
+2026-01-13T15:25:01.481687796Z [inf]  1:M 13 Jan 2026 15:24:57.093 * Background saving started by pid 338
+2026-01-13T15:25:01.481695341Z [inf]  338:C 13 Jan 2026 15:24:57.115 * DB saved on disk
+2026-01-13T15:25:01.481702549Z [inf]  338:C 13 Jan 2026 15:24:57.116 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T15:25:01.481709087Z [inf]  1:M 13 Jan 2026 15:24:57.194 * Background saving terminated with success
+2026-01-13T15:43:23.073035712Z [inf]  1:M 13 Jan 2026 15:43:19.048 * 1 changes in 60 seconds. Saving...
+2026-01-13T15:43:23.073042971Z [inf]  1:M 13 Jan 2026 15:43:19.049 * Background saving started by pid 339
+2026-01-13T15:43:23.073048646Z [inf]  339:C 13 Jan 2026 15:43:19.067 * DB saved on disk
+2026-01-13T15:43:23.073053892Z [inf]  339:C 13 Jan 2026 15:43:19.068 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T15:43:23.073059182Z [inf]  1:M 13 Jan 2026 15:43:19.150 * Background saving terminated with success
+2026-01-13T15:44:22.999317651Z [inf]  1:M 13 Jan 2026 15:44:20.054 * 1 changes in 60 seconds. Saving...
+2026-01-13T15:44:22.999324551Z [inf]  1:M 13 Jan 2026 15:44:20.055 * Background saving started by pid 340
+2026-01-13T15:44:22.999329433Z [inf]  340:C 13 Jan 2026 15:44:20.068 * DB saved on disk
+2026-01-13T15:44:22.999333870Z [inf]  340:C 13 Jan 2026 15:44:20.069 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T15:44:22.999337857Z [inf]  1:M 13 Jan 2026 15:44:20.156 * Background saving terminated with success
+2026-01-13T17:10:08.581623703Z [inf]  1:M 13 Jan 2026 17:09:59.221 * 1 changes in 60 seconds. Saving...
+2026-01-13T17:10:08.581633138Z [inf]  1:M 13 Jan 2026 17:09:59.222 * Background saving started by pid 341
+2026-01-13T17:10:08.581640281Z [inf]  341:C 13 Jan 2026 17:09:59.240 * DB saved on disk
+2026-01-13T17:10:08.581644985Z [inf]  341:C 13 Jan 2026 17:09:59.241 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T17:10:08.581649755Z [inf]  1:M 13 Jan 2026 17:09:59.323 * Background saving terminated with success
+2026-01-13T17:11:08.599803442Z [inf]  1:M 13 Jan 2026 17:11:00.027 * 1 changes in 60 seconds. Saving...
+2026-01-13T17:11:08.599812787Z [inf]  1:M 13 Jan 2026 17:11:00.028 * Background saving started by pid 342
+2026-01-13T17:11:08.599818469Z [inf]  342:C 13 Jan 2026 17:11:00.049 * DB saved on disk
+2026-01-13T17:11:08.599823644Z [inf]  342:C 13 Jan 2026 17:11:00.050 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T17:11:08.599830246Z [inf]  1:M 13 Jan 2026 17:11:00.129 * Background saving terminated with success
+2026-01-13T17:12:08.621356492Z [inf]  1:M 13 Jan 2026 17:12:01.031 * 1 changes in 60 seconds. Saving...
+2026-01-13T17:12:08.621364446Z [inf]  1:M 13 Jan 2026 17:12:01.032 * Background saving started by pid 343
+2026-01-13T17:12:08.621371022Z [inf]  343:C 13 Jan 2026 17:12:01.053 * DB saved on disk
+2026-01-13T17:12:08.621376854Z [inf]  343:C 13 Jan 2026 17:12:01.054 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T17:12:08.621382080Z [inf]  1:M 13 Jan 2026 17:12:01.133 * Background saving terminated with success
+2026-01-13T19:19:11.922112053Z [inf]  1:M 13 Jan 2026 19:19:10.546 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:19:11.922125231Z [inf]  1:M 13 Jan 2026 19:19:10.547 * Background saving started by pid 391
+2026-01-13T19:19:11.922133243Z [inf]  391:C 13 Jan 2026 19:19:10.564 * DB saved on disk
+2026-01-13T19:19:11.922139268Z [inf]  391:C 13 Jan 2026 19:19:10.565 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T19:19:11.922144706Z [inf]  1:M 13 Jan 2026 19:19:10.648 * Background saving terminated with success
+2026-01-13T19:20:11.933664235Z [inf]  1:M 13 Jan 2026 19:20:11.054 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:20:11.933673563Z [inf]  1:M 13 Jan 2026 19:20:11.056 * Background saving started by pid 392
+2026-01-13T19:20:11.933679485Z [inf]  392:C 13 Jan 2026 19:20:11.072 * DB saved on disk
+2026-01-13T19:20:11.933685866Z [inf]  392:C 13 Jan 2026 19:20:11.072 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T19:20:11.933691238Z [inf]  1:M 13 Jan 2026 19:20:11.157 * Background saving terminated with success
+2026-01-13T19:26:12.627408487Z [inf]  1:M 13 Jan 2026 19:26:08.237 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:26:12.627415946Z [inf]  1:M 13 Jan 2026 19:26:08.238 * Background saving started by pid 393
+2026-01-13T19:26:12.627421185Z [inf]  393:C 13 Jan 2026 19:26:08.313 * DB saved on disk
+2026-01-13T19:26:12.627428144Z [inf]  393:C 13 Jan 2026 19:26:08.314 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T19:26:12.627432519Z [inf]  1:M 13 Jan 2026 19:26:08.339 * Background saving terminated with success
+2026-01-13T19:27:12.531895883Z [inf]  1:M 13 Jan 2026 19:27:09.044 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:27:12.531903171Z [inf]  1:M 13 Jan 2026 19:27:09.045 * Background saving started by pid 394
+2026-01-13T19:27:12.531908042Z [inf]  394:C 13 Jan 2026 19:27:09.061 * DB saved on disk
+2026-01-13T19:27:12.531912967Z [inf]  394:C 13 Jan 2026 19:27:09.062 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T19:27:12.531919350Z [inf]  1:M 13 Jan 2026 19:27:09.146 * Background saving terminated with success
+2026-01-13T19:29:32.551527810Z [inf]  1:M 13 Jan 2026 19:29:24.515 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:29:32.551536488Z [inf]  1:M 13 Jan 2026 19:29:24.516 * Background saving started by pid 395
+2026-01-13T19:29:32.551542594Z [inf]  395:C 13 Jan 2026 19:29:24.530 * DB saved on disk
+2026-01-13T19:29:32.551547269Z [inf]  395:C 13 Jan 2026 19:29:24.531 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T19:29:32.551551759Z [inf]  1:M 13 Jan 2026 19:29:24.617 * Background saving terminated with success
+2026-01-13T19:30:32.548890011Z [inf]  1:M 13 Jan 2026 19:30:25.024 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:30:32.548897429Z [inf]  1:M 13 Jan 2026 19:30:25.025 * Background saving started by pid 396
+2026-01-13T19:30:32.548902320Z [inf]  396:C 13 Jan 2026 19:30:25.038 * DB saved on disk
+2026-01-13T19:30:32.548907426Z [inf]  396:C 13 Jan 2026 19:30:25.039 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T19:30:32.548912366Z [inf]  1:M 13 Jan 2026 19:30:25.125 * Background saving terminated with success
+2026-01-13T19:31:32.558974642Z [inf]  1:M 13 Jan 2026 19:31:26.041 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:31:32.558982521Z [inf]  1:M 13 Jan 2026 19:31:26.042 * Background saving started by pid 397
+2026-01-13T19:31:32.558989088Z [inf]  397:C 13 Jan 2026 19:31:26.061 * DB saved on disk
+2026-01-13T19:31:32.558993906Z [inf]  397:C 13 Jan 2026 19:31:26.062 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T19:31:32.558999136Z [inf]  1:M 13 Jan 2026 19:31:26.143 * Background saving terminated with success
+2026-01-13T19:36:13.224906467Z [inf]  1:M 13 Jan 2026 19:36:10.476 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:36:13.224913933Z [inf]  1:M 13 Jan 2026 19:36:10.477 * Background saving started by pid 398
+2026-01-13T19:36:13.224918879Z [inf]  398:C 13 Jan 2026 19:36:10.526 * DB saved on disk
+2026-01-13T19:36:13.224923832Z [inf]  398:C 13 Jan 2026 19:36:10.526 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-13T19:36:13.224928238Z [inf]  1:M 13 Jan 2026 19:36:10.579 * Background saving terminated with success
+2026-01-13T19:37:13.167717052Z [inf]  1:M 13 Jan 2026 19:37:11.052 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:37:13.167729904Z [inf]  1:M 13 Jan 2026 19:37:11.074 * Background saving started by pid 399
+2026-01-13T19:37:33.168142942Z [inf]  399:C 13 Jan 2026 19:37:28.976 * DB saved on disk
+2026-01-13T19:37:33.168151883Z [inf]  399:C 13 Jan 2026 19:37:28.979 * Fork CoW for RDB: current 9 MB, peak 9 MB, average 5 MB
+2026-01-13T19:37:33.168158057Z [inf]  1:M 13 Jan 2026 19:37:29.053 * Background saving terminated with success
+2026-01-13T19:38:33.194067778Z [inf]  1:M 13 Jan 2026 19:38:30.092 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:38:33.194075722Z [inf]  1:M 13 Jan 2026 19:38:30.108 * Background saving started by pid 400
+2026-01-13T19:38:42.948629312Z [inf]  400:C 13 Jan 2026 19:38:42.946 * DB saved on disk
+2026-01-13T19:38:42.949222401Z [inf]  400:C 13 Jan 2026 19:38:42.948 * Fork CoW for RDB: current 23 MB, peak 23 MB, average 12 MB
+2026-01-13T19:38:43.043863360Z [inf]  1:M 13 Jan 2026 19:38:43.040 * Background saving terminated with success
+2026-01-13T19:39:53.045632893Z [inf]  1:M 13 Jan 2026 19:39:44.023 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:39:53.045640644Z [inf]  1:M 13 Jan 2026 19:39:44.028 * Background saving started by pid 401
+2026-01-13T19:39:53.045646464Z [inf]  401:C 13 Jan 2026 19:39:45.303 * DB saved on disk
+2026-01-13T19:39:53.045652287Z [inf]  401:C 13 Jan 2026 19:39:45.304 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-13T19:39:53.045657600Z [inf]  1:M 13 Jan 2026 19:39:45.334 * Background saving terminated with success
+2026-01-13T19:41:03.052758797Z [inf]  1:M 13 Jan 2026 19:40:55.380 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:41:03.052767315Z [inf]  1:M 13 Jan 2026 19:40:55.384 * Background saving started by pid 402
+2026-01-13T19:41:03.052773696Z [inf]  402:C 13 Jan 2026 19:40:56.628 * DB saved on disk
+2026-01-13T19:41:03.052780102Z [inf]  402:C 13 Jan 2026 19:40:56.629 * Fork CoW for RDB: current 2 MB, peak 2 MB, average 1 MB
+2026-01-13T19:41:03.052786124Z [inf]  1:M 13 Jan 2026 19:40:56.691 * Background saving terminated with success
+2026-01-13T19:42:03.116878295Z [inf]  1:M 13 Jan 2026 19:41:57.088 * 1 changes in 60 seconds. Saving...
+2026-01-13T19:42:03.116888255Z [inf]  1:M 13 Jan 2026 19:41:57.090 * Background saving started by pid 403
+2026-01-13T19:42:03.116894753Z [inf]  403:C 13 Jan 2026 19:41:57.105 * DB saved on disk
+2026-01-13T19:42:03.116900898Z [inf]  403:C 13 Jan 2026 19:41:57.106 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T19:42:03.116913529Z [inf]  1:M 13 Jan 2026 19:41:57.191 * Background saving terminated with success
+2026-01-13T21:40:14.952152395Z [inf]  1:M 13 Jan 2026 21:40:12.330 * 1 changes in 60 seconds. Saving...
+2026-01-13T21:40:14.952164524Z [inf]  1:M 13 Jan 2026 21:40:12.333 * Background saving started by pid 404
+2026-01-13T21:40:14.952172662Z [inf]  404:C 13 Jan 2026 21:40:12.854 * DB saved on disk
+2026-01-13T21:40:14.952182019Z [inf]  404:C 13 Jan 2026 21:40:12.856 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-13T21:40:14.952191666Z [inf]  1:M 13 Jan 2026 21:40:12.937 * Background saving terminated with success
+2026-01-13T21:41:15.059221954Z [inf]  1:M 13 Jan 2026 21:41:13.030 * 1 changes in 60 seconds. Saving...
+2026-01-13T21:41:15.059230350Z [inf]  1:M 13 Jan 2026 21:41:13.033 * Background saving started by pid 405
+2026-01-13T21:41:15.059236409Z [inf]  405:C 13 Jan 2026 21:41:13.047 * DB saved on disk
+2026-01-13T21:41:15.059241432Z [inf]  405:C 13 Jan 2026 21:41:13.048 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-13T21:41:15.059245634Z [inf]  1:M 13 Jan 2026 21:41:13.134 * Background saving terminated with success
+2026-01-14T07:00:21.135483550Z [inf]  1:M 14 Jan 2026 07:00:17.704 * 1 changes in 60 seconds. Saving...
+2026-01-14T07:00:21.135487669Z [inf]  1:M 14 Jan 2026 07:00:17.707 * Background saving started by pid 406
+2026-01-14T07:00:21.135491486Z [inf]  406:C 14 Jan 2026 07:00:17.781 * DB saved on disk
+2026-01-14T07:00:21.135495470Z [inf]  406:C 14 Jan 2026 07:00:17.784 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T07:00:21.135499186Z [inf]  1:M 14 Jan 2026 07:00:17.808 * Background saving terminated with success
+2026-01-14T07:01:21.059787114Z [inf]  1:M 14 Jan 2026 07:01:18.006 * 1 changes in 60 seconds. Saving...
+2026-01-14T07:01:21.059795850Z [inf]  1:M 14 Jan 2026 07:01:18.009 * Background saving started by pid 407
+2026-01-14T07:01:21.059802439Z [inf]  407:C 14 Jan 2026 07:01:18.040 * DB saved on disk
+2026-01-14T07:01:21.059813457Z [inf]  407:C 14 Jan 2026 07:01:18.042 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T07:01:21.059819389Z [inf]  1:M 14 Jan 2026 07:01:18.110 * Background saving terminated with success
+2026-01-14T07:43:25.365241323Z [inf]  1:M 14 Jan 2026 07:43:22.480 * 1 changes in 60 seconds. Saving...
+2026-01-14T07:43:25.365246877Z [inf]  1:M 14 Jan 2026 07:43:22.483 * Background saving started by pid 408
+2026-01-14T07:43:25.365252716Z [inf]  408:C 14 Jan 2026 07:43:22.497 * DB saved on disk
+2026-01-14T07:43:25.365368820Z [inf]  408:C 14 Jan 2026 07:43:22.499 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T07:43:25.365375039Z [inf]  1:M 14 Jan 2026 07:43:22.583 * Background saving terminated with success
+2026-01-14T07:44:25.487303327Z [inf]  1:M 14 Jan 2026 07:44:23.073 * 1 changes in 60 seconds. Saving...
+2026-01-14T07:44:25.487310586Z [inf]  1:M 14 Jan 2026 07:44:23.076 * Background saving started by pid 409
+2026-01-14T07:44:25.487319100Z [inf]  409:C 14 Jan 2026 07:44:23.113 * DB saved on disk
+2026-01-14T07:44:25.487325791Z [inf]  409:C 14 Jan 2026 07:44:23.115 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 0 MB
+2026-01-14T07:44:25.487330349Z [inf]  1:M 14 Jan 2026 07:44:23.177 * Background saving terminated with success
+2026-01-14T07:45:25.416949324Z [inf]  1:M 14 Jan 2026 07:45:24.023 * 1 changes in 60 seconds. Saving...
+2026-01-14T07:45:25.416957612Z [inf]  1:M 14 Jan 2026 07:45:24.025 * Background saving started by pid 410
+2026-01-14T07:45:25.416965163Z [inf]  410:C 14 Jan 2026 07:45:24.064 * DB saved on disk
+2026-01-14T07:45:25.416970220Z [inf]  410:C 14 Jan 2026 07:45:24.066 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T07:45:25.416974684Z [inf]  1:M 14 Jan 2026 07:45:24.127 * Background saving terminated with success
+2026-01-14T09:07:01.991235748Z [inf]  1:M 14 Jan 2026 09:06:58.471 * 1 changes in 60 seconds. Saving...
+2026-01-14T09:07:01.991246235Z [inf]  1:M 14 Jan 2026 09:06:58.473 * Background saving started by pid 411
+2026-01-14T09:07:01.991252404Z [inf]  411:C 14 Jan 2026 09:06:58.501 * DB saved on disk
+2026-01-14T09:07:01.991258045Z [inf]  411:C 14 Jan 2026 09:06:58.503 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T09:07:01.991263247Z [inf]  1:M 14 Jan 2026 09:06:58.577 * Background saving terminated with success
+2026-01-14T09:08:02.119730258Z [inf]  1:M 14 Jan 2026 09:07:59.067 * 1 changes in 60 seconds. Saving...
+2026-01-14T09:08:02.119739965Z [inf]  1:M 14 Jan 2026 09:07:59.070 * Background saving started by pid 412
+2026-01-14T09:08:02.119751097Z [inf]  412:C 14 Jan 2026 09:07:59.087 * DB saved on disk
+2026-01-14T09:08:02.119759055Z [inf]  412:C 14 Jan 2026 09:07:59.089 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T09:08:02.119765139Z [inf]  1:M 14 Jan 2026 09:07:59.170 * Background saving terminated with success
+2026-01-14T09:28:43.479586689Z [inf]  1:M 14 Jan 2026 09:28:37.268 * 1 changes in 60 seconds. Saving...
+2026-01-14T09:28:43.479596406Z [inf]  1:M 14 Jan 2026 09:28:37.272 * Background saving started by pid 413
+2026-01-14T09:28:43.479603701Z [inf]  413:C 14 Jan 2026 09:28:37.290 * DB saved on disk
+2026-01-14T09:28:43.479609769Z [inf]  413:C 14 Jan 2026 09:28:37.291 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T09:28:43.479615325Z [inf]  1:M 14 Jan 2026 09:28:37.372 * Background saving terminated with success
+2026-01-14T09:29:43.479712010Z [inf]  1:M 14 Jan 2026 09:29:38.062 * 1 changes in 60 seconds. Saving...
+2026-01-14T09:29:43.479719372Z [inf]  1:M 14 Jan 2026 09:29:38.065 * Background saving started by pid 414
+2026-01-14T09:29:43.479725796Z [inf]  414:C 14 Jan 2026 09:29:38.097 * DB saved on disk
+2026-01-14T09:29:43.479730100Z [inf]  414:C 14 Jan 2026 09:29:38.098 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 0 MB
+2026-01-14T09:29:43.479734342Z [inf]  1:M 14 Jan 2026 09:29:38.165 * Background saving terminated with success
+2026-01-14T09:30:43.486605844Z [inf]  1:M 14 Jan 2026 09:30:39.019 * 1 changes in 60 seconds. Saving...
+2026-01-14T09:30:43.486614789Z [inf]  1:M 14 Jan 2026 09:30:39.022 * Background saving started by pid 415
+2026-01-14T09:30:43.486621430Z [inf]  415:C 14 Jan 2026 09:30:39.036 * DB saved on disk
+2026-01-14T09:30:43.486626580Z [inf]  415:C 14 Jan 2026 09:30:39.038 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T09:30:43.486631310Z [inf]  1:M 14 Jan 2026 09:30:39.123 * Background saving terminated with success
+2026-01-14T11:25:00.380690544Z [inf]  1:M 14 Jan 2026 11:24:54.529 * 1 changes in 60 seconds. Saving...
+2026-01-14T11:25:00.380704366Z [inf]  1:M 14 Jan 2026 11:24:54.532 * Background saving started by pid 417
+2026-01-14T11:25:00.380713224Z [inf]  417:C 14 Jan 2026 11:24:54.563 * DB saved on disk
+2026-01-14T11:25:00.380720154Z [inf]  417:C 14 Jan 2026 11:24:54.565 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T11:25:00.380726701Z [inf]  1:M 14 Jan 2026 11:24:54.633 * Background saving terminated with success
+2026-01-14T11:26:00.381998875Z [inf]  1:M 14 Jan 2026 11:25:55.051 * 1 changes in 60 seconds. Saving...
+2026-01-14T11:26:00.382006234Z [inf]  1:M 14 Jan 2026 11:25:55.054 * Background saving started by pid 418
+2026-01-14T11:26:00.382012380Z [inf]  418:C 14 Jan 2026 11:25:55.077 * DB saved on disk
+2026-01-14T11:26:00.382018978Z [inf]  418:C 14 Jan 2026 11:25:55.079 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T11:26:00.382024857Z [inf]  1:M 14 Jan 2026 11:25:55.154 * Background saving terminated with success
+2026-01-14T13:16:39.650083057Z [inf]  1:M 14 Jan 2026 13:16:33.763 * 1 changes in 60 seconds. Saving...
+2026-01-14T13:16:39.650090096Z [inf]  1:M 14 Jan 2026 13:16:33.766 * Background saving started by pid 419
+2026-01-14T13:16:39.650095242Z [inf]  419:C 14 Jan 2026 13:16:33.784 * DB saved on disk
+2026-01-14T13:16:39.650110104Z [inf]  419:C 14 Jan 2026 13:16:33.786 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T13:16:39.650116341Z [inf]  1:M 14 Jan 2026 13:16:33.867 * Background saving terminated with success
+2026-01-14T13:17:39.689319153Z [inf]  1:M 14 Jan 2026 13:17:34.074 * 1 changes in 60 seconds. Saving...
+2026-01-14T13:17:39.689325989Z [inf]  1:M 14 Jan 2026 13:17:34.078 * Background saving started by pid 420
+2026-01-14T13:17:39.689330848Z [inf]  420:C 14 Jan 2026 13:17:34.103 * DB saved on disk
+2026-01-14T13:17:39.689335282Z [inf]  420:C 14 Jan 2026 13:17:34.105 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T13:17:39.689339927Z [inf]  1:M 14 Jan 2026 13:17:34.178 * Background saving terminated with success
+2026-01-14T13:21:30.146917713Z [inf]  1:M 14 Jan 2026 13:21:26.240 * 1 changes in 60 seconds. Saving...
+2026-01-14T13:21:30.146928156Z [inf]  1:M 14 Jan 2026 13:21:26.243 * Background saving started by pid 421
+2026-01-14T13:21:30.146933917Z [inf]  421:C 14 Jan 2026 13:21:26.267 * DB saved on disk
+2026-01-14T13:21:30.146939684Z [inf]  421:C 14 Jan 2026 13:21:26.269 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T13:21:30.146945026Z [inf]  1:M 14 Jan 2026 13:21:26.343 * Background saving terminated with success
+2026-01-14T13:22:30.278009289Z [inf]  1:M 14 Jan 2026 13:22:27.058 * 1 changes in 60 seconds. Saving...
+2026-01-14T13:22:30.278024506Z [inf]  1:M 14 Jan 2026 13:22:27.062 * Background saving started by pid 422
+2026-01-14T13:22:30.278031431Z [inf]  422:C 14 Jan 2026 13:22:27.077 * DB saved on disk
+2026-01-14T13:22:30.278037472Z [inf]  422:C 14 Jan 2026 13:22:27.079 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T13:22:30.278043803Z [inf]  1:M 14 Jan 2026 13:22:27.163 * Background saving terminated with success
+2026-01-14T13:25:20.222301324Z [inf]  1:M 14 Jan 2026 13:25:12.192 * 1 changes in 60 seconds. Saving...
+2026-01-14T13:25:20.222310482Z [inf]  1:M 14 Jan 2026 13:25:12.194 * Background saving started by pid 423
+2026-01-14T13:25:20.222317314Z [inf]  423:C 14 Jan 2026 13:25:12.219 * DB saved on disk
+2026-01-14T13:25:20.222329760Z [inf]  423:C 14 Jan 2026 13:25:12.222 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T13:25:20.222337629Z [inf]  1:M 14 Jan 2026 13:25:12.295 * Background saving terminated with success
+2026-01-14T13:26:20.227757066Z [inf]  1:M 14 Jan 2026 13:26:13.101 * 1 changes in 60 seconds. Saving...
+2026-01-14T13:26:20.227763286Z [inf]  1:M 14 Jan 2026 13:26:13.104 * Background saving started by pid 424
+2026-01-14T13:26:20.227768301Z [inf]  424:C 14 Jan 2026 13:26:13.147 * DB saved on disk
+2026-01-14T13:26:20.227773245Z [inf]  424:C 14 Jan 2026 13:26:13.149 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T13:26:20.227778114Z [inf]  1:M 14 Jan 2026 13:26:13.205 * Background saving terminated with success
+2026-01-14T13:43:22.008913123Z [inf]  1:M 14 Jan 2026 13:43:20.563 * Background saving terminated with success
+2026-01-14T13:43:22.008988747Z [inf]  1:M 14 Jan 2026 13:43:20.457 * 1 changes in 60 seconds. Saving...
+2026-01-14T13:43:22.008993793Z [inf]  1:M 14 Jan 2026 13:43:20.460 * Background saving started by pid 425
+2026-01-14T13:43:22.008999282Z [inf]  425:C 14 Jan 2026 13:43:20.475 * DB saved on disk
+2026-01-14T13:43:22.009003783Z [inf]  425:C 14 Jan 2026 13:43:20.477 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T13:44:21.940271729Z [inf]  1:M 14 Jan 2026 13:44:21.057 * 1 changes in 60 seconds. Saving...
+2026-01-14T13:44:21.940276850Z [inf]  1:M 14 Jan 2026 13:44:21.059 * Background saving started by pid 426
+2026-01-14T13:44:21.940282558Z [inf]  426:C 14 Jan 2026 13:44:21.423 * DB saved on disk
+2026-01-14T13:44:21.940288269Z [inf]  426:C 14 Jan 2026 13:44:21.425 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-14T13:44:21.940296150Z [inf]  1:M 14 Jan 2026 13:44:21.462 * Background saving terminated with success
+2026-01-14T14:19:44.346881403Z [inf]  1:M 14 Jan 2026 14:19:36.910 * 1 changes in 60 seconds. Saving...
+2026-01-14T14:19:44.346888271Z [inf]  1:M 14 Jan 2026 14:19:36.912 * Background saving started by pid 427
+2026-01-14T14:19:44.346893115Z [inf]  427:C 14 Jan 2026 14:19:36.964 * DB saved on disk
+2026-01-14T14:19:44.346900959Z [inf]  427:C 14 Jan 2026 14:19:36.966 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T14:19:44.346906816Z [inf]  1:M 14 Jan 2026 14:19:37.014 * Background saving terminated with success
+2026-01-14T14:20:44.438139943Z [inf]  1:M 14 Jan 2026 14:20:38.030 * 1 changes in 60 seconds. Saving...
+2026-01-14T14:20:44.438148520Z [inf]  1:M 14 Jan 2026 14:20:38.032 * Background saving started by pid 428
+2026-01-14T14:20:44.438156261Z [inf]  428:C 14 Jan 2026 14:20:38.057 * DB saved on disk
+2026-01-14T14:20:44.438162344Z [inf]  428:C 14 Jan 2026 14:20:38.059 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T14:20:44.438168238Z [inf]  1:M 14 Jan 2026 14:20:38.133 * Background saving terminated with success
+2026-01-14T14:25:14.959645460Z [inf]  1:M 14 Jan 2026 14:25:09.485 * 1 changes in 60 seconds. Saving...
+2026-01-14T14:25:14.959651955Z [inf]  1:M 14 Jan 2026 14:25:09.488 * Background saving started by pid 429
+2026-01-14T14:25:14.959656888Z [inf]  429:C 14 Jan 2026 14:25:09.510 * DB saved on disk
+2026-01-14T14:25:14.959661926Z [inf]  429:C 14 Jan 2026 14:25:09.511 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T14:25:14.959665894Z [inf]  1:M 14 Jan 2026 14:25:09.589 * Background saving terminated with success
+2026-01-14T14:26:14.972023134Z [inf]  1:M 14 Jan 2026 14:26:10.015 * 1 changes in 60 seconds. Saving...
+2026-01-14T14:26:14.972031658Z [inf]  1:M 14 Jan 2026 14:26:10.019 * Background saving started by pid 430
+2026-01-14T14:26:14.972037230Z [inf]  430:C 14 Jan 2026 14:26:10.051 * DB saved on disk
+2026-01-14T14:26:14.972041826Z [inf]  430:C 14 Jan 2026 14:26:10.052 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T14:26:14.972047004Z [inf]  1:M 14 Jan 2026 14:26:10.120 * Background saving terminated with success
+2026-01-14T15:12:07.717813581Z [inf]  1:M 14 Jan 2026 15:12:03.114 * 1 changes in 60 seconds. Saving...
+2026-01-14T15:12:07.717824148Z [inf]  1:M 14 Jan 2026 15:12:03.118 * Background saving started by pid 431
+2026-01-14T15:12:07.717829395Z [inf]  431:C 14 Jan 2026 15:12:03.168 * DB saved on disk
+2026-01-14T15:12:07.717834348Z [inf]  431:C 14 Jan 2026 15:12:03.170 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T15:12:07.717839906Z [inf]  1:M 14 Jan 2026 15:12:03.218 * Background saving terminated with success
+2026-01-14T15:13:07.652799011Z [inf]  1:M 14 Jan 2026 15:13:04.042 * 1 changes in 60 seconds. Saving...
+2026-01-14T15:13:07.652805650Z [inf]  1:M 14 Jan 2026 15:13:04.045 * Background saving started by pid 432
+2026-01-14T15:13:07.652812799Z [inf]  432:C 14 Jan 2026 15:13:04.066 * DB saved on disk
+2026-01-14T15:13:07.652818774Z [inf]  432:C 14 Jan 2026 15:13:04.068 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T15:13:07.652824914Z [inf]  1:M 14 Jan 2026 15:13:04.146 * Background saving terminated with success
+2026-01-14T15:19:57.832263531Z [inf]  1:M 14 Jan 2026 15:19:51.001 * 1 changes in 60 seconds. Saving...
+2026-01-14T15:19:57.832273592Z [inf]  1:M 14 Jan 2026 15:19:51.003 * Background saving started by pid 433
+2026-01-14T15:19:57.832282009Z [inf]  433:C 14 Jan 2026 15:19:51.137 * DB saved on disk
+2026-01-14T15:19:57.832290772Z [inf]  433:C 14 Jan 2026 15:19:51.139 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-14T15:19:57.832296071Z [inf]  1:M 14 Jan 2026 15:19:51.205 * Background saving terminated with success
+2026-01-14T15:20:57.839441658Z [inf]  1:M 14 Jan 2026 15:20:52.074 * 1 changes in 60 seconds. Saving...
+2026-01-14T15:20:57.839450082Z [inf]  1:M 14 Jan 2026 15:20:52.078 * Background saving started by pid 434
+2026-01-14T15:20:57.839456990Z [inf]  434:C 14 Jan 2026 15:20:53.152 * DB saved on disk
+2026-01-14T15:20:57.839463110Z [inf]  434:C 14 Jan 2026 15:20:53.154 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-14T15:20:57.839468589Z [inf]  1:M 14 Jan 2026 15:20:53.185 * Background saving terminated with success
+2026-01-14T15:25:07.892735656Z [inf]  1:M 14 Jan 2026 15:24:58.820 * 1 changes in 60 seconds. Saving...
+2026-01-14T15:25:07.892743635Z [inf]  1:M 14 Jan 2026 15:24:58.824 * Background saving started by pid 435
+2026-01-14T15:25:07.892749672Z [inf]  435:C 14 Jan 2026 15:24:59.748 * DB saved on disk
+2026-01-14T15:25:07.892756709Z [inf]  435:C 14 Jan 2026 15:24:59.750 * Fork CoW for RDB: current 2 MB, peak 2 MB, average 1 MB
+2026-01-14T15:25:07.892762033Z [inf]  1:M 14 Jan 2026 15:24:59.832 * Background saving terminated with success
+2026-01-14T15:26:07.942968616Z [inf]  1:M 14 Jan 2026 15:26:00.047 * 1 changes in 60 seconds. Saving...
+2026-01-14T15:26:07.942977282Z [inf]  1:M 14 Jan 2026 15:26:00.050 * Background saving started by pid 436
+2026-01-14T15:26:07.942983302Z [inf]  436:C 14 Jan 2026 15:26:00.064 * DB saved on disk
+2026-01-14T15:26:07.942987460Z [inf]  436:C 14 Jan 2026 15:26:00.066 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T15:26:07.942992332Z [inf]  1:M 14 Jan 2026 15:26:00.150 * Background saving terminated with success
+2026-01-14T16:44:35.278890934Z [inf]  1:M 14 Jan 2026 16:44:25.901 * 1 changes in 60 seconds. Saving...
+2026-01-14T16:44:35.278906807Z [inf]  1:M 14 Jan 2026 16:44:25.903 * Background saving started by pid 437
+2026-01-14T16:44:35.278914973Z [inf]  437:C 14 Jan 2026 16:44:25.925 * DB saved on disk
+2026-01-14T16:44:35.278921820Z [inf]  437:C 14 Jan 2026 16:44:25.926 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T16:44:35.278928359Z [inf]  1:M 14 Jan 2026 16:44:26.005 * Background saving terminated with success
+2026-01-14T16:45:35.195040166Z [inf]  1:M 14 Jan 2026 16:45:26.020 * 1 changes in 60 seconds. Saving...
+2026-01-14T16:45:35.195046170Z [inf]  1:M 14 Jan 2026 16:45:26.023 * Background saving started by pid 438
+2026-01-14T16:45:35.195051135Z [inf]  438:C 14 Jan 2026 16:45:26.036 * DB saved on disk
+2026-01-14T16:45:35.195055262Z [inf]  438:C 14 Jan 2026 16:45:26.038 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T16:45:35.195060935Z [inf]  1:M 14 Jan 2026 16:45:26.124 * Background saving terminated with success
+2026-01-14T17:43:29.271625852Z [inf]  1:M 14 Jan 2026 17:43:23.637 * 1 changes in 60 seconds. Saving...
+2026-01-14T17:43:29.271637370Z [inf]  1:M 14 Jan 2026 17:43:23.640 * Background saving started by pid 439
+2026-01-14T17:43:29.271645149Z [inf]  439:C 14 Jan 2026 17:43:23.655 * DB saved on disk
+2026-01-14T17:43:29.271654683Z [inf]  439:C 14 Jan 2026 17:43:23.656 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T17:43:29.271663651Z [inf]  1:M 14 Jan 2026 17:43:23.741 * Background saving terminated with success
+2026-01-14T17:44:29.277186839Z [inf]  1:M 14 Jan 2026 17:44:24.042 * 1 changes in 60 seconds. Saving...
+2026-01-14T17:44:29.277194281Z [inf]  1:M 14 Jan 2026 17:44:24.045 * Background saving started by pid 440
+2026-01-14T17:44:29.277200233Z [inf]  440:C 14 Jan 2026 17:44:24.059 * DB saved on disk
+2026-01-14T17:44:29.277206464Z [inf]  440:C 14 Jan 2026 17:44:24.060 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T17:44:29.277212196Z [inf]  1:M 14 Jan 2026 17:44:24.147 * Background saving terminated with success
+2026-01-14T18:47:34.364788618Z [inf]  1:M 14 Jan 2026 18:47:30.277 * 1 changes in 60 seconds. Saving...
+2026-01-14T18:47:34.364797268Z [inf]  1:M 14 Jan 2026 18:47:30.280 * Background saving started by pid 441
+2026-01-14T18:47:34.364805359Z [inf]  441:C 14 Jan 2026 18:47:30.296 * DB saved on disk
+2026-01-14T18:47:34.364811915Z [inf]  441:C 14 Jan 2026 18:47:30.298 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T18:47:34.364818774Z [inf]  1:M 14 Jan 2026 18:47:30.381 * Background saving terminated with success
+2026-01-14T18:48:34.375810566Z [inf]  1:M 14 Jan 2026 18:48:31.069 * 1 changes in 60 seconds. Saving...
+2026-01-14T18:48:34.375818956Z [inf]  1:M 14 Jan 2026 18:48:31.072 * Background saving started by pid 442
+2026-01-14T18:48:34.375824670Z [inf]  442:C 14 Jan 2026 18:48:31.153 * DB saved on disk
+2026-01-14T18:48:34.375829466Z [inf]  442:C 14 Jan 2026 18:48:31.155 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T18:48:34.375834623Z [inf]  1:M 14 Jan 2026 18:48:31.173 * Background saving terminated with success
+2026-01-14T19:09:46.117220497Z [inf]  1:M 14 Jan 2026 19:09:40.044 * 1 changes in 60 seconds. Saving...
+2026-01-14T19:09:46.117229468Z [inf]  1:M 14 Jan 2026 19:09:40.047 * Background saving started by pid 443
+2026-01-14T19:09:46.117237806Z [inf]  443:C 14 Jan 2026 19:09:40.060 * DB saved on disk
+2026-01-14T19:09:46.117243892Z [inf]  443:C 14 Jan 2026 19:09:40.061 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T19:09:46.117250642Z [inf]  1:M 14 Jan 2026 19:09:40.147 * Background saving terminated with success
+2026-01-14T19:10:46.106319872Z [inf]  1:M 14 Jan 2026 19:10:41.039 * 1 changes in 60 seconds. Saving...
+2026-01-14T19:10:46.106327334Z [inf]  1:M 14 Jan 2026 19:10:41.042 * Background saving started by pid 444
+2026-01-14T19:10:46.106331968Z [inf]  444:C 14 Jan 2026 19:10:41.101 * DB saved on disk
+2026-01-14T19:10:46.106336621Z [inf]  444:C 14 Jan 2026 19:10:41.103 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T19:10:46.106341533Z [inf]  1:M 14 Jan 2026 19:10:41.143 * Background saving terminated with success
+2026-01-14T19:19:16.454551815Z [inf]  1:M 14 Jan 2026 19:19:12.118 * 1 changes in 60 seconds. Saving...
+2026-01-14T19:19:16.454569409Z [inf]  1:M 14 Jan 2026 19:19:12.121 * Background saving started by pid 445
+2026-01-14T19:19:16.454577807Z [inf]  445:C 14 Jan 2026 19:19:12.136 * DB saved on disk
+2026-01-14T19:19:16.454585551Z [inf]  445:C 14 Jan 2026 19:19:12.138 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T19:19:16.454592918Z [inf]  1:M 14 Jan 2026 19:19:12.222 * Background saving terminated with success
+2026-01-14T19:20:16.370893084Z [inf]  1:M 14 Jan 2026 19:20:13.050 * 1 changes in 60 seconds. Saving...
+2026-01-14T19:20:16.370902190Z [inf]  1:M 14 Jan 2026 19:20:13.055 * Background saving started by pid 446
+2026-01-14T19:20:16.370909831Z [inf]  446:C 14 Jan 2026 19:20:13.087 * DB saved on disk
+2026-01-14T19:20:16.370915898Z [inf]  446:C 14 Jan 2026 19:20:13.089 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T19:20:16.370921813Z [inf]  1:M 14 Jan 2026 19:20:13.156 * Background saving terminated with success
+2026-01-14T20:00:29.989715759Z [inf]  1:M 14 Jan 2026 20:00:29.162 * 1 changes in 60 seconds. Saving...
+2026-01-14T20:00:29.989727107Z [inf]  1:M 14 Jan 2026 20:00:29.166 * Background saving started by pid 447
+2026-01-14T20:00:29.989738889Z [inf]  447:C 14 Jan 2026 20:00:29.185 * DB saved on disk
+2026-01-14T20:00:29.989747821Z [inf]  447:C 14 Jan 2026 20:00:29.187 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T20:00:29.989759581Z [inf]  1:M 14 Jan 2026 20:00:29.267 * Background saving terminated with success
+2026-01-14T20:01:39.860596997Z [inf]  1:M 14 Jan 2026 20:01:30.032 * 1 changes in 60 seconds. Saving...
+2026-01-14T20:01:39.860605709Z [inf]  1:M 14 Jan 2026 20:01:30.035 * Background saving started by pid 448
+2026-01-14T20:01:39.860612375Z [inf]  448:C 14 Jan 2026 20:01:30.048 * DB saved on disk
+2026-01-14T20:01:39.860618856Z [inf]  448:C 14 Jan 2026 20:01:30.050 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T20:01:39.860626654Z [inf]  1:M 14 Jan 2026 20:01:30.137 * Background saving terminated with success
+2026-01-14T20:02:39.868553773Z [inf]  1:M 14 Jan 2026 20:02:31.052 * 1 changes in 60 seconds. Saving...
+2026-01-14T20:02:39.868562932Z [inf]  1:M 14 Jan 2026 20:02:31.055 * Background saving started by pid 449
+2026-01-14T20:02:39.868570161Z [inf]  449:C 14 Jan 2026 20:02:31.091 * DB saved on disk
+2026-01-14T20:02:39.868576162Z [inf]  449:C 14 Jan 2026 20:02:31.092 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-14T20:02:39.868583227Z [inf]  1:M 14 Jan 2026 20:02:31.156 * Background saving terminated with success
+2026-01-15T04:09:47.675031127Z [inf]  1:M 15 Jan 2026 04:09:40.232 * 1 changes in 60 seconds. Saving...
+2026-01-15T04:09:47.675043689Z [inf]  1:M 15 Jan 2026 04:09:40.235 * Background saving started by pid 450
+2026-01-15T04:09:47.675050387Z [inf]  450:C 15 Jan 2026 04:09:40.255 * DB saved on disk
+2026-01-15T04:09:47.675056203Z [inf]  450:C 15 Jan 2026 04:09:40.256 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T04:09:47.675061620Z [inf]  1:M 15 Jan 2026 04:09:40.336 * Background saving terminated with success
+2026-01-15T04:10:47.804407530Z [inf]  1:M 15 Jan 2026 04:10:41.061 * 1 changes in 60 seconds. Saving...
+2026-01-15T04:10:47.804415452Z [inf]  1:M 15 Jan 2026 04:10:41.064 * Background saving started by pid 451
+2026-01-15T04:10:47.804423383Z [inf]  451:C 15 Jan 2026 04:10:41.096 * DB saved on disk
+2026-01-15T04:10:47.804430441Z [inf]  451:C 15 Jan 2026 04:10:41.098 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T04:10:47.804437976Z [inf]  1:M 15 Jan 2026 04:10:41.164 * Background saving terminated with success
+2026-01-15T05:46:44.763629857Z [inf]  1:M 15 Jan 2026 05:46:36.908 * 1 changes in 60 seconds. Saving...
+2026-01-15T05:46:44.763641292Z [inf]  1:M 15 Jan 2026 05:46:36.911 * Background saving started by pid 452
+2026-01-15T05:46:44.763647647Z [inf]  452:C 15 Jan 2026 05:46:36.933 * DB saved on disk
+2026-01-15T05:46:44.763653332Z [inf]  452:C 15 Jan 2026 05:46:36.935 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T05:46:44.763658867Z [inf]  1:M 15 Jan 2026 05:46:37.012 * Background saving terminated with success
+2026-01-15T05:47:44.764759134Z [inf]  1:M 15 Jan 2026 05:47:38.100 * 1 changes in 60 seconds. Saving...
+2026-01-15T05:47:44.764767241Z [inf]  1:M 15 Jan 2026 05:47:38.102 * Background saving started by pid 453
+2026-01-15T05:47:44.764773319Z [inf]  453:C 15 Jan 2026 05:47:38.117 * DB saved on disk
+2026-01-15T05:47:44.764779214Z [inf]  453:C 15 Jan 2026 05:47:38.118 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T05:47:44.764784666Z [inf]  1:M 15 Jan 2026 05:47:38.203 * Background saving terminated with success
+2026-01-15T06:23:26.758150279Z [inf]  1:M 15 Jan 2026 06:23:17.535 * 1 changes in 60 seconds. Saving...
+2026-01-15T06:23:26.758158907Z [inf]  1:M 15 Jan 2026 06:23:17.538 * Background saving started by pid 454
+2026-01-15T06:23:26.758165467Z [inf]  454:C 15 Jan 2026 06:23:17.551 * DB saved on disk
+2026-01-15T06:23:26.758169804Z [inf]  454:C 15 Jan 2026 06:23:17.553 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T06:23:26.758173920Z [inf]  1:M 15 Jan 2026 06:23:17.639 * Background saving terminated with success
+2026-01-15T06:24:26.860731417Z [inf]  1:M 15 Jan 2026 06:24:18.046 * 1 changes in 60 seconds. Saving...
+2026-01-15T06:24:26.860739071Z [inf]  1:M 15 Jan 2026 06:24:18.049 * Background saving started by pid 455
+2026-01-15T06:24:26.860743862Z [inf]  455:C 15 Jan 2026 06:24:18.071 * DB saved on disk
+2026-01-15T06:24:26.860748031Z [inf]  455:C 15 Jan 2026 06:24:18.073 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T06:24:26.860751891Z [inf]  1:M 15 Jan 2026 06:24:18.150 * Background saving terminated with success
+2026-01-15T06:50:38.583326146Z [inf]  1:M 15 Jan 2026 06:50:38.132 * 1 changes in 60 seconds. Saving...
+2026-01-15T06:50:38.583333858Z [inf]  1:M 15 Jan 2026 06:50:38.135 * Background saving started by pid 456
+2026-01-15T06:50:38.583344744Z [inf]  456:C 15 Jan 2026 06:50:38.156 * DB saved on disk
+2026-01-15T06:50:38.583353152Z [inf]  456:C 15 Jan 2026 06:50:38.157 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T06:50:38.583362608Z [inf]  1:M 15 Jan 2026 06:50:38.236 * Background saving terminated with success
+2026-01-15T06:51:48.508425269Z [inf]  1:M 15 Jan 2026 06:51:39.029 * 1 changes in 60 seconds. Saving...
+2026-01-15T06:51:48.508435772Z [inf]  1:M 15 Jan 2026 06:51:39.032 * Background saving started by pid 457
+2026-01-15T06:51:48.508441760Z [inf]  457:C 15 Jan 2026 06:51:39.047 * DB saved on disk
+2026-01-15T06:51:48.508447347Z [inf]  457:C 15 Jan 2026 06:51:39.049 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T06:51:48.508452718Z [inf]  1:M 15 Jan 2026 06:51:39.132 * Background saving terminated with success
+2026-01-15T07:05:09.456415686Z [inf]  1:M 15 Jan 2026 07:05:02.129 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:05:09.456426364Z [inf]  1:M 15 Jan 2026 07:05:02.132 * Background saving started by pid 458
+2026-01-15T07:05:09.456434832Z [inf]  458:C 15 Jan 2026 07:05:02.764 * DB saved on disk
+2026-01-15T07:05:09.456441506Z [inf]  458:C 15 Jan 2026 07:05:02.765 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-15T07:05:09.456448121Z [inf]  1:M 15 Jan 2026 07:05:02.836 * Background saving terminated with success
+2026-01-15T07:06:09.350674401Z [inf]  1:M 15 Jan 2026 07:06:03.022 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:06:09.350680773Z [inf]  1:M 15 Jan 2026 07:06:03.025 * Background saving started by pid 459
+2026-01-15T07:06:09.350687015Z [inf]  459:C 15 Jan 2026 07:06:03.037 * DB saved on disk
+2026-01-15T07:06:09.350693035Z [inf]  459:C 15 Jan 2026 07:06:03.038 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:06:09.350700081Z [inf]  1:M 15 Jan 2026 07:06:03.126 * Background saving terminated with success
+2026-01-15T07:16:00.043163940Z [inf]  1:M 15 Jan 2026 07:15:52.494 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:16:00.043176607Z [inf]  1:M 15 Jan 2026 07:15:52.496 * Background saving started by pid 460
+2026-01-15T07:16:00.043184777Z [inf]  460:C 15 Jan 2026 07:15:52.570 * DB saved on disk
+2026-01-15T07:16:00.043191231Z [inf]  460:C 15 Jan 2026 07:15:52.571 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:16:00.043197893Z [inf]  1:M 15 Jan 2026 07:15:52.597 * Background saving terminated with success
+2026-01-15T07:16:59.952770662Z [inf]  1:M 15 Jan 2026 07:16:53.093 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:16:59.952777781Z [inf]  1:M 15 Jan 2026 07:16:53.096 * Background saving started by pid 461
+2026-01-15T07:16:59.952782315Z [inf]  461:C 15 Jan 2026 07:16:53.112 * DB saved on disk
+2026-01-15T07:16:59.952786439Z [inf]  461:C 15 Jan 2026 07:16:53.113 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:16:59.952791077Z [inf]  1:M 15 Jan 2026 07:16:53.196 * Background saving terminated with success
+2026-01-15T07:19:19.969365555Z [inf]  1:M 15 Jan 2026 07:19:10.813 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:19:19.969371522Z [inf]  1:M 15 Jan 2026 07:19:10.815 * Background saving started by pid 462
+2026-01-15T07:19:19.969375726Z [inf]  462:C 15 Jan 2026 07:19:10.837 * DB saved on disk
+2026-01-15T07:19:19.969379435Z [inf]  462:C 15 Jan 2026 07:19:10.839 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:19:19.969383070Z [inf]  1:M 15 Jan 2026 07:19:10.916 * Background saving terminated with success
+2026-01-15T07:20:19.975844930Z [inf]  1:M 15 Jan 2026 07:20:11.028 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:20:19.975853577Z [inf]  1:M 15 Jan 2026 07:20:11.031 * Background saving started by pid 463
+2026-01-15T07:20:19.975858431Z [inf]  463:C 15 Jan 2026 07:20:11.046 * DB saved on disk
+2026-01-15T07:20:19.975862879Z [inf]  463:C 15 Jan 2026 07:20:11.049 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:20:19.975866977Z [inf]  1:M 15 Jan 2026 07:20:11.131 * Background saving terminated with success
+2026-01-15T07:26:30.288712239Z [inf]  1:M 15 Jan 2026 07:26:25.954 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:26:30.288719953Z [inf]  1:M 15 Jan 2026 07:26:25.956 * Background saving started by pid 464
+2026-01-15T07:26:30.288725902Z [inf]  464:C 15 Jan 2026 07:26:25.980 * DB saved on disk
+2026-01-15T07:26:30.288730540Z [inf]  464:C 15 Jan 2026 07:26:25.981 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:26:30.288735043Z [inf]  1:M 15 Jan 2026 07:26:26.057 * Background saving terminated with success
+2026-01-15T07:27:30.290170989Z [inf]  1:M 15 Jan 2026 07:27:27.072 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:27:30.290181425Z [inf]  1:M 15 Jan 2026 07:27:27.075 * Background saving started by pid 465
+2026-01-15T07:27:30.290189344Z [inf]  465:C 15 Jan 2026 07:27:27.089 * DB saved on disk
+2026-01-15T07:27:30.290195147Z [inf]  465:C 15 Jan 2026 07:27:27.091 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:27:30.290199938Z [inf]  1:M 15 Jan 2026 07:27:27.175 * Background saving terminated with success
+2026-01-15T07:29:10.303702444Z [inf]  1:M 15 Jan 2026 07:29:07.796 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:29:10.303709531Z [inf]  1:M 15 Jan 2026 07:29:07.798 * Background saving started by pid 466
+2026-01-15T07:29:10.303713873Z [inf]  466:C 15 Jan 2026 07:29:07.827 * DB saved on disk
+2026-01-15T07:29:10.303717982Z [inf]  466:C 15 Jan 2026 07:29:07.829 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:29:10.303721830Z [inf]  1:M 15 Jan 2026 07:29:07.899 * Background saving terminated with success
+2026-01-15T07:30:10.304917731Z [inf]  1:M 15 Jan 2026 07:30:08.095 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:30:10.304924203Z [inf]  1:M 15 Jan 2026 07:30:08.098 * Background saving started by pid 467
+2026-01-15T07:30:10.304929057Z [inf]  467:C 15 Jan 2026 07:30:08.113 * DB saved on disk
+2026-01-15T07:30:10.304933283Z [inf]  467:C 15 Jan 2026 07:30:08.114 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:30:10.304937830Z [inf]  1:M 15 Jan 2026 07:30:08.198 * Background saving terminated with success
+2026-01-15T07:42:00.746517866Z [inf]  1:M 15 Jan 2026 07:41:51.764 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:42:00.746525449Z [inf]  1:M 15 Jan 2026 07:41:51.767 * Background saving started by pid 468
+2026-01-15T07:42:00.746531341Z [inf]  468:C 15 Jan 2026 07:41:51.779 * DB saved on disk
+2026-01-15T07:42:00.746536251Z [inf]  468:C 15 Jan 2026 07:41:51.781 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:42:00.746540775Z [inf]  1:M 15 Jan 2026 07:41:51.868 * Background saving terminated with success
+2026-01-15T07:43:00.752142715Z [inf]  1:M 15 Jan 2026 07:42:52.055 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:43:00.752154638Z [inf]  1:M 15 Jan 2026 07:42:52.058 * Background saving started by pid 469
+2026-01-15T07:43:00.752162680Z [inf]  469:C 15 Jan 2026 07:42:52.076 * DB saved on disk
+2026-01-15T07:43:00.752170004Z [inf]  469:C 15 Jan 2026 07:42:52.078 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:43:00.752176516Z [inf]  1:M 15 Jan 2026 07:42:52.159 * Background saving terminated with success
+2026-01-15T07:47:40.790765472Z [inf]  1:M 15 Jan 2026 07:47:31.882 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:47:40.790775966Z [inf]  1:M 15 Jan 2026 07:47:31.886 * Background saving started by pid 470
+2026-01-15T07:47:40.790783167Z [inf]  470:C 15 Jan 2026 07:47:31.897 * DB saved on disk
+2026-01-15T07:47:40.790789745Z [inf]  470:C 15 Jan 2026 07:47:31.899 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:47:40.790796522Z [inf]  1:M 15 Jan 2026 07:47:31.986 * Background saving terminated with success
+2026-01-15T07:48:40.795843610Z [inf]  1:M 15 Jan 2026 07:48:32.082 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:48:40.795850830Z [inf]  1:M 15 Jan 2026 07:48:32.086 * Background saving started by pid 471
+2026-01-15T07:48:40.795856768Z [inf]  471:C 15 Jan 2026 07:48:32.215 * DB saved on disk
+2026-01-15T07:48:40.795862727Z [inf]  471:C 15 Jan 2026 07:48:32.217 * Fork CoW for RDB: current 3 MB, peak 3 MB, average 2 MB
+2026-01-15T07:48:40.795868911Z [inf]  1:M 15 Jan 2026 07:48:32.288 * Background saving terminated with success
+2026-01-15T07:49:40.812537683Z [inf]  1:M 15 Jan 2026 07:49:33.095 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:49:40.812549398Z [inf]  1:M 15 Jan 2026 07:49:33.098 * Background saving started by pid 472
+2026-01-15T07:49:40.812557254Z [inf]  472:C 15 Jan 2026 07:49:33.208 * DB saved on disk
+2026-01-15T07:49:40.812575138Z [inf]  472:C 15 Jan 2026 07:49:33.210 * Fork CoW for RDB: current 4 MB, peak 4 MB, average 2 MB
+2026-01-15T07:49:40.812581170Z [inf]  1:M 15 Jan 2026 07:49:33.301 * Background saving terminated with success
+2026-01-15T07:50:40.823748206Z [inf]  1:M 15 Jan 2026 07:50:34.014 * 1 changes in 60 seconds. Saving...
+2026-01-15T07:50:40.823757956Z [inf]  1:M 15 Jan 2026 07:50:34.017 * Background saving started by pid 473
+2026-01-15T07:50:40.823763687Z [inf]  473:C 15 Jan 2026 07:50:34.028 * DB saved on disk
+2026-01-15T07:50:40.823769371Z [inf]  473:C 15 Jan 2026 07:50:34.030 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T07:50:40.823774931Z [inf]  1:M 15 Jan 2026 07:50:34.117 * Background saving terminated with success
+2026-01-15T08:07:01.475375585Z [inf]  1:M 15 Jan 2026 08:06:59.758 * 1 changes in 60 seconds. Saving...
+2026-01-15T08:07:01.475382542Z [inf]  1:M 15 Jan 2026 08:06:59.761 * Background saving started by pid 474
+2026-01-15T08:07:01.475388058Z [inf]  474:C 15 Jan 2026 08:06:59.772 * DB saved on disk
+2026-01-15T08:07:01.475393099Z [inf]  474:C 15 Jan 2026 08:06:59.774 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T08:07:01.475397904Z [inf]  1:M 15 Jan 2026 08:06:59.862 * Background saving terminated with success
+2026-01-15T08:08:01.480873763Z [inf]  1:M 15 Jan 2026 08:08:00.053 * 1 changes in 60 seconds. Saving...
+2026-01-15T08:08:01.480882955Z [inf]  1:M 15 Jan 2026 08:08:00.056 * Background saving started by pid 475
+2026-01-15T08:08:01.480889413Z [inf]  475:C 15 Jan 2026 08:08:00.077 * DB saved on disk
+2026-01-15T08:08:01.480899688Z [inf]  475:C 15 Jan 2026 08:08:00.079 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T08:08:01.480911953Z [inf]  1:M 15 Jan 2026 08:08:00.157 * Background saving terminated with success
+2026-01-15T08:33:54.293120821Z [inf]  1:M 15 Jan 2026 08:33:52.137 * 1 changes in 60 seconds. Saving...
+2026-01-15T08:33:54.293130544Z [inf]  1:M 15 Jan 2026 08:33:52.140 * Background saving started by pid 476
+2026-01-15T08:33:54.293136157Z [inf]  476:C 15 Jan 2026 08:33:52.172 * DB saved on disk
+2026-01-15T08:33:54.293140466Z [inf]  476:C 15 Jan 2026 08:33:52.174 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T08:33:54.293145965Z [inf]  1:M 15 Jan 2026 08:33:52.240 * Background saving terminated with success
+2026-01-15T08:34:54.407553846Z [inf]  1:M 15 Jan 2026 08:34:53.053 * 1 changes in 60 seconds. Saving...
+2026-01-15T08:34:54.407563967Z [inf]  1:M 15 Jan 2026 08:34:53.056 * Background saving started by pid 477
+2026-01-15T08:34:54.407575194Z [inf]  477:C 15 Jan 2026 08:34:53.072 * DB saved on disk
+2026-01-15T08:34:54.407581832Z [inf]  477:C 15 Jan 2026 08:34:53.074 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T08:34:54.407588023Z [inf]  1:M 15 Jan 2026 08:34:53.157 * Background saving terminated with success
+2026-01-15T08:38:44.357502244Z [inf]  1:M 15 Jan 2026 08:38:38.307 * 1 changes in 60 seconds. Saving...
+2026-01-15T08:38:44.357512043Z [inf]  1:M 15 Jan 2026 08:38:38.309 * Background saving started by pid 478
+2026-01-15T08:38:44.357518295Z [inf]  478:C 15 Jan 2026 08:38:38.325 * DB saved on disk
+2026-01-15T08:38:44.357523911Z [inf]  478:C 15 Jan 2026 08:38:38.327 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T08:38:44.357529314Z [inf]  1:M 15 Jan 2026 08:38:38.410 * Background saving terminated with success
+2026-01-15T08:39:44.365095849Z [inf]  1:M 15 Jan 2026 08:39:39.000 * 1 changes in 60 seconds. Saving...
+2026-01-15T08:39:44.365105372Z [inf]  1:M 15 Jan 2026 08:39:39.003 * Background saving started by pid 479
+2026-01-15T08:39:44.365111637Z [inf]  479:C 15 Jan 2026 08:39:39.029 * DB saved on disk
+2026-01-15T08:39:44.365117018Z [inf]  479:C 15 Jan 2026 08:39:39.031 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T08:39:44.365150929Z [inf]  1:M 15 Jan 2026 08:39:39.104 * Background saving terminated with success
+2026-01-15T08:46:34.495629595Z [inf]  1:M 15 Jan 2026 08:46:32.034 * 1 changes in 60 seconds. Saving...
+2026-01-15T08:46:34.495638917Z [inf]  1:M 15 Jan 2026 08:46:32.036 * Background saving started by pid 480
+2026-01-15T08:46:34.495648595Z [inf]  480:C 15 Jan 2026 08:46:32.060 * DB saved on disk
+2026-01-15T08:46:34.495654184Z [inf]  480:C 15 Jan 2026 08:46:32.062 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T08:46:34.495659755Z [inf]  1:M 15 Jan 2026 08:46:32.137 * Background saving terminated with success
+2026-01-15T08:47:34.424633704Z [inf]  1:M 15 Jan 2026 08:47:33.026 * 1 changes in 60 seconds. Saving...
+2026-01-15T08:47:34.424643884Z [inf]  1:M 15 Jan 2026 08:47:33.028 * Background saving started by pid 481
+2026-01-15T08:47:34.424650123Z [inf]  481:C 15 Jan 2026 08:47:33.041 * DB saved on disk
+2026-01-15T08:47:34.424655482Z [inf]  481:C 15 Jan 2026 08:47:33.043 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T08:47:34.424660162Z [inf]  1:M 15 Jan 2026 08:47:33.130 * Background saving terminated with success
+2026-01-15T09:01:25.555424411Z [inf]  1:M 15 Jan 2026 09:01:21.152 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:01:25.555434741Z [inf]  1:M 15 Jan 2026 09:01:21.155 * Background saving started by pid 482
+2026-01-15T09:01:25.555440104Z [inf]  482:C 15 Jan 2026 09:01:21.192 * DB saved on disk
+2026-01-15T09:01:25.555444737Z [inf]  482:C 15 Jan 2026 09:01:21.194 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:01:25.555449687Z [inf]  1:M 15 Jan 2026 09:01:21.256 * Background saving terminated with success
+2026-01-15T09:02:25.563022326Z [inf]  1:M 15 Jan 2026 09:02:22.070 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:02:25.563027738Z [inf]  1:M 15 Jan 2026 09:02:22.072 * Background saving started by pid 483
+2026-01-15T09:02:25.563032229Z [inf]  483:C 15 Jan 2026 09:02:22.090 * DB saved on disk
+2026-01-15T09:02:25.563094179Z [inf]  483:C 15 Jan 2026 09:02:22.092 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:02:25.563102349Z [inf]  1:M 15 Jan 2026 09:02:22.173 * Background saving terminated with success
+2026-01-15T09:16:46.788982352Z [inf]  1:M 15 Jan 2026 09:16:38.168 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:16:46.788988208Z [inf]  1:M 15 Jan 2026 09:16:38.170 * Background saving started by pid 484
+2026-01-15T09:16:46.788993285Z [inf]  484:C 15 Jan 2026 09:16:38.217 * DB saved on disk
+2026-01-15T09:16:46.788997772Z [inf]  484:C 15 Jan 2026 09:16:38.218 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:16:46.789001651Z [inf]  1:M 15 Jan 2026 09:16:38.271 * Background saving terminated with success
+2026-01-15T09:17:46.823980800Z [inf]  1:M 15 Jan 2026 09:17:39.087 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:17:46.823989625Z [inf]  1:M 15 Jan 2026 09:17:39.090 * Background saving started by pid 485
+2026-01-15T09:17:46.823995126Z [inf]  485:C 15 Jan 2026 09:17:39.105 * DB saved on disk
+2026-01-15T09:17:46.824000302Z [inf]  485:C 15 Jan 2026 09:17:39.107 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:17:46.824010334Z [inf]  1:M 15 Jan 2026 09:17:39.191 * Background saving terminated with success
+2026-01-15T09:21:27.205351153Z [inf]  1:M 15 Jan 2026 09:21:26.145 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:21:27.205357600Z [inf]  1:M 15 Jan 2026 09:21:26.148 * Background saving started by pid 486
+2026-01-15T09:21:27.205363910Z [inf]  486:C 15 Jan 2026 09:21:26.187 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:21:27.205365055Z [inf]  486:C 15 Jan 2026 09:21:26.185 * DB saved on disk
+2026-01-15T09:21:27.205371994Z [inf]  1:M 15 Jan 2026 09:21:26.249 * Background saving terminated with success
+2026-01-15T09:22:27.143066836Z [inf]  1:M 15 Jan 2026 09:22:27.064 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:22:27.143075795Z [inf]  1:M 15 Jan 2026 09:22:27.067 * Background saving started by pid 487
+2026-01-15T09:22:27.143083028Z [inf]  487:C 15 Jan 2026 09:22:27.082 * DB saved on disk
+2026-01-15T09:22:27.143089981Z [inf]  487:C 15 Jan 2026 09:22:27.083 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:22:27.172064114Z [inf]  1:M 15 Jan 2026 09:22:27.168 * Background saving terminated with success
+2026-01-15T09:49:38.216258871Z [inf]  1:M 15 Jan 2026 09:49:33.469 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:49:38.216265849Z [inf]  1:M 15 Jan 2026 09:49:33.472 * Background saving started by pid 488
+2026-01-15T09:49:38.216270779Z [inf]  488:C 15 Jan 2026 09:49:33.492 * DB saved on disk
+2026-01-15T09:49:38.216274701Z [inf]  488:C 15 Jan 2026 09:49:33.493 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:49:38.216278545Z [inf]  1:M 15 Jan 2026 09:49:33.573 * Background saving terminated with success
+2026-01-15T09:50:38.300082954Z [inf]  1:M 15 Jan 2026 09:50:34.083 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:50:38.300089340Z [inf]  1:M 15 Jan 2026 09:50:34.086 * Background saving started by pid 489
+2026-01-15T09:50:38.300096223Z [inf]  489:C 15 Jan 2026 09:50:34.102 * DB saved on disk
+2026-01-15T09:50:38.300101886Z [inf]  489:C 15 Jan 2026 09:50:34.103 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:50:38.300109270Z [inf]  1:M 15 Jan 2026 09:50:34.186 * Background saving terminated with success
+2026-01-15T09:58:58.602951931Z [inf]  1:M 15 Jan 2026 09:58:52.130 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:58:58.602959639Z [inf]  1:M 15 Jan 2026 09:58:52.134 * Background saving started by pid 490
+2026-01-15T09:58:58.602964907Z [inf]  490:C 15 Jan 2026 09:58:52.163 * DB saved on disk
+2026-01-15T09:58:58.602970175Z [inf]  490:C 15 Jan 2026 09:58:52.166 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:58:58.602974934Z [inf]  1:M 15 Jan 2026 09:58:52.235 * Background saving terminated with success
+2026-01-15T09:59:58.523488002Z [inf]  1:M 15 Jan 2026 09:59:53.026 * 1 changes in 60 seconds. Saving...
+2026-01-15T09:59:58.523501709Z [inf]  1:M 15 Jan 2026 09:59:53.029 * Background saving started by pid 491
+2026-01-15T09:59:58.523509556Z [inf]  491:C 15 Jan 2026 09:59:53.072 * DB saved on disk
+2026-01-15T09:59:58.523516192Z [inf]  491:C 15 Jan 2026 09:59:53.073 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T09:59:58.523522795Z [inf]  1:M 15 Jan 2026 09:59:53.130 * Background saving terminated with success
+2026-01-15T10:09:38.707570427Z [inf]  1:M 15 Jan 2026 10:09:35.878 * 1 changes in 60 seconds. Saving...
+2026-01-15T10:09:38.707580833Z [inf]  1:M 15 Jan 2026 10:09:35.881 * Background saving started by pid 492
+2026-01-15T10:09:38.707587183Z [inf]  492:C 15 Jan 2026 10:09:35.892 * DB saved on disk
+2026-01-15T10:09:38.707592989Z [inf]  492:C 15 Jan 2026 10:09:35.894 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T10:09:38.707598590Z [inf]  1:M 15 Jan 2026 10:09:35.981 * Background saving terminated with success
+2026-01-15T10:10:38.711324345Z [inf]  1:M 15 Jan 2026 10:10:36.061 * 1 changes in 60 seconds. Saving...
+2026-01-15T10:10:38.711331607Z [inf]  1:M 15 Jan 2026 10:10:36.063 * Background saving started by pid 493
+2026-01-15T10:10:38.711336301Z [inf]  493:C 15 Jan 2026 10:10:36.076 * DB saved on disk
+2026-01-15T10:10:38.711340631Z [inf]  493:C 15 Jan 2026 10:10:36.078 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T10:10:38.711344305Z [inf]  1:M 15 Jan 2026 10:10:36.164 * Background saving terminated with success
+2026-01-15T18:25:31.312817601Z [inf]  1:M 15 Jan 2026 18:25:29.277 * 1 changes in 60 seconds. Saving...
+2026-01-15T18:25:31.312826429Z [inf]  1:M 15 Jan 2026 18:25:29.280 * Background saving started by pid 494
+2026-01-15T18:25:31.312832843Z [inf]  494:C 15 Jan 2026 18:25:29.295 * DB saved on disk
+2026-01-15T18:25:31.312838005Z [inf]  494:C 15 Jan 2026 18:25:29.297 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T18:25:31.312847403Z [inf]  1:M 15 Jan 2026 18:25:29.382 * Background saving terminated with success
+2026-01-15T18:26:31.321879371Z [inf]  1:M 15 Jan 2026 18:26:30.089 * 1 changes in 60 seconds. Saving...
+2026-01-15T18:26:31.321888203Z [inf]  1:M 15 Jan 2026 18:26:30.092 * Background saving started by pid 495
+2026-01-15T18:26:31.321893669Z [inf]  495:C 15 Jan 2026 18:26:30.113 * DB saved on disk
+2026-01-15T18:26:31.321898268Z [inf]  495:C 15 Jan 2026 18:26:30.115 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T18:26:31.321903992Z [inf]  1:M 15 Jan 2026 18:26:30.193 * Background saving terminated with success
+2026-01-15T19:29:36.702880427Z [inf]  1:M 15 Jan 2026 19:29:27.564 * 1 changes in 60 seconds. Saving...
+2026-01-15T19:29:36.702895529Z [inf]  1:M 15 Jan 2026 19:29:27.567 * Background saving started by pid 496
+2026-01-15T19:29:36.702906018Z [inf]  496:C 15 Jan 2026 19:29:27.583 * DB saved on disk
+2026-01-15T19:29:36.702915436Z [inf]  496:C 15 Jan 2026 19:29:27.585 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T19:29:36.702922910Z [inf]  1:M 15 Jan 2026 19:29:27.668 * Background saving terminated with success
+2026-01-15T19:30:36.645108090Z [inf]  1:M 15 Jan 2026 19:30:28.010 * 1 changes in 60 seconds. Saving...
+2026-01-15T19:30:36.645115369Z [inf]  1:M 15 Jan 2026 19:30:28.013 * Background saving started by pid 497
+2026-01-15T19:30:36.645120353Z [inf]  497:C 15 Jan 2026 19:30:28.044 * DB saved on disk
+2026-01-15T19:30:36.645124756Z [inf]  497:C 15 Jan 2026 19:30:28.046 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T19:30:36.645129314Z [inf]  1:M 15 Jan 2026 19:30:28.114 * Background saving terminated with success
+2026-01-15T20:27:49.895858814Z [inf]  1:M 15 Jan 2026 20:27:42.217 * 1 changes in 60 seconds. Saving...
+2026-01-15T20:27:49.895868456Z [inf]  1:M 15 Jan 2026 20:27:42.222 * Background saving started by pid 498
+2026-01-15T20:27:49.895875024Z [inf]  498:C 15 Jan 2026 20:27:42.255 * DB saved on disk
+2026-01-15T20:27:49.895882123Z [inf]  498:C 15 Jan 2026 20:27:42.257 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T20:27:49.895888494Z [inf]  1:M 15 Jan 2026 20:27:42.323 * Background saving terminated with success
+2026-01-15T20:28:49.792287912Z [inf]  1:M 15 Jan 2026 20:28:43.063 * 1 changes in 60 seconds. Saving...
+2026-01-15T20:28:49.792294090Z [inf]  1:M 15 Jan 2026 20:28:43.066 * Background saving started by pid 499
+2026-01-15T20:28:49.792300243Z [inf]  499:C 15 Jan 2026 20:28:43.083 * DB saved on disk
+2026-01-15T20:28:49.792308080Z [inf]  499:C 15 Jan 2026 20:28:43.085 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T20:28:49.792314465Z [inf]  1:M 15 Jan 2026 20:28:43.167 * Background saving terminated with success
+2026-01-15T20:49:41.480609942Z [inf]  1:M 15 Jan 2026 20:49:36.906 * 1 changes in 60 seconds. Saving...
+2026-01-15T20:49:41.480621210Z [inf]  1:M 15 Jan 2026 20:49:36.909 * Background saving started by pid 500
+2026-01-15T20:49:41.480628412Z [inf]  500:C 15 Jan 2026 20:49:36.932 * DB saved on disk
+2026-01-15T20:49:41.480634782Z [inf]  500:C 15 Jan 2026 20:49:36.933 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T20:49:41.480640394Z [inf]  1:M 15 Jan 2026 20:49:37.010 * Background saving terminated with success
+2026-01-15T20:50:41.493870331Z [inf]  1:M 15 Jan 2026 20:50:38.026 * 1 changes in 60 seconds. Saving...
+2026-01-15T20:50:41.493877851Z [inf]  1:M 15 Jan 2026 20:50:38.030 * Background saving started by pid 501
+2026-01-15T20:50:41.493882640Z [inf]  501:C 15 Jan 2026 20:50:38.187 * DB saved on disk
+2026-01-15T20:50:41.493887174Z [inf]  501:C 15 Jan 2026 20:50:38.189 * Fork CoW for RDB: current 1 MB, peak 1 MB, average 1 MB
+2026-01-15T20:50:41.493892056Z [inf]  1:M 15 Jan 2026 20:50:38.233 * Background saving terminated with success
+2026-01-15T21:17:04.414163496Z [inf]  1:M 15 Jan 2026 21:17:02.235 * 1 changes in 60 seconds. Saving...
+2026-01-15T21:17:04.414168695Z [inf]  1:M 15 Jan 2026 21:17:02.238 * Background saving started by pid 502
+2026-01-15T21:17:04.414174807Z [inf]  502:C 15 Jan 2026 21:17:02.266 * DB saved on disk
+2026-01-15T21:17:04.414179615Z [inf]  502:C 15 Jan 2026 21:17:02.269 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T21:17:04.414184158Z [inf]  1:M 15 Jan 2026 21:17:02.339 * Background saving terminated with success
+2026-01-15T21:18:04.411845549Z [inf]  1:M 15 Jan 2026 21:18:03.072 * 1 changes in 60 seconds. Saving...
+2026-01-15T21:18:04.411863145Z [inf]  1:M 15 Jan 2026 21:18:03.076 * Background saving started by pid 503
+2026-01-15T21:18:04.411874910Z [inf]  503:C 15 Jan 2026 21:18:03.135 * DB saved on disk
+2026-01-15T21:18:04.411880833Z [inf]  503:C 15 Jan 2026 21:18:03.137 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-15T21:18:04.411886175Z [inf]  1:M 15 Jan 2026 21:18:03.176 * Background saving terminated with success
+2026-01-16T07:44:00.117392981Z [inf]  1:M 16 Jan 2026 07:43:57.545 * 1 changes in 60 seconds. Saving...
+2026-01-16T07:44:00.117399873Z [inf]  1:M 16 Jan 2026 07:43:57.548 * Background saving started by pid 504
+2026-01-16T07:44:00.117404878Z [inf]  504:C 16 Jan 2026 07:43:57.580 * DB saved on disk
+2026-01-16T07:44:00.117409588Z [inf]  504:C 16 Jan 2026 07:43:57.582 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T07:44:00.117414147Z [inf]  1:M 16 Jan 2026 07:43:57.649 * Background saving terminated with success
+2026-01-16T07:45:00.132684327Z [inf]  1:M 16 Jan 2026 07:44:58.043 * 1 changes in 60 seconds. Saving...
+2026-01-16T07:45:00.132696433Z [inf]  1:M 16 Jan 2026 07:44:58.046 * Background saving started by pid 505
+2026-01-16T07:45:00.132706726Z [inf]  505:C 16 Jan 2026 07:44:58.061 * DB saved on disk
+2026-01-16T07:45:00.132712873Z [inf]  505:C 16 Jan 2026 07:44:58.063 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T07:45:00.132721365Z [inf]  1:M 16 Jan 2026 07:44:58.147 * Background saving terminated with success
+2026-01-16T07:48:30.421015212Z [inf]  1:M 16 Jan 2026 07:48:26.486 * 1 changes in 60 seconds. Saving...
+2026-01-16T07:48:30.421022754Z [inf]  1:M 16 Jan 2026 07:48:26.488 * Background saving started by pid 506
+2026-01-16T07:48:30.421028236Z [inf]  506:C 16 Jan 2026 07:48:26.539 * DB saved on disk
+2026-01-16T07:48:30.421033631Z [inf]  506:C 16 Jan 2026 07:48:26.542 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T07:48:30.421039202Z [inf]  1:M 16 Jan 2026 07:48:26.589 * Background saving terminated with success
+2026-01-16T07:49:30.496828822Z [inf]  1:M 16 Jan 2026 07:49:27.019 * 1 changes in 60 seconds. Saving...
+2026-01-16T07:49:30.496835757Z [inf]  1:M 16 Jan 2026 07:49:27.021 * Background saving started by pid 507
+2026-01-16T07:49:30.496843215Z [inf]  507:C 16 Jan 2026 07:49:27.035 * DB saved on disk
+2026-01-16T07:49:30.496848682Z [inf]  507:C 16 Jan 2026 07:49:27.037 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T07:49:30.496853629Z [inf]  1:M 16 Jan 2026 07:49:27.122 * Background saving terminated with success
+2026-01-16T10:49:32.337604502Z [inf]  1:M 16 Jan 2026 10:49:22.832 * Background saving started by pid 508
+2026-01-16T10:49:32.337614726Z [inf]  508:C 16 Jan 2026 10:49:22.846 * DB saved on disk
+2026-01-16T10:49:32.337620021Z [inf]  508:C 16 Jan 2026 10:49:22.848 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T10:49:32.337625214Z [inf]  1:M 16 Jan 2026 10:49:22.933 * Background saving terminated with success
+2026-01-16T10:49:32.337735643Z [inf]  1:M 16 Jan 2026 10:49:22.829 * 1 changes in 60 seconds. Saving...
+2026-01-16T10:50:32.334451622Z [inf]  509:C 16 Jan 2026 10:50:23.059 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T10:50:32.334459175Z [inf]  1:M 16 Jan 2026 10:50:23.134 * Background saving terminated with success
+2026-01-16T10:50:32.334511411Z [inf]  1:M 16 Jan 2026 10:50:23.031 * 1 changes in 60 seconds. Saving...
+2026-01-16T10:50:32.334517824Z [inf]  1:M 16 Jan 2026 10:50:23.033 * Background saving started by pid 509
+2026-01-16T10:50:32.334523622Z [inf]  509:C 16 Jan 2026 10:50:23.058 * DB saved on disk
+2026-01-16T11:54:26.241729495Z [inf]  1:M 16 Jan 2026 11:54:25.190 * 1 changes in 60 seconds. Saving...
+2026-01-16T11:54:26.241740255Z [inf]  1:M 16 Jan 2026 11:54:25.193 * Background saving started by pid 510
+2026-01-16T11:54:26.241747492Z [inf]  510:C 16 Jan 2026 11:54:25.210 * DB saved on disk
+2026-01-16T11:54:26.241754882Z [inf]  510:C 16 Jan 2026 11:54:25.212 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T11:54:26.241761570Z [inf]  1:M 16 Jan 2026 11:54:25.294 * Background saving terminated with success
+2026-01-16T11:55:26.159145276Z [inf]  1:M 16 Jan 2026 11:55:26.016 * 1 changes in 60 seconds. Saving...
+2026-01-16T11:55:26.159151533Z [inf]  1:M 16 Jan 2026 11:55:26.020 * Background saving started by pid 511
+2026-01-16T11:55:26.159155692Z [inf]  511:C 16 Jan 2026 11:55:26.033 * DB saved on disk
+2026-01-16T11:55:26.159160753Z [inf]  511:C 16 Jan 2026 11:55:26.034 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T11:55:26.159165380Z [inf]  1:M 16 Jan 2026 11:55:26.122 * Background saving terminated with success
+2026-01-16T12:51:39.741574767Z [inf]  1:M 16 Jan 2026 12:51:38.273 * 1 changes in 60 seconds. Saving...
+2026-01-16T12:51:39.741582882Z [inf]  1:M 16 Jan 2026 12:51:38.276 * Background saving started by pid 512
+2026-01-16T12:51:39.741587922Z [inf]  512:C 16 Jan 2026 12:51:38.290 * DB saved on disk
+2026-01-16T12:51:39.741592593Z [inf]  512:C 16 Jan 2026 12:51:38.292 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T12:51:39.741598479Z [inf]  1:M 16 Jan 2026 12:51:38.377 * Background saving terminated with success
+2026-01-16T12:52:39.742097288Z [inf]  1:M 16 Jan 2026 12:52:39.077 * 1 changes in 60 seconds. Saving...
+2026-01-16T12:52:39.742117595Z [inf]  1:M 16 Jan 2026 12:52:39.080 * Background saving started by pid 513
+2026-01-16T12:52:39.742126889Z [inf]  513:C 16 Jan 2026 12:52:39.108 * DB saved on disk
+2026-01-16T12:52:39.742134259Z [inf]  513:C 16 Jan 2026 12:52:39.109 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T12:52:39.742141459Z [inf]  1:M 16 Jan 2026 12:52:39.181 * Background saving terminated with success
+2026-01-16T13:46:44.231541701Z [inf]  1:M 16 Jan 2026 13:46:40.075 * 1 changes in 60 seconds. Saving...
+2026-01-16T13:46:44.231548638Z [inf]  1:M 16 Jan 2026 13:46:40.077 * Background saving started by pid 514
+2026-01-16T13:46:44.231553851Z [inf]  514:C 16 Jan 2026 13:46:40.149 * DB saved on disk
+2026-01-16T13:46:44.231558331Z [inf]  514:C 16 Jan 2026 13:46:40.151 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T13:46:44.231562798Z [inf]  1:M 16 Jan 2026 13:46:40.178 * Background saving terminated with success
+2026-01-16T13:47:44.169000975Z [inf]  1:M 16 Jan 2026 13:47:41.076 * 1 changes in 60 seconds. Saving...
+2026-01-16T13:47:44.169007748Z [inf]  1:M 16 Jan 2026 13:47:41.079 * Background saving started by pid 515
+2026-01-16T13:47:44.169012903Z [inf]  515:C 16 Jan 2026 13:47:41.102 * DB saved on disk
+2026-01-16T13:47:44.169017648Z [inf]  515:C 16 Jan 2026 13:47:41.104 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T13:47:44.169022011Z [inf]  1:M 16 Jan 2026 13:47:41.182 * Background saving terminated with success
+2026-01-16T13:49:44.177194444Z [inf]  1:M 16 Jan 2026 13:49:38.352 * 1 changes in 60 seconds. Saving...
+2026-01-16T13:49:44.177206430Z [inf]  1:M 16 Jan 2026 13:49:38.354 * Background saving started by pid 516
+2026-01-16T13:49:44.177214665Z [inf]  516:C 16 Jan 2026 13:49:38.419 * DB saved on disk
+2026-01-16T13:49:44.177224028Z [inf]  516:C 16 Jan 2026 13:49:38.421 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T13:49:44.177230561Z [inf]  1:M 16 Jan 2026 13:49:38.455 * Background saving terminated with success
+2026-01-16T13:50:44.214817879Z [inf]  1:M 16 Jan 2026 13:50:39.066 * 1 changes in 60 seconds. Saving...
+2026-01-16T13:50:44.214826919Z [inf]  1:M 16 Jan 2026 13:50:39.069 * Background saving started by pid 517
+2026-01-16T13:50:44.214833500Z [inf]  517:C 16 Jan 2026 13:50:39.094 * DB saved on disk
+2026-01-16T13:50:44.214840230Z [inf]  517:C 16 Jan 2026 13:50:39.095 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T13:50:44.214846089Z [inf]  1:M 16 Jan 2026 13:50:39.170 * Background saving terminated with success
+2026-01-16T15:36:43.515404102Z [inf]  1:M 16 Jan 2026 15:36:38.606 * 1 changes in 60 seconds. Saving...
+2026-01-16T15:36:43.515410528Z [inf]  1:M 16 Jan 2026 15:36:38.608 * Background saving started by pid 518
+2026-01-16T15:36:43.515416183Z [inf]  518:C 16 Jan 2026 15:36:38.647 * DB saved on disk
+2026-01-16T15:36:43.515421371Z [inf]  518:C 16 Jan 2026 15:36:38.649 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T15:36:43.515426809Z [inf]  1:M 16 Jan 2026 15:36:38.709 * Background saving terminated with success
+2026-01-16T15:37:43.536646487Z [inf]  1:M 16 Jan 2026 15:37:39.012 * 1 changes in 60 seconds. Saving...
+2026-01-16T15:37:43.536661463Z [inf]  1:M 16 Jan 2026 15:37:39.015 * Background saving started by pid 519
+2026-01-16T15:37:43.536669892Z [inf]  519:C 16 Jan 2026 15:37:39.033 * DB saved on disk
+2026-01-16T15:37:43.536675965Z [inf]  519:C 16 Jan 2026 15:37:39.035 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T15:37:43.536682170Z [inf]  1:M 16 Jan 2026 15:37:39.115 * Background saving terminated with success
+2026-01-16T15:56:25.025974447Z [inf]  1:M 16 Jan 2026 15:56:20.044 * 1 changes in 60 seconds. Saving...
+2026-01-16T15:56:25.025982499Z [inf]  1:M 16 Jan 2026 15:56:20.047 * Background saving started by pid 520
+2026-01-16T15:56:25.025990706Z [inf]  520:C 16 Jan 2026 15:56:20.065 * DB saved on disk
+2026-01-16T15:56:25.025994902Z [inf]  520:C 16 Jan 2026 15:56:20.068 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T15:56:25.025998977Z [inf]  1:M 16 Jan 2026 15:56:20.148 * Background saving terminated with success
+2026-01-16T15:57:24.916875509Z [inf]  1:M 16 Jan 2026 15:57:21.069 * 1 changes in 60 seconds. Saving...
+2026-01-16T15:57:24.916880686Z [inf]  1:M 16 Jan 2026 15:57:21.072 * Background saving started by pid 521
+2026-01-16T15:57:24.916885008Z [inf]  521:C 16 Jan 2026 15:57:21.092 * DB saved on disk
+2026-01-16T15:57:24.916889342Z [inf]  521:C 16 Jan 2026 15:57:21.094 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T15:57:24.916893544Z [inf]  1:M 16 Jan 2026 15:57:21.174 * Background saving terminated with success
+2026-01-16T16:33:27.748940224Z [inf]  1:M 16 Jan 2026 16:33:27.167 * 1 changes in 60 seconds. Saving...
+2026-01-16T16:33:27.748947945Z [inf]  1:M 16 Jan 2026 16:33:27.170 * Background saving started by pid 522
+2026-01-16T16:33:27.748953006Z [inf]  522:C 16 Jan 2026 16:33:27.187 * DB saved on disk
+2026-01-16T16:33:27.748960352Z [inf]  522:C 16 Jan 2026 16:33:27.188 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T16:33:27.748965135Z [inf]  1:M 16 Jan 2026 16:33:27.271 * Background saving terminated with success
+2026-01-16T16:34:37.759278866Z [inf]  1:M 16 Jan 2026 16:34:28.073 * 1 changes in 60 seconds. Saving...
+2026-01-16T16:34:37.759285358Z [inf]  1:M 16 Jan 2026 16:34:28.077 * Background saving started by pid 523
+2026-01-16T16:34:37.759289674Z [inf]  523:C 16 Jan 2026 16:34:28.125 * DB saved on disk
+2026-01-16T16:34:37.759293783Z [inf]  523:C 16 Jan 2026 16:34:28.127 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T16:34:37.759297774Z [inf]  1:M 16 Jan 2026 16:34:28.177 * Background saving terminated with success
+2026-01-16T17:13:31.553807247Z [inf]  1:M 16 Jan 2026 17:13:24.942 # Possible SECURITY ATTACK detected. It looks like somebody is sending POST or Host: commands to Redis. This is likely due to an attacker attempting to use Cross Protocol Scripting to compromise your Redis instance. Connection from 100.64.0.14:56706 aborted.
+2026-01-16T17:18:01.559651560Z [inf]  1:M 16 Jan 2026 17:17:56.080 * 1 changes in 60 seconds. Saving...
+2026-01-16T17:18:01.559659473Z [inf]  1:M 16 Jan 2026 17:17:56.083 * Background saving started by pid 524
+2026-01-16T17:18:01.559665450Z [inf]  524:C 16 Jan 2026 17:17:56.096 * DB saved on disk
+2026-01-16T17:18:01.559670664Z [inf]  524:C 16 Jan 2026 17:17:56.098 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T17:18:01.559679216Z [inf]  1:M 16 Jan 2026 17:17:56.184 * Background saving terminated with success
+2026-01-16T17:19:01.621075954Z [inf]  1:M 16 Jan 2026 17:18:57.093 * 1 changes in 60 seconds. Saving...
+2026-01-16T17:19:01.621091521Z [inf]  1:M 16 Jan 2026 17:18:57.096 * Background saving started by pid 525
+2026-01-16T17:19:01.621098064Z [inf]  525:C 16 Jan 2026 17:18:57.133 * DB saved on disk
+2026-01-16T17:19:01.621104254Z [inf]  525:C 16 Jan 2026 17:18:57.135 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T17:19:01.621111083Z [inf]  1:M 16 Jan 2026 17:18:57.197 * Background saving terminated with success
+2026-01-16T18:36:47.613769949Z [inf]  1:M 16 Jan 2026 18:36:41.544 * 1 changes in 60 seconds. Saving...
+2026-01-16T18:36:47.613780148Z [inf]  1:M 16 Jan 2026 18:36:41.547 * Background saving started by pid 526
+2026-01-16T18:36:47.613791142Z [inf]  526:C 16 Jan 2026 18:36:41.599 * DB saved on disk
+2026-01-16T18:36:47.613798548Z [inf]  526:C 16 Jan 2026 18:36:41.600 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T18:36:47.613803438Z [inf]  1:M 16 Jan 2026 18:36:41.648 * Background saving terminated with success
+2026-01-16T18:37:47.470785457Z [inf]  1:M 16 Jan 2026 18:37:42.049 * 1 changes in 60 seconds. Saving...
+2026-01-16T18:37:47.470822901Z [inf]  1:M 16 Jan 2026 18:37:42.052 * Background saving started by pid 527
+2026-01-16T18:37:47.470829509Z [inf]  527:C 16 Jan 2026 18:37:42.069 * DB saved on disk
+2026-01-16T18:37:47.470834518Z [inf]  527:C 16 Jan 2026 18:37:42.070 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T18:37:47.470838987Z [inf]  1:M 16 Jan 2026 18:37:42.153 * Background saving terminated with success
+2026-01-16T21:28:54.597328730Z [inf]  1:M 16 Jan 2026 21:28:50.436 * 1 changes in 60 seconds. Saving...
+2026-01-16T21:28:54.597336491Z [inf]  1:M 16 Jan 2026 21:28:50.439 * Background saving started by pid 528
+2026-01-16T21:28:54.597341746Z [inf]  528:C 16 Jan 2026 21:28:50.458 * DB saved on disk
+2026-01-16T21:28:54.597346305Z [inf]  528:C 16 Jan 2026 21:28:50.460 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T21:28:54.597350955Z [inf]  1:M 16 Jan 2026 21:28:50.539 * Background saving terminated with success
+2026-01-16T21:29:54.518139984Z [inf]  1:M 16 Jan 2026 21:29:51.062 * 1 changes in 60 seconds. Saving...
+2026-01-16T21:29:54.518146270Z [inf]  1:M 16 Jan 2026 21:29:51.065 * Background saving started by pid 529
+2026-01-16T21:29:54.518150926Z [inf]  529:C 16 Jan 2026 21:29:51.092 * DB saved on disk
+2026-01-16T21:29:54.518155488Z [inf]  529:C 16 Jan 2026 21:29:51.093 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T21:29:54.518160034Z [inf]  1:M 16 Jan 2026 21:29:51.166 * Background saving terminated with success
+2026-01-16T21:32:34.546676071Z [inf]  1:M 16 Jan 2026 21:32:29.631 * 1 changes in 60 seconds. Saving...
+2026-01-16T21:32:34.546686030Z [inf]  1:M 16 Jan 2026 21:32:29.636 * Background saving started by pid 530
+2026-01-16T21:32:34.546692256Z [inf]  530:C 16 Jan 2026 21:32:29.672 * DB saved on disk
+2026-01-16T21:32:34.546697374Z [inf]  530:C 16 Jan 2026 21:32:29.674 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T21:32:34.546702301Z [inf]  1:M 16 Jan 2026 21:32:29.737 * Background saving terminated with success
+2026-01-16T21:33:34.559280893Z [inf]  1:M 16 Jan 2026 21:33:30.079 * 1 changes in 60 seconds. Saving...
+2026-01-16T21:33:34.559288312Z [inf]  1:M 16 Jan 2026 21:33:30.083 * Background saving started by pid 531
+2026-01-16T21:33:34.559293285Z [inf]  531:C 16 Jan 2026 21:33:30.115 * DB saved on disk
+2026-01-16T21:33:34.559298032Z [inf]  531:C 16 Jan 2026 21:33:30.117 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T21:33:34.559302280Z [inf]  1:M 16 Jan 2026 21:33:30.184 * Background saving terminated with success
+2026-01-16T21:37:04.773541995Z [inf]  1:M 16 Jan 2026 21:36:57.147 * 1 changes in 60 seconds. Saving...
+2026-01-16T21:37:04.773572537Z [inf]  1:M 16 Jan 2026 21:36:57.150 * Background saving started by pid 532
+2026-01-16T21:37:04.773580406Z [inf]  532:C 16 Jan 2026 21:36:57.174 * DB saved on disk
+2026-01-16T21:37:04.773585759Z [inf]  532:C 16 Jan 2026 21:36:57.176 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T21:37:04.773590195Z [inf]  1:M 16 Jan 2026 21:36:57.251 * Background saving terminated with success
+2026-01-16T21:38:04.911335719Z [inf]  1:M 16 Jan 2026 21:37:58.085 * 1 changes in 60 seconds. Saving...
+2026-01-16T21:38:04.911341319Z [inf]  1:M 16 Jan 2026 21:37:58.088 * Background saving started by pid 533
+2026-01-16T21:38:04.911347563Z [inf]  533:C 16 Jan 2026 21:37:58.111 * DB saved on disk
+2026-01-16T21:38:04.911354142Z [inf]  533:C 16 Jan 2026 21:37:58.113 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T21:38:04.911360301Z [inf]  1:M 16 Jan 2026 21:37:58.189 * Background saving terminated with success
+2026-01-16T21:41:44.819977730Z [inf]  1:M 16 Jan 2026 21:41:37.371 * 1 changes in 60 seconds. Saving...
+2026-01-16T21:41:44.819990499Z [inf]  1:M 16 Jan 2026 21:41:37.374 * Background saving started by pid 534
+2026-01-16T21:41:44.819997428Z [inf]  534:C 16 Jan 2026 21:41:37.427 * DB saved on disk
+2026-01-16T21:41:44.820007341Z [inf]  534:C 16 Jan 2026 21:41:37.428 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T21:41:44.820013667Z [inf]  1:M 16 Jan 2026 21:41:37.475 * Background saving terminated with success
+2026-01-16T21:42:44.833483436Z [inf]  1:M 16 Jan 2026 21:42:38.098 * 1 changes in 60 seconds. Saving...
+2026-01-16T21:42:44.833490922Z [inf]  1:M 16 Jan 2026 21:42:38.101 * Background saving started by pid 535
+2026-01-16T21:42:44.833496524Z [inf]  535:C 16 Jan 2026 21:42:38.116 * DB saved on disk
+2026-01-16T21:42:44.833502169Z [inf]  535:C 16 Jan 2026 21:42:38.118 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T21:42:44.833508004Z [inf]  1:M 16 Jan 2026 21:42:38.202 * Background saving terminated with success
+2026-01-16T22:07:56.749283392Z [inf]  1:M 16 Jan 2026 22:07:47.892 * 1 changes in 60 seconds. Saving...
+2026-01-16T22:07:56.749297982Z [inf]  1:M 16 Jan 2026 22:07:47.895 * Background saving started by pid 536
+2026-01-16T22:07:56.749306476Z [inf]  536:C 16 Jan 2026 22:07:47.921 * DB saved on disk
+2026-01-16T22:07:56.749314943Z [inf]  536:C 16 Jan 2026 22:07:47.923 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T22:07:56.749320781Z [inf]  1:M 16 Jan 2026 22:07:47.996 * Background saving terminated with success
+2026-01-16T22:08:56.835470877Z [inf]  1:M 16 Jan 2026 22:08:48.017 * 1 changes in 60 seconds. Saving...
+2026-01-16T22:08:56.835479110Z [inf]  1:M 16 Jan 2026 22:08:48.021 * Background saving started by pid 537
+2026-01-16T22:08:56.835492662Z [inf]  537:C 16 Jan 2026 22:08:48.037 * DB saved on disk
+2026-01-16T22:08:56.835499856Z [inf]  537:C 16 Jan 2026 22:08:48.039 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T22:08:56.835505947Z [inf]  1:M 16 Jan 2026 22:08:48.121 * Background saving terminated with success
+2026-01-16T22:38:48.586268043Z [inf]  1:M 16 Jan 2026 22:38:40.304 * 1 changes in 60 seconds. Saving...
+2026-01-16T22:38:48.586274206Z [inf]  1:M 16 Jan 2026 22:38:40.306 * Background saving started by pid 538
+2026-01-16T22:38:48.586280435Z [inf]  538:C 16 Jan 2026 22:38:40.323 * DB saved on disk
+2026-01-16T22:38:48.586286259Z [inf]  538:C 16 Jan 2026 22:38:40.325 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T22:38:48.586291801Z [inf]  1:M 16 Jan 2026 22:38:40.407 * Background saving terminated with success
+2026-01-16T22:39:48.668635025Z [inf]  1:M 16 Jan 2026 22:39:41.008 * 1 changes in 60 seconds. Saving...
+2026-01-16T22:39:48.668642470Z [inf]  1:M 16 Jan 2026 22:39:41.011 * Background saving started by pid 539
+2026-01-16T22:39:48.668646863Z [inf]  539:C 16 Jan 2026 22:39:41.026 * DB saved on disk
+2026-01-16T22:39:48.668651076Z [inf]  539:C 16 Jan 2026 22:39:41.027 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T22:39:48.668654931Z [inf]  1:M 16 Jan 2026 22:39:41.111 * Background saving terminated with success
+2026-01-16T23:00:59.528862510Z [inf]  1:M 16 Jan 2026 23:00:54.510 * 1 changes in 60 seconds. Saving...
+2026-01-16T23:00:59.528874982Z [inf]  1:M 16 Jan 2026 23:00:54.514 * Background saving started by pid 540
+2026-01-16T23:00:59.528882434Z [inf]  540:C 16 Jan 2026 23:00:54.581 * DB saved on disk
+2026-01-16T23:00:59.528889431Z [inf]  540:C 16 Jan 2026 23:00:54.583 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T23:00:59.528895548Z [inf]  1:M 16 Jan 2026 23:00:54.615 * Background saving terminated with success
+2026-01-16T23:01:59.524668757Z [inf]  1:M 16 Jan 2026 23:01:55.023 * 1 changes in 60 seconds. Saving...
+2026-01-16T23:01:59.524675954Z [inf]  1:M 16 Jan 2026 23:01:55.027 * Background saving started by pid 541
+2026-01-16T23:01:59.524681760Z [inf]  541:C 16 Jan 2026 23:01:55.048 * DB saved on disk
+2026-01-16T23:01:59.524688007Z [inf]  541:C 16 Jan 2026 23:01:55.050 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T23:01:59.524694320Z [inf]  1:M 16 Jan 2026 23:01:55.129 * Background saving terminated with success
+2026-01-16T23:14:30.136398531Z [inf]  1:M 16 Jan 2026 23:14:24.116 * 1 changes in 60 seconds. Saving...
+2026-01-16T23:14:30.136405080Z [inf]  1:M 16 Jan 2026 23:14:24.119 * Background saving started by pid 542
+2026-01-16T23:14:30.136409290Z [inf]  542:C 16 Jan 2026 23:14:24.136 * DB saved on disk
+2026-01-16T23:14:30.136413485Z [inf]  542:C 16 Jan 2026 23:14:24.138 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T23:14:30.136418268Z [inf]  1:M 16 Jan 2026 23:14:24.220 * Background saving terminated with success
+2026-01-16T23:15:30.149269638Z [inf]  1:M 16 Jan 2026 23:15:25.018 * 1 changes in 60 seconds. Saving...
+2026-01-16T23:15:30.149275188Z [inf]  1:M 16 Jan 2026 23:15:25.021 * Background saving started by pid 543
+2026-01-16T23:15:30.149280947Z [inf]  543:C 16 Jan 2026 23:15:25.064 * DB saved on disk
+2026-01-16T23:15:30.149288792Z [inf]  543:C 16 Jan 2026 23:15:25.066 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T23:15:30.149294827Z [inf]  1:M 16 Jan 2026 23:15:25.121 * Background saving terminated with success
+2026-01-16T23:43:02.870078998Z [inf]  1:M 16 Jan 2026 23:42:53.021 * 1 changes in 60 seconds. Saving...
+2026-01-16T23:43:02.870089854Z [inf]  1:M 16 Jan 2026 23:42:53.024 * Background saving started by pid 544
+2026-01-16T23:43:02.870097171Z [inf]  544:C 16 Jan 2026 23:42:53.050 * DB saved on disk
+2026-01-16T23:43:02.870103544Z [inf]  544:C 16 Jan 2026 23:42:53.051 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T23:43:02.870111651Z [inf]  1:M 16 Jan 2026 23:42:53.125 * Background saving terminated with success
+2026-01-16T23:44:02.884278780Z [inf]  1:M 16 Jan 2026 23:43:54.034 * 1 changes in 60 seconds. Saving...
+2026-01-16T23:44:02.884289025Z [inf]  1:M 16 Jan 2026 23:43:54.036 * Background saving started by pid 545
+2026-01-16T23:44:02.884295687Z [inf]  545:C 16 Jan 2026 23:43:54.052 * DB saved on disk
+2026-01-16T23:44:02.884302396Z [inf]  545:C 16 Jan 2026 23:43:54.054 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+2026-01-16T23:44:02.884309165Z [inf]  1:M 16 Jan 2026 23:43:54.137 * Background saving terminated with success

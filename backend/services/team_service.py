@@ -108,7 +108,7 @@ class TeamService:
             # This is a single query that handles all the joins
             response = supabase.rpc(
                 "get_effective_plan", 
-                {"target_user_id": user_id}
+                {"p_user_id": user_id}
             ).execute()
             
             if response.data:
@@ -141,7 +141,7 @@ class TeamService:
             # ✅ OPTIMIZED: Single RPC call instead of N+1 queries
             try:
                 team_data_response = supabase.rpc('get_user_team_data', {
-                    'target_user_id': user_id
+                    'p_user_id': user_id
                 }).execute()
                 
                 if team_data_response.data:

@@ -48,10 +48,12 @@ export default defineConfig({
     ],
 
     /* Run your local dev server before starting the tests */
-    /* Run your local dev server before starting the tests */
-    webServer: {
-        command: 'npm run dev',
-        url: 'http://localhost:3000',
-        reuseExistingServer: !process.env.CI,
-    },
+    /* Only start local dev server if NOT testing against production */
+    webServer: !process.env.E2E_BASE_URL || process.env.E2E_BASE_URL.includes('localhost')
+        ? {
+            command: 'npm run dev',
+            url: 'http://localhost:3000',
+            reuseExistingServer: !process.env.CI,
+        }
+        : undefined,
 });

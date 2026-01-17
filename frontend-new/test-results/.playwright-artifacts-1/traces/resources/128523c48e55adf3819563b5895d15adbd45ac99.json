@@ -1,0 +1,1 @@
+{"plan":"enterprise","files":{"used":24,"limit":100000,"percent":0.0},"storage":{"used_bytes":397749,"used_display":"388.4 KB","limit_bytes":1099511627776,"limit_display":"1024.0 GB","percent":0.0},"features":{"web_crawl":true,"team":true,"premium_models":true},"model_tier":"premium","subscription_status":"active"}

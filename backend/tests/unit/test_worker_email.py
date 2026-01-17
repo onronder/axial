@@ -33,11 +33,18 @@ class TestSendEmailNotification:
         profile_mock.data = profile_data
         return profile_mock
 
-    def _setup_auth_user(self, mock_supabase, email):
-        """Helper to setup auth.admin.get_user_by_id mock."""
+    def _setup_auth_user(self, mock_supabase, email, full_name=None, name=None):
+        """Helper to setup auth.admin.get_user_by_id mock with user_metadata."""
         auth_user = Mock()
         auth_user.user = Mock()
         auth_user.user.email = email
+        # Setup user_metadata for name lookup
+        user_metadata = {}
+        if full_name:
+            user_metadata["full_name"] = full_name
+        if name:
+            user_metadata["name"] = name
+        auth_user.user.user_metadata = user_metadata
         mock_supabase.auth.admin.get_user_by_id.return_value = auth_user
     
     def _setup_settings_mock(self, enabled):
@@ -128,22 +135,13 @@ class TestSendEmailNotification:
             mock_email.send_ingestion_complete.assert_called_once()
     
     def test_handles_missing_user_profile(self, mock_supabase):
-        """Should handle missing user profile gracefully - still sends email using auth email."""
-        # Setup auth user with email (email comes from auth, not profile)
-        self._setup_auth_user(mock_supabase, "user@example.com")
+        """Should handle missing user metadata gracefully - uses default name 'there'."""
+        # Setup auth user with email but NO user_metadata (no name)
+        self._setup_auth_user(mock_supabase, "user@example.com")  # No name params = empty metadata
         
         def table_side_effect(table_name):
             table_mock = Mock()
-            if table_name == "user_profiles":
-                profile_mock = Mock()
-                profile_mock.data = None  # No profile
-                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
-            elif table_name == "profiles":
-                # Legacy table also empty
-                profile_mock = Mock()
-                profile_mock.data = None
-                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
-            elif table_name == "user_notification_settings":
+            if table_name == "user_notification_settings":
                 settings_mock = Mock()
                 settings_mock.data = [{"enabled": True}]
                 table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
@@ -157,7 +155,7 @@ class TestSendEmailNotification:
             from worker.tasks import send_email_notification
             send_email_notification(mock_supabase, "nonexistent-user", 5)
             
-            # Should still send email (uses default name "there")
+            # Should still send email (uses default name "there" since no metadata)
             mock_email.send_ingestion_complete.assert_called_once()
             call_args = mock_email.send_ingestion_complete.call_args
             assert call_args.kwargs["name"] == "there"
@@ -187,17 +185,13 @@ class TestSendEmailNotification:
             mock_email.send_ingestion_complete.assert_not_called()
     
     def test_uses_fallback_name_when_display_name_missing(self, mock_supabase):
-        """Should use 'there' as fallback when no name is available."""
-        # Setup auth user with email
-        self._setup_auth_user(mock_supabase, "user@example.com")
+        """Should use 'there' as fallback when no name is in user_metadata."""
+        # Setup auth user with email but empty user_metadata
+        self._setup_auth_user(mock_supabase, "user@example.com")  # No name = empty metadata
         
         def table_side_effect(table_name):
             table_mock = Mock()
-            if table_name == "user_profiles":
-                profile_mock = Mock()
-                profile_mock.data = {"display_name": None, "full_name": None}  # No names
-                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
-            elif table_name == "user_notification_settings":
+            if table_name == "user_notification_settings":
                 settings_mock = Mock()
                 settings_mock.data = [{"enabled": True}]
                 table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock
@@ -211,22 +205,18 @@ class TestSendEmailNotification:
             from worker.tasks import send_email_notification
             send_email_notification(mock_supabase, "user-123", 5)
             
-            # Check that fallback name "there" was used
+            # Check that fallback name "there" was used (no name in metadata)
             call_args = mock_email.send_ingestion_complete.call_args
             assert call_args.kwargs["name"] == "there"
     
-    def test_prefers_display_name_over_full_name(self, mock_supabase):
-        """Should prefer display_name when both are available."""
-        # Setup auth user with email
-        self._setup_auth_user(mock_supabase, "user@example.com")
+    def test_prefers_full_name_over_name(self, mock_supabase):
+        """Should prefer full_name over name when both are in user_metadata."""
+        # Setup auth user with email and full_name in metadata
+        self._setup_auth_user(mock_supabase, "user@example.com", full_name="Johnny")
         
         def table_side_effect(table_name):
             table_mock = Mock()
-            if table_name == "user_profiles":
-                profile_mock = Mock()
-                profile_mock.data = {"display_name": "Johnny", "full_name": "John Smith"}
-                table_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = profile_mock
-            elif table_name == "user_notification_settings":
+            if table_name == "user_notification_settings":
                 settings_mock = Mock()
                 settings_mock.data = [{"enabled": True}]
                 table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value = settings_mock

@@ -1058,32 +1058,17 @@ def send_email_notification(
         total_files: Number of processed files
     """
     try:
-        # Fetch user name from profile (email is in auth.users, not user_profiles)
+        # Fetch user name and email from Auth Admin (display_name/full_name are NOT in user_profiles)
         name = "there"  # Default
-        try:
-            user_response = supabase.table("user_profiles").select(
-                "display_name,full_name"
-            ).eq("user_id", user_id).maybe_single().execute()
-            user_data = user_response.data
-            if isinstance(user_data, dict):
-                name = user_data.get("display_name") or user_data.get("full_name") or "there"
-            else:
-                # Try legacy profiles table
-                legacy_response = supabase.table("profiles").select(
-                    "display_name,full_name"
-                ).eq("user_id", user_id).maybe_single().execute()
-                if legacy_response.data and isinstance(legacy_response.data, dict):
-                    name = legacy_response.data.get("display_name") or legacy_response.data.get("full_name") or "there"
-        except Exception as profile_error:
-            logger.debug(f"📧 [Email] Could not fetch profile (using default name): {profile_error}")
-            
-        # Fetch email from Auth Admin (requires Service Role key)
         email = None
         try:
             # tasks.py uses the global supabase client which has SECRET_KEY (Admin)
             auth_user = supabase.auth.admin.get_user_by_id(user_id)
             if auth_user and auth_user.user:
                 email = auth_user.user.email
+                # Get name from user_metadata if available
+                user_metadata = auth_user.user.user_metadata or {}
+                name = user_metadata.get("full_name") or user_metadata.get("name") or "there"
         except Exception as auth_error:
             logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
             
@@ -1143,25 +1128,17 @@ def send_failure_email_notification(
         error_message: Error details
     """
     try:
-        # Fetch user name from profile (email is in auth.users, not user_profiles)
+        # Fetch user name and email from Auth Admin (display_name/full_name are NOT in user_profiles)
         name = "there"  # Default
-        try:
-            user_response = supabase.table("user_profiles").select(
-                "display_name,full_name"
-            ).eq("user_id", user_id).maybe_single().execute()
-            user_data = user_response.data
-            if isinstance(user_data, dict):
-                name = user_data.get("display_name") or user_data.get("full_name") or "there"
-        except Exception as profile_error:
-            logger.debug(f"📧 [Email] Could not fetch profile (using default name): {profile_error}")
-            
-        # Fetch email from Auth Admin (requires Service Role key)
         email = None
         try:
             # tasks.py uses the global supabase client which has SECRET_KEY (Admin)
             auth_user = supabase.auth.admin.get_user_by_id(user_id)
             if auth_user and auth_user.user:
                 email = auth_user.user.email
+                # Get name from user_metadata if available
+                user_metadata = auth_user.user.user_metadata or {}
+                name = user_metadata.get("full_name") or user_metadata.get("name") or "there"
         except Exception as auth_error:
             logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
             

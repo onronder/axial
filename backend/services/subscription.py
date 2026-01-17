@@ -209,21 +209,15 @@ class SubscriptionService:
         }, on_conflict="team_id").execute()
         
         # ALSO UPDATE user_profiles.plan for the team owner (keeps both tables in sync)
+        # NOTE: subscription_status column was removed from user_profiles; status is tracked in subscriptions table
         owner_id = None
         try:
             team_response = supabase.table("teams").select("owner_id").eq("id", team_id).single().execute()
             if team_response.data and team_response.data.get("owner_id"):
                 owner_id = team_response.data["owner_id"]
-                try:
-                    supabase.table("user_profiles").update({
-                        "plan": plan,
-                        "subscription_status": "active"
-                    }).eq("user_id", owner_id).execute()
-                except Exception as update_error:
-                    logger.warning(f"[SubscriptionService] Failed to update subscription_status, retrying with plan only: {update_error}")
-                    supabase.table("user_profiles").update({
-                        "plan": plan
-                    }).eq("user_id", owner_id).execute()
+                supabase.table("user_profiles").update({
+                    "plan": plan
+                }).eq("user_id", owner_id).execute()
                 logger.info(f"[SubscriptionService] Updated user_profiles.plan for owner {owner_id[:8]}... to {plan}")
         except Exception as e:
             logger.warning(f"[SubscriptionService] Failed to update user_profiles: {e}")
@@ -275,6 +269,7 @@ class SubscriptionService:
         # ==========================================================================
         # When canceled, the team loses all plan privileges immediately.
         # The "free" plan has max_scopes=0, which blocks ALL ingestion.
+        # NOTE: subscription_status column was removed from user_profiles; status is tracked in subscriptions table
         # ==========================================================================
         owner_id = None
         try:
@@ -282,8 +277,7 @@ class SubscriptionService:
             owner_id = team_response.data.get("owner_id") if team_response.data else None
             if owner_id:
                 supabase.table("user_profiles").update({
-                    "plan": "free",
-                    "subscription_status": "canceled"
+                    "plan": "free"
                 }).eq("user_id", owner_id).execute()
                 logger.warning(
                     f"[SubscriptionService] Team {team_id[:8]}... downgraded to FREE plan. "
