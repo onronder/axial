@@ -406,7 +406,7 @@ export function BillingSettings() {
                   <Button
                     className={cn(
                       "w-full mt-4",
-                      isPopular && "bg-gradient-to-r from-cyan-500 to-purple-500 hover:opacity-90"
+                      isPopular && "bg-gradient-to-r from-cyan-500 to-purple-500 text-white hover:scale-[1.02] active:scale-[0.98] transition-transform"
                     )}
                     variant={isCurrentPlan ? "outline" : isEnterprise ? "ghost" : isPopular ? "default" : "outline"}
                     disabled={isDisabled}

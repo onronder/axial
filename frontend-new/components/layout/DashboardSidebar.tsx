@@ -81,7 +81,7 @@ export function DashboardSidebar() {
                 <div className="pt-1">
                     <Button
                         variant="gradient"
-                        className="w-full justify-center gap-2 shadow-glow bg-gradient"
+                        className="w-full justify-center gap-2 shadow-glow"
                         onClick={handleNewChat}
                     >
                         <MessageSquarePlus className="h-4 w-4" />
@@ -126,7 +126,7 @@ export function DashboardSidebar() {
             <div className="pt-2 border-t border-sidebar-border">
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <button className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-sidebar-accent transition-colors group focus:outline-none focus:ring-2 focus:ring-primary/40">
+                        <button className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-sidebar-accent transition-colors group focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer">
                             <DeterministicAvatar name={displayName} className="h-8 w-8 text-xs" />
                             <div className="flex flex-1 flex-col items-start text-left text-sm overflow-hidden">
                                 <span className="font-medium truncate w-full">{displayName}</span>

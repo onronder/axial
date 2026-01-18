@@ -271,7 +271,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={handleBackdropClick}>
             <Card className="w-full max-w-md relative animate-in fade-in zoom-in-95 duration-200">
-                <button onClick={onClose} className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                <button onClick={onClose} className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer">
                     <X className="h-4 w-4" />
                     <span className="sr-only">Close</span>
                 </button>
@@ -400,7 +400,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                                             type="button"
                                             onClick={handleNotionConnect}
                                             disabled={dsLoading || isViewer}
-                                            className="bg-slate-900 text-white hover:bg-slate-800"
+                                            className="bg-foreground text-background hover:bg-foreground/90"
                                         >
                                             {dsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                             Connect Notion

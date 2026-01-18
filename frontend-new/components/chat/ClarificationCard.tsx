@@ -81,7 +81,7 @@ function ScopeCandidateItem({
             className={cn(
                 "w-full flex items-start gap-3 p-3 rounded-lg border transition-all text-left",
                 "hover:border-primary/50 hover:bg-primary/5",
-                "focus:outline-none focus:ring-2 focus:ring-primary/20",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
                 isSelected 
                     ? "border-primary bg-primary/10" 
@@ -149,7 +149,7 @@ export function ClarificationCard({
             
             {/* Content */}
             <div className="max-w-[85%]">
-                <div className="rounded-2xl bg-amber-50/50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-4 py-3 shadow-sm">
+                <div className="rounded-xl bg-amber-50/50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-4 py-3 shadow-sm">
                     {/* Header */}
                     <div className="mb-3">
                         <h3 className="font-medium text-foreground flex items-center gap-2">

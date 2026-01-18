@@ -83,7 +83,7 @@ export function WelcomeStep() {
                 <Button
                     onClick={nextStep}
                     size="lg"
-                    className="w-full gap-2 bg-gradient-to-r from-primary to-accent hover:opacity-90"
+                    className="w-full gap-2 bg-gradient-to-r from-primary to-accent text-white hover:scale-[1.02] active:scale-[0.98] transition-transform"
                 >
                     Get Started
                     <ArrowRight className="h-4 w-4" />
@@ -91,7 +91,7 @@ export function WelcomeStep() {
 
                 <button
                     onClick={skipOnboarding}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                     Skip tutorial
                 </button>

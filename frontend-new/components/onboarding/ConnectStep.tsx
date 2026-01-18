@@ -97,7 +97,7 @@ export function ConnectStep() {
             <div className="text-center">
                 <button
                     onClick={skipOnboarding}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                     Skip tutorial
                 </button>

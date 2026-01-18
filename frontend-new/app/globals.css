@@ -162,23 +162,6 @@
     animation: scale-in 0.2s ease-out;
   }
 
-  .animate-pulse-subtle {
-    animation: pulse-subtle 2s ease-in-out infinite;
-  }
-
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
-  }
-
-  .animate-glow {
-    animation: glow 2s ease-in-out infinite alternate;
-  }
-
-  .animate-shimmer {
-    animation: shimmer 2s linear infinite;
-    background-size: 200% 100%;
-  }
-
   /* Premium card effects */
   .card-hover {
     @apply transition-all duration-300;
@@ -327,16 +310,6 @@
     box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2);
   }
 
-  .btn-primary-gradient {
-    @apply text-white font-semibold py-3 px-6 rounded-full border-none cursor-pointer transition-all duration-200;
-    background: linear-gradient(to right, hsl(var(--primary)), hsl(var(--secondary)));
-  }
-
-  .btn-primary-gradient:hover {
-    transform: scale(1.02);
-    box-shadow: 0 10px 40px hsl(var(--primary) / 0.4);
-  }
-
   /* Ensure gradient buttons are always visible in light mode */
   .light .bg-axio-gradient {
     background: linear-gradient(to right, hsl(var(--primary)), hsl(var(--secondary))) !important;
@@ -348,27 +321,10 @@
     box-shadow: 0 10px 30px -5px hsl(var(--primary) / 0.5);
   }
 
-  /* Ghost button - dark mode */
-  .btn-ghost-glass {
-    @apply bg-transparent py-3 px-6 rounded-full transition-all duration-200;
-    color: rgba(255, 255, 255, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  .btn-ghost-glass:hover {
-    background: rgba(255, 255, 255, 0.05);
+  /* Ensure gradient button text stays white in light mode (gradient bg provides contrast) */
+  .light .bg-axio-gradient,
+  .light .bg-axio-gradient * {
     color: white;
-  }
-
-  /* Ghost button - light mode */
-  .light .btn-ghost-glass {
-    color: rgba(0, 0, 0, 0.7);
-    border-color: rgba(0, 0, 0, 0.1);
-  }
-
-  .light .btn-ghost-glass:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: hsl(224 71% 4%);
   }
 
   /* Void background - dark mode only */
@@ -422,87 +378,16 @@
     }
   }
 
-  @keyframes pulse-subtle {
-
-    0%,
-    100% {
-      opacity: 1;
-    }
-
-    50% {
-      opacity: 0.8;
-    }
-  }
-
-  @keyframes pulse-slow {
-
-    0%,
-    100% {
-      opacity: 0.4;
-      transform: scale(1);
-    }
-
-    50% {
-      opacity: 0.7;
-      transform: scale(1.05);
-    }
-  }
-
-  .animate-pulse-slow {
-    animation: pulse-slow 4s ease-in-out infinite;
-  }
-
-  @keyframes float {
-
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-
-    50% {
-      transform: translateY(-10px);
-    }
-  }
-
-  @keyframes glow {
-    from {
-      box-shadow: 0 0 20px hsl(var(--primary) / 0.3);
-    }
-
-    to {
-      box-shadow: 0 0 30px hsl(var(--primary) / 0.5);
-    }
-  }
-
-  @keyframes shimmer {
-    0% {
-      background-position: -200% 0;
-    }
-
-    100% {
-      background-position: 200% 0;
-    }
-  }
-
   /* Accessibility: Respect user's reduced motion preference */
   @media (prefers-reduced-motion: reduce) {
     .animate-fade-in,
     .animate-slide-up,
     .animate-scale-in,
-    .animate-pulse-subtle,
-    .animate-float,
-    .animate-glow,
-    .animate-shimmer,
-    .animate-pulse-slow,
     .animate-spin {
       animation: none;
     }
 
     .card-hover:hover {
-      transform: none;
-    }
-
-    .btn-primary-gradient:hover {
       transform: none;
     }
   }

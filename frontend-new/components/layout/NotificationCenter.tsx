@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Bell, CheckCircle2, AlertTriangle, XCircle, Info, Check, Trash2 } from "lucide-react";
+import { Bell, CheckCircle2, AlertTriangle, XCircle, Info, Check, Trash2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -97,9 +97,9 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
     return (
         <div
             className={cn(
-                "p-3 border-b border-slate-100 dark:border-slate-800 transition-colors cursor-pointer",
-                "hover:bg-slate-50 dark:hover:bg-slate-800/50",
-                !notification.is_read && "bg-slate-50/50 dark:bg-slate-800/30",
+                "p-3 border-b border-border transition-colors cursor-pointer",
+                "hover:bg-muted/50",
+                !notification.is_read && "bg-muted/30",
                 actionUrl && "hover:bg-primary/5"
             )}
             onClick={handleClick}
@@ -136,14 +136,14 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
 
                     {notification.message && (
                         <p className={cn(
-                            "text-xs text-slate-500 dark:text-slate-400 mt-0.5",
+                            "text-xs text-muted-foreground mt-0.5",
                             isExpanded ? "" : "truncate"
                         )}>
                             {notification.message}
                         </p>
                     )}
 
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                    <p className="text-xs text-muted-foreground/70 mt-1">
                         {formatRelativeTime(notification.created_at)}
                         {actionUrl && (
                             <span className="ml-2 text-primary">Click to open →</span>
@@ -163,8 +163,8 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
 function EmptyState({ message }: { message: string }) {
     return (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Bell className="h-10 w-10 text-slate-300 dark:text-slate-600 mb-3" />
-            <p className="text-sm text-slate-500 dark:text-slate-400">{message}</p>
+            <Bell className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <p className="text-sm text-muted-foreground">{message}</p>
         </div>
     );
 }
@@ -220,7 +220,7 @@ export function NotificationCenter() {
                 sideOffset={8}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                     <h3 className="font-semibold">Notifications</h3>
                     <div className="flex items-center gap-1">
                         {unreadCount > 0 && (
@@ -247,7 +247,7 @@ export function NotificationCenter() {
 
                 {/* Tabs */}
                 <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "all" | "unread")}>
-                    <TabsList className="w-full rounded-none border-b border-slate-100 dark:border-slate-800">
+                    <TabsList className="w-full rounded-none border-b border-border">
                         <TabsTrigger value="all" className="flex-1">
                             All
                         </TabsTrigger>
@@ -260,7 +260,7 @@ export function NotificationCenter() {
                         <ScrollArea className="h-[400px]">
                             {isLoading ? (
                                 <div className="flex items-center justify-center py-12">
-                                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-slate-500" />
+                                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
                                 </div>
                             ) : displayedNotifications.length === 0 ? (
                                 <EmptyState

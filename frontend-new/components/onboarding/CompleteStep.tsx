@@ -118,7 +118,7 @@ export function CompleteStep() {
                 <Button
                     onClick={handleComplete}
                     size="lg"
-                    className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:opacity-90"
+                    className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:scale-[1.02] active:scale-[0.98] transition-transform"
                 >
                     <Sparkles className="h-4 w-4" />
                     Start Using Axio Hub

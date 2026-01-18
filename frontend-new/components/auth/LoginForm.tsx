@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Loader2, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
@@ -207,7 +208,7 @@ export function LoginForm() {
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-border bg-muted text-primary focus:ring-2 focus:ring-primary focus:ring-offset-0"
+                className="h-4 w-4 rounded border-border bg-muted text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
               <span className="text-sm text-foreground/80">Remember me</span>
             </label>
@@ -220,14 +221,15 @@ export function LoginForm() {
             </Link>
           </div>
 
-          <button
+          <Button
             type="submit"
-            className="btn-primary-gradient w-full py-3 h-auto"
+            variant="gradient"
+            className="w-full py-3 h-auto"
             disabled={isLoading}
           >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />}
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Sign In
-          </button>
+          </Button>
         </form>
       </Form>
 
@@ -242,8 +244,10 @@ export function LoginForm() {
         </div>
       </div>
 
-      <button
-        className="btn-ghost-glass w-full flex items-center justify-center gap-3 py-3 h-auto"
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full flex items-center justify-center gap-3 py-3 h-auto"
         disabled={isLoading}
       >
         <svg className="h-4 w-4" viewBox="0 0 24 24">
@@ -265,7 +269,7 @@ export function LoginForm() {
           />
         </svg>
         Continue with Google
-      </button>
+      </Button>
 
       {/* Footer Link */}
       <p className="text-center text-sm text-muted-foreground">

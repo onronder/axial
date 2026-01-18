@@ -89,7 +89,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
             {/* Header - matches original "Simple pricing" design */}
             <div className="text-center space-y-4 mb-12">
                 <h1 className="text-5xl font-extrabold tracking-tight">
-                    <span className="text-white">Simple </span>
+                    <span className="text-foreground">Simple </span>
                     <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
                         pricing
                     </span>
@@ -159,7 +159,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
 
                             <CardFooter className="pt-4">
                                 <Button
-                                    className={`w-full ${isPro ? 'bg-gradient-to-r from-cyan-500 to-purple-500 hover:opacity-90' : ''}`}
+                                    className={`w-full ${isPro ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white hover:scale-[1.02] active:scale-[0.98] transition-transform' : ''}`}
                                     size="lg"
                                     variant={plan.button_variant}
                                     onClick={() => handleUpgrade(plan.type)}

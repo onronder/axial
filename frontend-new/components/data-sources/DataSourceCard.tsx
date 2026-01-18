@@ -148,7 +148,7 @@ export function DataSourceCard({
   return (
     <div
       className={cn(
-        "group glass-card border-white/10 p-4 transition-all duration-300 flex flex-col",
+        "group glass-card border-white/10 p-6 transition-all duration-300 flex flex-col cursor-pointer",
         source.isConnected
           ? "border-primary/30 bg-gradient-to-br from-primary/10 via-transparent to-transparent shadow-glow"
           : "hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5"

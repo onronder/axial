@@ -94,7 +94,7 @@ export function GeneralSettings() {
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 placeholder="John"
-                className="transition-all focus:ring-2 focus:ring-primary/20"
+                className="transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
             </div>
             <div className="space-y-2">
@@ -104,7 +104,7 @@ export function GeneralSettings() {
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 placeholder="Doe"
-                className="transition-all focus:ring-2 focus:ring-primary/20"
+                className="transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
             </div>
           </div>

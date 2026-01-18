@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Loader2, CheckCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
@@ -83,12 +84,14 @@ export function ForgotPasswordForm() {
               We&apos;ve sent a password reset link to your email address.
             </p>
           </div>
-          <button
-            className="btn-ghost-glass w-full py-3 h-auto"
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full py-3 h-auto"
             onClick={() => setIsSubmitted(false)}
           >
             Send another link
-          </button>
+          </Button>
         </div>
       ) : (
         <>
@@ -123,14 +126,15 @@ export function ForgotPasswordForm() {
                 )}
               />
 
-              <button
+              <Button
                 type="submit"
-                className="btn-primary-gradient w-full py-3 h-auto"
+                variant="gradient"
+                className="w-full py-3 h-auto"
                 disabled={isLoading}
               >
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />}
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Send Reset Link
-              </button>
+              </Button>
             </form>
           </Form>
 
