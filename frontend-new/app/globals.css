@@ -16,7 +16,7 @@
     --secondary: 189 94% 43%; /* Neon Cyan */
     --secondary-foreground: 0 0% 100%;
     --muted: 217 33% 17%;
-    --muted-foreground: 215 25% 63%;
+    --muted-foreground: 215 25% 73%; /* WCAG AA: increased from 63% for 4.5:1 contrast */
     --accent: 263 83% 58%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 62% 50%;
@@ -39,7 +39,7 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 33% 17%;
     --sidebar-ring: 263 83% 58%;
-    --sidebar-muted: 215 25% 63%;
+    --sidebar-muted: 215 25% 73%; /* WCAG AA: increased from 63% for 4.5:1 contrast */
 
     /* Sidebar dimensions - set here to prevent hydration flash */
     --sidebar-width: 16rem;
@@ -59,7 +59,7 @@
     --secondary: 189 94% 43%;
     --secondary-foreground: 0 0% 100%;
     --muted: 217 33% 17%;
-    --muted-foreground: 215 25% 63%;
+    --muted-foreground: 215 25% 73%; /* WCAG AA: increased from 63% for 4.5:1 contrast */
     --accent: 263 83% 58%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 62% 50%;
@@ -80,7 +80,7 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 33% 17%;
     --sidebar-ring: 263 83% 58%;
-    --sidebar-muted: 215 25% 63%;
+    --sidebar-muted: 215 25% 73%; /* WCAG AA: increased from 63% for 4.5:1 contrast */
   }
 
   /* Light theme - Clean, professional with brand colors */
@@ -235,9 +235,11 @@
     left: 100%;
   }
 
-  /* Focus glow */
+  /* Focus glow - enhanced for accessibility */
   .focus-glow:focus-within {
-    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2);
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.4);
+    outline: 2px solid hsl(var(--primary) / 0.6);
+    outline-offset: 2px;
   }
 
   /* Subtle border gradient */
@@ -321,29 +323,29 @@
 
   .input-glass:focus {
     outline: none;
-    border-color: #8B5CF6;
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2);
   }
 
   .btn-primary-gradient {
     @apply text-white font-semibold py-3 px-6 rounded-full border-none cursor-pointer transition-all duration-200;
-    background: linear-gradient(to right, #8B5CF6, #06B6D4);
+    background: linear-gradient(to right, hsl(var(--primary)), hsl(var(--secondary)));
   }
 
   .btn-primary-gradient:hover {
     transform: scale(1.02);
-    box-shadow: 0 10px 40px rgba(139, 92, 246, 0.4);
+    box-shadow: 0 10px 40px hsl(var(--primary) / 0.4);
   }
 
   /* Ensure gradient buttons are always visible in light mode */
   .light .bg-axio-gradient {
-    background: linear-gradient(to right, #8B5CF6, #06B6D4) !important;
-    box-shadow: 0 4px 14px 0 rgba(139, 92, 246, 0.35);
+    background: linear-gradient(to right, hsl(var(--primary)), hsl(var(--secondary))) !important;
+    box-shadow: 0 4px 14px 0 hsl(var(--primary) / 0.35);
   }
-  
+
   .light .bg-axio-gradient:hover {
-    background: linear-gradient(to right, #7C3AED, #0891B2) !important;
-    box-shadow: 0 10px 30px -5px rgba(139, 92, 246, 0.5);
+    background: linear-gradient(to right, hsl(var(--primary) / 0.9), hsl(var(--secondary) / 0.9)) !important;
+    box-shadow: 0 10px 30px -5px hsl(var(--primary) / 0.5);
   }
 
   /* Ghost button - dark mode */
@@ -479,6 +481,29 @@
 
     100% {
       background-position: 200% 0;
+    }
+  }
+
+  /* Accessibility: Respect user's reduced motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-in,
+    .animate-slide-up,
+    .animate-scale-in,
+    .animate-pulse-subtle,
+    .animate-float,
+    .animate-glow,
+    .animate-shimmer,
+    .animate-pulse-slow,
+    .animate-spin {
+      animation: none;
+    }
+
+    .card-hover:hover {
+      transform: none;
+    }
+
+    .btn-primary-gradient:hover {
+      transform: none;
     }
   }
 }

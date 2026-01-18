@@ -1,398 +1,380 @@
 "use client";
 
-import { useState } from "react";
-import { 
-  FileUp, 
-  Globe, 
-  Database, 
-  MessageSquare, 
-  Plus,
+import { useState, useCallback, type KeyboardEvent } from "react";
+import {
   Sparkles,
-  ArrowRight,
-  Cloud,
-  Code2,
+  UploadCloud,
+  Globe,
+  MessageSquare,
   FileText,
-  Layers,
-  Play,
-  Server,
-  Lock
+  ArrowRight,
+  AlertTriangle,
+  GitCompare,
+  BarChart3,
+  Loader2,
 } from "lucide-react";
+import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
-import { useProfile } from "@/hooks/useProfile";
 import { useIngestModal } from "@/hooks/useIngestModal";
 import { useDocumentCount } from "@/hooks/useDocumentCount";
-import { useDataSources } from "@/hooks/useDataSources";
-import { AxioLogo } from "@/components/branding/AxioLogo";
-import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon";
 import { starterQueries } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+
+// =============================================================================
+// TYPES
+// =============================================================================
 
 interface EmptyStateProps {
+  /** Callback when user selects a starter query */
   onQuerySelect: (query: string) => void;
 }
 
-const iconMap: Record<string, typeof MessageSquare> = {
-  "file-text": MessageSquare,
-  "alert-triangle": MessageSquare,
-  "git-compare": MessageSquare,
-  "file-bar-chart": MessageSquare,
+interface ActionCardProps {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+  ariaLabel: string;
+}
+
+interface QueryCardProps {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+}
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+/** Map of query icon names to Lucide components */
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  "file-text": FileText,
+  "alert-triangle": AlertTriangle,
+  "git-compare": GitCompare,
+  "file-bar-chart": BarChart3,
 };
 
-// Connector showcase data - what we support
-const CONNECTOR_SHOWCASE = [
-  {
-    category: "Cloud Storage",
-    icon: Cloud,
-    color: "from-blue-500 to-cyan-500",
-    connectors: [
-      { id: "google-drive", name: "Google Drive", description: "Docs, Sheets, PDFs" },
-      { id: "onedrive", name: "OneDrive", description: "Microsoft cloud files" },
-      { id: "sharepoint", name: "SharePoint", description: "Team documents" },
-      { id: "dropbox", name: "Dropbox", description: "Cloud storage" },
-      { id: "box", name: "Box", description: "Enterprise storage" },
-      { id: "s3", name: "Amazon S3", description: "Object storage" },
-    ]
-  },
-  {
-    category: "Development",
-    icon: Code2,
-    color: "from-violet-500 to-purple-500",
-    connectors: [
-      { id: "github", name: "GitHub", description: "Repos & code" },
-      { id: "sftp", name: "SFTP", description: "Secure file transfer" },
-    ]
-  },
-  {
-    category: "Productivity",
-    icon: Layers,
-    color: "from-amber-500 to-orange-500",
-    connectors: [
-      { id: "notion", name: "Notion", description: "Wikis & docs" },
-    ]
-  },
-  {
-    category: "Web & Media",
-    icon: Globe,
-    color: "from-emerald-500 to-green-500",
-    connectors: [
-      { id: "web", name: "Web Crawler", description: "Any website" },
-      { id: "youtube", name: "YouTube", description: "Video transcripts" },
-    ]
-  },
-  {
-    category: "Files",
-    icon: FileText,
-    color: "from-rose-500 to-pink-500",
-    connectors: [
-      { id: "file-upload", name: "File Upload", description: "PDF, DOCX, TXT" },
-    ]
-  },
-];
+/** Accepted file types for drag & drop */
+const ACCEPTED_FILE_TYPES = {
+  "application/pdf": [".pdf"],
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+  "text/plain": [".txt"],
+  "text/markdown": [".md"],
+};
 
-// Quick start connectors (most common)
-const QUICK_START = [
-  { id: "file", icon: FileUp, name: "Upload Files", description: "PDF, DOCX, TXT", color: "emerald", action: "file" as const },
-  { id: "google-drive", icon: null, name: "Google Drive", description: "Connect & browse", color: "blue", action: "google-drive" as const },
-  { id: "github", icon: null, name: "GitHub", description: "Repos & code", color: "violet", action: "github" as const },
-  { id: "web", icon: Globe, name: "Website", description: "Crawl pages", color: "purple", action: "url" as const },
-];
+// =============================================================================
+// SUB-COMPONENTS
+// =============================================================================
 
-export function EmptyState({ onQuerySelect }: EmptyStateProps) {
-  const { user } = useAuth();
-  const { profile } = useProfile();
-  const { openModal } = useIngestModal();
-  const { isEmpty, isLoading } = useDocumentCount();
-  const { connect } = useDataSources();
-  const router = useRouter();
-  const [showAllConnectors, setShowAllConnectors] = useState(false);
-
-  const displayName = profile?.first_name || user?.name?.split(" ")[0] || "there";
-
-  function getGreeting() {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
-  }
-
-  const greeting = getGreeting();
-  const showDataSourcePrompt = isEmpty && !isLoading;
-
-  const handleQuickAction = (action: "file" | "url" | "google-drive" | "github") => {
-    if (action === "file" || action === "url") {
-      openModal(action);
-    } else if (action === "google-drive") {
-      connect("google_drive");
-    } else if (action === "github") {
-      connect("github");
+/** Primary action card (Upload Files / Add Website) */
+function ActionCard({ icon, title, description, onClick, ariaLabel }: ActionCardProps) {
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
     }
   };
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center px-4 py-12 md:py-16">
-      {/* Enhanced gradient background */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-primary/10 via-violet-500/5 to-transparent blur-3xl animate-pulse-slow" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] rounded-full bg-gradient-to-tl from-cyan-500/8 via-primary/5 to-transparent blur-3xl" />
-        <div className="absolute top-1/3 right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-bl from-amber-500/5 via-transparent to-transparent blur-3xl" />
+    <button
+      type="button"
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      aria-label={ariaLabel}
+      className={cn(
+        "group flex flex-col items-center gap-4 p-6 rounded-xl",
+        "border border-border bg-card text-center",
+        "transition-all duration-200 ease-out",
+        "hover:border-foreground/20 hover:bg-accent/50",
+        "hover:scale-[1.02] active:scale-[0.98]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "cursor-pointer"
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-12 w-12 items-center justify-center rounded-xl",
+          "bg-muted text-muted-foreground",
+          "transition-colors duration-200",
+          "group-hover:bg-primary/10 group-hover:text-primary"
+        )}
+      >
+        {icon}
       </div>
+      <div className="space-y-1">
+        <h3 className="font-medium text-foreground">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+    </button>
+  );
+}
 
-      <div className="max-w-4xl w-full space-y-8 text-center animate-fade-in">
-        {/* Greeting with inline logo */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-center gap-4">
-            <div className="animate-float">
-              <AxioLogo variant="icon" size="xl" />
-            </div>
-            <h1 className="font-display text-4xl md:text-5xl font-bold text-foreground">
-              {greeting}, <span className="gradient-text">{displayName}</span>
-            </h1>
-          </div>
-          <p className="text-xl text-muted-foreground">
-            {showDataSourcePrompt
-              ? "Connect your data to start chatting with AI"
-              : "What would you like to explore today?"
-            }
-          </p>
+/** Starter query suggestion card */
+function QueryCard({ icon, title, description, onClick }: QueryCardProps) {
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      aria-label={`Ask: ${title}`}
+      className={cn(
+        "group flex w-full items-center gap-3 p-4 rounded-xl",
+        "border border-border bg-card text-left",
+        "transition-all duration-200 ease-out",
+        "hover:border-foreground/20 hover:bg-accent/50",
+        "hover:scale-[1.01] active:scale-[0.98]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "cursor-pointer"
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+          "bg-muted text-muted-foreground",
+          "transition-colors duration-200",
+          "group-hover:bg-primary/10 group-hover:text-primary"
+        )}
+      >
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-foreground truncate">{title}</p>
+        <p className="text-sm text-muted-foreground truncate">{description}</p>
+      </div>
+      <ArrowRight
+        className="h-4 w-4 text-muted-foreground opacity-40 group-hover:opacity-100 transition-opacity"
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
+/** Secondary link button */
+function SecondaryAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      className={cn(
+        "inline-flex items-center gap-1.5 text-sm",
+        "text-muted-foreground hover:text-foreground",
+        "transition-colors duration-200",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded",
+        "min-h-[44px] py-2 px-1 cursor-pointer"
+      )}
+    >
+      <span>{children}</span>
+      <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+    </button>
+  );
+}
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
+
+/**
+ * Empty state component for the chat interface.
+ * 
+ * Shows different content based on whether the user has documents:
+ * - No documents: Prompts to add data sources with upload/website cards
+ * - Has documents: Shows starter query suggestions
+ * 
+ * Features:
+ * - Drag & drop file upload zone
+ * - Keyboard accessible
+ * - Loading state handling
+ */
+export function EmptyState({ onQuerySelect }: EmptyStateProps) {
+  const { openModal } = useIngestModal();
+  const { isEmpty, isLoading } = useDocumentCount();
+  const router = useRouter();
+  const [isDragActive, setIsDragActive] = useState(false);
+
+  // File drop handler - opens the upload modal
+  const onDrop = useCallback(() => {
+    openModal("file");
+    setIsDragActive(false);
+  }, [openModal]);
+
+  // Dropzone configuration
+  const { getRootProps, getInputProps, isDragActive: dropzoneActive } = useDropzone({
+    onDrop,
+    onDragEnter: () => setIsDragActive(true),
+    onDragLeave: () => setIsDragActive(false),
+    noClick: true,
+    accept: ACCEPTED_FILE_TYPES,
+  });
+
+  // Navigation handlers
+  const handleOpenFileModal = useCallback(() => openModal("file"), [openModal]);
+  const handleOpenUrlModal = useCallback(() => openModal("url"), [openModal]);
+  const handleNavigateToDataSources = useCallback(
+    () => router.push("/dashboard/settings/data-sources"),
+    [router]
+  );
+
+  // Computed state
+  const showDataSourcePrompt = isEmpty && !isLoading;
+  const showDropOverlay = isDragActive || dropzoneActive;
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div
+        className="flex min-h-full flex-col items-center justify-center px-4 py-16 md:py-24"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div className="flex flex-col items-center gap-4">
+          <Loader2
+            className="h-8 w-8 text-muted-foreground animate-spin motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+          <span className="sr-only">Loading data sources, please wait</span>
         </div>
+      </div>
+    );
+  }
 
-        {/* Data Source Prompt - Show when no documents */}
+  return (
+    <div
+      {...getRootProps()}
+      className="relative flex min-h-full flex-col items-center justify-center px-4 py-16 md:py-24"
+      role="region"
+      aria-label={showDataSourcePrompt ? "Add your first data source" : "Start a conversation"}
+    >
+      {/* Hidden file input for dropzone */}
+      <input {...getInputProps()} aria-hidden="true" />
+
+      {/* Drop Overlay */}
+      {showDropOverlay && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm animate-in fade-in duration-200"
+          role="status"
+          aria-label="Drop files to upload"
+        >
+          <div className="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 border-dashed border-primary bg-primary/5">
+            <UploadCloud className="h-12 w-12 text-primary" aria-hidden="true" />
+            <p className="text-lg font-medium text-foreground">Drop to analyze</p>
+            <p className="text-sm text-muted-foreground">PDF, DOCX, TXT, MD</p>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-xl w-full space-y-10 text-center">
+        {/* Empty State - No documents */}
         {showDataSourcePrompt && (
-          <div className="space-y-8">
-            {/* Quick Start Section */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary animate-pulse" />
-                <span className="text-sm font-semibold text-foreground">Quick Start</span>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {QUICK_START.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => handleQuickAction(item.action)}
-                    className="group relative flex flex-col items-center gap-3 p-5 rounded-2xl border border-border/50 bg-gradient-to-b from-card/80 to-card/40 backdrop-blur-sm transition-all duration-300 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-1 overflow-hidden"
-                  >
-                    {/* Subtle shine effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                    
-                    <div className={cn(
-                      "flex h-14 w-14 items-center justify-center rounded-xl text-white shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl",
-                      item.color === "emerald" && "bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/30 group-hover:shadow-emerald-500/50",
-                      item.color === "blue" && "bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/30 group-hover:shadow-blue-500/50",
-                      item.color === "violet" && "bg-gradient-to-br from-violet-500 to-violet-600 shadow-violet-500/30 group-hover:shadow-violet-500/50",
-                      item.color === "purple" && "bg-gradient-to-br from-purple-500 to-purple-600 shadow-purple-500/30 group-hover:shadow-purple-500/50",
-                    )}>
-                      {item.icon ? (
-                        <item.icon className="h-6 w-6" />
-                      ) : (
-                        <DataSourceIcon sourceId={item.id} size="lg" />
-                      )}
-                    </div>
-                    <div className="text-center">
-                      <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                        {item.name}
-                      </h3>
-                      <p className="text-xs text-muted-foreground">{item.description}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Connector Showcase */}
-            <div className="space-y-4 pt-4">
-              <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                <Database className="h-4 w-4" />
-                <span className="text-sm">Connect to 12+ data sources</span>
-              </div>
-
-              {/* Connector Icons Row */}
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                {CONNECTOR_SHOWCASE.flatMap(cat => cat.connectors).slice(0, 8).map((connector) => (
-                  <div
-                    key={connector.id}
-                    className="group relative flex items-center justify-center h-12 w-12 rounded-xl bg-muted/50 border border-border/50 transition-all duration-300 hover:bg-muted hover:border-border hover:scale-110"
-                    title={connector.name}
-                  >
-                    <DataSourceIcon sourceId={connector.id} size="md" />
-                  </div>
-                ))}
-                <button
-                  onClick={() => setShowAllConnectors(true)}
-                  className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary/10 border border-primary/20 text-primary transition-all duration-300 hover:bg-primary/20 hover:scale-110"
-                  title="View all connectors"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* View All Button */}
-              <Button
-                variant="outline"
-                onClick={() => setShowAllConnectors(true)}
-                className="mt-4 group"
+          <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Hero Section */}
+            <header className="space-y-4">
+              <div
+                className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-muted"
+                aria-hidden="true"
               >
-                <span>View All Data Sources</span>
-                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </Button>
+                <Sparkles className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+                I&apos;m ready to learn.
+              </h1>
+              <p className="text-muted-foreground">
+                Connect a data source to start chatting with your knowledge base.
+              </p>
+            </header>
+
+            {/* Primary Action Cards */}
+            <div className="grid gap-4 sm:grid-cols-2" role="group" aria-label="Quick actions">
+              <ActionCard
+                icon={<UploadCloud className="h-6 w-6" />}
+                title="Upload Files"
+                description="Drag & drop PDF, DOCX, TXT"
+                onClick={handleOpenFileModal}
+                ariaLabel="Upload files - supports PDF, DOCX, and TXT"
+              />
+              <ActionCard
+                icon={<Globe className="h-6 w-6" />}
+                title="Add Website"
+                description="Crawl a URL or YouTube video"
+                onClick={handleOpenUrlModal}
+                ariaLabel="Add website - crawl a URL or YouTube video"
+              />
             </div>
 
-            {/* Features highlight */}
-            <div className="grid grid-cols-3 gap-4 pt-4 max-w-xl mx-auto">
-              <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/30">
-                <Lock className="h-5 w-5 text-primary" />
-                <span className="text-xs text-muted-foreground text-center">Secure & Private</span>
-              </div>
-              <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/30">
-                <Server className="h-5 w-5 text-primary" />
-                <span className="text-xs text-muted-foreground text-center">Auto-Sync</span>
-              </div>
-              <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/30">
-                <Play className="h-5 w-5 text-primary" />
-                <span className="text-xs text-muted-foreground text-center">Instant Search</span>
-              </div>
-            </div>
+            {/* Secondary Action */}
+            <SecondaryAction onClick={handleNavigateToDataSources}>
+              or connect apps like Google Drive, Notion & GitHub
+            </SecondaryAction>
           </div>
         )}
 
-        {/* Starter queries - Show when user has documents */}
-        {!showDataSourcePrompt && (
-          <>
-            <div className="grid gap-5 sm:grid-cols-2">
-              {starterQueries.map((query, index) => {
-                const Icon = iconMap[query.icon] || MessageSquare;
+        {/* Has Documents - Show starter queries */}
+        {!showDataSourcePrompt && !isLoading && (
+          <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Hero Section */}
+            <header className="space-y-4">
+              <div
+                className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-muted"
+                aria-hidden="true"
+              >
+                <MessageSquare className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+                What can I help you with?
+              </h1>
+              <p className="text-muted-foreground">
+                Ask questions about your knowledge base or try a suggestion below.
+              </p>
+            </header>
+
+            {/* Starter Queries */}
+            <nav className="space-y-3" aria-label="Suggested questions">
+              {starterQueries.slice(0, 4).map((query) => {
+                const Icon = ICON_MAP[query.icon] || FileText;
                 return (
-                  <button
+                  <QueryCard
                     key={query.title}
+                    icon={<Icon className="h-5 w-5" />}
+                    title={query.title}
+                    description={query.description}
                     onClick={() => onQuerySelect(query.title)}
-                    className="group relative flex items-start gap-4 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-6 text-left transition-all duration-300 hover:border-primary/40 hover:bg-card hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 shine"
-                    style={{ animationDelay: `${index * 100}ms` }}
-                  >
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground transition-all duration-300 group-hover:bg-gradient-to-br group-hover:from-primary group-hover:to-accent group-hover:text-white group-hover:shadow-lg group-hover:shadow-primary/30">
-                      <Icon className="h-6 w-6" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <h3 className="font-semibold text-lg text-foreground group-hover:text-primary transition-colors">
-                        {query.title}
-                      </h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {query.description}
-                      </p>
-                    </div>
-                    <div className="absolute right-5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <svg className="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                  </button>
+                  />
                 );
               })}
-            </div>
+            </nav>
 
-            {/* Add data source button when documents exist */}
-            <Button
-              variant="outline"
-              onClick={() => router.push("/dashboard/settings/data-sources")}
-              className="mt-4 group"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              <span>Add New Data Source</span>
-            </Button>
-          </>
+            {/* Secondary Action */}
+            <SecondaryAction onClick={handleNavigateToDataSources}>
+              Add more data sources
+            </SecondaryAction>
+          </div>
         )}
 
-        {/* Hint text */}
-        <p className="text-sm text-muted-foreground/60 pt-2">
+        {/* Subtle hint */}
+        <p className="text-xs text-muted-foreground/50" aria-live="polite">
           {showDataSourcePrompt
-            ? "Your data stays secure and private — only you can access it"
-            : "Or type your own question below"
-          }
+            ? "Drag files anywhere to upload"
+            : "Type a message below to start"}
         </p>
       </div>
-
-      {/* All Connectors Modal */}
-      <Dialog open={showAllConnectors} onOpenChange={setShowAllConnectors}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <Database className="h-5 w-5 text-primary" />
-              Available Data Sources
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="space-y-6 py-4">
-            {CONNECTOR_SHOWCASE.map((category) => (
-              <div key={category.category} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-lg text-white bg-gradient-to-br",
-                    category.color
-                  )}>
-                    <category.icon className="h-4 w-4" />
-                  </div>
-                  <h3 className="font-semibold text-foreground">{category.category}</h3>
-                </div>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {category.connectors.map((connector) => (
-                    <button
-                      key={connector.id}
-                      onClick={() => {
-                        setShowAllConnectors(false);
-                        if (connector.id === "file-upload") {
-                          openModal("file");
-                        } else if (connector.id === "web") {
-                          openModal("url");
-                        } else if (connector.id === "youtube") {
-                          router.push("/dashboard/settings/data-sources");
-                        } else {
-                          router.push("/dashboard/settings/data-sources");
-                        }
-                      }}
-                      className="group flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card/50 transition-all hover:border-primary/50 hover:bg-card text-left"
-                    >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/50 group-hover:bg-muted transition-colors">
-                        <DataSourceIcon sourceId={connector.id} size="md" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm text-foreground group-hover:text-primary transition-colors truncate">
-                          {connector.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {connector.description}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            
-            {/* Go to Settings */}
-            <div className="pt-4 border-t border-border">
-              <Button
-                onClick={() => {
-                  setShowAllConnectors(false);
-                  router.push("/dashboard/settings/data-sources");
-                }}
-                className="w-full"
-              >
-                <span>Manage All Data Sources</span>
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
