@@ -1,113 +1,63 @@
-from unittest.mock import MagicMock, patch
+"""
+Tests for core/quotas.py - Plan limits and utilities.
+
+Note: Actual quota enforcement (check_admission) is tested in test_services_quotas.py
+"""
 
 import pytest
-from fastapi import HTTPException
 
 from core import quotas
 
 
-@pytest.mark.asyncio
-async def test_check_quota_allows_within_limit():
-    profiles_table = MagicMock()
-    profiles_table.select.return_value = profiles_table
-    profiles_table.eq.return_value = profiles_table
-    profiles_table.single.return_value = profiles_table
-    profiles_table.execute.return_value = MagicMock(data={"plan": "starter"})
-
-    docs_table = MagicMock()
-    docs_table.select.return_value = docs_table
-    docs_table.eq.return_value = docs_table
-    docs_table.execute.return_value = MagicMock(count=0)
-
-    supabase = MagicMock()
-    supabase.table.side_effect = lambda name: profiles_table if name == "user_profiles" else docs_table
-
-    with patch("core.quotas.get_supabase", return_value=supabase):
-        await quotas.check_quota("user-1", "files")
-
-
-@pytest.mark.asyncio
-async def test_check_quota_blocks_when_over_limit():
-    profiles_table = MagicMock()
-    profiles_table.select.return_value = profiles_table
-    profiles_table.eq.return_value = profiles_table
-    profiles_table.single.return_value = profiles_table
-    profiles_table.execute.return_value = MagicMock(data={"plan": "starter"})
-
-    docs_table = MagicMock()
-    docs_table.select.return_value = docs_table
-    docs_table.eq.return_value = docs_table
-    docs_table.execute.return_value = MagicMock(count=quotas.settings.LIMITS_STARTER_FILES)
-
-    supabase = MagicMock()
-    supabase.table.side_effect = lambda name: profiles_table if name == "user_profiles" else docs_table
-
-    with patch("core.quotas.get_supabase", return_value=supabase):
-        with pytest.raises(HTTPException) as exc:
-            await quotas.check_quota("user-1", "files")
-    assert exc.value.status_code == 402
-
-
-@pytest.mark.asyncio
-async def test_check_quota_uses_pro_limit():
-    profiles_table = MagicMock()
-    profiles_table.select.return_value = profiles_table
-    profiles_table.eq.return_value = profiles_table
-    profiles_table.single.return_value = profiles_table
-    profiles_table.execute.return_value = MagicMock(data={"plan": "pro"})
-
-    docs_table = MagicMock()
-    docs_table.select.return_value = docs_table
-    docs_table.eq.return_value = docs_table
-    docs_table.execute.return_value = MagicMock(count=0)
-
-    supabase = MagicMock()
-    supabase.table.side_effect = lambda name: profiles_table if name == "user_profiles" else docs_table
-
-    with patch("core.quotas.get_supabase", return_value=supabase):
-        await quotas.check_quota("user-1", "files")
-
-
-@pytest.mark.asyncio
-async def test_check_quota_enterprise_returns_without_check():
-    profiles_table = MagicMock()
-    profiles_table.select.return_value = profiles_table
-    profiles_table.eq.return_value = profiles_table
-    profiles_table.single.return_value = profiles_table
-    profiles_table.execute.return_value = MagicMock(data={"plan": "enterprise"})
-
-    supabase = MagicMock()
-    supabase.table.return_value = profiles_table
-
-    with patch("core.quotas.get_supabase", return_value=supabase):
-        await quotas.check_quota("user-1", "files")
-
-
-@pytest.mark.asyncio
-async def test_check_quota_fails_open_on_db_error():
-    profiles_table = MagicMock()
-    profiles_table.select.return_value = profiles_table
-    profiles_table.eq.return_value = profiles_table
-    profiles_table.single.return_value = profiles_table
-    profiles_table.execute.side_effect = Exception("boom")
-
-    docs_table = MagicMock()
-    docs_table.select.return_value = docs_table
-    docs_table.eq.return_value = docs_table
-    docs_table.execute.side_effect = Exception("boom")
-
-    supabase = MagicMock()
-    supabase.table.side_effect = lambda name: profiles_table if name == "user_profiles" else docs_table
-
-    with patch("core.quotas.get_supabase", return_value=supabase):
-        await quotas.check_quota("user-1", "files")
-
-
-def test_format_bytes():
+def test_format_bytes_under_1kb():
     assert quotas.format_bytes(1024) == "1024.0 B"
+
+
+def test_format_bytes_kb():
     assert quotas.format_bytes(1025) == "1.0 KB"
+
+
+def test_format_bytes_mb():
+    assert quotas.format_bytes(1048576) == "1024.0 KB"
+    assert quotas.format_bytes(1048577) == "1.0 MB"
+
+
+def test_format_bytes_gb():
+    assert quotas.format_bytes(1073741824) == "1024.0 MB"
+    assert quotas.format_bytes(1073741825) == "1.0 GB"
+
+
+def test_get_plan_limits_returns_starter():
+    limits = quotas.get_plan_limits("starter")
+    assert limits.plan_name == "starter"
+    assert limits.max_files > 0
+
+
+def test_get_plan_limits_returns_pro():
+    limits = quotas.get_plan_limits("pro")
+    assert limits.plan_name == "pro"
+    assert limits.max_team_seats == 5
+
+
+def test_get_plan_limits_returns_enterprise():
+    limits = quotas.get_plan_limits("enterprise")
+    assert limits.plan_name == "enterprise"
+    assert limits.max_team_seats == 100
 
 
 def test_get_plan_limits_defaults_to_free():
     limits = quotas.get_plan_limits("unknown-plan")
     assert limits.plan_name == "free"
+    assert limits.max_files == 0
+
+
+def test_plan_limits_storage_mb_property():
+    limits = quotas.get_plan_limits("starter")
+    # max_storage_mb is derived from max_storage_bytes
+    assert limits.max_storage_mb == limits.max_storage_bytes / (1024 * 1024)
+
+
+def test_quota_limits_contains_all_plans():
+    expected_plans = {"free", "starter", "pro", "enterprise"}
+    actual_plans = set(quotas.QUOTA_LIMITS.keys())
+    assert actual_plans == expected_plans

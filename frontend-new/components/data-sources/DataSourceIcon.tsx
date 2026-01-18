@@ -245,7 +245,7 @@ const customIconMap: Record<string, React.FC<{ className?: string }>> = {
 
 // Fallback icons with colors for sources without custom SVGs
 const fallbackConfig: Record<string, { icon: typeof Upload; color: string }> = {
-  "sftp": { icon: Server, color: "text-gray-500" },
+  "sftp": { icon: Server, color: "text-muted-foreground" },
   "file-upload": { icon: Upload, color: "text-primary" },
   "file_upload": { icon: Upload, color: "text-primary" },
 };

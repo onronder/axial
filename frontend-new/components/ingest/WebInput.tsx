@@ -40,7 +40,7 @@ export function WebInput({ url, onUrlChange, error, disabled = false }: WebInput
             {error && (
                 <p className="text-xs text-red-500">{error}</p>
             )}
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
                 Enter the full URL of the web page you want to ingest.
             </p>
         </div>

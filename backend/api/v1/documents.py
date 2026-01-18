@@ -9,6 +9,7 @@ from core.ingestion_utils import normalize_provider, canonicalize_provider_name
 from core.scopes import get_scope_prefixes
 from services.audit import log_document_delete
 from api.v1.dependencies import validate_team_access, require_editor, require_paid_access, get_user_organization_id
+from api.v1.error_utils import api_error, ApiErrorCode
 from services.cleanup import cleanup_service
 from services.team_service import team_service
 import logging
@@ -149,7 +150,7 @@ async def get_document_stats(
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_stats")
 
 
 
@@ -271,7 +272,7 @@ async def list_documents(
             
         return docs
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch documents: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_documents")
 
 @router.delete("/documents")
 @limiter.limit("30/minute")
@@ -425,7 +426,7 @@ async def delete_document(
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "delete_document")
 
 
 # =============================================================================
@@ -531,7 +532,7 @@ async def update_document(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update document: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_document")
 
 
 # =============================================================================
@@ -580,4 +581,4 @@ async def get_document_chunks(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch chunks: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_chunks")

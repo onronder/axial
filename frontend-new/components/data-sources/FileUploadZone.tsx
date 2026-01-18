@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState, useRef } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, type FileRejection } from "react-dropzone";
 import { useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, Loader2, AlertCircle } from "lucide-react";
 import { DataSource } from "@/lib/mockData";
@@ -16,6 +16,13 @@ import type { ExistingDocument } from "@/lib/api";
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 import { DuplicateFileModal, type DuplicateAction } from "./DuplicateFileModal";
 import { calculateSHA256 } from "@/lib/hash";
+import {
+  ACCEPTED_FILE_TYPES,
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_LABEL,
+  MIN_FILE_SIZE,
+  getDropRejectionMessage,
+} from "@/lib/file-validation";
 
 interface FileUploadZoneProps {
   source: DataSource;
@@ -289,75 +296,27 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
     [toast, disabled, processNextFile]
   );
 
+  /**
+   * Handle rejected files (size/type validation failed)
+   */
+  const onDropRejected = useCallback(
+    (rejections: FileRejection[]) => {
+      const message = getDropRejectionMessage(rejections);
+      toast({
+        title: "Files Rejected",
+        description: message,
+        variant: "destructive",
+      });
+    },
+    [toast]
+  );
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      // Documents
-      "application/pdf": [".pdf"],
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-      "application/msword": [".doc"],
-      "application/rtf": [".rtf"],
-
-      // Spreadsheets
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-      "application/vnd.ms-excel": [".xls"],
-      "text/csv": [".csv"],
-      "text/tab-separated-values": [".tsv"],
-
-      // Presentations
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
-      "application/vnd.ms-powerpoint": [".ppt"],
-
-      // Email
-      "message/rfc822": [".eml"],
-      "application/vnd.ms-outlook": [".msg"],
-
-      // Text & Code
-      "text/plain": [
-        ".txt",
-        ".py",
-        ".js",
-        ".jsx",
-        ".ts",
-        ".tsx",
-        ".java",
-        ".go",
-        ".cpp",
-        ".c",
-        ".cs",
-        ".rb",
-        ".php",
-        ".rs",
-        ".scala",
-        ".swift",
-        ".kt",
-        ".json",
-        ".yaml",
-        ".yml",
-        ".toml",
-        ".ini",
-        ".conf",
-        ".config",
-        ".xml",
-        ".css",
-        ".sql",
-        ".env",
-        ".sh",
-        ".dockerfile",
-        ".log",
-      ],
-      "text/markdown": [".md", ".markdown"],
-      "text/html": [".html", ".htm"],
-      "application/json": [".json"],
-      "application/xml": [".xml"],
-      "text/xml": [".xml"],
-
-      // Images (OCR via LlamaParse)
-      "image/jpeg": [".jpg", ".jpeg"],
-      "image/png": [".png"],
-      "image/tiff": [".tiff", ".tif"],
-      "image/bmp": [".bmp"],
-    },
+    onDropRejected,
+    accept: ACCEPTED_FILE_TYPES,
+    maxSize: MAX_FILE_SIZE,
+    minSize: MIN_FILE_SIZE,
     disabled: isUploading || isOverLimit || disabled,
   });
 
@@ -437,7 +396,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
           </div>
           <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <FileText className="h-3 w-3" />
-            PDF, Office, CSV, Code, Images & more
+            PDF, Office, CSV, Code, Images & more (max {MAX_FILE_SIZE_LABEL})
           </div>
         </div>
       </div>

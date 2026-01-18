@@ -56,7 +56,7 @@ export default function HelpCenterPage() {
                 {categoryNames.map((category) => {
                     const categoryArticles = categories[category] || [];
                     const icon = categoryIcons[category] || <FileText className="h-5 w-5" />;
-                    const colorClass = categoryColors[category] || "bg-gray-500/10 text-gray-600";
+                    const colorClass = categoryColors[category] || "bg-muted text-muted-foreground";
 
                     return (
                         <Card key={category} className="group hover:shadow-lg transition-all duration-200 border-border/50">

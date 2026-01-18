@@ -60,9 +60,9 @@ export function KnowledgeBase() {
     const getIcon = (type: string) => {
         const normalizedType = normalizeSourceType(type) || type;
         switch (normalizedType) {
-            case 'web': return <LinkIcon className="h-4 w-4 text-blue-500" />
+            case 'web': return <LinkIcon className="h-4 w-4 text-primary" />
             case 'google_drive': return <DataSourceIcon sourceId="google-drive" size="sm" />
-            default: return <FileText className="h-4 w-4 text-slate-500" />
+            default: return <FileText className="h-4 w-4 text-muted-foreground" />
         }
     }
 
@@ -81,7 +81,7 @@ export function KnowledgeBase() {
                 {/* Search Bar */}
                 <div className="mb-4">
                     <div className="relative">
-                        <FileText className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                        <FileText className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
                             placeholder="Search documents..."
                             className="pl-9"
@@ -92,23 +92,23 @@ export function KnowledgeBase() {
                 </div>
 
                 {loading ? (
-                    <div className="p-8 text-center text-slate-500 text-sm">Loading documents...</div>
+                    <div className="p-8 text-center text-muted-foreground text-sm">Loading documents...</div>
                 ) : error ? (
-                    <div className="p-8 text-center text-red-500 text-sm">Error: {error}</div>
+                    <div className="p-8 text-center text-destructive text-sm">Error: {error}</div>
                 ) : filteredDocuments.length === 0 ? (
                     <div className="p-12 text-center border-2 border-dashed rounded-lg">
-                        <div className="mx-auto h-12 w-12 text-slate-300 mb-3 flex items-center justify-center rounded-full bg-slate-50">
+                        <div className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3 flex items-center justify-center rounded-full bg-muted">
                             <FileText className="h-6 w-6" />
                         </div>
-                        <h3 className="text-lg font-medium text-slate-900">No documents found</h3>
-                        <p className="text-sm text-slate-500 mt-1">
+                        <h3 className="text-lg font-medium text-foreground">No documents found</h3>
+                        <p className="text-sm text-muted-foreground mt-1">
                             {searchQuery ? "Try a different search query." : "Upload files or add URLs to populate your knowledge base."}
                         </p>
                     </div>
                 ) : (
                     <div className="rounded-md border">
                         <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-50 text-slate-500 font-medium border-b">
+                            <thead className="bg-muted text-muted-foreground font-medium border-b">
                                 <tr>
                                     <th className="px-4 py-3 w-[50px]">Type</th>
                                     <th className="px-4 py-3">Name / Source</th>
@@ -118,28 +118,28 @@ export function KnowledgeBase() {
                             </thead>
                             <tbody className="divide-y">
                                 {filteredDocuments.map((doc) => (
-                                    <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors">
+                                    <tr key={doc.id} className="hover:bg-muted/50 transition-colors">
                                         <td className="px-4 py-3">
                                             {getIcon(doc.source_type)}
                                         </td>
-                                        <td className="px-4 py-3 font-medium text-slate-900">
+                                        <td className="px-4 py-3 font-medium text-foreground">
                                             <div className="flex flex-col">
                                                 <span>{doc.title}</span>
                                                 {doc.source_url && (
-                                                    <a href={doc.source_url} target="_blank" rel="noreferrer" className="text-xs text-slate-400 hover:text-blue-500 hover:underline truncate max-w-[300px]">
+                                                    <a href={doc.source_url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground/70 hover:text-primary hover:underline truncate max-w-[300px]">
                                                         {doc.source_url}
                                                     </a>
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-slate-500">
+                                        <td className="px-4 py-3 text-muted-foreground">
                                             {format(new Date(doc.created_at), 'MMM d, yyyy')}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                className="h-8 w-8 p-0 text-slate-400 hover:text-red-500"
+                                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
                                                 onClick={() => handleDelete(doc.id)}
                                             >
                                                 <Trash2 className="h-4 w-4" />

@@ -10,12 +10,13 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from collections import Counter
 from api.v1.dependencies import validate_team_access, require_paid_access, get_user_organization_id
-from api.v1.error_utils import build_error_payload, raise_http_error
+from api.v1.error_utils import build_error_payload, raise_http_error, api_error, ApiErrorCode
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
 from core.exceptions import QuotaExceededError
 from core.ingestion_utils import normalize_source_type
+from core.rate_limit import limiter
 from core.resilience import is_retryable_error, CircuitBreakerOpen, openai_breaker
 from services.audit import log_chat_delete, audit_logger
 from services.llm_factory import LLMFactory
@@ -33,8 +34,6 @@ from services.scope_analysis import (
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from datetime import datetime, timezone
 import logging
 import json
@@ -43,9 +42,6 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
-
-# Rate limiter instance
-limiter = Limiter(key_func=get_remote_address)
 
 # ============================================================
 # CONVERSATION MANAGEMENT ENDPOINTS
@@ -71,7 +67,9 @@ class MessageResponse(BaseModel):
     created_at: str
 
 @router.get("/conversations", response_model=List[ConversationResponse])
+@limiter.limit("60/minute")
 async def list_conversations(
+    request: Request,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
 ):
@@ -83,10 +81,12 @@ async def list_conversations(
         response = supabase.table("conversations").select("*").eq("organization_id", organization_id).order("updated_at", desc=True).execute()
         return response.data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch conversations: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_conversations")
 
 @router.post("/conversations", response_model=ConversationResponse)
+@limiter.limit("30/minute")
 async def create_conversation(
+    request: Request,
     payload: ConversationCreate,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
@@ -106,13 +106,15 @@ async def create_conversation(
     try:
         response = supabase.table("conversations").insert(data).execute()
         if not response.data:
-            raise HTTPException(status_code=500, detail="Failed to create conversation")
+            raise api_error(ApiErrorCode.DATABASE_ERROR, None, "create_conversation")
         return response.data[0]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create conversation: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "create_conversation")
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
+@limiter.limit("60/minute")
 async def get_conversation(
+    request: Request,
     conversation_id: str,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
@@ -129,10 +131,12 @@ async def get_conversation(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_conversation")
 
 @router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
+@limiter.limit("30/minute")
 async def update_conversation(
+    request: Request,
     conversation_id: str,
     payload: ConversationUpdate,
     user_id: str = Depends(get_current_user),
@@ -154,9 +158,10 @@ async def update_conversation(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update conversation: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_conversation")
 
 @router.delete("/conversations/{conversation_id}")
+@limiter.limit("20/minute")
 async def delete_conversation(
     conversation_id: str,
     request: Request,
@@ -180,9 +185,12 @@ async def delete_conversation(
         
         return {"status": "success", "deleted_id": conversation_id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete conversation: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "delete_conversation")
+
 @router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
+@limiter.limit("60/minute")
 async def get_messages(
+    request: Request,
     conversation_id: str,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
@@ -203,7 +211,7 @@ async def get_messages(
                 msg["sources"] = []
         return messages
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch messages: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_messages")
 
 
 # ============================================================

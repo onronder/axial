@@ -2,10 +2,8 @@
 
 import { useState, useCallback, type KeyboardEvent } from "react";
 import {
-  Sparkles,
   UploadCloud,
   Globe,
-  MessageSquare,
   FileText,
   ArrowRight,
   AlertTriangle,
@@ -13,12 +11,21 @@ import {
   BarChart3,
   Loader2,
 } from "lucide-react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, type FileRejection } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { useIngestModal } from "@/hooks/useIngestModal";
 import { useDocumentCount } from "@/hooks/useDocumentCount";
 import { starterQueries } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
+import { AxioLogo } from "@/components/branding/AxioLogo";
+import { useToast } from "@/hooks/use-toast";
+import {
+  SIMPLE_ACCEPTED_FILE_TYPES,
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_LABEL,
+  MIN_FILE_SIZE,
+  getDropRejectionMessage,
+} from "@/lib/file-validation";
 
 // =============================================================================
 // TYPES
@@ -56,13 +63,10 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   "file-bar-chart": BarChart3,
 };
 
-/** Accepted file types for drag & drop */
-const ACCEPTED_FILE_TYPES = {
-  "application/pdf": [".pdf"],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-  "text/plain": [".txt"],
-  "text/markdown": [".md"],
-};
+/** 
+ * Accepted file types use the simplified set from file-validation.ts
+ * (PDF, DOCX, TXT, MD for quick chat uploads)
+ */
 
 // =============================================================================
 // SUB-COMPONENTS
@@ -206,6 +210,7 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
   const { openModal } = useIngestModal();
   const { isEmpty, isLoading } = useDocumentCount();
   const router = useRouter();
+  const { toast } = useToast();
   const [isDragActive, setIsDragActive] = useState(false);
 
   // File drop handler - opens the upload modal
@@ -214,13 +219,30 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
     setIsDragActive(false);
   }, [openModal]);
 
-  // Dropzone configuration
+  // Handle rejected files (size/type validation failed)
+  const onDropRejected = useCallback(
+    (rejections: FileRejection[]) => {
+      setIsDragActive(false);
+      const message = getDropRejectionMessage(rejections);
+      toast({
+        title: "Files Rejected",
+        description: message,
+        variant: "destructive",
+      });
+    },
+    [toast]
+  );
+
+  // Dropzone configuration with file size validation
   const { getRootProps, getInputProps, isDragActive: dropzoneActive } = useDropzone({
     onDrop,
+    onDropRejected,
     onDragEnter: () => setIsDragActive(true),
     onDragLeave: () => setIsDragActive(false),
     noClick: true,
-    accept: ACCEPTED_FILE_TYPES,
+    accept: SIMPLE_ACCEPTED_FILE_TYPES,
+    maxSize: MAX_FILE_SIZE,
+    minSize: MIN_FILE_SIZE,
   });
 
   // Navigation handlers
@@ -237,7 +259,7 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
 
   // Loading state
   if (isLoading) {
-    return (
+  return (
       <div
         className="flex min-h-full flex-col items-center justify-center px-4 py-16 md:py-24"
         role="status"
@@ -276,7 +298,9 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
           <div className="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 border-dashed border-primary bg-primary/5">
             <UploadCloud className="h-12 w-12 text-primary" aria-hidden="true" />
             <p className="text-lg font-medium text-foreground">Drop to analyze</p>
-            <p className="text-sm text-muted-foreground">PDF, DOCX, TXT, MD</p>
+            <p className="text-sm text-muted-foreground">
+              PDF, DOCX, TXT, MD (max {MAX_FILE_SIZE_LABEL})
+            </p>
           </div>
         </div>
       )}
@@ -291,8 +315,8 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
                 className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-muted"
                 aria-hidden="true"
               >
-                <Sparkles className="h-8 w-8 text-muted-foreground" />
-              </div>
+                <AxioLogo variant="icon" size="lg" />
+            </div>
               <h1 className="text-2xl font-semibold text-foreground tracking-tight">
                 I&apos;m ready to learn.
               </h1>
@@ -335,7 +359,7 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
                 className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-muted"
                 aria-hidden="true"
               >
-                <MessageSquare className="h-8 w-8 text-muted-foreground" />
+                <AxioLogo variant="icon" size="lg" />
               </div>
               <h1 className="text-2xl font-semibold text-foreground tracking-tight">
                 What can I help you with?
@@ -349,16 +373,16 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
             <nav className="space-y-3" aria-label="Suggested questions">
               {starterQueries.slice(0, 4).map((query) => {
                 const Icon = ICON_MAP[query.icon] || FileText;
-                return (
+              return (
                   <QueryCard
-                    key={query.title}
+                  key={query.title}
                     icon={<Icon className="h-5 w-5" />}
                     title={query.title}
                     description={query.description}
-                    onClick={() => onQuerySelect(query.title)}
+                  onClick={() => onQuerySelect(query.title)}
                   />
-                );
-              })}
+              );
+            })}
             </nav>
 
             {/* Secondary Action */}

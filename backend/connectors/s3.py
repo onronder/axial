@@ -64,7 +64,7 @@ from connectors.enhanced import (
     ItemNotFoundError,
     FileTooLargeError,
 )
-from core.db import get_supabase
+from connectors.utils import load_integration, build_config_from_kwargs
 from core.security import decrypt_token
 from core.scopes import build_scope_uri
 
@@ -799,15 +799,11 @@ class S3Connector(EnhancedConnector, BaseConnector):
         **kwargs,
     ) -> Dict[str, Any]:
         """Build configuration dict by merging credentials with kwargs."""
-        config: Dict[str, Any] = dict(credentials or {})
-
-        # Keys that should be merged from kwargs
-        config_keys = ("user_id", "integration_id", "bucket_name", "prefix", "region")
-        for key in config_keys:
-            if key in kwargs and kwargs[key] is not None:
-                config[key] = kwargs[key]
-
-        return config
+        return build_config_from_kwargs(
+            credentials,
+            auth_keys=("user_id", "integration_id", "bucket_name", "prefix", "region"),
+            **kwargs,
+        )
 
     def _resolve_config(self, config: dict) -> dict:
         """
@@ -837,37 +833,12 @@ class S3Connector(EnhancedConnector, BaseConnector):
         return resolved
 
     def _load_integration(self, config: dict) -> Dict[str, Any]:
-        """Load integration record from database."""
-        supabase = get_supabase()
-        integration_id = config.get("integration_id")
-        user_id = config.get("user_id")
-
-        if integration_id:
-            result = supabase.table("user_integrations").select("*").eq(
-                "id", integration_id
-            ).single().execute()
-            if result.data:
-                return result.data
-            raise ConnectorAuthError(f"Integration {integration_id} not found")
-
-        if not user_id:
-            raise ConnectorAuthError("S3 requires user_id or integration_id")
-
-        # Find S3 connector definition
-        def_result = supabase.table("connector_definitions").select("id").eq(
-            "type", "s3"
-        ).single().execute()
-        if not def_result.data:
-            raise ConnectorAuthError("S3 connector not registered")
-
-        # Find user's S3 integration
-        int_result = supabase.table("user_integrations").select("*").eq(
-            "user_id", user_id
-        ).eq("connector_definition_id", def_result.data["id"]).single().execute()
-        if not int_result.data:
-            raise ConnectorAuthError("S3 not connected for this user")
-
-        return int_result.data
+        """Load integration record from database using shared utility."""
+        return load_integration(
+            "s3",
+            integration_id=config.get("integration_id"),
+            user_id=config.get("user_id"),
+        )
 
     # =========================================================================
     # Error Handling

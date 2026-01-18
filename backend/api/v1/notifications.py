@@ -5,14 +5,16 @@ Provides endpoints for managing user notifications.
 Tracks operation lifecycle events (success, warning, error, info).
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Optional, List
 from datetime import datetime, timezone
 import json
 from api.v1.dependencies import validate_team_access, require_paid_access
 from core.security import get_current_user
 from core.db import get_supabase
+from core.rate_limit import limiter
 from models import NotificationResponse, NotificationListResponse, UnreadCountResponse
+from api.v1.error_utils import api_error, ApiErrorCode
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,7 +34,9 @@ from services.notification_service import create_notification  # noqa: F401
 # =============================================================================
 
 @router.get("/notifications", response_model=NotificationListResponse)
+@limiter.limit("60/minute")
 async def list_notifications(
+    request: Request,
     user_id: str = Depends(get_current_user),
     limit: int = 50,
     offset: int = 0,
@@ -94,12 +98,12 @@ async def list_notifications(
         )
         
     except Exception as e:
-        logger.error(f"Failed to list notifications: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch notifications")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_notifications")
 
 
 @router.get("/notifications/unread-count", response_model=UnreadCountResponse)
-async def get_unread_count(user_id: str = Depends(get_current_user)):
+@limiter.limit("120/minute")
+async def get_unread_count(request: Request, user_id: str = Depends(get_current_user)):
     """
     Lightweight endpoint for unread notification count.
     
@@ -117,12 +121,13 @@ async def get_unread_count(user_id: str = Depends(get_current_user)):
         return UnreadCountResponse(count=response.count or 0)
         
     except Exception as e:
-        logger.error(f"Failed to get unread count: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch unread count")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_unread_count")
 
 
 @router.patch("/notifications/{notification_id}/read", response_model=NotificationResponse)
+@limiter.limit("60/minute")
 async def mark_as_read(
+    request: Request,
     notification_id: str,
     user_id: str = Depends(get_current_user)
 ):
@@ -163,12 +168,12 @@ async def mark_as_read(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to mark notification as read: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update notification")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "mark_notification_read")
 
 
 @router.patch("/notifications/read-all")
-async def mark_all_as_read(user_id: str = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def mark_all_as_read(request: Request, user_id: str = Depends(get_current_user)):
     """Mark all notifications as read."""
     supabase = get_supabase()
     
@@ -182,12 +187,12 @@ async def mark_all_as_read(user_id: str = Depends(get_current_user)):
         return {"status": "success", "message": "All notifications marked as read"}
         
     except Exception as e:
-        logger.error(f"Failed to mark all as read: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update notifications")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "mark_notification_read")
 
 
 @router.delete("/notifications/all")
-async def clear_all_notifications(user_id: str = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def clear_all_notifications(request: Request, user_id: str = Depends(get_current_user)):
     """Delete all notifications for the user."""
     supabase = get_supabase()
     
@@ -200,12 +205,13 @@ async def clear_all_notifications(user_id: str = Depends(get_current_user)):
         return {"status": "success", "message": "All notifications cleared"}
         
     except Exception as e:
-        logger.error(f"Failed to clear notifications: {e}")
-        raise HTTPException(status_code=500, detail="Failed to clear notifications")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "clear_notifications")
 
 
 @router.delete("/notifications/{notification_id}")
+@limiter.limit("30/minute")
 async def delete_notification(
+    request: Request,
     notification_id: str,
     user_id: str = Depends(get_current_user)
 ):
@@ -227,5 +233,4 @@ async def delete_notification(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete notification: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete notification")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "delete_notification")

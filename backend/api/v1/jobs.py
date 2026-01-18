@@ -5,7 +5,7 @@ Endpoints for tracking background job progress.
 Used for polling-based progress updates during ingestion.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Optional
 from api.v1.dependencies import (
     validate_team_access,
@@ -15,8 +15,10 @@ from api.v1.dependencies import (
 )
 from core.security import get_current_user
 from core.db import get_supabase
+from core.rate_limit import limiter
 from core.ingestion_utils import normalize_provider
 from models import IngestionJobResponse
+from api.v1.error_utils import api_error, ApiErrorCode
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,7 +26,9 @@ router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_
 
 
 @router.get("/jobs/active", response_model=Optional[IngestionJobResponse])
+@limiter.limit("120/minute")
 async def get_active_job(
+    request: Request,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
 ):
@@ -72,12 +76,13 @@ async def get_active_job(
         )
         
     except Exception as e:
-        logger.error(f"Failed to fetch active job: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch job status")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_job")
 
 
 @router.get("/jobs/{job_id}", response_model=IngestionJobResponse)
+@limiter.limit("60/minute")
 async def get_job_by_id(
+    request: Request,
     job_id: str,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
@@ -128,12 +133,13 @@ async def get_job_by_id(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch job {job_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch job status")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_job")
 
 
 @router.get("/jobs", response_model=list[IngestionJobResponse])
+@limiter.limit("60/minute")
 async def list_recent_jobs(
+    request: Request,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
     limit: int = 10,
@@ -173,8 +179,7 @@ async def list_recent_jobs(
         return jobs
         
     except Exception as e:
-        logger.error(f"Failed to list jobs: {e}")
-        raise HTTPException(status_code=500, detail="Failed to list jobs")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_jobs")
 
 
 # ============================================================
@@ -182,7 +187,9 @@ async def list_recent_jobs(
 # ============================================================
 
 @router.post("/jobs/{job_id}/cancel")
+@limiter.limit("10/minute")
 async def cancel_job(
+    request: Request,
     job_id: str,
     user_id: str = Depends(require_editor),
     organization_id: str = Depends(get_user_organization_id),
@@ -262,12 +269,13 @@ async def cancel_job(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to cancel job {job_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to cancel job")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "cancel_job")
 
 
 @router.post("/jobs/files/{file_status_id}/retry")
+@limiter.limit("30/minute")
 async def retry_file(
+    request: Request,
     file_status_id: str,
     user_id: str = Depends(require_editor),
     organization_id: str = Depends(get_user_organization_id),
@@ -358,12 +366,13 @@ async def retry_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to retry file {file_status_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retry file")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "retry_file")
 
 
 @router.get("/jobs/{job_id}/files")
+@limiter.limit("60/minute")
 async def get_job_files(
+    request: Request,
     job_id: str,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
@@ -400,8 +409,7 @@ async def get_job_files(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get files for job {job_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get job files")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_job_files")
 
 
 # ============================================================
@@ -409,7 +417,9 @@ async def get_job_files(
 # ============================================================
 
 @router.post("/jobs/{job_id}/retry")
+@limiter.limit("10/minute")
 async def retry_job(
+    request: Request,
     job_id: str,
     user_id: str = Depends(require_editor),
     organization_id: str = Depends(get_user_organization_id),
@@ -507,5 +517,4 @@ async def retry_job(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to retry job {job_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retry job")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "retry_job")

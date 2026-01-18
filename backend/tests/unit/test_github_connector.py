@@ -1427,10 +1427,11 @@ class TestGitHubConnector:
             "credentials": {"selected_repositories": []}
         }
 
-        mock_creds = {"access_token": "loaded-token"}
+        mock_creds = {"access_token": "loaded-token", "integration_id": "int-1"}
 
-        with patch.object(connector, "_load_integration", return_value=mock_integration), \
-             patch("connectors.github.OAuthTokenManager.get_valid_credentials", return_value=mock_creds):
+        # Patch the shared utility functions used by _resolve_config
+        with patch("connectors.utils.load_integration", return_value=mock_integration), \
+             patch("connectors.utils.OAuthTokenManager.get_valid_credentials", return_value=mock_creds):
             result = connector._resolve_config({"integration_id": "int-1"})
 
         assert result["access_token"] == "loaded-token"
@@ -1442,46 +1443,50 @@ class TestGitHubConnector:
 
         from services.oauth_token_manager import TokenRefreshError
 
-        with patch.object(connector, "_load_integration", return_value=mock_integration), \
-             patch("connectors.github.OAuthTokenManager.get_valid_credentials",
+        # Patch the shared utility functions used by _resolve_config
+        with patch("connectors.utils.load_integration", return_value=mock_integration), \
+             patch("connectors.utils.OAuthTokenManager.get_valid_credentials",
                    side_effect=TokenRefreshError("Token refresh failed")):
             with pytest.raises(ConnectorAuthError, match="requires reconnection"):
                 connector._resolve_config({"integration_id": "int-1"})
 
     # -------------------------------------------------------------------------
-    # _load_integration Tests
+    # Shared Utility Integration Tests (via connectors.utils)
     # -------------------------------------------------------------------------
 
     def test_load_integration_by_id(self):
-        connector = GitHubConnector()
+        """Test that load_integration works with integration_id."""
+        from connectors.utils import load_integration
 
         mock_supabase = MagicMock()
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
             data={"id": "int-1", "access_token": "enc-token"}
         )
 
-        with patch("connectors.github.get_supabase", return_value=mock_supabase):
-            result = connector._load_integration({"integration_id": "int-1"})
+        with patch("connectors.utils.get_supabase", return_value=mock_supabase):
+            result = load_integration("github", integration_id="int-1")
 
         assert result["id"] == "int-1"
 
     def test_load_integration_not_found(self):
-        connector = GitHubConnector()
+        """Test that load_integration raises error when not found."""
+        from connectors.utils import load_integration
 
         mock_supabase = MagicMock()
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
             data=None
         )
 
-        with patch("connectors.github.get_supabase", return_value=mock_supabase):
+        with patch("connectors.utils.get_supabase", return_value=mock_supabase):
             with pytest.raises(ConnectorAuthError, match="not found"):
-                connector._load_integration({"integration_id": "int-1"})
+                load_integration("github", integration_id="int-1")
 
     def test_load_integration_requires_user_or_integration_id(self):
-        connector = GitHubConnector()
+        """Test that load_integration raises error without identifiers."""
+        from connectors.utils import load_integration
 
         with pytest.raises(ConnectorAuthError, match="requires user_id or integration_id"):
-            connector._load_integration({})
+            load_integration("github")
 
     # -------------------------------------------------------------------------
     # Helper Methods Tests

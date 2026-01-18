@@ -5,13 +5,15 @@ Provides usage statistics for the frontend to display progress bars
 and quota information.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
 
 from core.security import get_current_user
+from core.rate_limit import limiter
 from api.v1.dependencies import validate_team_access
+from api.v1.error_utils import api_error, ApiErrorCode
 from services.usage import get_user_usage_with_limits
 from core.quotas import QUOTA_LIMITS, format_bytes
 
@@ -73,7 +75,9 @@ class PlansResponse(BaseModel):
 # ============================================================
 
 @router.get("/usage", response_model=UsageResponse)
+@limiter.limit("60/minute")
 async def get_usage(
+    request: Request,
     user_id: str = Depends(get_current_user)
 ):
     """
@@ -115,12 +119,12 @@ async def get_usage(
         )
         
     except Exception as e:
-        logger.error(f"Failed to get usage: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch usage: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_usage")
 
 
 @router.get("/plans", response_model=PlansResponse)
-async def get_plans():
+@limiter.limit("30/minute")
+async def get_plans(request: Request):
     """
     Get available plans and their limits (public endpoint).
     

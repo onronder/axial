@@ -155,6 +155,8 @@ class Settings(BaseSettings):
     CONNECTOR_CONCURRENCY_DROPBOX: int = 2
     CONNECTOR_CONCURRENCY_GITHUB: int = 2
     CONNECTOR_CONCURRENCY_BOX: int = 2
+    CONNECTOR_CONCURRENCY_S3: int = 4  # S3 has high rate limits
+    CONNECTOR_CONCURRENCY_SFTP: int = 2  # SSH connection limits
  
 
     # =========================================================================

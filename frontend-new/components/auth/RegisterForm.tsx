@@ -178,6 +178,7 @@ export function RegisterForm() {
                     <Link
                       href="/legal/terms"
                       target="_blank"
+                      rel="noopener noreferrer"
                       className="text-primary hover:underline hover:text-primary/80"
                     >
                       Terms of Service
@@ -186,6 +187,7 @@ export function RegisterForm() {
                     <Link
                       href="/legal/privacy"
                       target="_blank"
+                      rel="noopener noreferrer"
                       className="text-primary hover:underline hover:text-primary/80"
                     >
                       Privacy Policy

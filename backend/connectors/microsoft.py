@@ -25,8 +25,8 @@ from connectors.base import (
 )
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
 from connectors.limits import connector_fetch_limit
+from connectors.utils import load_integration
 from core.sync import SyncManager
-from core.db import get_supabase
 from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
@@ -189,32 +189,14 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         return resolved
 
     def _load_integration(self, config: dict) -> Dict[str, Any]:
-        supabase = get_supabase()
-        integration_id = config.get("integration_id")
-        user_id = config.get("user_id")
-
-        if integration_id:
-            int_res = supabase.table("user_integrations").select("*").eq("id", integration_id).single().execute()
-            if int_res.data:
-                return int_res.data
-            raise ConnectorAuthError(f"Integration {integration_id} not found")
-
-        if not user_id:
-            raise ConnectorAuthError("Microsoft integration requires user_id or integration_id")
-
-        def_res = supabase.table("connector_definitions").select("id").eq(
-            "type", config.get("target_type", self.target_type)
-        ).single().execute()
-        if not def_res.data:
-            raise ConnectorAuthError("Microsoft connector not registered")
-
-        int_res = supabase.table("user_integrations").select("*").eq(
-            "user_id", user_id
-        ).eq("connector_definition_id", def_res.data["id"]).single().execute()
-        if not int_res.data:
-            raise ConnectorAuthError("Microsoft integration not connected")
-
-        return int_res.data
+        """Load integration record from database using shared utility."""
+        # Microsoft uses dynamic target_type (onedrive or sharepoint)
+        connector_type = config.get("target_type", self.target_type)
+        return load_integration(
+            connector_type,
+            integration_id=config.get("integration_id"),
+            user_id=config.get("user_id"),
+        )
 
     def _resolve_drive_id(self, config: dict) -> tuple[str, Optional[str]]:
         drive_id = config.get("drive_id")

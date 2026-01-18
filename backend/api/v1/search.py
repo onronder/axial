@@ -4,13 +4,15 @@ Search API Endpoints
 Provides document search with scope-aware distribution analysis.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from api.v1.dependencies import validate_team_access, require_paid_access
+from api.v1.error_utils import api_error, ApiErrorCode
 from core.security import get_current_user
 from core.db import get_supabase
 from core.config import settings
+from core.rate_limit import limiter
 from langchain_openai import OpenAIEmbeddings
 from services.team_service import team_service
 from services.scope_analysis import (
@@ -65,7 +67,9 @@ class SearchResponse(BaseModel):
 
 
 @router.post("/search", response_model=SearchResponse)
+@limiter.limit("60/minute")
 async def search_documents(
+    request: Request,
     payload: SearchRequest,
     user_id: str = Depends(get_current_user)
 ):
@@ -88,11 +92,7 @@ async def search_documents(
     try:
         query_vector = embeddings_model.embed_query(payload.query)
     except Exception as e:
-        logger.error(f"❌ [Search] Embedding failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate query embedding: {str(e)}"
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "search")
     
     # 2. Execute Hybrid Search (scope-aware)
     organization_id = await team_service.get_organization_id(user_id)
@@ -122,11 +122,7 @@ async def search_documents(
         logger.info(f"📚 [Search] Found {len(matches)} results for query: {payload.query[:50]}...")
         
     except Exception as e:
-        logger.error(f"❌ [Search] Hybrid search failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Search failed: {str(e)}"
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "search")
     
     # 3. Analyze scope distribution (optional)
     scope_analysis_response = None

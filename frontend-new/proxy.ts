@@ -208,7 +208,7 @@ export async function proxy(request: NextRequest) {
             headers: request.headers,
         },
     })
-    
+
     const supabase = createServerClient(
         SUPABASE_URL,
         SUPABASE_ANON_KEY,
@@ -226,7 +226,7 @@ export async function proxy(request: NextRequest) {
             },
         }
     )
-    
+
     // ---------------------------------------------------------------------
     // 4. VALIDATE AND REFRESH SESSION
     // ---------------------------------------------------------------------
@@ -234,7 +234,7 @@ export async function proxy(request: NextRequest) {
         // getUser() validates the session with Supabase server
         // This is more secure than getSession() which only reads the cookie
         const { data: { user }, error } = await supabase.auth.getUser()
-        
+
         // Handle specific auth errors
         if (error) {
             // Log for debugging (will appear in Vercel/server logs)
@@ -262,9 +262,9 @@ export async function proxy(request: NextRequest) {
                 }
                 
                 // For public routes, just continue with cleared cookies
-                return response
-            }
-            
+        return response
+    }
+
             // For non-session errors (e.g., network issues), don't block
             // Just log and continue - better to allow access than break the app
             console.error('[Proxy] Non-session auth error:', error)
@@ -275,17 +275,17 @@ export async function proxy(request: NextRequest) {
         // ---------------------------------------------------------------------
         if (!user && !isPublicPath(pathname)) {
             return createLoginRedirect(request, 'auth_required')
-        }
-        
+    }
+
         // ---------------------------------------------------------------------
         // 6. REDIRECT AUTHENTICATED USERS FROM AUTH PAGES
         // ---------------------------------------------------------------------
         if (user && isAuthPage(pathname)) {
-            return NextResponse.redirect(new URL('/dashboard', request.url))
-        }
-        
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
         // Success - return response with any refreshed session cookies
-        return response
+    return response
         
     } catch (error) {
         // ---------------------------------------------------------------------

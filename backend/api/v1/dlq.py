@@ -7,11 +7,13 @@ Production-grade API for managing failed tasks and retry operations.
 import logging
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field, ConfigDict
 
 from api.v1.dependencies import get_current_user, require_admin, validate_team_access, require_paid_access
+from api.v1.error_utils import api_error, ApiErrorCode
 from core.db import get_supabase
+from core.rate_limit import limiter
 from worker.dlq_worker import retry_failed_tasks
 
 logger = logging.getLogger(__name__)
@@ -96,7 +98,9 @@ class DLQListResponse(BaseModel):
     summary="Get failed task for a job",
     description="Retrieve the failed task information for a specific ingestion job"
 )
+@limiter.limit("60/minute")
 async def get_failed_task_for_job(
+    request: Request,
     job_id: str,
     user_id: str = Depends(get_current_user)
 ):
@@ -143,11 +147,7 @@ async def get_failed_task_for_job(
         )
         
     except Exception as e:
-        logger.error(f"Error fetching failed task for job {job_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve task information"
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_failed_task")
 
 
 @router.post(
@@ -156,7 +156,9 @@ async def get_failed_task_for_job(
     summary="Manually retry a failed task",
     description="Trigger an immediate retry of a failed task"
 )
+@limiter.limit("20/minute")
 async def manual_retry_task(
+    http_request: Request,
     task_id: str,
     request: ManualRetryRequest = ManualRetryRequest(),
     user_id: str = Depends(get_current_user)
@@ -234,11 +236,7 @@ async def manual_retry_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error manually retrying task {task_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retry task"
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "retry_task")
 
 
 @router.post(
@@ -247,7 +245,9 @@ async def manual_retry_task(
     summary="Resolve a failed task",
     description="Mark a failed task as resolved (dismisses it from the list)"
 )
+@limiter.limit("30/minute")
 async def resolve_failed_task(
+    request: Request,
     task_id: str,
     user_id: str = Depends(get_current_user)
 ):
@@ -307,11 +307,7 @@ async def resolve_failed_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error resolving task {task_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to resolve task"
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "resolve_task")
 
 
 @router.get(
@@ -320,7 +316,9 @@ async def resolve_failed_task(
     summary="Get DLQ statistics",
     description="Retrieve statistics about failed tasks for the current user"
 )
+@limiter.limit("60/minute")
 async def get_dlq_stats(
+    request: Request,
     user_id: str = Depends(get_current_user)
 ):
     """
@@ -371,11 +369,7 @@ async def get_dlq_stats(
         )
         
     except Exception as e:
-        logger.error(f"Error fetching DLQ stats for user {user_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve statistics"
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_dlq_stats")
 
 
 @router.get(
@@ -384,7 +378,9 @@ async def get_dlq_stats(
     summary="Get all failed tasks for current user",
     description="Retrieve paginated list of all failed tasks for the authenticated user"
 )
+@limiter.limit("60/minute")
 async def get_my_failed_tasks(
+    request: Request,
     page: int = 1,
     page_size: int = 20,
     status_filter: Optional[str] = None,
@@ -450,11 +446,7 @@ async def get_my_failed_tasks(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching failed tasks for user {user_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve tasks"
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_failed_tasks")
 
 
 # =============================================================================
@@ -467,7 +459,9 @@ async def get_my_failed_tasks(
     summary="[Admin] Get all failed tasks",
     description="Admin endpoint to retrieve all failed tasks across all users"
 )
+@limiter.limit("30/minute")
 async def admin_get_all_failed_tasks(
+    request: Request,
     page: int = 1,
     page_size: int = 50,
     status_filter: Optional[str] = None,
@@ -526,11 +520,7 @@ async def admin_get_all_failed_tasks(
         )
         
     except Exception as e:
-        logger.error(f"Error in admin get all failed tasks: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve tasks"
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_failed_tasks")
 
 
 @router.post(
@@ -538,7 +528,9 @@ async def admin_get_all_failed_tasks(
     summary="[Admin] Trigger retry cycle",
     description="Admin endpoint to manually trigger the DLQ retry cycle"
 )
+@limiter.limit("5/minute")
 async def admin_trigger_retry_cycle(
+    request: Request,
     user_id: str = Depends(get_current_user),
     _: bool = Depends(require_admin)
 ):
@@ -562,11 +554,7 @@ async def admin_trigger_retry_cycle(
         }
         
     except Exception as e:
-        logger.error(f"Error in admin trigger retry cycle: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to trigger retry cycle"
-        )
+        raise api_error(ApiErrorCode.INTERNAL_ERROR, e, "trigger_retry_cycle")
 
 
 @router.get(
@@ -574,7 +562,9 @@ async def admin_trigger_retry_cycle(
     summary="[Admin] Get global DLQ statistics",
     description="Admin endpoint to get DLQ statistics across all users"
 )
+@limiter.limit("30/minute")
 async def admin_get_global_stats(
+    request: Request,
     user_id: str = Depends(get_current_user),
     _: bool = Depends(require_admin)
 ):
@@ -626,8 +616,4 @@ async def admin_get_global_stats(
         }
         
     except Exception as e:
-        logger.error(f"Error in admin get global stats: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve statistics"
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_dlq_stats")

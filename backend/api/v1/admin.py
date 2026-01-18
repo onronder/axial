@@ -7,10 +7,12 @@ Endpoints for administrative functions including audit logs.
 import logging
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from api.v1.dependencies import validate_team_access, require_admin, require_paid_access
+from api.v1.error_utils import api_error, ApiErrorCode
 from core.db import get_supabase
+from core.rate_limit import limiter
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,9 @@ class AuditLogListResponse(BaseModel):
 # =============================================================================
 
 @router.get("/audit-logs", response_model=AuditLogListResponse)
+@limiter.limit("30/minute")
 async def get_audit_logs(
+    request: Request,
     user_id: str = Depends(require_admin),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
@@ -111,12 +115,13 @@ async def get_audit_logs(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch audit logs: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch audit logs")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_audit_logs")
 
 
 @router.get("/audit-logs/actions")
+@limiter.limit("30/minute")
 async def get_audit_log_actions(
+    request: Request,
     user_id: str = Depends(require_admin)
 ):
     """

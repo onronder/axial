@@ -36,7 +36,7 @@ from connectors.base import (
 )
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
 from connectors.limits import connector_fetch_limit
-from core.db import get_supabase
+from connectors.utils import load_integration
 from core.config import settings
 from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
@@ -691,35 +691,12 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
         return resolved
 
     def _load_integration(self, config: dict) -> Dict[str, Any]:
-        """Load integration record from database."""
-        supabase = get_supabase()
-        integration_id = config.get("integration_id")
-        user_id = config.get("user_id")
-        
-        if integration_id:
-            result = supabase.table("user_integrations").select("*").eq(
-                "id", integration_id
-            ).single().execute()
-            if result.data:
-                return result.data
-            raise ConnectorAuthError(f"Integration {integration_id} not found")
-        
-        if not user_id:
-            raise ConnectorAuthError("Dropbox requires user_id or integration_id")
-        
-        def_result = supabase.table("connector_definitions").select("id").eq(
-            "type", "dropbox"
-        ).single().execute()
-        if not def_result.data:
-            raise ConnectorAuthError("Dropbox connector not registered")
-        
-        int_result = supabase.table("user_integrations").select("*").eq(
-            "user_id", user_id
-        ).eq("connector_definition_id", def_result.data["id"]).single().execute()
-        if not int_result.data:
-            raise ConnectorAuthError("Dropbox not connected for this user")
-        
-        return int_result.data
+        """Load integration record from database using shared utility."""
+        return load_integration(
+            "dropbox",
+            integration_id=config.get("integration_id"),
+            user_id=config.get("user_id"),
+        )
 
     # =========================================================================
     # Helper Methods

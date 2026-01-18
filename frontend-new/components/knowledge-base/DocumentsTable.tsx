@@ -490,7 +490,7 @@ export function DocumentsTable() {
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
-                              onClick={() => doc.sourceUrl && window.open(doc.sourceUrl, '_blank')}
+                              onClick={() => doc.sourceUrl && window.open(doc.sourceUrl, '_blank', 'noopener,noreferrer')}
                               disabled={!doc.sourceUrl}
                             >
                               <ExternalLink className="mr-2 h-4 w-4" /> View Source

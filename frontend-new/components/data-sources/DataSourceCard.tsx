@@ -357,7 +357,7 @@ export function DataSourceCard({
           onClick={handleConnect}
           disabled={isLoading || disabled}
         >
-          {isLoading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Connect
         </Button>
       )}

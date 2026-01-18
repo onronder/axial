@@ -48,9 +48,94 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // Headers for caching static assets
+  // Headers for security and caching
   async headers() {
+    // Build CSP directives for production-grade security
+    // @see https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://*.supabase.co';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://axial-production-1503.up.railway.app';
+    
+    // CSP directives - carefully crafted for security + functionality
+    const cspDirectives = [
+      // Default: only same origin
+      "default-src 'self'",
+      
+      // Scripts: self + inline for Next.js hydration + eval for dev tools (removed in prod ideally)
+      // 'unsafe-inline' needed for Next.js script tags, 'unsafe-eval' for development
+      process.env.NODE_ENV === 'development'
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.sentry-cdn.com https://browser.sentry-cdn.com"
+        : "script-src 'self' 'unsafe-inline' https://js.sentry-cdn.com https://browser.sentry-cdn.com",
+      
+      // Styles: self + inline for Tailwind/styled components
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      
+      // Fonts: self + Google Fonts
+      "font-src 'self' https://fonts.gstatic.com data:",
+      
+      // Images: self + approved domains for avatars, thumbnails, favicons
+      `img-src 'self' data: blob: https://img.youtube.com https://www.google.com https://*.googleusercontent.com https://www.notion.so ${supabaseUrl}`,
+      
+      // Connect: API endpoints + Supabase + Sentry
+      `connect-src 'self' ${apiUrl} ${supabaseUrl} https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://o4509311565545472.ingest.us.sentry.io`,
+      
+      // Frames: deny all framing (clickjacking protection)
+      "frame-ancestors 'none'",
+      
+      // Object/embed: none (prevents Flash/plugin exploits)
+      "object-src 'none'",
+      
+      // Base URI: only self (prevents base tag injection)
+      "base-uri 'self'",
+      
+      // Form action: only self (prevents form hijacking)
+      "form-action 'self'",
+      
+      // Upgrade insecure requests in production
+      process.env.NODE_ENV === 'production' ? "upgrade-insecure-requests" : "",
+    ].filter(Boolean).join('; ');
+    
     return [
+      // Security headers for all routes
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: cspDirectives,
+          },
+          {
+            key: "X-Frame-Options",
+            value: "DENY",
+          },
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          {
+            key: "X-XSS-Protection",
+            value: "1; mode=block",
+          },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
+          },
+          {
+            // Prevent MIME type sniffing
+            key: "X-Download-Options",
+            value: "noopen",
+          },
+          {
+            // Cross-Origin policies for modern security
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin",
+          },
+        ],
+      },
+      // Caching for static assets
       {
         source: "/:all*(svg|jpg|png|webp|avif)",
         headers: [

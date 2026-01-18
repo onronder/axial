@@ -315,7 +315,7 @@
     background: linear-gradient(to right, hsl(var(--primary)), hsl(var(--secondary))) !important;
     box-shadow: 0 4px 14px 0 hsl(var(--primary) / 0.35);
   }
-
+  
   .light .bg-axio-gradient:hover {
     background: linear-gradient(to right, hsl(var(--primary) / 0.9), hsl(var(--secondary) / 0.9)) !important;
     box-shadow: 0 10px 30px -5px hsl(var(--primary) / 0.5);

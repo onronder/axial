@@ -18,7 +18,7 @@ from api.v1.dependencies import (
     require_paid_access,
     get_user_organization_id,
 )
-from api.v1.error_utils import raise_http_error
+from api.v1.error_utils import raise_http_error, api_error, ApiErrorCode
 from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
 from core.exceptions import QuotaExceededError
@@ -290,7 +290,7 @@ async def exchange_google_token(
         logger.error(f"🔐 [OAuth] ❌ Token exchange failed: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
+        raise api_error(ApiErrorCode.OAUTH_ERROR, e, "oauth_exchange")
 
     # 3. Calculate expiry
     try:
@@ -339,7 +339,7 @@ async def exchange_google_token(
         logger.error(f"🔐 [OAuth] ❌ Database error: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "oauth_exchange")
 
     # NOTE: We no longer auto-sync on connect to prevent unexpected behavior.
     # User should explicitly select files/folders to ingest via the Drive explorer.
@@ -440,7 +440,7 @@ async def exchange_notion_token(
         logger.error(f"🔐 [OAuth] ❌ Notion token exchange failed: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
+        raise api_error(ApiErrorCode.OAUTH_ERROR, e, "oauth_exchange")
 
     # 3. Encrypt and store token
     encrypted_access_token = encrypt_token(access_token) if access_token else None
@@ -481,7 +481,7 @@ async def exchange_notion_token(
         logger.error(f"🔐 [OAuth] ❌ Database error: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "oauth_exchange")
 
     integration_id = upsert_res.data[0]["id"]
     
@@ -1857,7 +1857,7 @@ async def disconnect_provider(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to disconnect: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "disconnect")
 
 
 # =============================================================================
@@ -2283,7 +2283,7 @@ async def ingest_provider_items(
         raise
     except Exception as e:
         logger.error(f"❌ [Ingest] Failed to queue task: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to queue ingestion: {str(e)}")
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "ingest_items")
 
 
 # =============================================================================
@@ -2502,7 +2502,7 @@ async def sync_integration(
         raise
     except Exception as e:
         logger.error(f"❌ [Sync] Failed to trigger sync: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to trigger sync: {str(e)}")
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "sync_integration")
 
 
 # =============================================================================

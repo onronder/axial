@@ -17,11 +17,13 @@ Polar API Reference:
 import httpx
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from services.team_service import team_service
 from core.config import settings
+from core.rate_limit import limiter
 from api.v1.dependencies import validate_team_access
+from api.v1.error_utils import api_error, ApiErrorCode
 from core.db import get_supabase
 
 router = APIRouter(dependencies=[Depends(validate_team_access)])
@@ -219,7 +221,8 @@ async def get_customer_id_for_user(user_id: str) -> Optional[str]:
 # ============================================================
 
 @router.get("/plans", response_model=List[PlanResponse])
-async def list_plans():
+@limiter.limit("30/minute")
+async def list_plans(request: Request):
     """
     Fetch available plans from Polar with real prices.
     """
@@ -311,7 +314,9 @@ async def list_plans():
 # ============================================================
 
 @router.post("/checkout")
+@limiter.limit("10/minute")
 async def create_checkout_session(
+    request: Request,
     data: CheckoutRequest,
     current_user_id: str = Depends(validate_team_access)
 ):
@@ -319,7 +324,7 @@ async def create_checkout_session(
     Create a Polar checkout session for plan upgrade.
     """
     if not settings.POLAR_ACCESS_TOKEN:
-        raise HTTPException(status_code=500, detail="Billing not configured")
+        raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "create_checkout")
 
     team_member = await team_service.get_user_team_member(current_user_id)
     if not team_member:
@@ -352,8 +357,7 @@ async def create_checkout_session(
             return {"url": response.json()["url"]}
             
         except Exception as e:
-            logger.error(f"[Billing] Checkout error: {e}")
-            raise HTTPException(status_code=500, detail="Failed to create checkout")
+            raise api_error(ApiErrorCode.PAYMENT_ERROR, e, "create_checkout")
 
 
 # ============================================================
@@ -361,7 +365,8 @@ async def create_checkout_session(
 # ============================================================
 
 @router.post("/portal", response_model=PortalResponse)
-async def create_portal_session(current_user_id: str = Depends(validate_team_access)):
+@limiter.limit("10/minute")
+async def create_portal_session(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Create a Polar Customer Portal session.
     
@@ -369,7 +374,7 @@ async def create_portal_session(current_user_id: str = Depends(validate_team_acc
     pre-authenticated customer_portal_url.
     """
     if not settings.POLAR_ACCESS_TOKEN:
-        raise HTTPException(status_code=500, detail="Billing not configured")
+        raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "create_portal")
     
     try:
         customer_id = await get_customer_id_for_user(current_user_id)
@@ -400,13 +405,12 @@ async def create_portal_session(current_user_id: str = Depends(validate_team_acc
                     return PortalResponse(url=portal_url)
             
             logger.error(f"[Billing] Customer session failed: {response.status_code} - {response.text}")
-            raise HTTPException(status_code=500, detail="Failed to create portal session")
+            raise api_error(ApiErrorCode.PAYMENT_ERROR, None, "create_portal")
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Billing] Portal error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create portal session")
+        raise api_error(ApiErrorCode.PAYMENT_ERROR, e, "create_portal")
 
 
 # ============================================================
@@ -414,7 +418,8 @@ async def create_portal_session(current_user_id: str = Depends(validate_team_acc
 # ============================================================
 
 @router.get("/subscription", response_model=Optional[SubscriptionDetailResponse])
-async def get_current_subscription(current_user_id: str = Depends(validate_team_access)):
+@limiter.limit("30/minute")
+async def get_current_subscription(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Get current subscription details from Polar.
     
@@ -474,7 +479,8 @@ async def get_current_subscription(current_user_id: str = Depends(validate_team_
 # ============================================================
 
 @router.post("/subscription/cancel")
-async def cancel_subscription(current_user_id: str = Depends(validate_team_access)):
+@limiter.limit("5/minute")
+async def cancel_subscription(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Cancel the current subscription.
     
@@ -484,7 +490,7 @@ async def cancel_subscription(current_user_id: str = Depends(validate_team_acces
     - User can resubscribe anytime before period ends
     """
     if not settings.POLAR_ACCESS_TOKEN:
-        raise HTTPException(status_code=500, detail="Billing not configured")
+        raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "cancel_subscription")
     
     try:
         customer_id = await get_customer_id_for_user(current_user_id)
@@ -544,13 +550,12 @@ async def cancel_subscription(current_user_id: str = Depends(validate_team_acces
                 }
             else:
                 logger.error(f"[Billing] Cancel failed: {cancel_response.status_code} - {cancel_response.text}")
-                raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+                raise api_error(ApiErrorCode.PAYMENT_ERROR, None, "cancel_subscription")
                 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Billing] Cancel error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+        raise api_error(ApiErrorCode.PAYMENT_ERROR, e, "cancel_subscription")
 
 
 # ============================================================
@@ -558,7 +563,8 @@ async def cancel_subscription(current_user_id: str = Depends(validate_team_acces
 # ============================================================
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
-async def get_billing_history(current_user_id: str = Depends(validate_team_access)):
+@limiter.limit("30/minute")
+async def get_billing_history(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Get billing history (orders) from Polar.
     
@@ -615,7 +621,9 @@ async def get_billing_history(current_user_id: str = Depends(validate_team_acces
 # ============================================================
 
 @router.get("/invoices/{order_id}/download")
+@limiter.limit("20/minute")
 async def download_invoice(
+    request: Request,
     order_id: str,
     current_user_id: str = Depends(validate_team_access)
 ):
@@ -625,7 +633,7 @@ async def download_invoice(
     Uses GET /v1/orders/{id}/invoice
     """
     if not settings.POLAR_ACCESS_TOKEN:
-        raise HTTPException(status_code=500, detail="Billing not configured")
+        raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "download_invoice")
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -657,8 +665,7 @@ async def download_invoice(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Billing] Invoice download error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get invoice")
+        raise api_error(ApiErrorCode.PAYMENT_ERROR, e, "download_invoice")
 
 
 # ============================================================
@@ -666,14 +673,15 @@ async def download_invoice(
 # ============================================================
 
 @router.post("/fix-customer-id")
-async def fix_customer_id(current_user_id: str = Depends(validate_team_access)):
+@limiter.limit("5/minute")
+async def fix_customer_id(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Fetch and update customer_id from Polar for the current user's subscription.
     
     This is needed for subscriptions created before customer_id was stored.
     """
     if not settings.POLAR_ACCESS_TOKEN:
-        raise HTTPException(status_code=500, detail="Billing not configured")
+        raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "fix_customer")
     
     try:
         team_member = await team_service.get_user_team_member(current_user_id)
@@ -734,8 +742,7 @@ async def fix_customer_id(current_user_id: str = Depends(validate_team_access)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Billing] Fix customer_id error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise api_error(ApiErrorCode.PAYMENT_ERROR, e, "fix_customer")
 
 
 # ============================================================
@@ -751,7 +758,9 @@ class EnterpriseInquiryRequest(BaseModel):
 
 
 @router.post("/enterprise-inquiry")
+@limiter.limit("5/minute")
 async def submit_enterprise_inquiry(
+    request: Request,
     data: EnterpriseInquiryRequest,
     current_user_id: str = Depends(validate_team_access)
 ):

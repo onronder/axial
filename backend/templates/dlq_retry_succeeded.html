@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Retry Succeeded - Axio Hub</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+        /* Reset */
+        body, table, td, p, a, li { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+        
+        body {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #0a0a0f;
+            color: #ffffff;
+        }
+        
+        .email-container {
+            max-width: 560px;
+            margin: 0 auto;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #030712 0%, #0f172a 50%, #030712 100%);
+            padding: 48px 32px 32px;
+            text-align: center;
+            border-bottom: 1px solid rgba(34, 197, 94, 0.2);
+        }
+        
+        .logo-container {
+            margin-bottom: 8px;
+        }
+        
+        .logo-container img {
+            height: 48px;
+            width: auto;
+        }
+        
+        /* Hero section */
+        .hero {
+            background: linear-gradient(180deg, #0f172a 0%, #030712 100%);
+            padding: 40px 32px;
+            text-align: center;
+        }
+        
+        .success-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 100px;
+            padding: 8px 20px;
+            margin-bottom: 24px;
+        }
+        
+        .success-badge span {
+            color: #22c55e;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        
+        .hero h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: #ffffff;
+            margin: 0 0 12px;
+            line-height: 1.3;
+        }
+        
+        .hero p {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0;
+            line-height: 1.6;
+        }
+        
+        /* Task details section */
+        .task-section {
+            padding: 0 32px 40px;
+            background-color: #030712;
+        }
+        
+        .task-card {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.03) 100%);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+        }
+        
+        .task-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .task-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #ffffff;
+            word-break: break-word;
+            margin-bottom: 8px;
+        }
+        
+        .task-status {
+            font-size: 13px;
+            color: #22c55e;
+            font-weight: 500;
+        }
+        
+        /* Content section */
+        .content {
+            padding: 40px 32px;
+            background-color: #030712;
+        }
+        
+        .greeting {
+            font-size: 15px;
+            color: rgba(255, 255, 255, 0.6);
+            margin: 0 0 8px;
+        }
+        
+        .content h2 {
+            font-size: 22px;
+            font-weight: 600;
+            color: #ffffff;
+            margin: 0 0 16px;
+        }
+        
+        .content p {
+            font-size: 15px;
+            line-height: 1.7;
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0 0 24px;
+        }
+        
+        /* Info section */
+        .info-section {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        
+        .info-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #22c55e;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0 0 16px;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        
+        .info-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .info-icon {
+            color: #06b6d4;
+            margin-right: 12px;
+            font-size: 14px;
+        }
+        
+        .info-text {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.5;
+        }
+        
+        /* CTA section */
+        .cta-section {
+            padding: 8px 32px 48px;
+            background-color: #030712;
+            text-align: center;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #22c55e 0%, #10b981 100%);
+            color: #ffffff !important;
+            font-weight: 600;
+            font-size: 15px;
+            padding: 16px 40px;
+            border-radius: 12px;
+            text-decoration: none;
+            box-shadow: 0 8px 32px rgba(34, 197, 94, 0.3);
+        }
+        
+        /* Footer */
+        .footer {
+            background: linear-gradient(180deg, #030712 0%, #0a0a0f 100%);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 32px;
+            text-align: center;
+        }
+        
+        .footer-logo {
+            margin-bottom: 16px;
+        }
+        
+        .footer-logo img {
+            height: 28px;
+            width: auto;
+            opacity: 0.6;
+        }
+        
+        .footer-links {
+            margin-bottom: 16px;
+        }
+        
+        .footer-links a {
+            color: rgba(255, 255, 255, 0.5);
+            text-decoration: none;
+            font-size: 13px;
+            margin: 0 12px;
+        }
+        
+        .footer-copyright {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .unsubscribe {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.25);
+            margin-top: 16px;
+        }
+        
+        .unsubscribe a {
+            color: rgba(255, 255, 255, 0.35);
+            text-decoration: underline;
+        }
+        
+        /* Mobile responsive */
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                width: 100% !important;
+            }
+            .header, .hero, .task-section, .content, .cta-section, .footer {
+                padding-left: 24px !important;
+                padding-right: 24px !important;
+            }
+            .hero h1 {
+                font-size: 24px !important;
+            }
+            .task-card {
+                padding: 20px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <center>
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #0a0a0f;">
+            <tr>
+                <td>
+                    <div class="email-container">
+                        <!-- Header with actual logo -->
+                        <div class="header">
+                            <div class="logo-container">
+                                <img src="{{ app_url }}/assets/axio-hub-full-dark.png" alt="Axio Hub" height="48">
+                            </div>
+                        </div>
+                        
+                        <!-- Hero Section -->
+                        <div class="hero">
+                            <div class="success-badge">
+                                <span>✅ Retry Succeeded</span>
+                            </div>
+                            <h1>All Good Now!</h1>
+                            <p>The task that previously failed has been successfully completed on retry.</p>
+                        </div>
+                        
+                        <!-- Task Details Card -->
+                        <div class="task-section">
+                            <div class="task-card">
+                                <div class="task-icon">🎉</div>
+                                <div class="task-name">{{ task_name }}</div>
+                                <div class="task-status">Completed successfully</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Content -->
+                        <div class="content">
+                            <p class="greeting">Hi {{ name }},</p>
+                            <h2>Your data is ready</h2>
+                            <p>
+                                Great news! The task that encountered an issue earlier has now completed successfully. 
+                                Your data has been processed and is ready to use.
+                            </p>
+                            
+                            <!-- Info -->
+                            <div class="info-section">
+                                <div class="info-title">✨ What's new</div>
+                                <div class="info-item">
+                                    <span class="info-icon">→</span>
+                                    <span class="info-text">Your documents are now indexed and searchable</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-icon">→</span>
+                                    <span class="info-text">Your AI assistant has learned from the new content</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-icon">→</span>
+                                    <span class="info-text">Start chatting to explore your knowledge base</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- CTA -->
+                        <div class="cta-section">
+                            <a href="{{ app_url }}/dashboard" class="cta-button">
+                                Go to Dashboard →
+                            </a>
+                        </div>
+                        
+                        <!-- Footer -->
+                        <div class="footer">
+                            <div class="footer-logo">
+                                <img src="{{ app_url }}/assets/axio-hub-logo.png" alt="Axio" height="28">
+                            </div>
+                            <div class="footer-links">
+                                <a href="{{ app_url }}/dashboard">Dashboard</a>
+                                <a href="{{ app_url }}/settings">Settings</a>
+                                <a href="https://axiohub.io/help">Help</a>
+                            </div>
+                            <div class="footer-copyright">
+                                © {{ current_year }} Axio Hub. All rights reserved.
+                            </div>
+                            <div class="unsubscribe">
+                                <a href="{{ app_url }}/settings/notifications">Manage email preferences</a>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </center>
+</body>
+</html>

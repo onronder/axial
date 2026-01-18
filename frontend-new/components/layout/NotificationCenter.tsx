@@ -73,12 +73,34 @@ interface NotificationItemProps {
     onMarkAsRead: (id: string) => void;
 }
 
+/**
+ * Validates that a URL is safe for redirect (same-origin or trusted external domains).
+ * Prevents open redirect vulnerabilities.
+ */
+function isSafeRedirectUrl(url: string): boolean {
+    try {
+        const parsed = new URL(url, window.location.origin);
+        // Allow same-origin URLs
+        if (parsed.origin === window.location.origin) {
+            return true;
+        }
+        // Allow trusted external domains (billing/checkout)
+        const trustedDomains = ['polar.sh', 'checkout.polar.sh'];
+        return trustedDomains.some(domain => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`));
+    } catch {
+        // Invalid URL - only allow relative paths
+        return url.startsWith('/') && !url.startsWith('//');
+    }
+}
+
 function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps) {
     const config = typeConfig[notification.type] || typeConfig.info;
     const [isExpanded, setIsExpanded] = useState(false);
 
     // Get action_url from metadata
     const actionUrl = notification.metadata?.action_url as string | undefined;
+    // Validate URL to prevent open redirect attacks
+    const safeActionUrl = actionUrl && isSafeRedirectUrl(actionUrl) ? actionUrl : undefined;
 
     const handleClick = () => {
         // Mark as read when clicked
@@ -86,9 +108,9 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
             onMarkAsRead(notification.id);
         }
 
-        // Navigate to action_url if present
-        if (actionUrl) {
-            window.location.href = actionUrl;
+        // Navigate to action_url if present and validated
+        if (safeActionUrl) {
+            window.location.href = safeActionUrl;
         } else {
             setIsExpanded(!isExpanded);
         }
@@ -100,7 +122,7 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
                 "p-3 border-b border-border transition-colors cursor-pointer",
                 "hover:bg-muted/50",
                 !notification.is_read && "bg-muted/30",
-                actionUrl && "hover:bg-primary/5"
+                safeActionUrl && "hover:bg-primary/5"
             )}
             onClick={handleClick}
         >
@@ -145,7 +167,7 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
 
                     <p className="text-xs text-muted-foreground/70 mt-1">
                         {formatRelativeTime(notification.created_at)}
-                        {actionUrl && (
+                        {safeActionUrl && (
                             <span className="ml-2 text-primary">Click to open →</span>
                         )}
                     </p>

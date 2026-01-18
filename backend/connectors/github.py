@@ -47,10 +47,8 @@ from connectors.base import (
 )
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
 from connectors.limits import connector_fetch_limit
-from core.db import get_supabase
-from core.config import settings
+from connectors.utils import resolve_oauth_credentials, build_config_from_kwargs
 from core.scopes import build_scope_uri
-from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
 
@@ -1294,78 +1292,12 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         credentials: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        """Build configuration dict by merging credentials with kwargs.
-        
-        This ensures user_id, integration_id, and other auth-related params
-        from kwargs are available for credential resolution.
-        
-        Args:
-            credentials: Optional credentials dict (may contain access_token)
-            **kwargs: Additional params (user_id, integration_id, etc.)
-            
-        Returns:
-            Merged configuration dict for _resolve_config
-        """
-        config: Dict[str, Any] = dict(credentials or {})
-        
-        # Auth-related kwargs that should be merged into config
-        auth_keys = ("user_id", "integration_id")
-        for key in auth_keys:
-            if key in kwargs and kwargs[key] is not None:
-                config[key] = kwargs[key]
-        
-        return config
+        """Build configuration dict by merging credentials with kwargs."""
+        return build_config_from_kwargs(credentials, **kwargs)
     
     def _resolve_config(self, config: dict) -> dict:
         """Resolve configuration, fetching tokens from database if needed."""
-        resolved = dict(config or {})
-        
-        if resolved.get("access_token"):
-            return resolved
-        
-        integration = self._load_integration(resolved)
-        
-        try:
-            creds = OAuthTokenManager.get_valid_credentials(integration, "github")
-        except TokenRefreshError as exc:
-            raise ConnectorAuthError("GitHub integration requires reconnection") from exc
-        
-        resolved["access_token"] = creds.get("access_token")
-        resolved["integration_id"] = creds.get("integration_id") or integration.get("id")
-        resolved["credentials"] = integration.get("credentials") or {}
-        
-        return resolved
-    
-    def _load_integration(self, config: dict) -> Dict[str, Any]:
-        """Load integration record from database."""
-        supabase = get_supabase()
-        integration_id = config.get("integration_id")
-        user_id = config.get("user_id")
-        
-        if integration_id:
-            result = supabase.table("user_integrations").select("*").eq(
-                "id", integration_id
-            ).single().execute()
-            if result.data:
-                return result.data
-            raise ConnectorAuthError(f"Integration {integration_id} not found")
-        
-        if not user_id:
-            raise ConnectorAuthError("GitHub requires user_id or integration_id")
-        
-        def_result = supabase.table("connector_definitions").select("id").eq(
-            "type", "github"
-        ).single().execute()
-        if not def_result.data:
-            raise ConnectorAuthError("GitHub connector not registered")
-        
-        int_result = supabase.table("user_integrations").select("*").eq(
-            "user_id", user_id
-        ).eq("connector_definition_id", def_result.data["id"]).single().execute()
-        if not int_result.data:
-            raise ConnectorAuthError("GitHub not connected for this user")
-        
-        return int_result.data
+        return resolve_oauth_credentials("github", config)
     
     # =========================================================================
     # Helpers

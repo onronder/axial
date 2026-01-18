@@ -280,16 +280,16 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 </CardHeader>
                 <CardContent>
                     {/* Tabs */}
-                    <div className="flex w-full rounded-md border p-1 mb-6 bg-slate-100">
+                    <div className="flex w-full rounded-md border p-1 mb-6 bg-muted">
                         {tabs.map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
                                 className={cn(
-                                    "flex-1 rounded-sm px-3 py-1.5 text-sm font-medium transition-all",
+                                    "flex-1 rounded-sm px-3 py-1.5 text-sm font-medium transition-all cursor-pointer",
                                     activeTab === tab.id
-                                        ? "bg-white text-slate-950 shadow-sm"
-                                        : "text-slate-500 hover:text-slate-900"
+                                        ? "bg-background text-foreground shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground"
                                 )}
                             >
                                 <div className="flex items-center justify-center gap-2">
@@ -306,7 +306,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                             <div className="grid w-full items-center gap-1.5">
                                 <label className="text-sm font-medium leading-none">Select Document (PDF, TXT, MD)</label>
                                 <Input key="file-input" type="file" onChange={handleFileChange} disabled={isViewer} />
-                                {file && <p className="text-xs text-slate-500">Selected: {file.name}</p>}
+                                {file && <p className="text-xs text-muted-foreground">Selected: {file.name}</p>}
                             </div>
                         )}
 
@@ -327,9 +327,9 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
                         {activeTab === 'youtube' && (
                             <div className="space-y-3">
-                                <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-100">
+                                <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20">
                                     <Youtube className="h-5 w-5 text-red-500 shrink-0" />
-                                    <div className="text-sm text-slate-600">
+                                    <div className="text-sm text-muted-foreground">
                                         Paste a YouTube video URL to transcribe and chat with the content.
                                     </div>
                                 </div>
@@ -372,28 +372,28 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                         )}
 
                         {activeTab === 'notion' && (
-                            <div className="flex flex-col items-center justify-center py-6 space-y-4 text-center border rounded-lg bg-slate-50/50">
-                                <BookOpen className={cn("h-12 w-12", isNotionConnected ? "text-green-500" : "text-slate-300")} />
+                            <div className="flex flex-col items-center justify-center py-6 space-y-4 text-center border rounded-lg bg-muted/50">
+                                <BookOpen className={cn("h-12 w-12", isNotionConnected ? "text-green-500" : "text-muted-foreground/50")} />
 
                                 {isNotionConnected ? (
                                     <div className="space-y-2">
-                                        <h3 className="font-semibold text-slate-900 flex items-center justify-center gap-2">
+                                        <h3 className="font-semibold text-foreground flex items-center justify-center gap-2">
                                             <CheckCircle className="h-4 w-4 text-green-500" />
                                             Notion Connected
                                         </h3>
-                                        <p className="text-sm text-slate-500 max-w-[260px] mx-auto">
+                                        <p className="text-sm text-muted-foreground max-w-[260px] mx-auto">
                                             Your Notion workspace is synced. All accessible pages will be automatically ingested.
                                         </p>
                                         <div className="pt-2">
-                                            <Button variant="outline" size="sm" onClick={() => window.open('https://notion.so/my-integrations', '_blank')} className="text-xs">
+                                            <Button variant="outline" size="sm" onClick={() => window.open('https://notion.so/my-integrations', '_blank', 'noopener,noreferrer')} className="text-xs">
                                                 Manage in Notion
                                             </Button>
                                         </div>
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
-                                        <h3 className="font-medium text-slate-900">Connect Notion Workspace</h3>
-                                        <p className="text-sm text-slate-500 max-w-[280px] mx-auto">
+                                        <h3 className="font-medium text-foreground">Connect Notion Workspace</h3>
+                                        <p className="text-sm text-muted-foreground max-w-[280px] mx-auto">
                                             Connect your workspace to automatically import and sync pages.
                                         </p>
                                         <Button

@@ -213,7 +213,7 @@ export function BillingSettings() {
       const response = await api.post("/billing/portal");
 
       if (response.data?.url) {
-        window.open(response.data.url, "_blank");
+        window.open(response.data.url, "_blank", "noopener,noreferrer");
       } else {
         throw new Error("No portal URL returned");
       }
@@ -513,7 +513,7 @@ export function BillingSettings() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => window.open(invoice.invoice_url, "_blank")}
+                        onClick={() => window.open(invoice.invoice_url, "_blank", "noopener,noreferrer")}
                       >
                         <ExternalLink className="h-4 w-4" />
                       </Button>

@@ -4,14 +4,19 @@ Team Management API Router
 Endpoints for managing teams and team members.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Query
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Query, Request
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from api.v1.dependencies import validate_team_access, require_admin, require_paid_access
 from core.security import get_current_user
 from core.db import get_supabase
+from core.rate_limit import limiter
 from services.team_service import team_service
 from datetime import datetime, timezone
+from api.v1.error_utils import api_error, ApiErrorCode
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
@@ -112,7 +117,8 @@ class AcceptInviteResponse(BaseModel):
 # ============================================================
 
 @router.get("/team", response_model=TeamResponse)
-async def get_current_team(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_current_team(request: Request, user_id: str = Depends(get_current_user)):
     """Get the current user's team."""
     team = await team_service.get_user_team(user_id)
     
@@ -123,7 +129,9 @@ async def get_current_team(user_id: str = Depends(get_current_user)):
 
 
 @router.patch("/team", response_model=TeamResponse)
+@limiter.limit("30/minute")
 async def update_team(
+    request: Request,
     payload: TeamUpdate,
     user_id: str = Depends(get_current_user)
 ):
@@ -171,7 +179,7 @@ async def update_team(
             .execute()
         
         if not result.data:
-            raise HTTPException(status_code=500, detail="Update failed")
+            raise api_error(ApiErrorCode.DATABASE_ERROR, None, "update_team")
         
         # Return updated team (with user context)
         return await team_service.get_user_team(user_id)
@@ -179,11 +187,13 @@ async def update_team(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update team: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_team")
 
 
 @router.delete("/team")
+@limiter.limit("5/minute")
 async def delete_team(
+    request: Request,
     purge_data: bool = Query(default=True),
     user_id: str = Depends(get_current_user),
 ):
@@ -244,11 +254,12 @@ async def delete_team(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete team: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "delete_team")
 
 
 @router.get("/team/effective-plan", response_model=EffectivePlanResponse)
-async def get_effective_plan(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_effective_plan(request: Request, user_id: str = Depends(get_current_user)):
     """
     Get the effective plan for the current user.
     
@@ -277,7 +288,9 @@ async def get_effective_plan(user_id: str = Depends(get_current_user)):
 
 
 @router.get("/team/members", response_model=List[TeamMemberResponse])
+@limiter.limit("60/minute")
 async def list_team_members(
+    request: Request,
     user_id: str = Depends(get_current_user),
     role: Optional[str] = None,
     status: Optional[str] = None,
@@ -320,11 +333,12 @@ async def list_team_members(
         return results
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch team: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_team_members")
 
 
 @router.get("/team/stats", response_model=TeamStatsResponse)
-async def get_team_stats(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_team_stats(request: Request, user_id: str = Depends(get_current_user)):
     """Get team statistics with dynamic seat limits based on plan."""
     from core.quotas import get_plan_limits
     
@@ -352,11 +366,13 @@ async def get_team_stats(user_id: str = Depends(get_current_user)):
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_team_stats")
 
 
 @router.post("/team/invite", response_model=InviteResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")
 async def invite_team_member(
+    request: Request,
     payload: InviteRequest,
     user_id: str = Depends(get_current_user)
 ):
@@ -404,7 +420,9 @@ async def invite_team_member(
 
 
 @router.post("/team/bulk-invite", response_model=BulkInviteResponse)
+@limiter.limit("5/minute")
 async def bulk_invite_team_members(
+    request: Request,
     file: UploadFile,
     user_id: str = Depends(get_current_user)
 ):
@@ -425,9 +443,10 @@ async def bulk_invite_team_members(
         content = await file.read()
         csv_content = content.decode("utf-8")
     except Exception as e:
+        logger.error(f"Failed to read CSV: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to read CSV: {str(e)}"
+            detail="Unable to read CSV file. Please check the file format."
         )
     
     result = await team_service.bulk_invite_csv(
@@ -446,7 +465,9 @@ async def bulk_invite_team_members(
 
 # Legacy endpoint for backward compatibility
 @router.post("/team/members", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")
 async def invite_team_member_legacy(
+    request: Request,
     payload: TeamMemberCreate,
     user_id: str = Depends(get_current_user)
 ):
@@ -482,7 +503,9 @@ async def invite_team_member_legacy(
 
 
 @router.patch("/team/members/{member_id}", response_model=TeamMemberResponse)
+@limiter.limit("30/minute")
 async def update_team_member(
+    request: Request,
     member_id: str,
     payload: TeamMemberUpdate,
     user_id: str = Depends(get_current_user)
@@ -496,13 +519,68 @@ async def update_team_member(
         
         if payload.name is not None:
             update_data["name"] = payload.name
+        
         if payload.role is not None:
             if payload.role not in ["admin", "editor", "viewer"]:
                 raise HTTPException(status_code=400, detail="Invalid role")
+            
+            # Last-admin protection: prevent demoting the last admin
+            if payload.role != "admin":
+                # Check if this member is currently an admin
+                member_check = supabase.table("team_members")\
+                    .select("role")\
+                    .eq("id", member_id)\
+                    .eq("owner_user_id", user_id)\
+                    .execute()
+                
+                if member_check.data and member_check.data[0].get("role") == "admin":
+                    # Count remaining active admins for this team owner
+                    admin_count_response = supabase.table("team_members")\
+                        .select("id", count="exact")\
+                        .eq("owner_user_id", user_id)\
+                        .eq("role", "admin")\
+                        .eq("status", "active")\
+                        .execute()
+                    
+                    admin_count = admin_count_response.count or 0
+                    if admin_count <= 1:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Cannot demote the last admin. Promote another member to admin first."
+                        )
+            
             update_data["role"] = payload.role
+        
         if payload.status is not None:
             if payload.status not in ["active", "pending", "suspended"]:
                 raise HTTPException(status_code=400, detail="Invalid status")
+            
+            # Last-admin protection: prevent suspending the last admin
+            if payload.status in ["suspended", "pending"]:
+                member_check = supabase.table("team_members")\
+                    .select("role, status")\
+                    .eq("id", member_id)\
+                    .eq("owner_user_id", user_id)\
+                    .execute()
+                
+                if (member_check.data and 
+                    member_check.data[0].get("role") == "admin" and 
+                    member_check.data[0].get("status") == "active"):
+                    # Count remaining active admins
+                    admin_count_response = supabase.table("team_members")\
+                        .select("id", count="exact")\
+                        .eq("owner_user_id", user_id)\
+                        .eq("role", "admin")\
+                        .eq("status", "active")\
+                        .execute()
+                    
+                    admin_count = admin_count_response.count or 0
+                    if admin_count <= 1:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Cannot suspend the last admin. Promote another member to admin first."
+                        )
+            
             update_data["status"] = payload.status
         
         if not update_data:
@@ -522,11 +600,13 @@ async def update_team_member(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update member: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_member")
 
 
 @router.delete("/team/members/{member_id}")
+@limiter.limit("20/minute")
 async def remove_team_member(
+    request: Request,
     member_id: str,
     user_id: str = Depends(get_current_user)
 ):
@@ -534,6 +614,41 @@ async def remove_team_member(
     supabase = get_supabase()
     
     try:
+        # Last-admin protection: check if we're removing the last admin
+        member_check = supabase.table("team_members")\
+            .select("role, status, member_user_id")\
+            .eq("id", member_id)\
+            .eq("owner_user_id", user_id)\
+            .execute()
+        
+        if not member_check.data:
+            raise HTTPException(status_code=404, detail="Member not found")
+        
+        member_data = member_check.data[0]
+        
+        # Prevent removing the team owner (themselves)
+        if member_data.get("member_user_id") == user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove yourself. Transfer ownership or delete the team instead."
+            )
+        
+        # Prevent removing the last active admin
+        if member_data.get("role") == "admin" and member_data.get("status") == "active":
+            admin_count_response = supabase.table("team_members")\
+                .select("id", count="exact")\
+                .eq("owner_user_id", user_id)\
+                .eq("role", "admin")\
+                .eq("status", "active")\
+                .execute()
+            
+            admin_count = admin_count_response.count or 0
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot remove the last admin. Promote another member to admin first."
+                )
+        
         response = supabase.table("team_members")\
             .delete()\
             .eq("id", member_id)\
@@ -548,11 +663,13 @@ async def remove_team_member(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to remove member: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "remove_member")
 
 
 @router.post("/team/members/{member_id}/resend")
+@limiter.limit("10/minute")
 async def resend_invitation(
+    request: Request,
     member_id: str,
     user_id: str = Depends(get_current_user)
 ):
@@ -566,13 +683,15 @@ async def resend_invitation(
         if error == "Pending member not found":
             raise HTTPException(status_code=404, detail=error)
         else:
-            raise HTTPException(status_code=500, detail=error)
+            raise api_error(ApiErrorCode.INTERNAL_ERROR, None, "resend_invite")
     
     return {"status": "success", "message": "Invitation resent"}
 
 
 @router.post("/team/accept", response_model=AcceptInviteResponse)
+@limiter.limit("10/minute")
 async def accept_invite(
+    request: Request,
     payload: AcceptInviteRequest,
     user_id: str = Depends(get_current_user)
 ):
@@ -615,10 +734,7 @@ async def accept_invite(
         }).eq("id", payload.token).execute()
         
         if not update_response.data:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to accept invitation"
-            )
+            raise api_error(ApiErrorCode.DATABASE_ERROR, None, "accept_invite")
         
         # Step 3: Invalidate plan cache for the new member
         team_service.invalidate_plan_cache(user_id)
@@ -632,4 +748,4 @@ async def accept_invite(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to accept invite: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "accept_invite")

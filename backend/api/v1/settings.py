@@ -4,12 +4,14 @@ Settings API Router
 Endpoints for user profile and notification settings management.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from api.v1.dependencies import validate_team_access, require_paid_access
+from api.v1.error_utils import api_error, ApiErrorCode
 from core.security import get_current_user
 from core.db import get_supabase
+from core.rate_limit import limiter
 from datetime import datetime, timezone
 
 router = APIRouter(dependencies=[Depends(validate_team_access)])
@@ -51,7 +53,8 @@ class NotificationSettingUpdate(BaseModel):
 # PROFILE ENDPOINTS
 # ============================================================
 @router.get("/settings/profile", response_model=ProfileResponse)
-async def get_profile(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_profile(request: Request, user_id: str = Depends(get_current_user)):
     """Get user profile, creating one if it doesn't exist."""
     supabase = get_supabase()
     
@@ -147,11 +150,13 @@ async def get_profile(user_id: str = Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch profile: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_profile")
 
 
 @router.patch("/settings/profile", response_model=ProfileResponse)
+@limiter.limit("30/minute")
 async def update_profile(
+    request: Request,
     payload: ProfileUpdate,
     user_id: str = Depends(get_current_user)
 ):
@@ -187,11 +192,12 @@ async def update_profile(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update profile: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_profile")
 
 
 @router.delete("/settings/profile/me", status_code=200)
-async def delete_account(user_id: str = Depends(get_current_user)):
+@limiter.limit("3/minute")
+async def delete_account(request: Request, user_id: str = Depends(get_current_user)):
     """
     Permanently delete user account and all associated data.
     
@@ -223,15 +229,12 @@ async def delete_account(user_id: str = Depends(get_current_user)):
         }
         
     except Exception as e:
-        logger.error(f"❌ [DeleteAccount] Failed to delete account {user_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to delete account: {str(e)}"
-        )
+        raise api_error(ApiErrorCode.INTERNAL_ERROR, e, "delete_account")
 
 
 @router.post("/settings/profile/me/anonymize", status_code=200)
-async def anonymize_account(user_id: str = Depends(get_current_user)):
+@limiter.limit("3/minute")
+async def anonymize_account(request: Request, user_id: str = Depends(get_current_user)):
     """
     Anonymize user data without hard deletion.
     
@@ -250,11 +253,7 @@ async def anonymize_account(user_id: str = Depends(get_current_user)):
             "details": results,
         }
     except Exception as e:
-        logger.error(f"❌ [AnonymizeAccount] Failed for user {user_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to anonymize account: {str(e)}",
-        )
+        raise api_error(ApiErrorCode.INTERNAL_ERROR, e, "anonymize_account")
 
 
 # ============================================================
@@ -306,7 +305,8 @@ DEFAULT_NOTIFICATION_SETTINGS = [
     response_model=List[NotificationSettingResponse],
     dependencies=[Depends(require_paid_access)],
 )
-async def get_notification_settings(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_notification_settings(request: Request, user_id: str = Depends(get_current_user)):
     """Get notification settings, creating defaults if they don't exist."""
     supabase = get_supabase()
     
@@ -337,7 +337,7 @@ async def get_notification_settings(user_id: str = Depends(get_current_user)):
         return response.data
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch settings: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_notification_settings")
 
 
 @router.patch(
@@ -345,7 +345,9 @@ async def get_notification_settings(user_id: str = Depends(get_current_user)):
     response_model=NotificationSettingResponse,
     dependencies=[Depends(require_paid_access)],
 )
+@limiter.limit("30/minute")
 async def update_notification_setting(
+    request: Request,
     payload: NotificationSettingUpdate,
     user_id: str = Depends(get_current_user),
 ):
@@ -370,14 +372,15 @@ async def update_notification_setting(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update setting: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_notification_settings")
 
 
 @router.delete(
     "/settings/notifications",
     dependencies=[Depends(require_paid_access)],
 )
-async def reset_notification_settings(user_id: str = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def reset_notification_settings(request: Request, user_id: str = Depends(get_current_user)):
     """
     Reset all notification settings to defaults.
     
@@ -402,4 +405,4 @@ async def reset_notification_settings(user_id: str = Depends(get_current_user)):
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reset settings: {str(e)}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_notification_settings")
