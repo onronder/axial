@@ -69,6 +69,10 @@ export default function ChatPage() {
     
     // FIX: Track if we just created a conversation to skip unnecessary reload
     const justCreatedConversationRef = useRef(false);
+    
+    // CRITICAL FIX: Track conversation ID that needs URL update AFTER streaming completes
+    // This prevents component remount/state reset during the critical streaming phase
+    const pendingUrlUpdateRef = useRef<string | null>(null);
 
     // State
     const [messages, setMessages] = useState<Message[]>([]);
@@ -205,23 +209,23 @@ export default function ChatPage() {
     // Track if we're currently streaming to prevent state resets
     const isStreamingRef = useRef(false);
     
+    // Ref to access getMessagesById without it being a dependency
+    // This prevents the effect from re-running when hasChatAccess/planReady changes
+    const getMessagesByIdRef = useRef(getMessagesById);
+    useEffect(() => {
+        getMessagesByIdRef.current = getMessagesById;
+    }, [getMessagesById]);
+    
     // Load messages for existing chats when conversation ID changes
+    // CRITICAL: Only depends on activeConversationId, NOT getMessagesById
     useEffect(() => {
         // FIX: Never reset messages while actively streaming
+        // Check this FIRST before anything else
         if (isStreamingRef.current) {
             console.log('📄 [ChatPage] Skipping load - streaming in progress');
             return;
         }
         
-        if (!activeConversationId) {
-            // Only clear if we're not in the middle of creating a conversation
-            if (!justCreatedConversationRef.current) {
-                setMessages([]);
-            }
-            setIsLoading(false);
-            return;
-        }
-
         // FIX: Skip loading if we just created this conversation - we already have correct state
         if (justCreatedConversationRef.current) {
             console.log('📄 [ChatPage] Skipping load - just created this conversation');
@@ -229,24 +233,62 @@ export default function ChatPage() {
             setIsLoading(false);
             return;
         }
+        
+        if (!activeConversationId) {
+            setMessages([]);
+            setIsLoading(false);
+            return;
+        }
 
         const loadMessages = async () => {
+            // Double-check streaming status before actually loading
+            // This handles race conditions where streaming started after effect began
+            if (isStreamingRef.current) {
+                console.log('📄 [ChatPage] Aborting load - streaming started');
+                return;
+            }
+            
             setIsLoading(true);
             try {
                 console.log('📄 [ChatPage] Loading messages for:', activeConversationId);
-                const msgs = await getMessagesById(activeConversationId);
+                const msgs = await getMessagesByIdRef.current(activeConversationId);
+                
+                // Don't set messages if streaming started during the fetch
+                if (isStreamingRef.current) {
+                    console.log('📄 [ChatPage] Discarding loaded messages - streaming in progress');
+                    return;
+                }
+                
                 console.log('📄 [ChatPage] Loaded', msgs.length, 'messages');
                 setMessages(msgs);
             } catch (error) {
                 console.error('📄 [ChatPage] Failed to load messages:', error);
-                setMessages([]);
+                if (!isStreamingRef.current) {
+                    setMessages([]);
+                }
             } finally {
-                setIsLoading(false);
+                if (!isStreamingRef.current) {
+                    setIsLoading(false);
+                }
             }
         };
 
         loadMessages();
-    }, [activeConversationId, getMessagesById]);
+    }, [activeConversationId]); // ONLY activeConversationId - not getMessagesById!
+
+    /**
+     * Helper: Update URL after streaming completes (if needed)
+     * This is deferred to prevent component remount during streaming
+     */
+    const flushPendingUrlUpdate = useCallback(() => {
+        const pendingId = pendingUrlUpdateRef.current;
+        if (pendingId && chatIdFromUrl === 'new') {
+            console.log('🔗 [ChatPage] Updating URL to:', pendingId);
+            pendingUrlUpdateRef.current = null;
+            // Now it's safe to update the URL - streaming is complete, state is stable
+            router.replace(`/dashboard/chat/${pendingId}`, { scroll: false });
+        }
+    }, [chatIdFromUrl, router]);
 
     /**
      * Handle sending a message (with optional scope selection).
@@ -287,9 +329,10 @@ export default function ChatPage() {
                 // FIX: Mark that we just created this conversation to skip unnecessary reload
                 justCreatedConversationRef.current = true;
 
-                // Update URL for bookmarking and sharing (doesn't affect routing state)
-                // Using router.replace for proper Next.js integration
-                router.replace(`/dashboard/chat/${conversationId}`, { scroll: false });
+                // CRITICAL FIX: DON'T update URL now - it causes component remount/state reset!
+                // Instead, queue the URL update for AFTER streaming completes
+                pendingUrlUpdateRef.current = conversationId;
+                console.log('💬 [ChatPage] URL update queued for after streaming');
             } catch (error) {
                 console.error('💬 [ChatPage] Failed to create chat:', error);
                 // Reset streaming flag on error
@@ -418,6 +461,9 @@ export default function ChatPage() {
                         original_query: content,
                     };
                     setMessages(prev => [...prev, clarificationMessage]);
+                    
+                    // Update URL now that streaming is complete
+                    flushPendingUrlUpdate();
                     return; // Exit early - don't add assistant message
                 } else if (event.type === 'error') {
                     const display = getChatErrorDisplay(event.error, event.message);
@@ -437,6 +483,9 @@ export default function ChatPage() {
                         created_at: new Date().toISOString(),
                     };
                     setMessages(prev => [...prev, errorMessage]);
+                    
+                    // Update URL now that streaming is complete (even on error)
+                    flushPendingUrlUpdate();
                     return;
                 }
             }
@@ -459,6 +508,9 @@ export default function ChatPage() {
             };
             setMessages(prev => [...prev, aiMessage]);
             console.log('✅ [ChatPage] Final message added to state');
+            
+            // NOW it's safe to update the URL (after streaming is complete and state is stable)
+            flushPendingUrlUpdate();
 
         } catch (error) {
             console.error('💬 [ChatPage] Chat API error:', error);
@@ -484,8 +536,11 @@ export default function ChatPage() {
                 created_at: new Date().toISOString(),
             };
             setMessages(prev => [...prev, errorMessage]);
+            
+            // Update URL now that streaming is complete (even on error)
+            flushPendingUrlUpdate();
         }
-    }, [createNewChat, currentScopeId, messages, router, selectedModel, toast, chatIdFromUrl, isNewChatUrl]);
+    }, [createNewChat, currentScopeId, flushPendingUrlUpdate, messages, selectedModel, toast, chatIdFromUrl, isNewChatUrl]);
 
     /**
      * Handle scope selection from clarification card.
