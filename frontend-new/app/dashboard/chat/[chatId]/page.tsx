@@ -256,6 +256,11 @@ export default function ChatPage() {
      * even when window.history.replaceState doesn't trigger a React re-render.
      */
     const handleSendMessage = useCallback(async (content: string, scopeId?: string) => {
+        // CRITICAL FIX: Set streaming flag IMMEDIATELY at the start, BEFORE any state 
+        // updates or navigation. This prevents the loadMessages effect from running
+        // and clearing messages during a re-render triggered by router.replace().
+        isStreamingRef.current = true;
+        
         // Use ref to get current conversation ID (avoids stale closure)
         let conversationId = conversationIdRef.current;
 
@@ -287,6 +292,8 @@ export default function ChatPage() {
                 router.replace(`/dashboard/chat/${conversationId}`, { scroll: false });
             } catch (error) {
                 console.error('💬 [ChatPage] Failed to create chat:', error);
+                // Reset streaming flag on error
+                isStreamingRef.current = false;
                 toast({
                     title: 'Error',
                     description: 'Failed to create new chat. Please try again.',
@@ -308,7 +315,7 @@ export default function ChatPage() {
         }
         
         setIsTyping(true);
-        isStreamingRef.current = true; // Mark streaming as active
+        // Note: isStreamingRef.current already set at function start
         
         // Start thinking status - show RAG is working
         setThinkingStatus({
