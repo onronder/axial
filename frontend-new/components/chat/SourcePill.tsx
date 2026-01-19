@@ -20,12 +20,12 @@ interface SourcePillProps extends HTMLAttributes<HTMLAnchorElement> {
     source: SourceMetadata;
     isHighlighted?: boolean;
     showExternalIcon?: boolean;
-    /** Optional badge showing citation count */
-    citationCount?: number;
+    /** All citation indices that reference this source (e.g., [6, 10] for citations [6] and [10]) */
+    citationIndices?: number[];
 }
 
 export const SourcePill = forwardRef<HTMLAnchorElement, SourcePillProps>(
-    ({ source, isHighlighted = false, showExternalIcon = false, citationCount, className, ...props }, ref) => {
+    ({ source, isHighlighted = false, showExternalIcon = false, citationIndices, className, ...props }, ref) => {
         // Extract display information
         const rawType = source.type || source.source_type || source.source || "";
         const normalizedType = normalizeSourceType(rawType);
@@ -69,6 +69,24 @@ export const SourcePill = forwardRef<HTMLAnchorElement, SourcePillProps>(
             className
         );
 
+        // Citation badges component - shows all citation numbers (e.g., [6] [10])
+        const citationBadges = citationIndices && citationIndices.length > 0 && (
+            <span 
+                className="ml-1.5 inline-flex items-center gap-0.5"
+                aria-label={`Citations: ${citationIndices.join(', ')}`}
+            >
+                {citationIndices.map((idx) => (
+                    <span 
+                        key={`citation-badge-${idx}`}
+                        className="flex h-4 min-w-4 items-center justify-center rounded-full bg-secondary px-1 text-[10px] font-bold text-background"
+                        title={`Citation [${idx}]`}
+                    >
+                        {idx}
+                    </span>
+                ))}
+            </span>
+        );
+
         // Render as link if URL exists, otherwise as span
         if (hasUrl) {
             return (
@@ -82,15 +100,7 @@ export const SourcePill = forwardRef<HTMLAnchorElement, SourcePillProps>(
                     {...props}
                 >
                     {pillContent}
-                    {/* Citation count badge */}
-                    {citationCount && citationCount > 1 && (
-                        <span 
-                            className="ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-secondary px-1 text-[10px] font-bold text-background"
-                            title={`Cited ${citationCount} times`}
-                        >
-                            {citationCount}
-                        </span>
-                    )}
+                    {citationBadges}
                 </a>
             );
         }
@@ -102,15 +112,7 @@ export const SourcePill = forwardRef<HTMLAnchorElement, SourcePillProps>(
                 {...(props as HTMLAttributes<HTMLSpanElement>)}
             >
                 {pillContent}
-                {/* Citation count badge */}
-                {citationCount && citationCount > 1 && (
-                    <span 
-                        className="ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-secondary px-1 text-[10px] font-bold text-background"
-                        title={`Cited ${citationCount} times`}
-                    >
-                        {citationCount}
-                    </span>
-                )}
+                {citationBadges}
             </span>
         );
     }
@@ -124,7 +126,7 @@ SourcePill.displayName = "SourcePill";
  * Features:
  * - Deduplication by source name (no duplicate pills)
  * - Max 5 visible sources with "+X more" overflow
- * - Citation count badge for repeated sources
+ * - Citation index badges showing ALL citation numbers (e.g., [6] [10]) for each source
  * - Hover coordination with inline citations
  * - Accessible keyboard navigation
  */
@@ -198,7 +200,7 @@ export function SourcePillList({
                         key={`source-pill-${idx}`}
                         source={item.source}
                         isHighlighted={isHighlighted}
-                        citationCount={item.count}
+                        citationIndices={item.indices}
                         onMouseEnter={() => onSourceHover?.(item.indices[0])}
                         onMouseLeave={() => onSourceHover?.(null)}
                         onFocus={() => onSourceHover?.(item.indices[0])}

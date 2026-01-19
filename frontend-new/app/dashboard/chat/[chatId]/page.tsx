@@ -13,6 +13,22 @@ import { ModelId } from "@/lib/types";
 import { Source, ScopeContext } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
+// =============================================================================
+// PRODUCTION UTILITIES
+// =============================================================================
+
+const isDev = process.env.NODE_ENV !== 'production';
+
+/** Conditional logging - only logs in development */
+const devLog = (...args: Parameters<typeof console.log>) => {
+    if (isDev) console.log(...args);
+};
+
+const devError = (...args: Parameters<typeof console.error>) => {
+    // Errors always logged in all environments
+    console.error(...args);
+};
+
 /**
  * RAG Processing Status - tracks what the system is doing
  */
@@ -73,6 +89,19 @@ export default function ChatPage() {
     // CRITICAL FIX: Track conversation ID that needs URL update AFTER streaming completes
     // This prevents component remount/state reset during the critical streaming phase
     const pendingUrlUpdateRef = useRef<string | null>(null);
+    
+    // P0 FIX: AbortController for cancelling concurrent streams
+    // When user sends new message, cancel any in-flight stream to prevent duplicates
+    const abortControllerRef = useRef<AbortController | null>(null);
+    
+    // P0 FIX: Track if component is mounted to prevent state updates after unmount
+    const isMountedRef = useRef(true);
+    
+    // P1 FIX: Keep latest messages in ref for accurate history in async callbacks
+    const messagesRef = useRef<Message[]>([]);
+    
+    // P2 FIX: Lock to prevent rapid double-sends (set immediately, before async work)
+    const isSendLockedRef = useRef(false);
 
     // State
     const [messages, setMessages] = useState<Message[]>([]);
@@ -109,12 +138,12 @@ export default function ChatPage() {
         // FIX: Skip sync if we just created this conversation ourselves
         // This prevents race condition where URL update triggers before state update
         if (justCreatedConversationRef.current) {
-            console.log('🔄 [ChatPage] Skipping sync - we just created this conversation');
+            devLog('🔄 [ChatPage] Skipping sync - we just created this conversation');
             // Don't reset the flag here - let loadMessages effect handle it
             return;
         }
 
-        console.log('🔄 [ChatPage] URL navigation detected:', {
+        devLog('🔄 [ChatPage] URL navigation detected:', {
             from: previousUrl,
             to: chatIdFromUrl,
             activeConversationId: activeConversationId?.slice(0, 8) + '...',
@@ -125,7 +154,7 @@ export default function ChatPage() {
             // Only reset if we don't already have a conversation in progress
             // (handles case where URL update is delayed after conversation creation)
             if (!activeConversationId || chatIdFromUrl === 'new') {
-                console.log('🔄 [ChatPage] Resetting for new chat');
+                devLog('🔄 [ChatPage] Resetting for new chat');
                 setActiveConversationId(null);
                 setMessages([]);
                 setCurrentScopeId(null);
@@ -133,7 +162,7 @@ export default function ChatPage() {
             }
         } else if (chatIdFromUrl && chatIdFromUrl !== activeConversationId) {
             // User navigated to a different existing chat
-            console.log('🔄 [ChatPage] Switching to conversation:', chatIdFromUrl);
+            devLog('🔄 [ChatPage] Switching to conversation:', chatIdFromUrl);
             setActiveConversationId(chatIdFromUrl);
             setCurrentScopeId(null);
             setThinkingStatus(null);
@@ -206,6 +235,28 @@ export default function ChatPage() {
         }
     }, [isNewChatUrl, hasNoDocuments, docCountLoading, profileLoading, profile?.has_team]);
 
+    // P0 FIX: Cleanup on component unmount - cancel any in-flight streams
+    useEffect(() => {
+        isMountedRef.current = true;
+        
+        return () => {
+            isMountedRef.current = false;
+            // Cancel any in-flight stream on unmount
+            if (abortControllerRef.current) {
+                devLog('🧹 [ChatPage] Cleaning up - aborting stream on unmount');
+                abortControllerRef.current.abort();
+                abortControllerRef.current = null;
+            }
+            // Reset streaming state
+            isStreamingRef.current = false;
+        };
+    }, []);
+    
+    // P1 FIX: Keep messages ref in sync for accurate history in async callbacks
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
+
     // Track if we're currently streaming to prevent state resets
     const isStreamingRef = useRef(false);
     
@@ -222,13 +273,13 @@ export default function ChatPage() {
         // FIX: Never reset messages while actively streaming
         // Check this FIRST before anything else
         if (isStreamingRef.current) {
-            console.log('📄 [ChatPage] Skipping load - streaming in progress');
+            devLog('📄 [ChatPage] Skipping load - streaming in progress');
             return;
         }
         
         // FIX: Skip loading if we just created this conversation - we already have correct state
         if (justCreatedConversationRef.current) {
-            console.log('📄 [ChatPage] Skipping load - just created this conversation');
+            devLog('📄 [ChatPage] Skipping load - just created this conversation');
             justCreatedConversationRef.current = false;
             setIsLoading(false);
             return;
@@ -244,25 +295,25 @@ export default function ChatPage() {
             // Double-check streaming status before actually loading
             // This handles race conditions where streaming started after effect began
             if (isStreamingRef.current) {
-                console.log('📄 [ChatPage] Aborting load - streaming started');
+                devLog('📄 [ChatPage] Aborting load - streaming started');
                 return;
             }
             
             setIsLoading(true);
             try {
-                console.log('📄 [ChatPage] Loading messages for:', activeConversationId);
+                devLog('📄 [ChatPage] Loading messages for:', activeConversationId);
                 const msgs = await getMessagesByIdRef.current(activeConversationId);
                 
                 // Don't set messages if streaming started during the fetch
                 if (isStreamingRef.current) {
-                    console.log('📄 [ChatPage] Discarding loaded messages - streaming in progress');
+                    devLog('📄 [ChatPage] Discarding loaded messages - streaming in progress');
                     return;
                 }
                 
-                console.log('📄 [ChatPage] Loaded', msgs.length, 'messages');
+                devLog('📄 [ChatPage] Loaded', msgs.length, 'messages');
                 setMessages(msgs);
             } catch (error) {
-                console.error('📄 [ChatPage] Failed to load messages:', error);
+                devError('📄 [ChatPage] Failed to load messages:', error);
                 if (!isStreamingRef.current) {
                     setMessages([]);
                 }
@@ -283,7 +334,7 @@ export default function ChatPage() {
     const flushPendingUrlUpdate = useCallback(() => {
         const pendingId = pendingUrlUpdateRef.current;
         if (pendingId && chatIdFromUrl === 'new') {
-            console.log('🔗 [ChatPage] Updating URL to:', pendingId);
+            devLog('🔗 [ChatPage] Updating URL to:', pendingId);
             pendingUrlUpdateRef.current = null;
             // Now it's safe to update the URL - streaming is complete, state is stable
             router.replace(`/dashboard/chat/${pendingId}`, { scroll: false });
@@ -296,8 +347,35 @@ export default function ChatPage() {
      * CRITICAL: Uses activeConversationId state (via ref) instead of URL params.
      * This ensures subsequent messages in the same chat use the correct conversation ID
      * even when window.history.replaceState doesn't trigger a React re-render.
+     * 
+     * P0 FIXES:
+     * - AbortController to cancel concurrent streams
+     * - Check isMounted before state updates
+     * 
+     * P1 FIXES:
+     * - Use messagesRef for accurate history (avoids stale closure)
+     * - Handle 'done' event with message_id
      */
     const handleSendMessage = useCallback(async (content: string, scopeId?: string) => {
+        // P2 FIX: Prevent rapid double-sends
+        // This check happens BEFORE any async work
+        if (isSendLockedRef.current) {
+            devLog('🔒 [ChatPage] Send locked - ignoring duplicate send');
+            return;
+        }
+        isSendLockedRef.current = true;
+        
+        // P0 FIX: Cancel any in-flight stream before starting a new one
+        // This prevents duplicate/interleaved responses
+        if (abortControllerRef.current) {
+            devLog('🛑 [ChatPage] Cancelling previous stream');
+            abortControllerRef.current.abort();
+        }
+        
+        // Create new AbortController for this stream
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
+        
         // CRITICAL FIX: Set streaming flag IMMEDIATELY at the start, BEFORE any state 
         // updates or navigation. This prevents the loadMessages effect from running
         // and clearing messages during a re-render triggered by router.replace().
@@ -306,8 +384,7 @@ export default function ChatPage() {
         // Use ref to get current conversation ID (avoids stale closure)
         let conversationId = conversationIdRef.current;
 
-        // DEBUG: Log conversation state for troubleshooting
-        console.log('💬 [ChatPage] Sending message:', {
+        devLog('💬 [ChatPage] Sending message:', {
             hasExistingConversation: !!conversationId,
             conversationId: conversationId?.slice(0, 8) + '...',
             urlChatId: chatIdFromUrl,
@@ -317,10 +394,17 @@ export default function ChatPage() {
         // For new chats, create the conversation first
         if (!conversationId) {
             try {
-                console.log('💬 [ChatPage] Creating NEW conversation (first message)...');
+                devLog('💬 [ChatPage] Creating NEW conversation (first message)...');
                 const title = generateSmartTitle(content);
                 conversationId = await createNewChat(title);
-                console.log('💬 [ChatPage] Created conversation:', conversationId);
+                devLog('💬 [ChatPage] Created conversation:', conversationId);
+
+                // P0 FIX: Check if component still mounted before state updates
+                if (!isMountedRef.current) {
+                    devLog('⚠️ [ChatPage] Component unmounted during conversation creation');
+                    isSendLockedRef.current = false; // P2 FIX: Unlock on unmount
+                    return;
+                }
 
                 // CRITICAL: Update state immediately so subsequent messages use this ID
                 setActiveConversationId(conversationId);
@@ -332,18 +416,29 @@ export default function ChatPage() {
                 // CRITICAL FIX: DON'T update URL now - it causes component remount/state reset!
                 // Instead, queue the URL update for AFTER streaming completes
                 pendingUrlUpdateRef.current = conversationId;
-                console.log('💬 [ChatPage] URL update queued for after streaming');
+                devLog('💬 [ChatPage] URL update queued for after streaming');
             } catch (error) {
-                console.error('💬 [ChatPage] Failed to create chat:', error);
+                devError('💬 [ChatPage] Failed to create chat:', error);
                 // Reset streaming flag on error
                 isStreamingRef.current = false;
-                toast({
-                    title: 'Error',
-                    description: 'Failed to create new chat. Please try again.',
-                    variant: 'destructive',
-                });
+                abortControllerRef.current = null;
+                isSendLockedRef.current = false; // P2 FIX: Unlock on error
+                
+                if (isMountedRef.current) {
+                    toast({
+                        title: 'Error',
+                        description: 'Failed to create new chat. Please try again.',
+                        variant: 'destructive',
+                    });
+                }
                 return;
             }
+        }
+
+        // P0 FIX: Check mounted before state updates
+        if (!isMountedRef.current) {
+            isSendLockedRef.current = false; // P2 FIX: Unlock on unmount
+            return;
         }
 
         // Add user message to UI immediately (only if not re-sending with scope)
@@ -358,7 +453,6 @@ export default function ChatPage() {
         }
         
         setIsTyping(true);
-        // Note: isStreamingRef.current already set at function start
         
         // Start thinking status - show RAG is working
         setThinkingStatus({
@@ -371,6 +465,7 @@ export default function ChatPage() {
         let aiContent = "";
         let aiSources: Source[] = [];
         let aiScopeContext: ScopeContext | undefined;
+        let serverMessageId: string | undefined;
 
         setStreamingMessage("");
 
@@ -379,33 +474,45 @@ export default function ChatPage() {
             const resolvedScopeId =
                 scopeId === '__all__' ? '__all__' : scopeId || currentScopeId || undefined;
             
-            // DEBUG: Log the exact payload being sent to backend
-            console.log('💬 [ChatPage] Sending chat request:', {
+            // P1 FIX: Use messagesRef for accurate history (avoids stale closure)
+            const currentMessages = messagesRef.current;
+            
+            devLog('💬 [ChatPage] Sending chat request:', {
                 conversation_id: conversationId,
-                messageCount: messages.length,
+                messageCount: currentMessages.length,
                 model: selectedModel,
             });
             
+            // P0 FIX: Pass abort signal to stream for cancellation support
             const generator = streamChatResponse({
                 query: content,
                 conversation_id: conversationId,
-                history: messages.slice(-10).map(m => ({
+                history: currentMessages.slice(-10).map(m => ({
                     role: m.role === 'clarification' ? 'system' : m.role,
                     content: m.content
                 })),
                 model: selectedModel,
                 scope_id: resolvedScopeId,
-            });
+            }, abortController.signal);
 
-            console.log('🚀 [ChatPage] Starting stream...');
+            devLog('🚀 [ChatPage] Starting stream...');
             
             for await (const event of generator) {
-                console.log('📨 [ChatPage] Stream event:', event.type);
+                // P0 FIX: Check if aborted or unmounted
+                if (abortController.signal.aborted || !isMountedRef.current) {
+                    devLog('🛑 [ChatPage] Stream aborted or component unmounted');
+                    isStreamingRef.current = false;
+                    abortControllerRef.current = null;
+                    isSendLockedRef.current = false; // P2 FIX: Unlock
+                    break;
+                }
+                
+                devLog('📨 [ChatPage] Stream event:', event.type);
                 
                 if (event.type === 'status') {
                     // Handle status events from backend
                     const statusEvent = event as { type: 'status'; step: string; message: string; details?: Record<string, unknown> };
-                    console.log('📊 [ChatPage] Status update:', statusEvent.step, statusEvent.message);
+                    devLog('📊 [ChatPage] Status update:', statusEvent.step, statusEvent.message);
                     setThinkingStatus({
                         step: statusEvent.step as ThinkingStatus['step'],
                         message: statusEvent.message,
@@ -443,10 +550,21 @@ export default function ChatPage() {
                             details: { ...prev.details, scopeName: event.scope_context.scope_name }
                         } : null);
                     }
+                } else if (event.type === 'done') {
+                    // P1 FIX: Handle 'done' event - capture message_id if provided
+                    const doneEvent = event as { type: 'done'; message_id?: string };
+                    if (doneEvent.message_id) {
+                        serverMessageId = doneEvent.message_id;
+                        devLog('✅ [ChatPage] Received server message_id:', serverMessageId);
+                    }
                 } else if (event.type === 'clarification') {
                     // Handle HTTP 300 clarification request
-                    console.log('🔍 [ChatPage] Clarification needed:', event.data.candidates.length, 'scopes');
+                    devLog('🔍 [ChatPage] Clarification needed:', event.data.candidates.length, 'scopes');
                     isStreamingRef.current = false;
+                    abortControllerRef.current = null;
+                    
+                    if (!isMountedRef.current) return;
+                    
                     setIsTyping(false);
                     setStreamingMessage(null);
                     setThinkingStatus(null);
@@ -464,15 +582,21 @@ export default function ChatPage() {
                     
                     // Update URL now that streaming is complete
                     flushPendingUrlUpdate();
+                    isSendLockedRef.current = false; // P2 FIX: Unlock on clarification
                     return; // Exit early - don't add assistant message
                 } else if (event.type === 'error') {
                     const display = getChatErrorDisplay(event.error, event.message);
+                    
+                    isStreamingRef.current = false;
+                    abortControllerRef.current = null;
+                    
+                    if (!isMountedRef.current) return;
+                    
                     toast({
                         title: display.title,
                         description: display.description,
                         variant: 'destructive',
                     });
-                    isStreamingRef.current = false;
                     setIsTyping(false);
                     setStreamingMessage(null);
                     setThinkingStatus(null);
@@ -486,20 +610,31 @@ export default function ChatPage() {
                     
                     // Update URL now that streaming is complete (even on error)
                     flushPendingUrlUpdate();
+                    isSendLockedRef.current = false; // P2 FIX: Unlock on error
                     return;
                 }
             }
 
-            // Stream complete
-            console.log('✅ [ChatPage] Stream complete, content length:', aiContent.length);
-            isStreamingRef.current = false; // Mark streaming as complete
+            // Stream complete - cleanup
+            isStreamingRef.current = false;
+            abortControllerRef.current = null;
+            
+            // P0 FIX: Check mounted before final state updates
+            if (!isMountedRef.current) {
+                devLog('⚠️ [ChatPage] Component unmounted after stream complete');
+                isSendLockedRef.current = false; // P2 FIX: Unlock on unmount
+                return;
+            }
+            
+            devLog('✅ [ChatPage] Stream complete, content length:', aiContent.length);
             setIsTyping(false);
             setStreamingMessage(null);
             setThinkingStatus(null);
 
             // Add final AI message to state
+            // P1 FIX: Use server message_id if available, otherwise use local ID
             const aiMessage: Message = {
-                id: aiMessageId,
+                id: serverMessageId || aiMessageId,
                 role: "assistant",
                 content: aiContent,
                 created_at: new Date().toISOString(),
@@ -507,14 +642,34 @@ export default function ChatPage() {
                 scope_context: aiScopeContext,
             };
             setMessages(prev => [...prev, aiMessage]);
-            console.log('✅ [ChatPage] Final message added to state');
+            devLog('✅ [ChatPage] Final message added to state');
             
             // NOW it's safe to update the URL (after streaming is complete and state is stable)
             flushPendingUrlUpdate();
+            
+            // P2 FIX: Unlock sending
+            isSendLockedRef.current = false;
 
         } catch (error) {
-            console.error('💬 [ChatPage] Chat API error:', error);
-            isStreamingRef.current = false; // Mark streaming as complete on error
+            // P0 FIX: Handle AbortError gracefully (not a real error)
+            if (error instanceof Error && error.name === 'AbortError') {
+                devLog('🛑 [ChatPage] Stream aborted');
+                isStreamingRef.current = false;
+                abortControllerRef.current = null;
+                isSendLockedRef.current = false; // P2 FIX: Unlock on abort
+                return;
+            }
+            
+            devError('💬 [ChatPage] Chat API error:', error);
+            isStreamingRef.current = false;
+            abortControllerRef.current = null;
+            
+            // P0 FIX: Check mounted before state updates on error
+            if (!isMountedRef.current) {
+                isSendLockedRef.current = false; // P2 FIX: Unlock on unmount
+                return;
+            }
+            
             setIsTyping(false);
             setStreamingMessage(null);
             setThinkingStatus(null);
@@ -539,15 +694,18 @@ export default function ChatPage() {
             
             // Update URL now that streaming is complete (even on error)
             flushPendingUrlUpdate();
+            
+            // P2 FIX: Unlock sending
+            isSendLockedRef.current = false;
         }
-    }, [createNewChat, currentScopeId, flushPendingUrlUpdate, messages, selectedModel, toast, chatIdFromUrl, isNewChatUrl]);
+    }, [createNewChat, currentScopeId, flushPendingUrlUpdate, selectedModel, toast, chatIdFromUrl, isNewChatUrl]);
 
     /**
      * Handle scope selection from clarification card.
      * Re-sends the original query with the selected scope.
      */
     const handleSelectScope = useCallback(async (scopeId: string, originalQuery: string) => {
-        console.log('🎯 [ChatPage] Scope selected:', scopeId);
+        devLog('🎯 [ChatPage] Scope selected:', scopeId);
         setIsResending(true);
         
         // Remove the clarification message from the UI

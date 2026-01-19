@@ -174,17 +174,27 @@ export async function sendChatRequest(
  * Stream chat response from backend using SSE.
  * Yields tokens as they arrive.
  * 
+ * Supports cancellation via AbortSignal for:
+ * - Concurrent stream prevention (cancel previous when new starts)
+ * - Component unmount cleanup
+ * 
  * NOTE: HTTP 300 (clarification) is not supported in streaming mode.
  * The backend will not stream if clarification is needed.
  */
 export async function* streamChatResponse(
-    payload: ChatPayload
+    payload: ChatPayload,
+    signal?: AbortSignal
 ): AsyncGenerator<StreamEvent, void, unknown> {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
 
     if (!token) {
         throw new Error("No authentication token found");
+    }
+
+    // Check if already aborted before starting
+    if (signal?.aborted) {
+        return;
     }
 
     const response = await fetch('/api/py/chat', {
@@ -194,13 +204,16 @@ export async function* streamChatResponse(
             'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ ...payload, stream: true }),
+        signal, // Pass abort signal to fetch
     });
 
     // Handle HTTP 300 Multiple Choices (clarification needed)
     // Even in streaming mode, backend returns JSON for clarification
     if (response.status === 300) {
         const clarification = await response.json() as ClarificationResponse;
-        console.log('🔍 [Chat] Clarification needed (streaming):', clarification.candidates.length, 'scopes');
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('🔍 [Chat] Clarification needed (streaming):', clarification.candidates.length, 'scopes');
+        }
         yield { type: 'clarification', data: clarification };
         return;
     }
@@ -218,6 +231,11 @@ export async function* streamChatResponse(
 
     try {
         while (true) {
+            // Check abort signal before each read
+            if (signal?.aborted) {
+                break;
+            }
+
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -226,6 +244,11 @@ export async function* streamChatResponse(
             buffer = lines.pop() || ""; // Keep incomplete chunk
 
             for (const line of lines) {
+                // Check abort signal between processing lines
+                if (signal?.aborted) {
+                    return;
+                }
+
                 if (line.startsWith('data: ')) {
                     const jsonStr = line.slice(6);
                     if (jsonStr.trim() === '[DONE]') continue; // Standard SSE done
@@ -234,7 +257,9 @@ export async function* streamChatResponse(
                         const event = JSON.parse(jsonStr) as StreamEvent;
                         yield event;
                     } catch {
-                        console.warn("Failed to parse SSE event:", jsonStr);
+                        if (process.env.NODE_ENV !== 'production') {
+                            console.warn("Failed to parse SSE event:", jsonStr);
+                        }
                     }
                 }
             }
