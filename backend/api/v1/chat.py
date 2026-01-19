@@ -1444,8 +1444,19 @@ async def chat_endpoint(
     
     # ========== STEP 13: GENERATION ==========
     if payload.stream:
-        return StreamingResponse(
-            stream_chat_response(
+        # Wrap the stream to include status events for RAG pipeline visualization
+        async def stream_with_status():
+            # Send initial status: Found sources
+            source_count = len(sources_metadata)
+            scope_name = scope_context.scope_name if scope_context else None
+            
+            yield f"data: {json.dumps({'type': 'status', 'step': 'found', 'message': f'Found {source_count} relevant sources', 'details': {'sourceCount': source_count, 'scopeName': scope_name}})}\n\n"
+            
+            # Send status: Generating
+            yield f"data: {json.dumps({'type': 'status', 'step': 'generating', 'message': 'Generating response...'})}\n\n"
+            
+            # Yield all events from the actual streaming response
+            async for event in stream_chat_response(
                 _prompt_bundle_for,
                 llm_candidates,
                 actual_tier,
@@ -1459,7 +1470,11 @@ async def chat_endpoint(
                 scope_context,
                 organization_id,
                 user_plan,
-            ),
+            ):
+                yield event
+        
+        return StreamingResponse(
+            stream_with_status(),
             media_type="text/event-stream"
         )
     else:

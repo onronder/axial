@@ -3,6 +3,7 @@
  * 
  * Clean, scrollable message list without virtualization complexity.
  * Includes Universal Context support for scope clarification.
+ * Features ThinkingIndicator for RAG pipeline visualization.
  */
 
 "use client";
@@ -13,7 +14,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
 import { ClarificationCard } from "./ClarificationCard";
-import { AxioLogo } from "@/components/branding/AxioLogo";
+import { ThinkingIndicator, ThinkingStatus, TypingIndicator } from "./ThinkingIndicator";
 import { ModelId } from "@/lib/types";
 
 interface ChatAreaProps {
@@ -28,6 +29,8 @@ interface ChatAreaProps {
   onModelSelect: (model: ModelId) => void;
   /** True when re-sending with scope selection */
   isResending?: boolean;
+  /** RAG processing status for thinking indicator */
+  thinkingStatus?: ThinkingStatus | null;
 }
 
 export function ChatArea({
@@ -40,15 +43,16 @@ export function ChatArea({
   selectedModel,
   onModelSelect,
   isResending = false,
+  thinkingStatus = null,
 }: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const showEmptyState = messages.length === 0 && !isTyping && !streamingMessage;
+  const showEmptyState = messages.length === 0 && !isTyping && !streamingMessage && !thinkingStatus;
 
-  // Smooth scroll to bottom when new messages arrive
+  // Smooth scroll to bottom when new messages arrive or thinking status changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, isTyping, streamingMessage]);
+  }, [messages.length, isTyping, streamingMessage, thinkingStatus]);
 
   const backgroundLayer = (
     <>
@@ -115,20 +119,14 @@ export function ChatArea({
               );
             })}
 
-            {/* Typing indicator */}
-            {isTyping && (
-              <div className="flex items-start gap-3 animate-fade-in">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted border border-border">
-                  <AxioLogo variant="icon" size="sm" />
-                </div>
-                <div className="rounded-2xl bg-muted border border-border px-4 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </div>
-                </div>
-              </div>
+            {/* Thinking indicator - shows RAG pipeline progress */}
+            {isTyping && thinkingStatus && !streamingMessage && (
+              <ThinkingIndicator status={thinkingStatus} />
+            )}
+            
+            {/* Fallback typing indicator (bouncing dots) when no status */}
+            {isTyping && !thinkingStatus && !streamingMessage && (
+              <TypingIndicator />
             )}
 
             {/* Streaming message */}

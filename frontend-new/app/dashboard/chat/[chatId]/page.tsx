@@ -14,6 +14,18 @@ import { Source, ScopeContext } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
 /**
+ * RAG Processing Status - tracks what the system is doing
+ */
+export interface ThinkingStatus {
+    step: 'searching' | 'analyzing' | 'found' | 'generating' | 'complete';
+    message: string;
+    details?: {
+        sourceCount?: number;
+        scopeName?: string;
+    };
+}
+
+/**
  * Unified ChatPage handles both:
  * - /dashboard/chat/new → New chat with empty state
  * - /dashboard/chat/[id] → Existing chat with loaded messages
@@ -54,6 +66,9 @@ export default function ChatPage() {
 
     // Track the previous URL to detect actual navigation (not just internal URL updates)
     const previousUrlRef = useRef<string>(chatIdFromUrl);
+    
+    // FIX: Track if we just created a conversation to skip unnecessary reload
+    const justCreatedConversationRef = useRef(false);
 
     // State
     const [messages, setMessages] = useState<Message[]>([]);
@@ -62,6 +77,9 @@ export default function ChatPage() {
     const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [selectedModel, setSelectedModel] = useState<ModelId>('fast');
+    
+    // RAG thinking status - shows what the system is doing
+    const [thinkingStatus, setThinkingStatus] = useState<ThinkingStatus | null>(null);
     
     // Universal Context state
     const [isResending, setIsResending] = useState(false);
@@ -99,12 +117,14 @@ export default function ChatPage() {
                 setActiveConversationId(null);
                 setMessages([]);
                 setCurrentScopeId(null);
+                setThinkingStatus(null);
             }
         } else if (chatIdFromUrl && chatIdFromUrl !== activeConversationId) {
             // User navigated to a different existing chat
             console.log('🔄 [ChatPage] Switching to conversation:', chatIdFromUrl);
             setActiveConversationId(chatIdFromUrl);
             setCurrentScopeId(null);
+            setThinkingStatus(null);
         }
     }, [chatIdFromUrl, isNewChatUrl, activeConversationId]);
 
@@ -182,6 +202,14 @@ export default function ChatPage() {
             return;
         }
 
+        // FIX: Skip loading if we just created this conversation - we already have correct state
+        if (justCreatedConversationRef.current) {
+            console.log('📄 [ChatPage] Skipping load - just created this conversation');
+            justCreatedConversationRef.current = false;
+            setIsLoading(false);
+            return;
+        }
+
         const loadMessages = async () => {
             setIsLoading(true);
             try {
@@ -230,6 +258,9 @@ export default function ChatPage() {
                 // CRITICAL: Update state immediately so subsequent messages use this ID
                 setActiveConversationId(conversationId);
                 conversationIdRef.current = conversationId;
+                
+                // FIX: Mark that we just created this conversation to skip unnecessary reload
+                justCreatedConversationRef.current = true;
 
                 // Update URL for bookmarking and sharing (doesn't affect routing state)
                 // Using router.replace for proper Next.js integration
@@ -257,6 +288,12 @@ export default function ChatPage() {
         }
         
         setIsTyping(true);
+        
+        // Start thinking status - show RAG is working
+        setThinkingStatus({
+            step: 'searching',
+            message: 'Searching knowledge base...',
+        });
 
         // Prepare placeholder for AI response
         const aiMessageId = `assistant-${Date.now()}`;
@@ -290,22 +327,52 @@ export default function ChatPage() {
             });
 
             for await (const event of generator) {
-                if (event.type === 'token') {
+                if (event.type === 'status') {
+                    // Handle status events from backend
+                    const statusEvent = event as { type: 'status'; step: string; message: string; details?: Record<string, unknown> };
+                    setThinkingStatus({
+                        step: statusEvent.step as ThinkingStatus['step'],
+                        message: statusEvent.message,
+                        details: statusEvent.details as ThinkingStatus['details'],
+                    });
+                } else if (event.type === 'token') {
+                    // First token received - switch from thinking to generating
+                    if (!aiContent) {
+                        setThinkingStatus({
+                            step: 'generating',
+                            message: 'Generating response...',
+                        });
+                    }
                     aiContent += event.content;
                     setStreamingMessage(aiContent);
                 } else if (event.type === 'sources') {
                     aiSources = normalizeSources(event.sources);
+                    // Update thinking status with source count
+                    if (aiSources.length > 0) {
+                        setThinkingStatus(prev => prev ? {
+                            ...prev,
+                            details: { ...prev.details, sourceCount: aiSources.length }
+                        } : null);
+                    }
                 } else if (event.type === 'scope_context') {
                     aiScopeContext = event.scope_context;
                     // Set sticky scope for conversation
                     if (event.scope_context.scope_id) {
                         setCurrentScopeId(event.scope_context.scope_id);
                     }
+                    // Update thinking status with scope name
+                    if (event.scope_context.scope_name) {
+                        setThinkingStatus(prev => prev ? {
+                            ...prev,
+                            details: { ...prev.details, scopeName: event.scope_context.scope_name }
+                        } : null);
+                    }
                 } else if (event.type === 'clarification') {
                     // Handle HTTP 300 clarification request
                     console.log('🔍 [ChatPage] Clarification needed:', event.data.candidates.length, 'scopes');
                     setIsTyping(false);
                     setStreamingMessage(null);
+                    setThinkingStatus(null);
                     
                     // Add clarification message to chat
                     const clarificationMessage: Message = {
@@ -327,6 +394,7 @@ export default function ChatPage() {
                     });
                     setIsTyping(false);
                     setStreamingMessage(null);
+                    setThinkingStatus(null);
                     const errorMessage: Message = {
                         id: `error-${Date.now()}`,
                         role: "assistant",
@@ -341,6 +409,7 @@ export default function ChatPage() {
             // Stream complete
             setIsTyping(false);
             setStreamingMessage(null);
+            setThinkingStatus(null);
 
             // Add final AI message to state
             const aiMessage: Message = {
@@ -357,6 +426,7 @@ export default function ChatPage() {
             console.error('💬 [ChatPage] Chat API error:', error);
             setIsTyping(false);
             setStreamingMessage(null);
+            setThinkingStatus(null);
 
             const display = isChatApiError(error)
                 ? getChatErrorDisplay(error.code, error.message)
@@ -376,7 +446,7 @@ export default function ChatPage() {
             };
             setMessages(prev => [...prev, errorMessage]);
         }
-    }, [createNewChat, currentScopeId, messages, router, selectedModel, toast]);
+    }, [createNewChat, currentScopeId, messages, router, selectedModel, toast, chatIdFromUrl, isNewChatUrl]);
 
     /**
      * Handle scope selection from clarification card.
@@ -407,8 +477,11 @@ export default function ChatPage() {
         }
     }, [handleSendMessage]);
 
-    // Loading state for existing chats
-    if (isLoading) {
+    // FIX: Loading state should NOT hide the chat if we're actively streaming
+    // This prevents the "kick out" bug where user sees empty screen during RAG processing
+    const showLoadingSpinner = isLoading && !isTyping && streamingMessage === null && !thinkingStatus;
+
+    if (showLoadingSpinner) {
         return (
             <div className="flex h-full items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -430,6 +503,7 @@ export default function ChatPage() {
                 selectedModel={selectedModel}
                 onModelSelect={setSelectedModel}
                 isResending={isResending}
+                thinkingStatus={thinkingStatus}
             />
 
             {/* Onboarding Modal for new users */}

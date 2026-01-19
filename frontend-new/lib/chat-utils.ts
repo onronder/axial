@@ -107,7 +107,8 @@ export type StreamEvent =
     | { type: 'scope_context'; scope_context: ScopeContext }
     | { type: 'done'; message_id?: string }
     | { type: 'error'; message: string; error?: string; details?: unknown }
-    | { type: 'clarification'; data: ClarificationResponse };
+    | { type: 'clarification'; data: ClarificationResponse }
+    | { type: 'status'; step: string; message: string; details?: Record<string, unknown> };
 
 /**
  * Result from a non-streaming chat request
