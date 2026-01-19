@@ -102,6 +102,14 @@ export default function ChatPage() {
             return;
         }
 
+        // FIX: Skip sync if we just created this conversation ourselves
+        // This prevents race condition where URL update triggers before state update
+        if (justCreatedConversationRef.current) {
+            console.log('🔄 [ChatPage] Skipping sync - we just created this conversation');
+            // Don't reset the flag here - let loadMessages effect handle it
+            return;
+        }
+
         console.log('🔄 [ChatPage] URL navigation detected:', {
             from: previousUrl,
             to: chatIdFromUrl,
@@ -194,10 +202,22 @@ export default function ChatPage() {
         }
     }, [isNewChatUrl, hasNoDocuments, docCountLoading, profileLoading, profile?.has_team]);
 
+    // Track if we're currently streaming to prevent state resets
+    const isStreamingRef = useRef(false);
+    
     // Load messages for existing chats when conversation ID changes
     useEffect(() => {
+        // FIX: Never reset messages while actively streaming
+        if (isStreamingRef.current) {
+            console.log('📄 [ChatPage] Skipping load - streaming in progress');
+            return;
+        }
+        
         if (!activeConversationId) {
-            setMessages([]);
+            // Only clear if we're not in the middle of creating a conversation
+            if (!justCreatedConversationRef.current) {
+                setMessages([]);
+            }
             setIsLoading(false);
             return;
         }
@@ -288,6 +308,7 @@ export default function ChatPage() {
         }
         
         setIsTyping(true);
+        isStreamingRef.current = true; // Mark streaming as active
         
         // Start thinking status - show RAG is working
         setThinkingStatus({
@@ -326,10 +347,15 @@ export default function ChatPage() {
                 scope_id: resolvedScopeId,
             });
 
+            console.log('🚀 [ChatPage] Starting stream...');
+            
             for await (const event of generator) {
+                console.log('📨 [ChatPage] Stream event:', event.type);
+                
                 if (event.type === 'status') {
                     // Handle status events from backend
                     const statusEvent = event as { type: 'status'; step: string; message: string; details?: Record<string, unknown> };
+                    console.log('📊 [ChatPage] Status update:', statusEvent.step, statusEvent.message);
                     setThinkingStatus({
                         step: statusEvent.step as ThinkingStatus['step'],
                         message: statusEvent.message,
@@ -370,6 +396,7 @@ export default function ChatPage() {
                 } else if (event.type === 'clarification') {
                     // Handle HTTP 300 clarification request
                     console.log('🔍 [ChatPage] Clarification needed:', event.data.candidates.length, 'scopes');
+                    isStreamingRef.current = false;
                     setIsTyping(false);
                     setStreamingMessage(null);
                     setThinkingStatus(null);
@@ -392,6 +419,7 @@ export default function ChatPage() {
                         description: display.description,
                         variant: 'destructive',
                     });
+                    isStreamingRef.current = false;
                     setIsTyping(false);
                     setStreamingMessage(null);
                     setThinkingStatus(null);
@@ -407,6 +435,8 @@ export default function ChatPage() {
             }
 
             // Stream complete
+            console.log('✅ [ChatPage] Stream complete, content length:', aiContent.length);
+            isStreamingRef.current = false; // Mark streaming as complete
             setIsTyping(false);
             setStreamingMessage(null);
             setThinkingStatus(null);
@@ -421,9 +451,11 @@ export default function ChatPage() {
                 scope_context: aiScopeContext,
             };
             setMessages(prev => [...prev, aiMessage]);
+            console.log('✅ [ChatPage] Final message added to state');
 
         } catch (error) {
             console.error('💬 [ChatPage] Chat API error:', error);
+            isStreamingRef.current = false; // Mark streaming as complete on error
             setIsTyping(false);
             setStreamingMessage(null);
             setThinkingStatus(null);
