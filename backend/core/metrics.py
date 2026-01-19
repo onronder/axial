@@ -298,4 +298,64 @@ try:
 except Exception as e:
     logger.warning(f"Failed to set system info: {e}")
 
-logger.info("📊 Prometheus metrics initialized")
+# =============================================================================
+# Ghost Protocol Metrics
+# =============================================================================
+
+secure_wipe_total = Counter(
+    'ghost_protocol_secure_wipe_total',
+    'Total files securely wiped (cryptographic overwrite)',
+    ['result']  # success, failure, not_found
+)
+
+secure_wipe_duration = Histogram(
+    'ghost_protocol_secure_wipe_duration_seconds',
+    'Secure wipe operation duration',
+    ['passes'],  # number of overwrite passes
+    buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0]
+)
+
+smart_buffer_allocations = Counter(
+    'ghost_protocol_smart_buffer_total',
+    'Smart buffer allocations',
+    ['backing']  # ram, disk
+)
+
+smart_buffer_size = Histogram(
+    'ghost_protocol_smart_buffer_bytes',
+    'Smart buffer content sizes',
+    ['backing'],
+    buckets=[1024, 10*1024, 100*1024, 1024*1024, 10*1024*1024, 100*1024*1024]
+)
+
+s3_cleanup_total = Counter(
+    'ghost_protocol_s3_cleanup_total',
+    'S3 staging file cleanup operations',
+    ['result']  # success, failure
+)
+
+emergency_cleanup_triggered = Counter(
+    'ghost_protocol_emergency_cleanup_total',
+    'Emergency cleanup triggered (process crash/signal)',
+    ['trigger']  # sigterm, sigint, atexit
+)
+
+encryption_operations = Counter(
+    'ghost_protocol_encryption_operations_total',
+    'Content encryption/decryption operations',
+    ['operation', 'result']  # encrypt/decrypt, success/failure
+)
+
+malware_scan_total = Counter(
+    'ghost_protocol_malware_scan_total',
+    'Malware scan operations',
+    ['result']  # clean, infected, error, skipped
+)
+
+malware_scan_duration = Histogram(
+    'ghost_protocol_malware_scan_duration_seconds',
+    'Malware scan operation duration',
+    buckets=[0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0]
+)
+
+logger.info("📊 Prometheus metrics initialized (including Ghost Protocol)")

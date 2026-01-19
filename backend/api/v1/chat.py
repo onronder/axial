@@ -843,12 +843,64 @@ def extract_scope_name(scope_id: str) -> str:
         return scope_id[:50]
 
 
+def _decrypt_search_results(docs: List[Dict]) -> List[Dict]:
+    """
+    GHOST PROTOCOL: Decrypt content in search results.
+    
+    Iterates through search results and decrypts the 'content' field
+    using the Ghost Protocol encryption. Handles errors gracefully
+    to ensure search continues even if some content can't be decrypted.
+    
+    Args:
+        docs: List of search result dicts with 'content' field
+        
+    Returns:
+        Same list with 'content' field decrypted in-place
+    """
+    from core.security import (
+        decrypt_text, 
+        UnencryptedContentError, 
+        EncryptionError,
+        HAS_CHUNK_ENCRYPTION,
+    )
+    
+    if not docs or not HAS_CHUNK_ENCRYPTION:
+        return docs
+    
+    for doc in docs:
+        if doc.get('content'):
+            try:
+                doc['content'] = decrypt_text(doc['content'])
+            except UnencryptedContentError:
+                # Strict mode violation - log but don't crash the search
+                logger.warning(
+                    f"[GhostProtocol] Unencrypted content in search result "
+                    f"(doc_id: {doc.get('document_id', 'unknown')[:8]}...)"
+                )
+                doc['content'] = "[Content unavailable - encryption policy violation]"
+            except EncryptionError as e:
+                logger.error(
+                    f"[GhostProtocol] Decryption failed for search result: {e}"
+                )
+                doc['content'] = "[Content unavailable - decryption error]"
+            except Exception as e:
+                # Fallback for unexpected errors
+                logger.error(
+                    f"[GhostProtocol] Unexpected error decrypting content: {e}"
+                )
+                # Don't modify - might be plaintext (legacy data)
+    
+    return docs
+
+
 def format_context_with_citations(docs: List[Dict]) -> tuple:
     """
     Format retrieved documents with numbered citations.
     
     Returns:
         Tuple of (formatted_context_string, sources_metadata_list)
+        
+    Note: Expects docs to already have decrypted content via _decrypt_search_results()
     """
     if not docs:
         return "", []
@@ -1157,6 +1209,9 @@ async def chat_endpoint(
         
         docs = response.data or []
         logger.info(f"📚 [Chat] Hybrid search found {len(docs)} raw candidates")
+        
+        # GHOST PROTOCOL: Decrypt content before processing
+        docs = _decrypt_search_results(docs)
         
     except Exception as e:
         logger.error("ERROR: Retrieval failed: %s", e)

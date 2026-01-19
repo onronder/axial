@@ -184,3 +184,14 @@ if _is_test_runtime():
         task_always_eager=True,
         task_eager_propagates=True,
     )
+
+# =============================================================================
+# GHOST PROTOCOL: Register Cleanup Signal Handlers
+# =============================================================================
+# Import signal handlers to ensure they're registered when workers start.
+# This enables emergency cleanup of sensitive data on worker shutdown.
+
+try:
+    import worker.ghost_protocol_signals  # noqa: F401
+except ImportError:
+    pass  # Worker module not available (e.g., in API-only deployments)

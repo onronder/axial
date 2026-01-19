@@ -553,7 +553,12 @@ async def get_document_chunks(
     Get all chunks for a document.
     
     Org-scoped: Team members can view chunks of shared documents.
+    
+    GHOST PROTOCOL: Content is decrypted before returning.
+    In strict mode, unencrypted content will raise an error.
     """
+    from core.security import decrypt_text, UnencryptedContentError, EncryptionError
+    
     supabase = get_supabase()
     
     try:
@@ -570,15 +575,104 @@ async def get_document_chunks(
         
         # Fetch chunks
         chunks_response = supabase.table("document_chunks")\
-            .select("id, document_id, content, chunk_index, metadata")\
+            .select("id, document_id, content, chunk_index")\
             .eq("document_id", document_id)\
             .order("chunk_index", desc=False)\
             .range(offset, offset + limit - 1)\
             .execute()
         
-        return chunks_response.data or []
+        # GHOST PROTOCOL: Decrypt content before returning
+        chunks = chunks_response.data or []
+        for chunk in chunks:
+            if chunk.get("content"):
+                try:
+                    chunk["content"] = decrypt_text(chunk["content"])
+                except UnencryptedContentError:
+                    # Strict mode: unencrypted content is a policy violation
+                    logger.warning(
+                        f"[GhostProtocol] Unencrypted content in chunk {chunk.get('id')} "
+                        f"(doc: {document_id})"
+                    )
+                    chunk["content"] = "[Content unavailable - encryption policy violation]"
+                except EncryptionError as e:
+                    logger.error(f"[GhostProtocol] Decryption failed for chunk {chunk.get('id')}: {e}")
+                    chunk["content"] = "[Content unavailable - decryption error]"
+            # Add empty metadata dict if not present
+            if "metadata" not in chunk:
+                chunk["metadata"] = {}
+        
+        return chunks
         
     except HTTPException:
         raise
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_chunks")
+
+
+# =============================================================================
+# GHOST PROTOCOL: Content Download Lockdown
+# =============================================================================
+
+@router.get("/documents/{document_id}/content")
+@limiter.limit("10/minute")
+async def get_document_content(
+    document_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
+):
+    """
+    BLOCKED: Original document content retrieval.
+    
+    Ghost Protocol enforces Zero-Retention: original files are processed
+    and destroyed immediately after vectorization. Only embeddings and
+    encrypted text chunks are retained.
+    
+    This endpoint always returns 403 Forbidden.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "error": "content_not_available",
+            "message": (
+                "Ephemeral Storage Policy: Original files are processed and destroyed "
+                "immediately after ingestion. Only vector embeddings and encrypted "
+                "text chunks are retained. Use /documents/{id}/chunks to retrieve "
+                "decrypted text content."
+            ),
+            "policy": "ghost_protocol",
+            "docs": "https://docs.axiohub.io/security/zero-retention"
+        }
+    )
+
+
+@router.get("/documents/{document_id}/download")
+@limiter.limit("10/minute")
+async def download_document(
+    document_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
+):
+    """
+    BLOCKED: Original document download.
+    
+    Ghost Protocol enforces Zero-Retention: original files cannot be
+    downloaded because they are not stored. Files are securely wiped
+    immediately after processing.
+    
+    This endpoint always returns 403 Forbidden.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "error": "download_not_available",
+            "message": (
+                "Ephemeral Storage Policy: Original files are securely wiped after "
+                "ingestion and cannot be downloaded. Axio Hub operates as a 'shredder' - "
+                "we remember the context but destroy the paper."
+            ),
+            "policy": "ghost_protocol",
+            "docs": "https://docs.axiohub.io/security/zero-retention"
+        }
+    )

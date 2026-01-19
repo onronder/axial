@@ -10,8 +10,23 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # Ghost Protocol: Zero-Retention Configuration
+      # These can be overridden in .env file
+      - CHUNK_ENCRYPTION_KEY=${CHUNK_ENCRYPTION_KEY:-}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - STRICT_ENCRYPTION_MODE=${STRICT_ENCRYPTION_MODE:-true}
+      - SECURE_WIPE_PASSES=${SECURE_WIPE_PASSES:-1}
+      - MAX_RAM_PROCESS_LIMIT=${MAX_RAM_PROCESS_LIMIT:-10485760}
+      # Skip ClamAV update on dev for faster startup
+      - SKIP_FRESHCLAM=${SKIP_FRESHCLAM:-true}
     depends_on:
       - redis
+    # Optional: Enable ClamAV for full Ghost Protocol compliance
+    # Uncomment the following for production:
+    # command: ["/start-with-clamav.sh"]
+    # cap_add:
+    #   - SYS_PTRACE  # Required for ClamAV
 
   redis:
     image: redis:alpine

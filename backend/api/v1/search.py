@@ -2,6 +2,9 @@
 Search API Endpoints
 
 Provides document search with scope-aware distribution analysis.
+
+GHOST PROTOCOL: Search results have encrypted content that is
+decrypted before being returned to the client.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -23,6 +26,42 @@ from services.scope_analysis import (
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _decrypt_search_results(results: List[Dict]) -> List[Dict]:
+    """
+    GHOST PROTOCOL: Decrypt content in search results.
+    
+    Handles encrypted content from Ghost Protocol storage.
+    Errors are handled gracefully to ensure search functionality.
+    """
+    from core.security import (
+        decrypt_text, 
+        UnencryptedContentError, 
+        EncryptionError,
+        HAS_CHUNK_ENCRYPTION,
+    )
+    
+    if not results or not HAS_CHUNK_ENCRYPTION:
+        return results
+    
+    for result in results:
+        if result.get('content'):
+            try:
+                result['content'] = decrypt_text(result['content'])
+            except UnencryptedContentError:
+                logger.warning(
+                    f"[GhostProtocol] Unencrypted content in search result"
+                )
+                result['content'] = "[Content unavailable - encryption policy violation]"
+            except EncryptionError as e:
+                logger.error(f"[GhostProtocol] Decryption failed: {e}")
+                result['content'] = "[Content unavailable - decryption error]"
+            except Exception:
+                # Don't modify - might be plaintext (legacy data)
+                pass
+    
+    return results
 
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
@@ -120,6 +159,9 @@ async def search_documents(
         
         matches = response.data or []
         logger.info(f"📚 [Search] Found {len(matches)} results for query: {payload.query[:50]}...")
+        
+        # GHOST PROTOCOL: Decrypt content before returning
+        matches = _decrypt_search_results(matches)
         
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "search")

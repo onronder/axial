@@ -144,6 +144,31 @@ class Settings(BaseSettings):
     PDF_PARSE_TIMEOUT_OCR: int = 600
 
     # =========================================================================
+    # GHOST PROTOCOL: Zero-Retention Security Configuration
+    # =========================================================================
+    # These settings control the "Zero-Retention" privacy architecture.
+    # Content is encrypted at rest, files are securely wiped after processing.
+    
+    # Encryption key for document chunk content at rest (AES-256 via Fernet)
+    # CRITICAL: Must be set in production - app will refuse to ingest without it
+    # Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+    CHUNK_ENCRYPTION_KEY: Optional[str] = None
+    
+    # Memory processing threshold for SmartBuffer
+    # Files below this use RAM (BytesIO), above use SecureTempFile (disk)
+    # Default: 10MB - balances speed vs OOM risk
+    MAX_RAM_PROCESS_LIMIT: int = 10 * 1024 * 1024
+    
+    # Secure wipe passes for forensic-grade file deletion
+    # 1 = fast (single overwrite), 3 = DoD 5220.22-M compliant (3 passes)
+    SECURE_WIPE_PASSES: int = 1
+    
+    # Strict encryption mode: crash on unencrypted content retrieval
+    # For greenfield deployments (no legacy data), this should ALWAYS be True
+    # Set to False only for migration periods with legacy plaintext data
+    STRICT_ENCRYPTION_MODE: bool = True
+
+    # =========================================================================
     # Connector Concurrency Limits
     # =========================================================================
     CONNECTOR_CONCURRENCY_DEFAULT: int = 2

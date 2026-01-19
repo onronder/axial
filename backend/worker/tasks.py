@@ -51,6 +51,14 @@ from services.malware import scan_content, MalwareScanException
 from services.scope_identity import synthesize_and_save_identity
 from services.audit import audit_logger
 from services.team_service import team_service
+# =============================================================================
+# GHOST PROTOCOL: Zero-Retention Security Imports
+# =============================================================================
+from services.secure_cleanup import (
+    SmartBuffer,
+    secure_wipe,
+    cleanup_staging_file,
+)
 try:
     from core.metrics import (
         job_counters_missing,
@@ -778,37 +786,32 @@ def ingest_document_batched(
     logger.info(f"📄 Created document {doc_id}: {doc_title}")
     
     # Step 2: Insert chunks in batches with progress tracking
+    # GHOST PROTOCOL: Use encrypted content with TSVECTOR search index
     total_chunks = len(chunks_payload)
     
     if total_chunks == 0:
         return str(doc_id)
     
-    inserted_count = 0
-    for i in range(0, total_chunks, DB_BATCH_SIZE):
-        batch = chunks_payload[i:i + DB_BATCH_SIZE]
-        
-        # Add document_id to each chunk
-        for chunk in batch:
-            chunk["document_id"] = str(doc_id)
-            # Schema Fix: Remove metadata from chunk as column doesn't exist in document_chunks
-            if "metadata" in chunk:
-                del chunk["metadata"]
-        
-        # Insert this batch
-        try:
-            insert_rows_with_retry(
-                supabase,
-                "document_chunks",
-                batch,
-                context=f"doc_id={doc_id} batch={i // DB_BATCH_SIZE + 1}",
-            )
-            inserted_count += len(batch)
-        except Exception as e:
-            logger.error(f"❌ Failed to insert chunk batch {i//DB_BATCH_SIZE + 1}: {e}")
-            # Continue with other batches - partial ingestion is better than none
-            continue
-        
-        # Per-chunk progress updates intentionally omitted (stage-based updates only).
+    # Clean metadata from chunks (column doesn't exist in document_chunks)
+    for chunk in chunks_payload:
+        if "metadata" in chunk:
+            del chunk["metadata"]
+    
+    # Use Ghost Protocol RPC for type-safe TSVECTOR insertion
+    from core.ingestion_utils import insert_chunks_with_ghost_protocol
+    
+    try:
+        inserted_count = insert_chunks_with_ghost_protocol(
+            supabase=supabase,
+            document_id=str(doc_id),
+            chunks_payload=chunks_payload,
+            batch_size=DB_BATCH_SIZE,
+            context=f"doc={doc_title[:30]}",
+        )
+    except Exception as e:
+        logger.error(f"❌ Ghost Protocol insertion failed: {e}")
+        # Partial ingestion is better than none - count what we got
+        inserted_count = 0
     
     logger.info(f"✅ Inserted {inserted_count} chunks for document {doc_id}")
     return str(doc_id)
@@ -1399,6 +1402,9 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
     
     This callback is triggered when a Celery task fails after all retries.
     It logs the failure to the failed_tasks table for tracking and potential retry.
+    
+    GHOST PROTOCOL: Also ensures S3 staging files are cleaned up on failure
+    to maintain Zero-Retention compliance.
     """
     try:
         from worker.dlq_worker import log_task_failure
@@ -1431,6 +1437,16 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
                 "error",
                 {"job_id": job_id, "task_id": task_id, "error": str(exc)[:300]},
             )
+        
+        # =====================================================================
+        # GHOST PROTOCOL: Cleanup staging files on failure
+        # =====================================================================
+        # Ensure S3 staging files don't rot in the bucket after failures
+        file_data = kwargs.get('file_data', {})
+        storage_path = file_data.get('storage_path')
+        if storage_path:
+            logger.warning(f"🚨 [GhostProtocol] Cleaning up staging file after task failure: {task_id}")
+            cleanup_staging_file(storage_path, STAGING_BUCKET)
         
     except Exception as e:
         logger.error(f"❌ [DLQ] Failed to log task failure to DLQ: {e}")
@@ -2194,10 +2210,22 @@ def process_file_task(
         elif force_overwrite:
             logger.info("[ProcessFile:%s] 🔄 Force overwrite enabled - skipping dedup check", task_id)
         
+        # =====================================================================
+        # GHOST PROTOCOL: SmartBuffer for Memory-Safe Processing
+        # =====================================================================
+        # SmartBuffer intelligently decides RAM vs disk based on file size:
+        # - Small files (< MAX_RAM_PROCESS_LIMIT): Keep in RAM (fast)
+        # - Large files (>= MAX_RAM_PROCESS_LIMIT): SecureTempFile (OOM-safe)
         suffix = os.path.splitext(filename)[1] or ".bin"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            local_path = tmp.name
+        buffer = SmartBuffer(content, filename=filename)
+        
+        # Get a file path for parsers (SmartBuffer handles cleanup tracking)
+        local_path = buffer.write_to_temp(suffix=suffix)
+        logger.debug(
+            f"[ProcessFile:{task_id}] 📁 SmartBuffer: "
+            f"{'RAM-backed' if buffer.is_ram_backed else 'disk-backed'} "
+            f"({len(content):,} bytes)"
+        )
         
         # STEP 2: Parse document
         update_file_status(supabase, file_status_id, job_id, status="parsing",
@@ -2392,21 +2420,26 @@ def process_file_task(
         }
         
     finally:
-        if source_type == "file_upload":
-            storage_path = file_data.get("storage_path")
-            if storage_path:
-                try:
-                    supabase.storage.from_(STAGING_BUCKET).remove([storage_path])
-                    logger.info(f"[ProcessFile:{task_id}] 🧹 Removed staged upload: {storage_path}")
-                except Exception as e:
-                    logger.warning(f"[ProcessFile:{task_id}] ⚠️ Failed to remove staged upload: {e}")
-
-        # Cleanup temp file
-        if local_path and os.path.exists(local_path):
+        # =====================================================================
+        # GHOST PROTOCOL: Guaranteed Cleanup (Zero-Retention Compliance)
+        # =====================================================================
+        
+        # 1. Cleanup SmartBuffer (handles both RAM and disk-backed storage)
+        if 'buffer' in dir() and buffer is not None:
             try:
-                os.unlink(local_path)
-            except:
-                pass
+                buffer.cleanup()
+            except Exception as buf_err:
+                logger.warning(f"[ProcessFile:{task_id}] ⚠️ SmartBuffer cleanup failed: {buf_err}")
+        
+        # 2. Secure wipe any temp files with cryptographic overwrite
+        if local_path and os.path.exists(local_path):
+            secure_wipe(local_path)
+        
+        # 3. Remove staging file from S3 (ALWAYS - success or failure)
+        # Use centralized cleanup for consistent logging and error handling
+        storage_path = file_data.get("storage_path")
+        if storage_path:
+            cleanup_staging_file(storage_path, STAGING_BUCKET)
 
 
 @celery_app.task(

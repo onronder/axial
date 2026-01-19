@@ -25,6 +25,8 @@ _TEST_ENV_VARS = {
     "ALLOWED_ORIGINS": "http://localhost:3000",
     # Valid Fernet key (must be 32 url-safe base64-encoded bytes)
     "ENCRYPTION_KEY": "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
+    # Ghost Protocol: Chunk content encryption key (valid Fernet key)
+    "CHUNK_ENCRYPTION_KEY": "LGNy0DAbgvEq4Tvl-d3DN6EFkhiSbpN5mq0zZ3XEN2w=",
     "CELERY_TASK_ALWAYS_EAGER": "1",
 }
 
