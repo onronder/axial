@@ -29,6 +29,8 @@ export interface ThinkingStatus {
     details?: {
         sourceCount?: number;
         scopeName?: string;
+        model?: string;      // 'fast' or 'smart' - from backend
+        isComplex?: boolean; // Whether query is complex
     };
 }
 

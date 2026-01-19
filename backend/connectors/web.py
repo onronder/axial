@@ -31,16 +31,12 @@ import trafilatura
 import requests
 from connectors.limits import connector_fetch_limit
 from core.scopes import build_scope_uri
+from core.url_utils import is_youtube_url, extract_youtube_video_id, YOUTUBE_URL_PATTERNS
 
 logger = logging.getLogger(__name__)
 
-# YouTube URL patterns
-YOUTUBE_PATTERNS = [
-    r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
-    r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})',
-    r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})',
-    r'(?:https?://)?(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})',
-]
+# Alias for backward compatibility
+YOUTUBE_PATTERNS = YOUTUBE_URL_PATTERNS
 
 
 class WebConnector(EnhancedConnector, BaseConnector):
@@ -316,17 +312,19 @@ class WebConnector(EnhancedConnector, BaseConnector):
     # YOUTUBE SUPPORT
     # =========================================================================
     
-    def is_youtube_url(self, url: str) -> bool:
-        """Check if a URL is a YouTube video."""
-        return any(re.match(pattern, url) for pattern in YOUTUBE_PATTERNS)
+    def _is_youtube_url(self, url: str) -> bool:
+        """Check if a URL is a YouTube video. Uses shared utility."""
+        return is_youtube_url(url)
     
-    def extract_youtube_video_id(self, url: str) -> Optional[str]:
-        """Extract video ID from a YouTube URL."""
-        for pattern in YOUTUBE_PATTERNS:
-            match = re.match(pattern, url)
-            if match:
-                return match.group(1)
-        return None
+    # Backward-compatible alias
+    is_youtube_url = _is_youtube_url
+    
+    def _extract_youtube_video_id(self, url: str) -> Optional[str]:
+        """Extract video ID from a YouTube URL. Uses shared utility."""
+        return extract_youtube_video_id(url)
+    
+    # Backward-compatible alias
+    extract_youtube_video_id = _extract_youtube_video_id
     
     def fetch_youtube_transcript(self, video_url: str) -> Optional[str]:
         """
@@ -346,7 +344,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 VideoUnavailable
             )
             
-            video_id = self.extract_youtube_video_id(video_url)
+            video_id = self._extract_youtube_video_id(video_url)
             if not video_id:
                 logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
                 return None
@@ -405,7 +403,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
     
     def get_youtube_metadata(self, video_url: str) -> Dict[str, str]:
         """Get basic metadata for a YouTube video."""
-        video_id = self.extract_youtube_video_id(video_url)
+        video_id = self._extract_youtube_video_id(video_url)
         return {
             "source": "youtube",
             "video_id": video_id or "unknown",
@@ -454,7 +452,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 # Generate scope_id using canonical URI builder
                 scope_id = build_scope_uri("web", {"url": url})
 
-                if self.is_youtube_url(url):
+                if self._is_youtube_url(url):
                     transcript = self.fetch_youtube_transcript(url)
                     if transcript:
                         metadata = self.get_youtube_metadata(url)

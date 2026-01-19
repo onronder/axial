@@ -6,27 +6,14 @@ Shared across web crawl endpoints.
 
 from datetime import datetime, timezone
 from typing import Dict, Optional
-import re
 
 import logging
 
 from core.db import get_supabase
+from core.url_utils import is_youtube_url  # Shared utility
 from worker.tasks import crawl_discovery_task
 
 logger = logging.getLogger(__name__)
-
-# YouTube URL patterns (same as connectors/web.py)
-YOUTUBE_PATTERNS = [
-    r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
-    r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})',
-    r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})',
-    r'(?:https?://)?(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})',
-]
-
-
-def is_youtube_url(url: str) -> bool:
-    """Check if a URL is a YouTube video."""
-    return any(re.match(pattern, url) for pattern in YOUTUBE_PATTERNS)
 
 def queue_web_crawl(
     *,

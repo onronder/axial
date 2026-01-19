@@ -36,6 +36,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useProfile } from '@/hooks/useProfile';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ROLE_TOAST_TITLES } from '@/lib/role-messages';
 
 // ============================================================
 // Types
@@ -157,7 +158,7 @@ export function DLQDashboard() {
     const guardActions = (action: string) => {
         if (isReadOnly) {
             toast({
-                title: "View only",
+                title: ROLE_TOAST_TITLES.VIEW_ONLY,
                 description: actionLockedReason || `You don't have permission to ${action}.`,
                 variant: "destructive",
             });

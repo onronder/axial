@@ -25,6 +25,7 @@ import { useDataSources } from "@/hooks/useDataSources";
 import { useToast } from "@/hooks/use-toast";
 import { DataSourceIcon } from "./DataSourceIcon";
 import { DataSource } from "@/lib/mockData";
+import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
 
 export interface FileItem {
   id: string;
@@ -178,8 +179,8 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
   const handleIngest = async () => {
     if (isViewer) {
       toast({
-        title: "View only",
-        description: "You need editor or admin access to ingest files.",
+        title: ROLE_TOAST_TITLES.VIEW_ONLY,
+        description: ROLE_MESSAGES.NEED_EDITOR_INGEST,
         variant: "destructive",
       });
       return;

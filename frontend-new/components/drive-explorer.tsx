@@ -1,14 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import { useUsage } from "@/hooks/useUsage"
+import { useIngestionProgress } from "@/hooks/useIngestionProgress"
 import { Loader2, Folder, FileText, ChevronRight, Home, Upload, CheckSquare, Square } from "lucide-react"
-import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal"
-import { useFileStatus } from "@/hooks/useFileStatus"
 
 type ConnectorItem = {
     id: string
@@ -20,34 +17,16 @@ type ConnectorItem = {
 }
 
 export function DriveExplorer() {
-    const queryClient = useQueryClient()
-    const { refresh } = useUsage()
     const [isLoading, setIsLoading] = useState(true)
     const [items, setItems] = useState<ConnectorItem[]>([])
     const [currentPath, setCurrentPath] = useState<{ id: string | null, name: string }[]>([{ id: null, name: 'Google Drive' }])
     const [selection, setSelection] = useState<Set<string>>(new Set())
     const [ingesting, setIngesting] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [currentJobId, setCurrentJobId] = useState<string | null>(null)
     const { toast } = useToast()
 
-    // Real-time file status subscription
-    const { files: fileStatuses } = useFileStatus(currentJobId)
-
-    /**
-     * Called when all Google Drive files have finished processing.
-     * Refreshes usage stats and invalidates document cache to update UI.
-     */
-    const handleIngestionComplete = useCallback(() => {
-        console.log("📊 [DriveExplorer] Ingestion complete - refreshing data...")
-        
-        // Refresh usage stats (file count, storage) in sidebar
-        refresh(true)
-        
-        // Invalidate documents cache so Knowledge Base table updates
-        queryClient.invalidateQueries({ queryKey: ["documents"] })
-        queryClient.invalidateQueries({ queryKey: ["documentCount"] })
-    }, [refresh, queryClient])
+    // Use centralized ingestion progress context - GlobalProgress renders the UI
+    const { registerJob } = useIngestionProgress()
 
     // Load Items for Current Folder
     useEffect(() => {
@@ -103,8 +82,8 @@ export function DriveExplorer() {
             const jobId = response.data?.job_id
 
             if (jobId) {
-                // Set job ID to trigger progress modal
-                setCurrentJobId(jobId)
+                // Register job with centralized context - GlobalProgress will show UI
+                registerJob(jobId)
             }
 
             toast({
@@ -276,22 +255,7 @@ export function DriveExplorer() {
                 )}
             </div>
 
-            {/* Progress Modal */}
-            {currentJobId && (
-                <IngestionProgressModal
-                    jobId={currentJobId}
-                    files={fileStatuses}
-                    totalFiles={fileStatuses.length}
-                    overallProgress={
-                        fileStatuses.length > 0
-                            ? (fileStatuses.filter((f) => f.status === "completed").length /
-                                fileStatuses.length) * 100
-                            : 0
-                    }
-                    onClose={() => setCurrentJobId(null)}
-                    onComplete={handleIngestionComplete}
-                />
-            )}
+            {/* Progress UI is now rendered by GlobalProgress - single source of truth */}
         </div>
     )
 }

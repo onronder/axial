@@ -1,10 +1,14 @@
 "use client";
 
 /**
- * GlobalProgress Component - REALTIME VERSION
+ * GlobalProgress Component - SINGLE SOURCE OF TRUTH
  * 
+ * This is the ONLY component that should render ingestion progress UI.
  * Uses Supabase Realtime to display ingestion progress instantly.
- * No more polling - updates arrive via WebSocket!
+ * 
+ * All other components (IngestModal, FileUploadZone, YoutubeInput, etc.)
+ * should use the useIngestionProgress() hook to register jobs, NOT render
+ * their own progress modals.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -27,6 +31,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useUsage } from "@/hooks/useUsage";
 import { useFileStatus } from "@/hooks/useFileStatus";
+import { useIngestionProgress } from "@/hooks/useIngestionProgress";
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 
@@ -60,12 +65,15 @@ export function GlobalProgress() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const { refresh } = useUsage();
+    
+    // Use context for expanded state - SINGLE SOURCE OF TRUTH
+    const { expandedJobId, expandJob, registerJob, unregisterJob } = useIngestionProgress();
+    
     const [jobs, setJobs] = useState<IngestionJob[]>([]);
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
-    const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [activeJob, setActiveJob] = useState<IngestionJob | null>(null);
-    const activeJobIdRef = useRef<string | null>(null);
-    const { files: activeFiles } = useFileStatus(activeJobId);
+    const expandedJobIdRef = useRef<string | null>(null);
+    const { files: activeFiles } = useFileStatus(expandedJobId);
 
     /**
      * Called when all files in the active job have finished processing.
@@ -118,13 +126,15 @@ export function GlobalProgress() {
 
                     if (payload.eventType === "INSERT") {
                         setJobs((prev) => [newJob, ...prev].slice(0, 5));
+                        // Register new jobs in context
+                        registerJob(newJob.id);
                     }
 
                     if (payload.eventType === "UPDATE") {
                         setJobs((prev) =>
                             prev.map((job) => (job.id === newJob.id ? newJob : job))
                         );
-                        if (activeJobIdRef.current === newJob.id) {
+                        if (expandedJobIdRef.current === newJob.id) {
                             setActiveJob(newJob);
                         }
 
@@ -138,11 +148,12 @@ export function GlobalProgress() {
                                     `Successfully processed ${newJob.processed_files} files from ${formatSourceTypeLabel(provider)}.`,
                             });
 
-                            // Auto-dismiss after delay
+                            // Auto-dismiss after delay and unregister from context
                             setTimeout(() => {
                                 setJobs((prev) =>
-                                    prev.filter((j) => j.id !== newJob.id || activeJobIdRef.current === newJob.id)
+                                    prev.filter((j) => j.id !== newJob.id || expandedJobIdRef.current === newJob.id)
                                 );
+                                unregisterJob(newJob.id);
                             }, COMPLETION_DISPLAY_TIME);
                         }
 
@@ -152,6 +163,8 @@ export function GlobalProgress() {
                                 description: newJob.error_message || "An error occurred during processing.",
                                 variant: "destructive",
                             });
+                            // Unregister failed jobs after delay
+                            setTimeout(() => unregisterJob(newJob.id), COMPLETION_DISPLAY_TIME);
                         }
 
                         if (newJob.status === "cancelled" && oldJob?.status !== "cancelled") {
@@ -162,11 +175,12 @@ export function GlobalProgress() {
                                 variant: "default",
                             });
 
-                            // Auto-dismiss after delay
+                            // Auto-dismiss after delay and unregister from context
                             setTimeout(() => {
                                 setJobs((prev) =>
-                                    prev.filter((j) => j.id !== newJob.id || activeJobIdRef.current === newJob.id)
+                                    prev.filter((j) => j.id !== newJob.id || expandedJobIdRef.current === newJob.id)
                                 );
+                                unregisterJob(newJob.id);
                             }, COMPLETION_DISPLAY_TIME);
                         }
                     }
@@ -183,45 +197,48 @@ export function GlobalProgress() {
         };
     }, [user?.id, toast]);
 
+    // Sync expanded job ref and active job data
     useEffect(() => {
-        activeJobIdRef.current = activeJobId;
-        if (!activeJobId) {
+        expandedJobIdRef.current = expandedJobId;
+        if (!expandedJobId) {
             setActiveJob(null);
             return;
         }
-        const job = jobs.find((j) => j.id === activeJobId) || null;
+        const job = jobs.find((j) => j.id === expandedJobId) || null;
         if (job) {
             setActiveJob(job);
         }
-    }, [activeJobId, jobs]);
+    }, [expandedJobId, jobs]);
 
-    // Filter out dismissed jobs
+    // Filter out dismissed jobs and the currently expanded job
     const visibleJobs = jobs.filter(
-        (job) => !dismissedIds.has(job.id) && job.id !== activeJobId
+        (job) => !dismissedIds.has(job.id) && job.id !== expandedJobId
     );
 
     const handleDismiss = (jobId: string) => {
         setDismissedIds((prev) => new Set([...prev, jobId]));
         setJobs((prev) => prev.filter((j) => j.id !== jobId));
+        unregisterJob(jobId);
     };
 
     const handleOpenDetails = (job: IngestionJob) => {
-        setActiveJobId(job.id);
+        expandJob(job.id);
         setActiveJob(job);
     };
 
     const handleCloseDetails = () => {
-        setActiveJobId(null);
+        expandJob(null);
         setActiveJob(null);
     };
 
-    if (visibleJobs.length === 0 && !activeJobId) return null;
+    if (visibleJobs.length === 0 && !expandedJobId) return null;
 
     return (
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
-            {activeJobId && (
+            {/* SINGLE progress modal - only rendered here */}
+            {expandedJobId && (
                 <IngestionProgressModal
-                    jobId={activeJobId}
+                    jobId={expandedJobId}
                     files={activeFiles}
                     totalFiles={activeJob?.total_files || activeFiles.length}
                     overallProgress={

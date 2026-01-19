@@ -20,6 +20,7 @@ from api.v1.error_utils import raise_http_error
 from services.audit import audit_logger
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from core.log_utils import safe_file_ref
 import uuid
 import datetime
 import logging
@@ -330,7 +331,7 @@ async def generate_upload_url(
             logger.error(f"[Upload] No signed_url in response: {result}")
             raise HTTPException(status_code=500, detail="Failed to generate upload URL")
         
-        logger.info(f"[Upload] Generated presigned URL for {body.filename} ({storage_path})")
+        logger.info(f"[Upload] Generated presigned URL for {safe_file_ref(filename=body.filename)} (path:{storage_path[:16]}...)")
         
         return UploadUrlResponse(
             upload_url=result["signed_url"],
@@ -477,5 +478,5 @@ async def ingest_file_reference(
             detail="Task queue unavailable. Please try again later."
         )
     
-    logger.info(f"[Upload] Unified task queued: {body.filename}, task={task.id}")
+    logger.info(f"[Upload] Unified task queued: {safe_file_ref(filename=body.filename)}, task={task.id}")
     return IngestResponse(status="queued", doc_id=job_id)

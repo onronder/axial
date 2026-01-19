@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { ChatHistoryProvider } from "@/hooks/useChatHistory";
 import { IngestModalProvider } from "@/hooks/useIngestModal";
+import { IngestionProgressProvider } from "@/hooks/useIngestionProgress";
 import { Loader2 } from "lucide-react";
 import { ProfileProvider } from "@/hooks/useProfile";
 import { UsageProvider } from "@/hooks/useUsage";
@@ -56,6 +57,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 <QuotaStatusProvider>
                     <ChatHistoryProvider>
                         <IngestModalProvider>
+                            <IngestionProgressProvider>
                             <PaywallGuard>
                             <div className="min-h-screen bg-background">
                                 {/* DESKTOP SIDEBAR - Isolated error boundary */}
@@ -96,6 +98,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                 </SidebarErrorBoundary>
                             </div>
                         </PaywallGuard>
+                            </IngestionProgressProvider>
                         </IngestModalProvider>
                     </ChatHistoryProvider>
                 </QuotaStatusProvider>

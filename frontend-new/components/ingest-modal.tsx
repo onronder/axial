@@ -1,14 +1,12 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
 import { BookOpen, CheckCircle, Globe, Loader2, Upload, X, Youtube, AlertCircle } from "lucide-react"
 
-import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal"
 // NotionInput removed - using OAuth flow now
 import { WebInput, validateUrl } from "@/components/ingest/WebInput"
 import { useDataSources } from "@/hooks/useDataSources"
-import { useFileStatus } from "@/hooks/useFileStatus"
+import { useIngestionProgress } from "@/hooks/useIngestionProgress"
 import { useToast } from "@/hooks/use-toast"
 import { useProfile } from "@/hooks/useProfile"
 import { useUsage } from "@/hooks/useUsage"
@@ -17,33 +15,14 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { 
+    isValidYoutubeUrl, 
+    normalizeYoutubeUrl, 
+    YOUTUBE_ERROR_MESSAGES 
+} from "@/lib/youtube-utils"
+import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages"
 
 type TabType = 'file' | 'url' | 'website' | 'notion' | 'youtube'
-
-/**
- * YouTube URL validation patterns.
- * Supports standard watch URLs, short URLs, embeds, and shorts.
- */
-const YOUTUBE_URL_PATTERNS = [
-    /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=[\w-]{11}/i,
-    /^(https?:\/\/)?(www\.)?youtu\.be\/[\w-]{11}/i,
-    /^(https?:\/\/)?(www\.)?youtube\.com\/embed\/[\w-]{11}/i,
-    /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]{11}/i,
-]
-
-function isValidYoutubeUrl(url: string): boolean {
-    const trimmedUrl = url.trim()
-    if (!trimmedUrl) return false
-    return YOUTUBE_URL_PATTERNS.some((pattern) => pattern.test(trimmedUrl))
-}
-
-function normalizeYoutubeUrl(url: string): string {
-    const trimmedUrl = url.trim()
-    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
-        return `https://${trimmedUrl}`
-    }
-    return trimmedUrl.replace('http://', 'https://')
-}
 
 interface IngestModalProps {
     isOpen: boolean
@@ -52,7 +31,6 @@ interface IngestModalProps {
 }
 
 export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModalProps) {
-    const queryClient = useQueryClient()
     const [activeTab, setActiveTab] = useState<TabType>(initialTab)
     const [file, setFile] = useState<File | null>(null)
     const [url, setUrl] = useState<string>("")
@@ -69,30 +47,14 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
     const isNotionConnected = isConnected('notion')
     const { toast } = useToast()
     const { profile } = useProfile()
-    const { canWebCrawl, refresh } = useUsage()
+    const { canWebCrawl } = useUsage()
     const isWebCrawlLocked = !canWebCrawl
     const isViewer = profile?.role === "viewer"
 
     const [loading, setLoading] = useState(false)
-    const [currentJobId, setCurrentJobId] = useState<string | null>(null)
-
-    // Track job status for unified ingestion progress
-    const { files: fileStatuses } = useFileStatus(currentJobId)
-
-    /**
-     * Called when all files in the ingestion job have finished processing.
-     * Refreshes usage stats and invalidates document cache to update UI.
-     */
-    const handleIngestionComplete = useCallback(() => {
-        console.log("📊 [IngestModal] Ingestion complete - refreshing data...")
-        
-        // Refresh usage stats (file count, storage) in sidebar
-        refresh(true)
-        
-        // Invalidate documents cache so Knowledge Base table updates
-        queryClient.invalidateQueries({ queryKey: ["documents"] })
-        queryClient.invalidateQueries({ queryKey: ["documentCount"] })
-    }, [refresh, queryClient])
+    
+    // Use centralized ingestion progress context - GlobalProgress renders the UI
+    const { registerJob } = useIngestionProgress()
 
     // Sync activeTab when initialTab changes
     useEffect(() => {
@@ -110,8 +72,8 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
     const handleNotionConnect = () => {
         if (isViewer) {
             toast({
-                title: "View only",
-                description: "You need editor or admin access to connect data sources.",
+                title: ROLE_TOAST_TITLES.VIEW_ONLY,
+                description: ROLE_MESSAGES.NEED_EDITOR_CONNECT,
                 variant: "destructive",
             })
             return
@@ -125,8 +87,8 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
         if (isViewer) {
             toast({
-                title: "View only",
-                description: "You need editor or admin access to ingest data.",
+                title: ROLE_TOAST_TITLES.VIEW_ONLY,
+                description: ROLE_MESSAGES.NEED_EDITOR_INGEST,
                 variant: "destructive",
             })
             return
@@ -134,8 +96,8 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
         if ((activeTab === 'website' || activeTab === 'url') && isWebCrawlLocked) {
             toast({
-                title: "Upgrade required",
-                description: "Web crawling is available on Starter and above plans.",
+                title: ROLE_TOAST_TITLES.UPGRADE_REQUIRED,
+                description: ROLE_MESSAGES.WEB_CRAWL_UPGRADE,
                 variant: "destructive",
             })
             return
@@ -194,8 +156,8 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
                 // Validate YouTube URL specifically
                 if (!isValidYoutubeUrl(youtubeUrl)) {
-                    setYoutubeValidationError("Please enter a valid YouTube video URL")
-                    throw new Error("Please enter a valid YouTube video URL (e.g., youtube.com/watch?v=... or youtu.be/...)")
+                    setYoutubeValidationError(YOUTUBE_ERROR_MESSAGES.INVALID_URL)
+                    throw new Error(YOUTUBE_ERROR_MESSAGES.INVALID_URL_DETAILED)
                 }
 
                 // Normalize and send to web backend (backend detects YouTube and fetches transcript)
@@ -212,7 +174,8 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
             }
 
             if (ingestionJobId) {
-                setCurrentJobId(ingestionJobId)
+                // Register job with centralized context - GlobalProgress will show UI
+                registerJob(ingestionJobId)
             }
 
             // Robust error handling: Check content type
@@ -436,22 +399,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                     </form>
                 </CardContent>
             </Card>
-
-            {/* Unified Ingestion Progress */}
-            {currentJobId && (
-                <IngestionProgressModal
-                    jobId={currentJobId}
-                    files={fileStatuses}
-                    totalFiles={fileStatuses.length}
-                    overallProgress={
-                        fileStatuses.length > 0
-                            ? (fileStatuses.filter((f) => f.status === "completed").length / fileStatuses.length) * 100
-                            : 0
-                    }
-                    onClose={() => setCurrentJobId(null)}
-                    onComplete={handleIngestionComplete}
-                />
-            )}
+            {/* Progress UI is now rendered by GlobalProgress - single source of truth */}
         </div>
     )
 }

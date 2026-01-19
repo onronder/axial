@@ -33,6 +33,10 @@ import tiktoken
 
 logger = logging.getLogger(__name__)
 LLAMAPARSE_LOCK = threading.Lock()
+
+# Ghost Protocol: Privacy-safe logging
+from core.log_utils import safe_file_ref, safe_extension
+
 try:
     from core.metrics import pdf_scan_detection_total, llamaparse_fallback_total, docx_ocr_fallback_total, image_ocr_total
 except Exception:
@@ -298,7 +302,7 @@ class CodeProcessor(BaseProcessor):
         for i, chunk in enumerate(chunks):
             chunk.chunk_index = i
         
-        logger.info(f"[CodeProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        logger.info(f"[CodeProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
         return ProcessedDocument(
             chunks=chunks,
             file_type="code",
@@ -416,7 +420,7 @@ class MarkdownProcessor(BaseProcessor):
                     chunk_index=i
                 ))
         
-        logger.info(f"[MarkdownProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        logger.info(f"[MarkdownProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
         return ProcessedDocument(
             chunks=chunks,
             file_type="markdown",
@@ -485,7 +489,7 @@ class PDFProcessor(BaseProcessor):
             can_execute, reason = LLAMAPARSE_CIRCUIT.can_execute()
             
             if can_execute:
-                logger.info(f"[PDFProcessor] Tier 1: Trying LlamaParse for {filename}")
+                logger.info(f"[PDFProcessor] Tier 1: Trying LlamaParse for {safe_file_ref(filename=filename)}")
                 try:
                     result = self._process_with_llamaparse(content, filename)
                     if result and result.chunks and result.total_tokens >= self.MIN_TOKENS_THRESHOLD:
@@ -513,14 +517,14 @@ class PDFProcessor(BaseProcessor):
                 if llamaparse_fallback_total:
                     llamaparse_fallback_total.labels(reason).inc()
         else:
-            logger.info(f"[PDFProcessor] No LLAMA_CLOUD_API_KEY, using local processing for {filename}")
+            logger.info(f"[PDFProcessor] No LLAMA_CLOUD_API_KEY, using local processing for {safe_file_ref(filename=filename)}")
             if pdf_scan_detection_total:
                 pdf_scan_detection_total.labels("local_no_api_key").inc()
         
         # =====================================================================
         # TIER 2: PyMuPDF (Fast Local)
         # =====================================================================
-        logger.info(f"[PDFProcessor] Tier 2: Trying PyMuPDF for {filename}")
+        logger.info(f"[PDFProcessor] Tier 2: Trying PyMuPDF for {safe_file_ref(filename=filename)}")
         result = self._process_with_pymupdf(content, filename)
         
         if result and result.chunks and result.total_tokens >= self.MIN_TOKENS_THRESHOLD:
@@ -536,7 +540,7 @@ class PDFProcessor(BaseProcessor):
         # =====================================================================
         # TIER 3: Tesseract OCR (Smart Local Fallback)
         # =====================================================================
-        logger.info(f"[PDFProcessor] Tier 3: Trying Tesseract OCR for {filename}")
+        logger.info(f"[PDFProcessor] Tier 3: Trying Tesseract OCR for {safe_file_ref(filename=filename)}")
         try:
             ocr_result = self._process_with_ocr(content, filename)
             if ocr_result and ocr_result.chunks and ocr_result.total_tokens >= self.OCR_QUALITY_THRESHOLD:
@@ -544,7 +548,7 @@ class PDFProcessor(BaseProcessor):
                     pdf_scan_detection_total.labels("tier3_ocr_success").inc()
                 return ocr_result
             
-            logger.warning(f"[PDFProcessor] OCR also returned low content for {filename}")
+            logger.warning(f"[PDFProcessor] OCR also returned low content for {safe_file_ref(filename=filename)}")
             
         except OCRNotAvailableException as e:
             logger.warning(f"[PDFProcessor] OCR not available: {e}")
@@ -583,7 +587,7 @@ class PDFProcessor(BaseProcessor):
         
         from core.config import settings
         
-        logger.info(f"[PDFProcessor] Using LlamaParse for {filename}")
+        logger.info(f"[PDFProcessor] Using LlamaParse for {safe_file_ref(filename=filename)}")
         
         # Write content to temp file (LlamaParse needs file path)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
@@ -613,7 +617,7 @@ class PDFProcessor(BaseProcessor):
             if not full_text.strip():
                 raise ValueError("LlamaParse returned empty text")
             
-            logger.info(f"[PDFProcessor] LlamaParse extracted {len(full_text)} chars from {filename}")
+            logger.info(f"[PDFProcessor] LlamaParse extracted {len(full_text)} chars from {safe_file_ref(filename=filename)}")
             
         finally:
             # Always cleanup temp file
@@ -648,7 +652,7 @@ class PDFProcessor(BaseProcessor):
                 chunk_index=i
             ))
         
-        logger.info(f"[PDFProcessor] LlamaParse: {filename}: {len(chunks)} chunks")
+        logger.info(f"[PDFProcessor] LlamaParse: {safe_file_ref(filename=filename)}: {len(chunks)} chunks")
         return ProcessedDocument(
             chunks=chunks,
             file_type="pdf",
@@ -717,7 +721,7 @@ class PDFProcessor(BaseProcessor):
                     chunk_index=len(chunks)
                 ))
         
-        logger.info(f"[PDFProcessor] PyMuPDF: {filename}: {len(chunks)} chunks from {len(pages_text)} pages")
+        logger.info(f"[PDFProcessor] PyMuPDF: {safe_file_ref(filename=filename)}: {len(chunks)} chunks from {len(pages_text)} pages")
         return ProcessedDocument(
             chunks=chunks,
             file_type="pdf",
@@ -789,7 +793,7 @@ class PDFProcessor(BaseProcessor):
         except ImportError as e:
             raise OCRNotAvailableException(f"OCR dependencies not installed: {e}")
         
-        logger.info(f"[PDFProcessor] Running Tesseract OCR on {filename}")
+        logger.info(f"[PDFProcessor] Running Tesseract OCR on {safe_file_ref(filename=filename)}")
         
         try:
             # Convert PDF pages to images (300 DPI for good OCR quality)
@@ -808,7 +812,7 @@ class PDFProcessor(BaseProcessor):
                 return ProcessedDocument(chunks=[], file_type="pdf", total_tokens=0)
             
             full_text = "\n\n".join(ocr_texts)
-            logger.info(f"[PDFProcessor] OCR: {filename}: {len(full_text)} chars from {len(images)} pages")
+            logger.info(f"[PDFProcessor] OCR: {safe_file_ref(filename=filename)}: {len(full_text)} chars from {len(images)} pages")
             
             # Chunk the OCR text
             splitter = RecursiveCharacterTextSplitter(
@@ -836,7 +840,7 @@ class PDFProcessor(BaseProcessor):
                     chunk_index=i
                 ))
             
-            logger.info(f"[PDFProcessor] Tesseract OCR: {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+            logger.info(f"[PDFProcessor] Tesseract OCR: {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
             return ProcessedDocument(
                 chunks=chunks,
                 file_type="pdf",
@@ -887,7 +891,7 @@ class DocxProcessor(BaseProcessor):
         # =====================================================================
         # TIER 1: docx2txt (Fast Local)
         # =====================================================================
-        logger.info(f"[DocxProcessor] Tier 1: Trying docx2txt for {filename}")
+        logger.info(f"[DocxProcessor] Tier 1: Trying docx2txt for {safe_file_ref(filename=filename)}")
         text = ""
         try:
             import docx2txt
@@ -899,7 +903,7 @@ class DocxProcessor(BaseProcessor):
         if text.strip():
             token_count = self.count_tokens(text)
             if token_count >= self.MIN_TOKENS_THRESHOLD:
-                logger.info(f"[DocxProcessor] Tier 1 success: {token_count} tokens extracted from {filename}")
+                logger.info(f"[DocxProcessor] Tier 1 success: {token_count} tokens extracted from {safe_file_ref(filename=filename)}")
                 if docx_ocr_fallback_total:
                     docx_ocr_fallback_total.labels("tier1_docx2txt_success").inc()
                 return self._chunk_text(text, filename, parser="docx2txt")
@@ -909,24 +913,24 @@ class DocxProcessor(BaseProcessor):
                     f"likely scanned DOCX - triggering OCR"
                 )
         else:
-            logger.warning(f"[DocxProcessor] No text extracted from {filename}, likely scanned DOCX - triggering OCR")
+            logger.warning(f"[DocxProcessor] No text extracted from {safe_file_ref(filename=filename)}, likely scanned DOCX - triggering OCR")
         
         # =====================================================================
         # TIER 2: Extract embedded images and OCR them
         # =====================================================================
-        logger.info(f"[DocxProcessor] Tier 2: Trying image extraction + OCR for {filename}")
+        logger.info(f"[DocxProcessor] Tier 2: Trying image extraction + OCR for {safe_file_ref(filename=filename)}")
         try:
             ocr_result = self._process_with_embedded_image_ocr(content, filename)
             if ocr_result and ocr_result.chunks and ocr_result.total_tokens >= self.OCR_QUALITY_THRESHOLD:
-                logger.info(f"[DocxProcessor] Tier 2 OCR success: {ocr_result.total_tokens} tokens from {filename}")
+                logger.info(f"[DocxProcessor] Tier 2 OCR success: {ocr_result.total_tokens} tokens from {safe_file_ref(filename=filename)}")
                 if docx_ocr_fallback_total:
                     docx_ocr_fallback_total.labels("tier2_tesseract_success").inc()
                 return ocr_result
-            logger.warning(f"[DocxProcessor] OCR returned low content ({ocr_result.total_tokens if ocr_result else 0} tokens) for {filename}")
+            logger.warning(f"[DocxProcessor] OCR returned low content ({ocr_result.total_tokens if ocr_result else 0} tokens) for {safe_file_ref(filename=filename)}")
         except OCRNotAvailableException as e:
             logger.warning(f"[DocxProcessor] OCR not available: {e}")
         except Exception as e:
-            logger.error(f"[DocxProcessor] OCR failed for {filename}: {e}")
+            logger.error(f"[DocxProcessor] OCR failed for {safe_file_ref(filename=filename)}: {e}")
         
         # =====================================================================
         # TIER 3: LlamaParse (Cloud Premium Fallback)
@@ -935,14 +939,14 @@ class DocxProcessor(BaseProcessor):
         if settings.LLAMA_CLOUD_API_KEY:
             can_execute, reason = LLAMAPARSE_CIRCUIT.can_execute()
             if can_execute:
-                logger.info(f"[DocxProcessor] Tier 3: Trying LlamaParse for {filename}")
+                logger.info(f"[DocxProcessor] Tier 3: Trying LlamaParse for {safe_file_ref(filename=filename)}")
                 try:
                     result = LlamaParseProcessor(file_type="docx").process(content, filename)
                     if result and result.chunks and result.total_tokens >= self.OCR_QUALITY_THRESHOLD:
                         LLAMAPARSE_CIRCUIT.record_success()
                         if docx_ocr_fallback_total:
                             docx_ocr_fallback_total.labels("tier3_llamaparse_success").inc()
-                        logger.info(f"[DocxProcessor] Tier 3 LlamaParse success: {result.total_tokens} tokens from {filename}")
+                        logger.info(f"[DocxProcessor] Tier 3 LlamaParse success: {result.total_tokens} tokens from {safe_file_ref(filename=filename)}")
                         return result
                 except Exception as e:
                     error_str = str(e).lower()
@@ -953,7 +957,7 @@ class DocxProcessor(BaseProcessor):
                         LLAMAPARSE_CIRCUIT.record_failure("error")
                         logger.warning(f"[DocxProcessor] LlamaParse failed: {e}")
             else:
-                logger.info(f"[DocxProcessor] Skipping LlamaParse ({reason}) for {filename}")
+                logger.info(f"[DocxProcessor] Skipping LlamaParse ({reason}) for {safe_file_ref(filename=filename)}")
                 if llamaparse_fallback_total:
                     llamaparse_fallback_total.labels(f"docx_{reason}").inc()
         
@@ -962,10 +966,10 @@ class DocxProcessor(BaseProcessor):
             docx_ocr_fallback_total.labels("all_tiers_low_content").inc()
         
         if text.strip():
-            logger.warning(f"[DocxProcessor] Returning low-content result for {filename}")
+            logger.warning(f"[DocxProcessor] Returning low-content result for {safe_file_ref(filename=filename)}")
             return self._chunk_text(text, filename, parser="docx2txt_low_content")
         
-        logger.error(f"[DocxProcessor] All tiers failed for {filename}, returning empty result")
+        logger.error(f"[DocxProcessor] All tiers failed for {safe_file_ref(filename=filename)}, returning empty result")
         return ProcessedDocument(chunks=[], file_type="docx")
         
     def _process_with_embedded_image_ocr(self, content: bytes, filename: str) -> ProcessedDocument:
@@ -1000,10 +1004,10 @@ class DocxProcessor(BaseProcessor):
                 ]
                 
                 if not image_files:
-                    logger.info(f"[DocxProcessor] No embedded images found in {filename}")
+                    logger.info(f"[DocxProcessor] No embedded images found in {safe_file_ref(filename=filename)}")
                     return ProcessedDocument(chunks=[], file_type="docx", total_tokens=0)
                 
-                logger.info(f"[DocxProcessor] Found {len(image_files)} embedded images in {filename}")
+                logger.info(f"[DocxProcessor] Found {len(image_files)} embedded images in {safe_file_ref(filename=filename)}")
                 
                 # Sort to maintain order (image1, image2, etc.)
                 image_files.sort()
@@ -1052,14 +1056,14 @@ class DocxProcessor(BaseProcessor):
                         continue
                         
         except zipfile.BadZipFile:
-            logger.error(f"[DocxProcessor] Invalid DOCX (not a valid ZIP): {filename}")
+            logger.error(f"[DocxProcessor] Invalid DOCX (not a valid ZIP): {safe_file_ref(filename=filename)}")
             raise OCRNotAvailableException("Invalid DOCX format - not a valid ZIP archive")
         except Exception as e:
             logger.error(f"[DocxProcessor] Failed to process DOCX as ZIP: {e}")
             raise OCRNotAvailableException(f"Failed to extract images from DOCX: {e}")
         
         if not ocr_texts:
-            logger.info(f"[DocxProcessor] No text extracted from {len(image_files)} images in {filename}")
+            logger.info(f"[DocxProcessor] No text extracted from {len(image_files)} images in {safe_file_ref(filename=filename)}")
             return ProcessedDocument(chunks=[], file_type="docx", total_tokens=0)
         
         full_text = "\n\n".join(ocr_texts)
@@ -1118,7 +1122,7 @@ class DocxProcessor(BaseProcessor):
                 chunk_index=i
             ))
         
-        logger.info(f"[DocxProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens (parser={parser})")
+        logger.info(f"[DocxProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens (parser={parser})")
         return ProcessedDocument(
             chunks=chunks,
             file_type="docx",
@@ -1181,7 +1185,7 @@ class HTMLProcessor(BaseProcessor):
                 )
             )
 
-        logger.info(f"[HTMLProcessor] {filename}: {len(chunks)} chunks")
+        logger.info(f"[HTMLProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks")
         return ProcessedDocument(chunks=chunks, file_type="html", total_tokens=total_tokens)
 
 
@@ -1198,7 +1202,7 @@ class CSVProcessor(BaseProcessor):
         from core.config import settings
 
         if len(content) > settings.MAX_STRUCTURED_FILE_SIZE:
-            logger.warning(f"[CSVProcessor] File too large for CSV parsing: {filename}")
+            logger.warning(f"[CSVProcessor] File too large for CSV parsing: {safe_file_ref(filename=filename)}")
             return ProcessedDocument(
                 chunks=[],
                 file_type="unsupported",
@@ -1265,10 +1269,10 @@ class CSVProcessor(BaseProcessor):
                 )
 
         except Exception as exc:
-            logger.error(f"[CSVProcessor] Failed to parse {filename}: {exc}")
+            logger.error(f"[CSVProcessor] Failed to parse {safe_file_ref(filename=filename)}: {exc}")
             return ProcessedDocument(chunks=[], file_type="csv")
 
-        logger.info(f"[CSVProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        logger.info(f"[CSVProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
         return ProcessedDocument(chunks=chunks, file_type="csv", total_tokens=total_tokens)
 
 
@@ -1285,7 +1289,7 @@ class ExcelProcessor(BaseProcessor):
         from core.config import settings
 
         if len(content) > settings.MAX_STRUCTURED_FILE_SIZE:
-            logger.warning(f"[ExcelProcessor] File too large for XLSX parsing: {filename}")
+            logger.warning(f"[ExcelProcessor] File too large for XLSX parsing: {safe_file_ref(filename=filename)}")
             return ProcessedDocument(
                 chunks=[],
                 file_type="unsupported",
@@ -1312,7 +1316,7 @@ class ExcelProcessor(BaseProcessor):
                 data_only=True,
             )
         except Exception as exc:
-            logger.error(f"[ExcelProcessor] Failed to load workbook {filename}: {exc}")
+            logger.error(f"[ExcelProcessor] Failed to load workbook {safe_file_ref(filename=filename)}: {exc}")
             return ProcessedDocument(chunks=[], file_type="xlsx")
 
         try:
@@ -1395,7 +1399,7 @@ class ExcelProcessor(BaseProcessor):
             except Exception:
                 pass
 
-        logger.info(f"[ExcelProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        logger.info(f"[ExcelProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
         return ProcessedDocument(chunks=chunks, file_type="xlsx", total_tokens=total_tokens)
 
 
@@ -1423,7 +1427,7 @@ class PPTXProcessor(BaseProcessor):
         try:
             presentation = Presentation(io.BytesIO(content))
         except Exception as exc:
-            logger.error(f"[PPTXProcessor] Failed to load {filename}: {exc}")
+            logger.error(f"[PPTXProcessor] Failed to load {safe_file_ref(filename=filename)}: {exc}")
             return ProcessedDocument(chunks=[], file_type="pptx")
 
         splitter = RecursiveCharacterTextSplitter(
@@ -1473,7 +1477,7 @@ class PPTXProcessor(BaseProcessor):
                     llamaparse_fallback_total.labels("pptx").inc()
                 return LlamaParseProcessor(file_type="pptx").process(content, filename)
 
-        logger.info(f"[PPTXProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        logger.info(f"[PPTXProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
         return ProcessedDocument(chunks=chunks, file_type="pptx", total_tokens=total_tokens)
 
 
@@ -1557,7 +1561,7 @@ class EmailProcessor(BaseProcessor):
                 )
             )
 
-        logger.info(f"[EmailProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        logger.info(f"[EmailProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
         return ProcessedDocument(chunks=chunks, file_type="email", total_tokens=total_tokens)
 
     def _email_to_text(self, msg) -> str:
@@ -1619,7 +1623,7 @@ class LlamaParseProcessor(BaseProcessor):
         from core.config import settings
 
         if not settings.LLAMA_CLOUD_API_KEY:
-            logger.warning(f"[LlamaParseProcessor] LlamaParse not configured for {filename}")
+            logger.warning(f"[LlamaParseProcessor] LlamaParse not configured for {safe_file_ref(filename=filename)}")
             return ProcessedDocument(
                 chunks=[],
                 file_type="unsupported",
@@ -1741,11 +1745,11 @@ class ImageProcessor(BaseProcessor):
         # =====================================================================
         # TIER 1: Tesseract OCR (Fast Local)
         # =====================================================================
-        logger.info(f"[ImageProcessor] Tier 1: Trying Tesseract OCR for {filename}")
+        logger.info(f"[ImageProcessor] Tier 1: Trying Tesseract OCR for {safe_file_ref(filename=filename)}")
         try:
             result = self._process_with_tesseract(content, filename)
             if result and result.chunks and result.total_tokens >= self.MIN_TOKENS_THRESHOLD:
-                logger.info(f"[ImageProcessor] Tier 1 success: {result.total_tokens} tokens from {filename}")
+                logger.info(f"[ImageProcessor] Tier 1 success: {result.total_tokens} tokens from {safe_file_ref(filename=filename)}")
                 if image_ocr_total:
                     image_ocr_total.labels("tier1_tesseract_success").inc()
                 return result
@@ -1756,7 +1760,7 @@ class ImageProcessor(BaseProcessor):
         except OCRNotAvailableException as e:
             logger.warning(f"[ImageProcessor] Tesseract not available: {e}")
         except Exception as e:
-            logger.error(f"[ImageProcessor] Tesseract failed for {filename}: {e}")
+            logger.error(f"[ImageProcessor] Tesseract failed for {safe_file_ref(filename=filename)}: {e}")
         
         # =====================================================================
         # TIER 2: LlamaParse (Cloud Premium Fallback)
@@ -1765,14 +1769,14 @@ class ImageProcessor(BaseProcessor):
         if settings.LLAMA_CLOUD_API_KEY:
             can_execute, reason = LLAMAPARSE_CIRCUIT.can_execute()
             if can_execute:
-                logger.info(f"[ImageProcessor] Tier 2: Trying LlamaParse for {filename}")
+                logger.info(f"[ImageProcessor] Tier 2: Trying LlamaParse for {safe_file_ref(filename=filename)}")
                 try:
                     result = LlamaParseProcessor(file_type="image").process(content, filename)
                     if result and result.chunks:
                         LLAMAPARSE_CIRCUIT.record_success()
                         if image_ocr_total:
                             image_ocr_total.labels("tier2_llamaparse_success").inc()
-                        logger.info(f"[ImageProcessor] Tier 2 LlamaParse success: {result.total_tokens} tokens from {filename}")
+                        logger.info(f"[ImageProcessor] Tier 2 LlamaParse success: {result.total_tokens} tokens from {safe_file_ref(filename=filename)}")
                         return result
                 except Exception as e:
                     error_str = str(e).lower()
@@ -1783,14 +1787,14 @@ class ImageProcessor(BaseProcessor):
                         LLAMAPARSE_CIRCUIT.record_failure("error")
                         logger.warning(f"[ImageProcessor] LlamaParse failed: {e}")
             else:
-                logger.info(f"[ImageProcessor] Skipping LlamaParse ({reason}) for {filename}")
+                logger.info(f"[ImageProcessor] Skipping LlamaParse ({reason}) for {safe_file_ref(filename=filename)}")
                 if llamaparse_fallback_total:
                     llamaparse_fallback_total.labels(f"image_{reason}").inc()
         
         # Return empty if nothing worked
         if image_ocr_total:
             image_ocr_total.labels("all_tiers_failed").inc()
-        logger.warning(f"[ImageProcessor] All tiers failed for {filename}")
+        logger.warning(f"[ImageProcessor] All tiers failed for {safe_file_ref(filename=filename)}")
         return ProcessedDocument(chunks=[], file_type="image")
     
     def _process_with_tesseract(self, content: bytes, filename: str) -> ProcessedDocument:
@@ -1849,10 +1853,10 @@ class ImageProcessor(BaseProcessor):
                 # Fallback to English only if multi-lang fails
                 text = pytesseract.image_to_string(image, lang='eng')
             
-            logger.debug(f"[ImageProcessor] Processed {filename} ({original_size}), extracted {len(text)} chars")
+            logger.debug(f"[ImageProcessor] Processed {safe_file_ref(filename=filename)} ({original_size}), extracted {len(text)} chars")
             
         except Exception as e:
-            logger.error(f"[ImageProcessor] Failed to process image {filename}: {e}")
+            logger.error(f"[ImageProcessor] Failed to process image {safe_file_ref(filename=filename)}: {e}")
             raise
         
         if not text.strip():
@@ -1890,7 +1894,7 @@ class ImageProcessor(BaseProcessor):
                 chunk_index=i
             ))
         
-        logger.info(f"[ImageProcessor] Tesseract: {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        logger.info(f"[ImageProcessor] Tesseract: {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
         return ProcessedDocument(
             chunks=chunks,
             file_type="image",
@@ -1962,7 +1966,7 @@ class PlainTextProcessor(BaseProcessor):
                 chunk_index=i
             ))
         
-        logger.info(f"[PlainTextProcessor] {filename}: {len(chunks)} chunks")
+        logger.info(f"[PlainTextProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks")
         return ProcessedDocument(chunks=chunks, file_type="text", total_tokens=total_tokens)
 
 
@@ -2181,7 +2185,7 @@ class DocumentProcessorFactory:
         processor = processor_class()
         result = processor.process(content, filename)
         
-        logger.info(f"[Factory] Processed {filename}: {len(result.chunks)} chunks, type={result.file_type}")
+        logger.info(f"[Factory] Processed {safe_file_ref(filename=filename)}: {len(result.chunks)} chunks, type={result.file_type}")
         return result
     
     @classmethod

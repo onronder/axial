@@ -12,6 +12,7 @@ from connectors.base import ConnectorTransientError, RemoteFile
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
 from core.db import get_supabase
 from core.scopes import build_scope_uri
+from core.log_utils import safe_file_ref, safe_size_desc
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class FileUploadConnector(EnhancedConnector):
                     size_bytes=len(file_data),
                 )
 
-                logger.info(f"[FileUpload] Fetched {filename} ({len(file_data)} bytes)")
+                logger.info(f"[FileUpload] Fetched {safe_file_ref(filename=filename)} ({safe_size_desc(len(file_data))})")
 
             except Exception as e:
                 logger.error(f"[FileUpload] Failed to fetch {storage_path}: {e}")

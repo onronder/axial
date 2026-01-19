@@ -2,18 +2,16 @@
 
 import { useCallback, useState, useRef } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
-import { useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, Loader2, AlertCircle } from "lucide-react";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useUsage } from "@/hooks/useUsage";
-import { useFileStatus } from "@/hooks/useFileStatus";
+import { useIngestionProgress } from "@/hooks/useIngestionProgress";
 import { useQuotaStatus } from "@/hooks/useQuotaStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getUploadUrl, uploadToStorage, ingestFileReference, checkDuplicates } from "@/lib/api";
 import type { ExistingDocument } from "@/lib/api";
-import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 import { DuplicateFileModal, type DuplicateAction } from "./DuplicateFileModal";
 import { calculateSHA256 } from "@/lib/hash";
 import {
@@ -23,6 +21,7 @@ import {
   MIN_FILE_SIZE,
   getDropRejectionMessage,
 } from "@/lib/file-validation";
+import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
 
 interface FileUploadZoneProps {
   source: DataSource;
@@ -38,16 +37,14 @@ interface PendingDuplicate {
 
 export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const { filesUsed, filesLimit, refresh } = useUsage();
   const { hasQuotaIssue, quotaExceededProviders } = useQuotaStatus();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
   const [uploadStage, setUploadStage] = useState<string>("");
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
-  // Track file-level progress
-  const { files: fileStatuses } = useFileStatus(currentJobId);
+  // Use centralized ingestion progress context - GlobalProgress renders the UI
+  const { registerJob } = useIngestionProgress();
 
   // Duplicate detection state
   const [pendingDuplicate, setPendingDuplicate] = useState<PendingDuplicate | null>(null);
@@ -55,37 +52,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
   const pendingFilesRef = useRef<File[]>([]);
   const uploadResultsRef = useRef<{ success: number; fail: number }>({ success: 0, fail: 0 });
 
-  /**
-   * Called when all files in the ingestion job have finished processing.
-   * Refreshes usage stats and invalidates document cache to update UI.
-   */
-  const handleIngestionComplete = useCallback(() => {
-    console.log("📊 [FileUpload] Ingestion complete - refreshing data...");
-    
-    // Refresh usage stats (file count, storage) in sidebar
-    refresh(true);
-    
-    // Invalidate documents cache so Knowledge Base table updates
-    queryClient.invalidateQueries({ queryKey: ["documents"] });
-    
-    // Also invalidate document count for any dependent components
-    queryClient.invalidateQueries({ queryKey: ["documentCount"] });
-  }, [refresh, queryClient]);
-
   const isOverLimit = filesUsed >= filesLimit;
-  const totalStatusCount = fileStatuses.length;
-  const completedStatusCount = fileStatuses.filter((file) => {
-    if (
-      file.status === "completed" ||
-      file.status === "indexed" ||
-      file.status === "failed" ||
-      file.status === "cancelled"
-    ) {
-      return true;
-    }
-    return file.status.startsWith("skipped");
-  }).length;
-  const overallProgress = totalStatusCount > 0 ? (completedStatusCount / totalStatusCount) * 100 : 0;
 
   /**
    * Direct-to-Storage Upload Flow with Duplicate Detection:
@@ -103,8 +70,8 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
   ): Promise<boolean> => {
     if (disabled) {
       toast({
-        title: "View only",
-        description: "You need editor or admin access to upload files.",
+        title: ROLE_TOAST_TITLES.VIEW_ONLY,
+        description: ROLE_MESSAGES.NEED_EDITOR_UPLOAD,
         variant: "destructive",
       });
       return false;
@@ -171,9 +138,9 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
         }
       );
 
-      // Capture job ID for progress tracking
+      // Register job with centralized context - GlobalProgress will show UI
       if (ingestionResponse?.job_id) {
-        setCurrentJobId(ingestionResponse.job_id ?? null);
+        registerJob(ingestionResponse.job_id);
       }
 
       return true;
@@ -272,8 +239,8 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
     async (acceptedFiles: File[]) => {
       if (disabled) {
         toast({
-          title: "View only",
-          description: "You need editor or admin access to upload files.",
+          title: ROLE_TOAST_TITLES.VIEW_ONLY,
+          description: ROLE_MESSAGES.NEED_EDITOR_UPLOAD,
           variant: "destructive",
         });
         return;
@@ -325,9 +292,9 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
       {disabled && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>View only</AlertTitle>
+          <AlertTitle>{ROLE_TOAST_TITLES.VIEW_ONLY}</AlertTitle>
           <AlertDescription>
-            You need editor or admin access to upload files.
+            {ROLE_MESSAGES.NEED_EDITOR_UPLOAD}
           </AlertDescription>
         </Alert>
       )}
@@ -401,17 +368,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
         </div>
       </div>
 
-      {/* Progress Modal */}
-      {currentJobId && (
-        <IngestionProgressModal
-          jobId={currentJobId}
-          files={fileStatuses}
-          totalFiles={totalStatusCount}
-          overallProgress={overallProgress}
-          onClose={() => setCurrentJobId(null)}
-          onComplete={handleIngestionComplete}
-        />
-      )}
+      {/* Progress UI is now rendered by GlobalProgress - single source of truth */}
 
       {/* Duplicate File Confirmation Modal */}
       <DuplicateFileModal

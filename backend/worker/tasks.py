@@ -22,6 +22,8 @@ from core.config import settings
 from core.exceptions import QuotaExceededError
 from core.hashing import compute_content_hash
 from core.ingestion_utils import normalize_provider, normalize_source_type
+from core.url_utils import is_youtube_url as _is_youtube_url
+from core.log_utils import safe_file_ref, safe_file_context, safe_extension
 from core.quotas import get_plan_limits
 from core.job_counters import (
     init_ingest_job_counters,
@@ -857,11 +859,11 @@ def create_file_status(
         
         if result.data:
             file_status_id = result.data[0]["id"]
-            logger.debug(f"📄 Created file status: {filename} ({file_status_id[:8]}...)")
+            logger.debug(f"📄 Created file status: {safe_file_ref(filename=filename)} ({file_status_id[:8]}...)")
             return file_status_id
         return None
     except Exception as e:
-        logger.warning(f"⚠️ Failed to create file status for {filename}: {e}")
+        logger.warning(f"⚠️ Failed to create file status for {safe_file_ref(filename=filename)}: {e}")
         return None
 
 
@@ -1246,7 +1248,7 @@ def process_document_pipeline(
             except Exception as exc:
                 logger.warning("⚠️ [Pipeline] Failed source_id lookup: %s", exc)
         elif force_overwrite:
-            logger.info("🔄 [Pipeline] Force overwrite enabled for %s - skipping dedup check", filename)
+            logger.info("🔄 [Pipeline] Force overwrite enabled for %s - skipping dedup check", safe_file_ref(filename=filename))
         
         parse_timeout = get_parse_timeout_seconds(filename, metadata.get("mime_type") if metadata else None)
         parse_start = time.time()
@@ -1982,7 +1984,7 @@ def process_file_task(
     
     task_id = self.request.id
     filename = file_data.get("filename", "unknown")
-    logger.info(f"[ProcessFile:{task_id}] Starting: {filename} (job: {job_id})")
+    logger.info(f"[ProcessFile:{task_id}] Starting: {safe_file_context(filename=filename, job_id=job_id)} ext={safe_extension(filename)}")
     
     supabase = get_supabase()
     source_type = normalize_source_type(file_data.get("source_type") or connector_type) or (connector_type or "unknown")
@@ -2385,12 +2387,12 @@ def process_file_task(
         )
 
         logger.info(
-            f"[ProcessFile:{task_id}] ✅ Dispatched embedding task for {filename} (job: {job_id}, plan={plan_code or 'starter'})"
+            f"[ProcessFile:{task_id}] ✅ Dispatched embedding task {safe_file_context(filename=filename, job_id=job_id)} plan={plan_code or 'starter'}"
         )
-        return {"status": "queued_embedding", "filename": filename}
+        return {"status": "queued_embedding", "file_ref": safe_file_ref(filename=filename)}
         
     except Exception as e:
-        logger.error(f"[ProcessFile:{task_id}] ❌ {filename}: {e}")
+        logger.error(f"[ProcessFile:{task_id}] ❌ {safe_file_ref(filename=filename)}: {e}")
         
         update_file_status(supabase, file_status_id, job_id, status="failed",
             progress=0,
@@ -2517,11 +2519,11 @@ def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_
             queue="queues.indexing",
         )
         logger.info(
-            f"[EmbedTask:{task_id}] ✅ Dispatched indexing for {filename} (job: {job_id}, plan={plan_label})"
+            f"[EmbedTask:{task_id}] ✅ Dispatched indexing {safe_file_context(filename=filename, job_id=job_id)} plan={plan_label}"
         )
 
     except Exception as exc:
-        logger.error(f"[EmbedTask:{task_id}] ❌ {filename}: {exc}")
+        logger.error(f"[EmbedTask:{task_id}] ❌ {safe_file_ref(filename=filename)}: {exc}")
         update_file_status(
             supabase,
             file_status_id,
@@ -2640,10 +2642,10 @@ def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
             file_status_id,
             "success",
         )
-        logger.info(f"[IndexTask:{task_id}] ✅ Stored {total_chunks} chunks for {filename} (doc={doc_id})")
+        logger.info(f"[IndexTask:{task_id}] ✅ Stored {total_chunks} chunks {safe_file_context(filename=filename, doc_id=doc_id)}")
 
     except Exception as exc:
-        logger.error(f"[IndexTask:{task_id}] ❌ {filename}: {exc}")
+        logger.error(f"[IndexTask:{task_id}] ❌ {safe_file_ref(filename=filename)}: {exc}")
         update_file_status(
             supabase,
             file_status_id,
@@ -3050,6 +3052,10 @@ def crawl_discovery_task(
             raise ValueError("URL is not allowed for crawling")
         root_url = normalized_root
         
+        # Detect if this is a YouTube URL for appropriate notifications
+        is_youtube = connector._is_youtube_url(root_url)
+        content_type = "YouTube video" if is_youtube else "web pages"
+        
         # Update status
         if crawl_id:
             update_crawl_status(
@@ -3057,7 +3063,7 @@ def crawl_discovery_task(
                 crawl_id,
                 status="discovering",
                 job_id=job_id,
-                message="Discovering pages..."
+                message=f"Processing {content_type}..."
             )
         if job_id:
             try:
@@ -3066,17 +3072,24 @@ def crawl_discovery_task(
                     job_id,
                     status="processing",
                     progress=5,
-                    message="Discovering pages..."
+                    message=f"Processing {content_type}..."
                 )
             except Exception:
                 pass
         
+        # Use appropriate notification title based on content type
+        notification_title = "YouTube Indexing Started" if is_youtube else "Web Crawl Started"
+        notification_message = (
+            f"Processing YouTube video: {root_url}" if is_youtube 
+            else f"Discovering pages from {root_url}"
+        )
+        
         create_notification(
             supabase, user_id,
-            "Web Crawl Started",
-            f"Discovering pages from {root_url}",
+            notification_title,
+            notification_message,
             "info",
-            {"crawl_id": crawl_id, "crawl_type": crawl_type}
+            {"crawl_id": crawl_id, "crawl_type": crawl_type, "is_youtube": is_youtube}
         )
         
         # ===== DISCOVERY PHASE =====
@@ -3256,12 +3269,20 @@ def crawl_discovery_task(
                 message=str(e)
             )
         
+        # Detect YouTube for appropriate error notification
+        is_youtube_error = _is_youtube_url(root_url)
+        error_notification_title = "YouTube Indexing Failed" if is_youtube_error else "Web Crawl Failed"
+        error_notification_message = (
+            f"Failed to process YouTube video: {str(e)[:200]}" if is_youtube_error
+            else f"Discovery failed for {root_url}: {str(e)[:200]}"
+        )
+        
         create_notification(
             supabase, user_id,
-            "Web Crawl Failed",
-            f"Discovery failed for {root_url}: {str(e)[:200]}",
+            error_notification_title,
+            error_notification_message,
             "error",
-            {"crawl_id": crawl_id, "error": str(e)}
+            {"crawl_id": crawl_id, "error": str(e), "is_youtube": is_youtube_error}
         )
         
         raise
@@ -3724,12 +3745,33 @@ def finalize_crawl_task(
     clear_crawl_counters(crawl_id)
 
     root_url = config.get("root_url") or "website"
+    
+    # Detect YouTube URL for appropriate notification messaging
+    is_youtube = _is_youtube_url(root_url)
+    
+    if is_youtube:
+        # YouTube-specific notifications
+        if final_status == "completed":
+            notification_title = "YouTube Video Indexed"
+            notification_message = f"Successfully indexed YouTube video"
+        else:
+            notification_title = "YouTube Indexing Failed"
+            notification_message = f"Failed to index YouTube video"
+    else:
+        # Standard web crawl notifications
+        if final_status == "completed":
+            notification_title = "Web Crawl Complete"
+            notification_message = f"Ingested {success_count} pages from {root_url}"
+        else:
+            notification_title = "Web Crawl Failed"
+            notification_message = f"Failed to crawl {root_url}"
+    
     create_notification(
         supabase, user_id,
-        "Web Crawl Complete" if final_status == "completed" else "Web Crawl Failed",
-        f"Ingested {success_count} pages from {root_url}" if final_status == "completed" else f"Failed to crawl {root_url}",
+        notification_title,
+        notification_message,
         "success" if final_status == "completed" else "error",
-        {"crawl_id": crawl_id, "pages_ingested": success_count, "pages_failed": failed_count}
+        {"crawl_id": crawl_id, "pages_ingested": success_count, "pages_failed": failed_count, "is_youtube": is_youtube}
     )
 
 

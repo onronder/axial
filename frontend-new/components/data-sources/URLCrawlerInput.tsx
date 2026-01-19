@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Globe, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
-import { useUsage } from "@/hooks/useUsage";
+import { useIngestionProgress } from "@/hooks/useIngestionProgress";
 import { api } from "@/lib/api";
-import { useFileStatus } from "@/hooks/useFileStatus";
-import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
+import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
 
 interface URLCrawlerInputProps {
   source: DataSource;
@@ -29,35 +27,18 @@ type ApiError = {
 
 export function URLCrawlerInput({ source, disabled = false, disabledReason }: URLCrawlerInputProps) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const { refresh } = useUsage();
   const [url, setUrl] = useState("");
   const [depth, setDepth] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
-  const { files: fileStatuses } = useFileStatus(currentJobId);
-
-  /**
-   * Called when all URLs in the crawl job have finished processing.
-   * Refreshes usage stats and invalidates document cache to update UI.
-   */
-  const handleIngestionComplete = useCallback(() => {
-    console.log("📊 [URLCrawler] Ingestion complete - refreshing data...");
-    
-    // Refresh usage stats (file count, storage) in sidebar
-    refresh(true);
-    
-    // Invalidate documents cache so Knowledge Base table updates
-    queryClient.invalidateQueries({ queryKey: ["documents"] });
-    queryClient.invalidateQueries({ queryKey: ["documentCount"] });
-  }, [refresh, queryClient]);
+  // Use centralized ingestion progress context - GlobalProgress renders the UI
+  const { registerJob } = useIngestionProgress();
 
   const handleCrawl = async () => {
     if (disabled) {
       toast({
-        title: "Action locked",
-        description: disabledReason || "You need editor or admin access to run crawls.",
+        title: ROLE_TOAST_TITLES.ACTION_LOCKED,
+        description: disabledReason || ROLE_MESSAGES.NEED_EDITOR_CRAWL,
         variant: "destructive",
       });
       return;
@@ -91,7 +72,8 @@ export function URLCrawlerInput({ source, disabled = false, disabledReason }: UR
         || (response as { data?: { crawl_id?: string } })?.data?.crawl_id
         || null;
       if (jobId) {
-        setCurrentJobId(jobId);
+        // Register job with centralized context - GlobalProgress will show UI
+        registerJob(jobId);
       }
 
       toast({
@@ -183,22 +165,7 @@ export function URLCrawlerInput({ source, disabled = false, disabledReason }: UR
         <p className="mt-3 text-xs text-muted-foreground">{disabledReason}</p>
       )}
 
-      {currentJobId && (
-        <IngestionProgressModal
-          jobId={currentJobId}
-          files={fileStatuses}
-          totalFiles={fileStatuses.length}
-          overallProgress={
-            fileStatuses.length > 0
-              ? (fileStatuses.filter((f) => f.status === "completed" || f.status === "indexed").length /
-                  fileStatuses.length) *
-                100
-              : 0
-          }
-          onClose={() => setCurrentJobId(null)}
-          onComplete={handleIngestionComplete}
-        />
-      )}
+      {/* Progress UI is now rendered by GlobalProgress - single source of truth */}
     </div>
   );
 }

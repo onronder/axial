@@ -1445,15 +1445,59 @@ async def chat_endpoint(
     # ========== STEP 13: GENERATION ==========
     if payload.stream:
         # Wrap the stream to include status events for RAG pipeline visualization
+        # Status events provide visual feedback for the RAG pipeline steps
         async def stream_with_status():
-            # Send initial status: Found sources
+            import asyncio
+            
+            # Calculate context for status messages
             source_count = len(sources_metadata)
             scope_name = scope_context.scope_name if scope_context else None
             
-            yield f"data: {json.dumps({'type': 'status', 'step': 'found', 'message': f'Found {source_count} relevant sources', 'details': {'sourceCount': source_count, 'scopeName': scope_name}})}\n\n"
+            # Determine if this is a complex query that may take longer
+            is_complex = guardrail_result.complexity == "COMPLEX" if guardrail_result else False
+            is_smart_model = actual_tier == settings.MODEL_ALIAS_SMART
             
-            # Send status: Generating
-            yield f"data: {json.dumps({'type': 'status', 'step': 'generating', 'message': 'Generating response...'})}\n\n"
+            # === Status 1: Searching ===
+            # Show immediately to give user feedback
+            searching_message = "Searching knowledge base..."
+            if scope_name:
+                searching_message = f"Searching {scope_name}..."
+            
+            yield f"data: {json.dumps({'type': 'status', 'step': 'searching', 'message': searching_message, 'details': {'scopeName': scope_name}})}\n\n"
+            
+            # Small delay to ensure event is rendered before next
+            await asyncio.sleep(0.15)
+            
+            # === Status 2: Analyzing ===
+            analyzing_message = "Analyzing context..."
+            if source_count > 10:
+                analyzing_message = f"Analyzing {source_count} documents..."
+            
+            yield f"data: {json.dumps({'type': 'status', 'step': 'analyzing', 'message': analyzing_message, 'details': {'sourceCount': source_count}})}\n\n"
+            
+            await asyncio.sleep(0.15)
+            
+            # === Status 3: Found ===
+            if source_count > 0:
+                found_message = f"Found {source_count} relevant sources"
+                if scope_name:
+                    found_message = f"Found {source_count} sources in {scope_name}"
+            else:
+                found_message = "No specific sources found, using general knowledge"
+            
+            yield f"data: {json.dumps({'type': 'status', 'step': 'found', 'message': found_message, 'details': {'sourceCount': source_count, 'scopeName': scope_name}})}\n\n"
+            
+            await asyncio.sleep(0.1)
+            
+            # === Status 4: Generating ===
+            # Include model info and complexity warning for transparency
+            generating_message = "Generating response..."
+            if is_complex and is_smart_model:
+                generating_message = "Generating detailed response (complex query)..."
+            elif is_smart_model:
+                generating_message = "Generating comprehensive response..."
+            
+            yield f"data: {json.dumps({'type': 'status', 'step': 'generating', 'message': generating_message, 'details': {'model': actual_tier, 'isComplex': is_complex}})}\n\n"
             
             # Yield all events from the actual streaming response
             async for event in stream_chat_response(

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { DataSourceIcon } from "./DataSourceIcon";
 import { cn } from "@/lib/utils";
 import type { MergedDataSource, PlanType } from "@/types";
+import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
 
 interface DataSourceCardProps {
   source: MergedDataSource;
@@ -70,8 +71,8 @@ export function DataSourceCard({
   const handleConnect = async () => {
     if (disabled) {
       toast({
-        title: "View only",
-        description: "You need editor or admin access to connect sources.",
+        title: ROLE_TOAST_TITLES.VIEW_ONLY,
+        description: ROLE_MESSAGES.NEED_EDITOR_CONNECT,
         variant: "destructive",
       });
       return;
@@ -92,8 +93,8 @@ export function DataSourceCard({
   const handleDisconnect = async () => {
     if (disabled) {
       toast({
-        title: "View only",
-        description: "You need editor or admin access to manage connections.",
+        title: ROLE_TOAST_TITLES.VIEW_ONLY,
+        description: ROLE_MESSAGES.NEED_EDITOR_DISCONNECT,
         variant: "destructive",
       });
       return;
@@ -119,8 +120,8 @@ export function DataSourceCard({
   const handleSync = async () => {
     if (disabled) {
       toast({
-        title: "View only",
-        description: "You need editor or admin access to sync data.",
+        title: ROLE_TOAST_TITLES.VIEW_ONLY,
+        description: ROLE_MESSAGES.NEED_EDITOR_SYNC,
         variant: "destructive",
       });
       return;
