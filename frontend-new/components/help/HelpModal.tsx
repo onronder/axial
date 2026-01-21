@@ -285,9 +285,9 @@ export function HelpModal() {
                     </div>
                 )}
 
-                <div className="flex h-full">
+                <div className="flex h-full min-h-0">
                     {/* Sidebar */}
-                    <div className="w-80 border-r border-border bg-muted/30 flex flex-col">
+                    <div className="w-80 border-r border-border bg-muted/30 flex flex-col min-h-0">
                         {/* Header */}
                         <div className="p-4 border-b border-border">
                             <div className="flex items-center justify-between mb-4">
@@ -551,7 +551,7 @@ export function HelpModal() {
                     </div>
 
                     {/* Content Area */}
-                    <div className="flex-1 flex flex-col min-w-0 bg-background">
+                    <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-background">
                         {/* Header with close button */}
                         <div className="flex items-center justify-between px-6 py-3 border-b border-border/50">
                             {selectedArticle && (
@@ -575,14 +575,6 @@ export function HelpModal() {
                                     </span>
                                 </nav>
                             )}
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={closeHelp}
-                                className="h-8 w-8 shrink-0"
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
                         </div>
 
                         {/* Article Content */}
