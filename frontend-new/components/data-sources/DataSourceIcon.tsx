@@ -241,6 +241,7 @@ const customIconMap: Record<string, React.FC<{ className?: string }>> = {
   "github": GitHubIcon,
   "amazon-s3": AmazonS3Icon,
   "amazon_s3": AmazonS3Icon,
+  "s3": AmazonS3Icon,
 };
 
 // Fallback icons with colors for sources without custom SVGs

@@ -96,7 +96,7 @@ export function SftpConnectModal({ open, onOpenChange, onConnected }: SftpConnec
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4">
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-4">
           <div className="grid gap-2">
             <label className="text-sm font-medium text-foreground">Host</label>
             <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="sftp.example.com" />
@@ -145,14 +145,14 @@ export function SftpConnectModal({ open, onOpenChange, onConnected }: SftpConnec
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => handleClose(false)} disabled={submitting}>
+            <Button type="button" variant="ghost" onClick={() => handleClose(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting}>
+            <Button type="submit" disabled={submitting}>
               {submitting ? "Connecting..." : "Connect"}
             </Button>
           </div>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

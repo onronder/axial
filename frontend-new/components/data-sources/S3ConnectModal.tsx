@@ -380,7 +380,7 @@ export function S3ConnectModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-5 py-2">
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="grid gap-5 py-2">
           {/* Enterprise Notice */}
           <Alert className="border-violet-500/50 bg-violet-500/5">
             <Info className="h-4 w-4 text-violet-500" />
@@ -653,8 +653,7 @@ export function S3ConnectModal({
               Cancel
             </Button>
             <Button
-              type="button"
-              onClick={handleSubmit}
+              type="submit"
               disabled={submitting}
               className="min-w-[100px]"
             >
@@ -668,7 +667,7 @@ export function S3ConnectModal({
               )}
             </Button>
           </div>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

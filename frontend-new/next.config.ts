@@ -201,6 +201,24 @@ export default withSentryConfig(nextConfig, {
   // side errors will fail.
   tunnelRoute: "/monitoring",
 
+  // Ignore Next.js internal files that don't have source maps
+  // This suppresses warnings like "could not determine a source map reference"
+  sourcemaps: {
+    ignore: [
+      "node_modules/**",
+      // Next.js client reference manifests (React Server Components)
+      "**/*_client-reference-manifest.js",
+      "**/*_client-reference-manifest.js.map",
+      // Next.js internal manifests
+      "**/middleware-build-manifest.js",
+      "**/server-reference-manifest.js",
+      "**/next-font-manifest.js",
+      "**/interception-route-rewrite-manifest.js",
+      // Build artifacts without source maps
+      "**/*.hot-update.js",
+    ],
+  },
+
   webpack: {
     // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
     // See the following for more information:
