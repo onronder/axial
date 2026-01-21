@@ -87,7 +87,7 @@ export function HelpModal() {
                 </DialogDescription>
                 <div className="flex h-full">
                     {/* Sidebar */}
-                    <div className="w-64 border-r border-border bg-muted/30 flex flex-col">
+                    <div className="w-64 border-r border-border bg-muted/30 flex flex-col min-h-0">
                         {/* Header */}
                         <div className="p-4 border-b border-border">
                             <div className="flex items-center gap-2 mb-4">
@@ -164,7 +164,7 @@ export function HelpModal() {
                     </div>
 
                     {/* Content Area */}
-                    <div className="flex-1 flex flex-col">
+                    <div className="flex-1 flex flex-col min-h-0">
                         {/* Close Button */}
                         <div className="flex justify-end p-2 border-b border-border">
                             <Button
