@@ -1,6 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+/**
+ * IngestionProgressModal - Per-file progress display
+ * 
+ * OPTIMIZATIONS:
+ * - FileProgressCard is memoized to prevent re-renders when other files update
+ * - useMemo for derived calculations (completedFiles, etc.)
+ * - onComplete callback is debounced to prevent multiple triggers
+ */
+
+import { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
 import { ChevronDown, ChevronUp, X, FileText, Loader2, CheckCircle2, XCircle, Clock, SkipForward } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileStatus, getStatusLabel } from "@/hooks/useFileStatus";
@@ -43,61 +52,94 @@ export function IngestionProgressModal({
     const keyboardShortcuts = useRef<KeyboardShortcuts | null>(null);
     const focusTrap = useRef<FocusTrap | null>(null);
     const hasCalledComplete = useRef(false);
+    const completeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const isSkippedStatus = (status: string) => status.startsWith("skipped");
-    const completedFiles = files.filter((f) => f.status === "completed" || f.status === "indexed").length;
-    const failedFiles = files.filter((f) => f.status === "failed").length;
-    const skippedFiles = files.filter((f) => isSkippedStatus(f.status)).length;
-    const processingFiles = files.filter((f) => {
-        if (isSkippedStatus(f.status)) return false;
-        return !["completed", "indexed", "failed", "cancelled"].includes(f.status);
-    }).length;
+    /**
+     * MEMOIZED DERIVED VALUES
+     * Prevents recalculation on every render
+     */
+    const { completedFiles, failedFiles, skippedFiles, processingFiles, allComplete } = useMemo(() => {
+        const isSkippedStatus = (status: string) => status.startsWith("skipped");
+        
+        const completed = files.filter((f) => f.status === "completed" || f.status === "indexed").length;
+        const failed = files.filter((f) => f.status === "failed").length;
+        const skipped = files.filter((f) => isSkippedStatus(f.status)).length;
+        const processing = files.filter((f) => {
+            if (isSkippedStatus(f.status)) return false;
+            return !["completed", "indexed", "failed", "cancelled"].includes(f.status);
+        }).length;
 
-    const allComplete = totalFiles > 0 && completedFiles + failedFiles + skippedFiles === totalFiles;
+        return {
+            completedFiles: completed,
+            failedFiles: failed,
+            skippedFiles: skipped,
+            processingFiles: processing,
+            allComplete: totalFiles > 0 && completed + failed + skipped === totalFiles,
+        };
+    }, [files, totalFiles]);
+
+    /**
+     * Memoized close handler
+     */
+    const handleClose = useCallback(() => {
+        onClose();
+    }, [onClose]);
+
+    /**
+     * Memoized expand toggle
+     */
+    const toggleExpand = useCallback(() => {
+        setIsExpanded((prev) => !prev);
+    }, []);
 
     // Setup keyboard shortcuts and focus trap
     useEffect(() => {
         if (!modalRef.current) return;
 
-        // Initialize keyboard shortcuts
         const shortcuts = new KeyboardShortcuts();
-        shortcuts.register('escape', onClose);
-        shortcuts.register('ctrl+e', () => setIsExpanded((prev) => !prev));
+        shortcuts.register('escape', handleClose);
+        shortcuts.register('ctrl+e', toggleExpand);
         shortcuts.start();
         keyboardShortcuts.current = shortcuts;
 
-        // Initialize focus trap
         const trap = new FocusTrap(modalRef.current);
         trap.activate();
         focusTrap.current = trap;
 
-        // Announce modal opening
         announceToScreenReader('File processing progress modal opened', 'polite');
 
         return () => {
             shortcuts.stop();
             trap.deactivate();
         };
-    }, [onClose]);
+    }, [handleClose, toggleExpand]);
 
-    // Announce progress updates and trigger completion callback
+    // Trigger completion callback ONCE when all files finish
     useEffect(() => {
-        if (allComplete) {
+        if (allComplete && !hasCalledComplete.current && onComplete) {
+            hasCalledComplete.current = true;
+            
             announceToScreenReader(
                 `Processing complete. ${completedFiles} files completed${failedFiles > 0 ? `, ${failedFiles} failed` : ''}`,
                 'assertive'
             );
             
-            // Trigger onComplete callback once when all files finish processing
-            // This is used to refresh usage stats and document lists
-            if (!hasCalledComplete.current && onComplete) {
-                hasCalledComplete.current = true;
-                // Small delay to ensure backend has committed all changes
-                setTimeout(() => {
-                    onComplete();
-                }, 500);
+            // Debounced completion callback - prevents double triggers
+            if (completeTimeoutRef.current) {
+                clearTimeout(completeTimeoutRef.current);
             }
+            
+            completeTimeoutRef.current = setTimeout(() => {
+                onComplete();
+                completeTimeoutRef.current = null;
+            }, 500);
         }
+
+        return () => {
+            if (completeTimeoutRef.current) {
+                clearTimeout(completeTimeoutRef.current);
+            }
+        };
     }, [allComplete, completedFiles, failedFiles, onComplete]);
 
     return (
@@ -215,7 +257,14 @@ interface FileProgressCardProps {
 type ProcessingStage = "uploading" | "parsing" | "chunking" | "embedding" | "indexing";
 type StageStatus = "pending" | "in_progress" | "complete" | "failed";
 
-function FileProgressCard({ file, jobId }: FileProgressCardProps) {
+/**
+ * MEMOIZED FileProgressCard
+ * 
+ * Only re-renders when the specific file's data changes, not when
+ * sibling files update. This is critical for performance when
+ * processing many files simultaneously.
+ */
+const FileProgressCard = memo(function FileProgressCard({ file, jobId }: FileProgressCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const statusLabel = getStatusLabel(file.status);
     const isSkipped = file.status.startsWith("skipped");
@@ -446,7 +495,7 @@ function FileProgressCard({ file, jobId }: FileProgressCardProps) {
             </div>
         </div>
     );
-}
+});
 
 function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B";

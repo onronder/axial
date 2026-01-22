@@ -182,6 +182,29 @@ class Settings(BaseSettings):
     CONNECTOR_CONCURRENCY_BOX: int = 2
     CONNECTOR_CONCURRENCY_S3: int = 4  # S3 has high rate limits
     CONNECTOR_CONCURRENCY_SFTP: int = 2  # SSH connection limits
+
+    # =========================================================================
+    # YouTube Proxy Configuration (Bright Data / Residential Proxy)
+    # =========================================================================
+    # Required for YouTube transcript fetching from cloud infrastructure.
+    # YouTube blocks most cloud provider IPs (AWS, GCP, Azure, Railway, etc.)
+    # 
+    # Supported proxy formats:
+    #   - HTTP: http://user:pass@proxy.brightdata.com:22225
+    #   - HTTPS: https://user:pass@proxy.brightdata.com:22225
+    #   - SOCKS5: socks5://user:pass@proxy.brightdata.com:22225
+    #
+    # Bright Data setup:
+    #   1. Create a "Residential" or "Datacenter" zone in Bright Data dashboard
+    #   2. Get your zone credentials (username, password, host, port)
+    #   3. Format: http://<username>:<password>@<host>:<port>
+    #
+    YOUTUBE_PROXY_URL: Optional[str] = None
+    YOUTUBE_PROXY_ENABLED: bool = True  # Set False to skip proxy even if configured
+    YOUTUBE_PROXY_TIMEOUT: int = 30  # Proxy request timeout in seconds
+    YOUTUBE_PROXY_RETRY_COUNT: int = 3  # Retry attempts on proxy failure
+    YOUTUBE_PROXY_RETRY_DELAY: float = 1.0  # Base delay between retries (exponential backoff)
+    YOUTUBE_DIRECT_FALLBACK: bool = True  # Try direct connection if proxy fails
  
 
     # =========================================================================

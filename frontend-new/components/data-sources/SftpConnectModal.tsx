@@ -120,6 +120,7 @@ export function SftpConnectModal({ open, onOpenChange, onConnected }: SftpConnec
               type="password"
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              autoComplete="current-password"
             />
           </div>
 

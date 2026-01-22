@@ -62,9 +62,13 @@ const nextConfig: NextConfig = {
       
       // Scripts: self + inline for Next.js hydration + eval for dev tools (removed in prod ideally)
       // 'unsafe-inline' needed for Next.js script tags, 'unsafe-eval' for development
+      // vercel.live needed for Vercel preview feedback tool
       process.env.NODE_ENV === 'development'
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.sentry-cdn.com https://browser.sentry-cdn.com"
-        : "script-src 'self' 'unsafe-inline' https://js.sentry-cdn.com https://browser.sentry-cdn.com",
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.sentry-cdn.com https://browser.sentry-cdn.com https://vercel.live"
+        : "script-src 'self' 'unsafe-inline' https://js.sentry-cdn.com https://browser.sentry-cdn.com https://vercel.live",
+      
+      // Workers: allow blob URLs for web workers (e.g., PDF parsing, syntax highlighting)
+      "worker-src 'self' blob:",
       
       // Styles: self + inline for Tailwind/styled components
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",

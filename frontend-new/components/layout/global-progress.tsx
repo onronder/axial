@@ -9,9 +9,14 @@
  * All other components (IngestModal, FileUploadZone, YoutubeInput, etc.)
  * should use the useIngestionProgress() hook to register jobs, NOT render
  * their own progress modals.
+ * 
+ * TOAST DEDUPLICATION:
+ * - Uses refs to track which jobs have already shown toasts
+ * - Prevents duplicate toasts from rapid realtime updates
+ * - Only GlobalProgress shows ingestion toasts (not useNotifications)
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -43,10 +48,9 @@ interface IngestionJob {
     processed_files: number;
     status: "pending" | "processing" | "completed" | "failed" | "cancelled";
     error_message?: string;
-    // NEW: Granular progress tracking from backend
-    progress?: number;           // 0-100 percentage  
-    message?: string;            // e.g., "Indexing chunk 45/200..."
-    status_message?: string;     // legacy alias
+    progress?: number;
+    message?: string;
+    status_message?: string;
     created_at: string;
     updated_at: string;
 }
@@ -66,7 +70,6 @@ export function GlobalProgress() {
     const queryClient = useQueryClient();
     const { refresh } = useUsage();
     
-    // Use context for expanded state - SINGLE SOURCE OF TRUTH
     const { expandedJobId, expandJob, registerJob, unregisterJob } = useIngestionProgress();
     
     const [jobs, setJobs] = useState<IngestionJob[]>([]);
@@ -76,16 +79,115 @@ export function GlobalProgress() {
     const { files: activeFiles } = useFileStatus(expandedJobId);
 
     /**
-     * Called when all files in the active job have finished processing.
-     * Refreshes usage stats and invalidates document cache to update UI.
+     * TOAST DEDUPLICATION REFS
+     * Track which jobs have already shown each type of toast to prevent duplicates
+     */
+    const completionToastsShown = useRef<Set<string>>(new Set());
+    const failureToastsShown = useRef<Set<string>>(new Set());
+    const cancelledToastsShown = useRef<Set<string>>(new Set());
+    const startToastsShown = useRef<Set<string>>(new Set());
+
+    /**
+     * THROTTLE JOB UPDATES
+     * Batch rapid updates to prevent UI thrashing
+     */
+    const pendingJobUpdates = useRef<Map<string, IngestionJob>>(new Map());
+    const jobUpdateTimer = useRef<NodeJS.Timeout | null>(null);
+    const JOB_UPDATE_THROTTLE = 100; // ms
+
+    /**
+     * Apply pending job updates in a batch
+     */
+    const flushJobUpdates = useCallback(() => {
+        if (pendingJobUpdates.current.size === 0) return;
+
+        setJobs((prev) => {
+            const updated = prev.map((job) => {
+                const update = pendingJobUpdates.current.get(job.id);
+                return update || job;
+            });
+            pendingJobUpdates.current.clear();
+            return updated;
+        });
+    }, []);
+
+    /**
+     * Schedule a throttled job update
+     */
+    const scheduleJobUpdate = useCallback((job: IngestionJob) => {
+        pendingJobUpdates.current.set(job.id, job);
+
+        if (!jobUpdateTimer.current) {
+            jobUpdateTimer.current = setTimeout(() => {
+                flushJobUpdates();
+                jobUpdateTimer.current = null;
+            }, JOB_UPDATE_THROTTLE);
+        }
+    }, [flushJobUpdates]);
+
+    /**
+     * Show toast only once per job per status
+     */
+    const showCompletionToast = useCallback((job: IngestionJob) => {
+        if (completionToastsShown.current.has(job.id)) return;
+        completionToastsShown.current.add(job.id);
+
+        const completionMessage = job.message || job.status_message;
+        const provider = normalizeSourceType(job.provider) || job.provider;
+        
+        toast({
+            title: "Ingestion Complete! 🎉",
+            description: completionMessage ||
+                `Successfully processed ${job.processed_files} files from ${formatSourceTypeLabel(provider)}.`,
+        });
+
+        // Auto-dismiss after delay
+        setTimeout(() => {
+            setJobs((prev) =>
+                prev.filter((j) => j.id !== job.id || expandedJobIdRef.current === job.id)
+            );
+            unregisterJob(job.id);
+        }, COMPLETION_DISPLAY_TIME);
+    }, [toast, unregisterJob]);
+
+    const showFailureToast = useCallback((job: IngestionJob) => {
+        if (failureToastsShown.current.has(job.id)) return;
+        failureToastsShown.current.add(job.id);
+
+        toast({
+            title: "Ingestion Failed",
+            description: job.error_message || "An error occurred during processing.",
+            variant: "destructive",
+        });
+
+        setTimeout(() => unregisterJob(job.id), COMPLETION_DISPLAY_TIME);
+    }, [toast, unregisterJob]);
+
+    const showCancelledToast = useCallback((job: IngestionJob) => {
+        if (cancelledToastsShown.current.has(job.id)) return;
+        cancelledToastsShown.current.add(job.id);
+
+        const provider = normalizeSourceType(job.provider) || job.provider;
+        toast({
+            title: "Ingestion Cancelled",
+            description: `${formatSourceTypeLabel(provider)} ingestion was cancelled.`,
+            variant: "default",
+        });
+
+        setTimeout(() => {
+            setJobs((prev) =>
+                prev.filter((j) => j.id !== job.id || expandedJobIdRef.current === job.id)
+            );
+            unregisterJob(job.id);
+        }, COMPLETION_DISPLAY_TIME);
+    }, [toast, unregisterJob]);
+
+    /**
+     * Called when ingestion completes - refresh data caches
      */
     const handleIngestionComplete = useCallback(() => {
         console.log("📊 [GlobalProgress] Ingestion complete - refreshing data...");
-        
-        // Refresh usage stats (file count, storage) in sidebar
         refresh(true);
-        
-        // Invalidate documents cache so Knowledge Base table updates
         queryClient.invalidateQueries({ queryKey: ["documents"] });
         queryClient.invalidateQueries({ queryKey: ["documentCount"] });
     }, [refresh, queryClient]);
@@ -94,7 +196,6 @@ export function GlobalProgress() {
     useEffect(() => {
         if (!user?.id) return;
 
-        // Fetch initial active jobs
         const fetchJobs = async () => {
             const { data } = await supabase
                 .from("ingestion_jobs")
@@ -109,7 +210,6 @@ export function GlobalProgress() {
 
         fetchJobs();
 
-        // Subscribe to realtime updates
         const channel = supabase
             .channel(`progress_${user.id}`)
             .on(
@@ -125,63 +225,45 @@ export function GlobalProgress() {
                     const oldJob = payload.old as IngestionJob;
 
                     if (payload.eventType === "INSERT") {
-                        setJobs((prev) => [newJob, ...prev].slice(0, 5));
-                        // Register new jobs in context
-                        registerJob(newJob.id);
+                        // Only show start toast once
+                        if (!startToastsShown.current.has(newJob.id)) {
+                            startToastsShown.current.add(newJob.id);
+                            setJobs((prev) => [newJob, ...prev].slice(0, 5));
+                            registerJob(newJob.id);
+                        }
                     }
 
                     if (payload.eventType === "UPDATE") {
-                        setJobs((prev) =>
-                            prev.map((job) => (job.id === newJob.id ? newJob : job))
-                        );
+                        // Check for terminal status changes BEFORE throttled update
+                        const wasNotCompleted = oldJob?.status !== "completed";
+                        const wasNotFailed = oldJob?.status !== "failed";
+                        const wasNotCancelled = oldJob?.status !== "cancelled";
+
+                        // Handle terminal statuses immediately (no throttle)
+                        if (newJob.status === "completed" && wasNotCompleted) {
+                            // Immediately update job state for terminal status
+                            setJobs((prev) =>
+                                prev.map((job) => (job.id === newJob.id ? newJob : job))
+                            );
+                            showCompletionToast(newJob);
+                        } else if (newJob.status === "failed" && wasNotFailed) {
+                            setJobs((prev) =>
+                                prev.map((job) => (job.id === newJob.id ? newJob : job))
+                            );
+                            showFailureToast(newJob);
+                        } else if (newJob.status === "cancelled" && wasNotCancelled) {
+                            setJobs((prev) =>
+                                prev.map((job) => (job.id === newJob.id ? newJob : job))
+                            );
+                            showCancelledToast(newJob);
+                        } else {
+                            // Throttle non-terminal updates
+                            scheduleJobUpdate(newJob);
+                        }
+
+                        // Update active job ref if expanded
                         if (expandedJobIdRef.current === newJob.id) {
                             setActiveJob(newJob);
-                        }
-
-                        // Show completion toast
-                        if (newJob.status === "completed" && oldJob?.status !== "completed") {
-                            const completionMessage = newJob.message || newJob.status_message;
-                            const provider = normalizeSourceType(newJob.provider) || newJob.provider;
-                            toast({
-                                title: "Ingestion Complete! 🎉",
-                                description: completionMessage ||
-                                    `Successfully processed ${newJob.processed_files} files from ${formatSourceTypeLabel(provider)}.`,
-                            });
-
-                            // Auto-dismiss after delay and unregister from context
-                            setTimeout(() => {
-                                setJobs((prev) =>
-                                    prev.filter((j) => j.id !== newJob.id || expandedJobIdRef.current === newJob.id)
-                                );
-                                unregisterJob(newJob.id);
-                            }, COMPLETION_DISPLAY_TIME);
-                        }
-
-                        if (newJob.status === "failed" && oldJob?.status !== "failed") {
-                            toast({
-                                title: "Ingestion Failed",
-                                description: newJob.error_message || "An error occurred during processing.",
-                                variant: "destructive",
-                            });
-                            // Unregister failed jobs after delay
-                            setTimeout(() => unregisterJob(newJob.id), COMPLETION_DISPLAY_TIME);
-                        }
-
-                        if (newJob.status === "cancelled" && oldJob?.status !== "cancelled") {
-                            const provider = normalizeSourceType(newJob.provider) || newJob.provider;
-                            toast({
-                                title: "Ingestion Cancelled",
-                                description: `${formatSourceTypeLabel(provider)} ingestion was cancelled.`,
-                                variant: "default",
-                            });
-
-                            // Auto-dismiss after delay and unregister from context
-                            setTimeout(() => {
-                                setJobs((prev) =>
-                                    prev.filter((j) => j.id !== newJob.id || expandedJobIdRef.current === newJob.id)
-                                );
-                                unregisterJob(newJob.id);
-                            }, COMPLETION_DISPLAY_TIME);
                         }
                     }
                 }
@@ -193,11 +275,16 @@ export function GlobalProgress() {
             });
 
         return () => {
+            if (jobUpdateTimer.current) {
+                clearTimeout(jobUpdateTimer.current);
+                jobUpdateTimer.current = null;
+            }
+            flushJobUpdates();
             channel.unsubscribe();
         };
-    }, [user?.id, toast]);
+    }, [user?.id, registerJob, showCompletionToast, showFailureToast, showCancelledToast, scheduleJobUpdate, flushJobUpdates]);
 
-    // Sync expanded job ref and active job data
+    // Sync expanded job ref
     useEffect(() => {
         expandedJobIdRef.current = expandedJobId;
         if (!expandedJobId) {
@@ -210,32 +297,30 @@ export function GlobalProgress() {
         }
     }, [expandedJobId, jobs]);
 
-    // Filter out dismissed jobs and the currently expanded job
     const visibleJobs = jobs.filter(
         (job) => !dismissedIds.has(job.id) && job.id !== expandedJobId
     );
 
-    const handleDismiss = (jobId: string) => {
+    const handleDismiss = useCallback((jobId: string) => {
         setDismissedIds((prev) => new Set([...prev, jobId]));
         setJobs((prev) => prev.filter((j) => j.id !== jobId));
         unregisterJob(jobId);
-    };
+    }, [unregisterJob]);
 
-    const handleOpenDetails = (job: IngestionJob) => {
+    const handleOpenDetails = useCallback((job: IngestionJob) => {
         expandJob(job.id);
         setActiveJob(job);
-    };
+    }, [expandJob]);
 
-    const handleCloseDetails = () => {
+    const handleCloseDetails = useCallback(() => {
         expandJob(null);
         setActiveJob(null);
-    };
+    }, [expandJob]);
 
     if (visibleJobs.length === 0 && !expandedJobId) return null;
 
     return (
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
-            {/* SINGLE progress modal - only rendered here */}
             {expandedJobId && (
                 <IngestionProgressModal
                     jobId={expandedJobId}
@@ -265,7 +350,10 @@ export function GlobalProgress() {
     );
 }
 
-function JobCard({
+/**
+ * Memoized JobCard to prevent unnecessary re-renders
+ */
+const JobCard = memo(function JobCard({
     job,
     onDismiss,
     onOpenDetails,
@@ -278,7 +366,6 @@ function JobCard({
     const Icon = providerIcons[normalizedProvider] || FileText;
     const label = formatSourceTypeLabel(normalizedProvider);
 
-    // Use backend progress if available, fallback to file-based calculation
     const progress = job.progress ?? (
         job.total_files > 0
             ? Math.round((job.processed_files / job.total_files) * 100)
@@ -290,7 +377,6 @@ function JobCard({
     const isFailed = job.status === "failed";
     const isCancelled = job.status === "cancelled";
 
-    // Status message from backend or fallback
     const statusText = job.message ||
         job.status_message ||
         (job.status === "pending" ? "Starting..." :
@@ -322,7 +408,6 @@ function JobCard({
                 isCancelled && "border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20"
             )}
         >
-            {/* Dismiss button */}
             {(isComplete || isFailed || isCancelled) && (
                 <button
                     onClick={(event) => {
@@ -335,7 +420,6 @@ function JobCard({
                 </button>
             )}
 
-            {/* Status Icon */}
             <div className={cn(
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
                 isActive && "bg-primary/10",
@@ -354,7 +438,6 @@ function JobCard({
                 )}
             </div>
 
-            {/* Content */}
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                     <Icon className="h-4 w-4 text-muted-foreground" />
@@ -363,7 +446,6 @@ function JobCard({
 
                 {isActive && (
                     <>
-                        {/* Progress Bar with smooth animation */}
                         <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
                             <motion.div
                                 className="h-full bg-gradient-to-r from-primary to-primary/80 rounded-full"
@@ -372,7 +454,6 @@ function JobCard({
                                 transition={{ duration: 0.5, ease: "easeOut" }}
                             />
                         </div>
-                        {/* Status Text with percentage */}
                         <div className="mt-1 flex items-center justify-between">
                             <p className="text-xs text-muted-foreground truncate max-w-[180px]">
                                 {statusText}
@@ -405,4 +486,4 @@ function JobCard({
             <ChevronRight className="h-4 w-4 text-muted-foreground/70" />
         </motion.div>
     );
-}
+});

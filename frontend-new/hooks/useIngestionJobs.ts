@@ -1,12 +1,23 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+/**
+ * useIngestionJobs Hook
+ * 
+ * Provides realtime tracking of ingestion jobs.
+ * 
+ * IMPORTANT: TOASTS ARE HANDLED BY GlobalProgress
+ * 
+ * This hook only manages job data state. All toast notifications for
+ * ingestion events (start, complete, failed, cancelled) are handled
+ * by the GlobalProgress component to prevent duplicate toasts.
+ */
+
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { RealtimeChannel } from "@supabase/supabase-js";
-import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 
 export interface IngestionJob {
     id: string;
@@ -16,10 +27,9 @@ export interface IngestionJob {
     total_files: number;
     processed_files: number;
     error_message?: string;
-    // NEW: Granular progress tracking from backend
-    progress?: number;           // 0-100 percentage
-    message?: string;            // e.g., "Indexing chunk 45/200..."
-    status_message?: string;     // legacy alias
+    progress?: number;
+    message?: string;
+    status_message?: string;
     created_at: string;
     updated_at: string;
 }
@@ -33,16 +43,84 @@ interface UseIngestionJobsReturn {
 }
 
 /**
+ * Throttle interval for batching realtime updates (ms)
+ */
+const THROTTLE_INTERVAL = 100;
+
+/**
  * Hook for realtime ingestion job tracking.
  * 
  * Uses Supabase Realtime to subscribe to job updates.
  * No polling needed - updates arrive instantly!
+ * 
+ * NOTE: Toasts are NOT shown here - GlobalProgress handles all
+ * ingestion-related toast notifications to prevent duplicates.
  */
 export function useIngestionJobs(): UseIngestionJobsReturn {
     const { user } = useAuth();
     const { toast } = useToast();
     const [jobs, setJobs] = useState<IngestionJob[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    // Throttling refs
+    const pendingUpdates = useRef<Map<string, IngestionJob>>(new Map());
+    const pendingInserts = useRef<IngestionJob[]>([]);
+    const pendingDeletes = useRef<Set<string>>(new Set());
+    const throttleTimer = useRef<NodeJS.Timeout | null>(null);
+
+    /**
+     * Flush all pending changes in a single batch
+     */
+    const flushPendingChanges = useCallback(() => {
+        const hasUpdates = pendingUpdates.current.size > 0;
+        const hasInserts = pendingInserts.current.length > 0;
+        const hasDeletes = pendingDeletes.current.size > 0;
+
+        if (!hasUpdates && !hasInserts && !hasDeletes) return;
+
+        setJobs((prev) => {
+            let result = [...prev];
+
+            // Apply deletes
+            if (hasDeletes) {
+                result = result.filter((j) => !pendingDeletes.current.has(j.id));
+                pendingDeletes.current.clear();
+            }
+
+            // Apply updates
+            if (hasUpdates) {
+                result = result.map((j) => {
+                    const update = pendingUpdates.current.get(j.id);
+                    return update || j;
+                });
+                pendingUpdates.current.clear();
+            }
+
+            // Apply inserts
+            if (hasInserts) {
+                const existingIds = new Set(result.map((j) => j.id));
+                const newJobs = pendingInserts.current.filter(
+                    (j) => !existingIds.has(j.id)
+                );
+                result = [...newJobs, ...result].slice(0, 20);
+                pendingInserts.current = [];
+            }
+
+            return result;
+        });
+    }, []);
+
+    /**
+     * Schedule a throttled flush
+     */
+    const scheduleFlush = useCallback(() => {
+        if (throttleTimer.current) return;
+
+        throttleTimer.current = setTimeout(() => {
+            flushPendingChanges();
+            throttleTimer.current = null;
+        }, THROTTLE_INTERVAL);
+    }, [flushPendingChanges]);
 
     // Fetch initial jobs
     const fetchJobs = useCallback(async () => {
@@ -65,59 +143,6 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
         }
     }, [user?.id]);
 
-    // Handle realtime updates
-    const handleRealtimeUpdate = useCallback(
-        (payload: { eventType: string; new: IngestionJob; old?: Partial<IngestionJob> }) => {
-            const { eventType, new: newJob, old: oldJob } = payload;
-
-            if (eventType === "INSERT") {
-                const provider = normalizeSourceType(newJob.provider) || newJob.provider;
-                setJobs((prev) => [newJob, ...prev].slice(0, 20));
-
-                toast({
-                    title: "Ingestion Started",
-                    description: `Processing ${formatSourceTypeLabel(provider)} files...`,
-                });
-            }
-
-            if (eventType === "UPDATE") {
-                setJobs((prev) =>
-                    prev.map((job) => (job.id === newJob.id ? newJob : job))
-                );
-
-                // Show completion toast
-                if (newJob.status === "completed" && oldJob?.status !== "completed") {
-                    const completionMessage = newJob.message || newJob.status_message;
-                    toast({
-                        title: "Ingestion Complete! 🎉",
-                        description: completionMessage ||
-                            `Successfully processed ${newJob.processed_files} files.`,
-                    });
-                }
-
-                if (newJob.status === "failed" && oldJob?.status !== "failed") {
-                    toast({
-                        title: "Ingestion Failed",
-                        description: newJob.error_message || "An error occurred.",
-                        variant: "destructive",
-                    });
-                }
-
-                if (newJob.status === "cancelled" && oldJob?.status !== "cancelled") {
-                    toast({
-                        title: "Ingestion Cancelled",
-                        description: "Job was cancelled by user.",
-                    });
-                }
-            }
-
-            if (eventType === "DELETE") {
-                setJobs((prev) => prev.filter((job) => job.id !== oldJob?.id));
-            }
-        },
-        [toast]
-    );
-
     // Setup realtime subscription
     useEffect(() => {
         if (!user?.id) return;
@@ -137,9 +162,36 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
                     filter: `user_id=eq.${user.id}`,
                 },
                 (payload) => {
-                    // Cast via unknown to handle Supabase realtime payload variance
-                    const typed = payload as unknown as { eventType: string; new?: IngestionJob; old?: Partial<IngestionJob> };
-                    if (typed.new) handleRealtimeUpdate({ ...typed, new: typed.new });
+                    const newJob = payload.new as IngestionJob;
+                    const oldJob = payload.old as Partial<IngestionJob>;
+
+                    if (payload.eventType === "INSERT") {
+                        pendingInserts.current.push(newJob);
+                        // Immediate flush for new jobs so they appear quickly
+                        flushPendingChanges();
+                    }
+
+                    if (payload.eventType === "UPDATE") {
+                        // Terminal statuses should be applied immediately
+                        const isTerminal = ["completed", "failed", "cancelled"].includes(newJob.status);
+                        const wasNotTerminal = !["completed", "failed", "cancelled"].includes(oldJob?.status || "");
+
+                        if (isTerminal && wasNotTerminal) {
+                            // Immediate update for terminal status changes
+                            setJobs((prev) =>
+                                prev.map((job) => (job.id === newJob.id ? newJob : job))
+                            );
+                        } else {
+                            // Throttle in-progress updates
+                            pendingUpdates.current.set(newJob.id, newJob);
+                            scheduleFlush();
+                        }
+                    }
+
+                    if (payload.eventType === "DELETE") {
+                        pendingDeletes.current.add(oldJob?.id || "");
+                        scheduleFlush();
+                    }
                 }
             )
             .subscribe((status) => {
@@ -150,9 +202,14 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
 
         // Cleanup on unmount
         return () => {
+            if (throttleTimer.current) {
+                clearTimeout(throttleTimer.current);
+                throttleTimer.current = null;
+            }
+            flushPendingChanges();
             channel.unsubscribe();
         };
-    }, [user?.id, fetchJobs, handleRealtimeUpdate]);
+    }, [user?.id, fetchJobs, scheduleFlush, flushPendingChanges]);
 
     // Filter for active (in-progress) jobs
     const activeJobs = jobs.filter(
@@ -170,7 +227,6 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
                 description: `Retrying ${result.files_queued} failed files...`,
             });
 
-            // Refresh jobs to show updated status
             await fetchJobs();
         } catch (err) {
             const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };

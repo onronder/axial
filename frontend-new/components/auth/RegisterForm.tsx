@@ -152,6 +152,7 @@ export function RegisterForm() {
                     className="input-glass w-full"
                     type="password"
                     placeholder="••••••••"
+                    autoComplete="new-password"
                     {...field}
                   />
                 </FormControl>

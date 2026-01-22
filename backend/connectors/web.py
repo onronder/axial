@@ -6,13 +6,15 @@ Supports:
 - Single page crawling
 - Sitemap.xml parsing
 - Recursive link extraction
-- YouTube transcript extraction
+- YouTube transcript extraction (with residential proxy support)
 - robots.txt respect
 
 The connector provides discovery capabilities; looping logic is in the Celery worker.
 """
 
 import re
+import os
+import time
 import logging
 import ipaddress
 import socket
@@ -34,6 +36,78 @@ from core.scopes import build_scope_uri
 from core.url_utils import is_youtube_url, extract_youtube_video_id, YOUTUBE_URL_PATTERNS
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# YouTube Proxy Configuration
+# =============================================================================
+# YouTube aggressively blocks cloud provider IPs. We use residential proxies
+# (Bright Data, SmartProxy, etc.) to bypass this restriction.
+
+
+def _get_youtube_proxy_config() -> Dict[str, Any]:
+    """
+    Load YouTube proxy configuration from environment/settings.
+    
+    Returns a dict with proxy settings. Lazy-loaded to avoid import cycles.
+    """
+    try:
+        from core.config import settings
+        return {
+            "proxy_url": settings.YOUTUBE_PROXY_URL,
+            "enabled": settings.YOUTUBE_PROXY_ENABLED,
+            "timeout": settings.YOUTUBE_PROXY_TIMEOUT,
+            "retry_count": settings.YOUTUBE_PROXY_RETRY_COUNT,
+            "retry_delay": settings.YOUTUBE_PROXY_RETRY_DELAY,
+            "direct_fallback": settings.YOUTUBE_DIRECT_FALLBACK,
+        }
+    except Exception:
+        # Fallback to environment variables if settings not available
+        return {
+            "proxy_url": os.getenv("YOUTUBE_PROXY_URL"),
+            "enabled": os.getenv("YOUTUBE_PROXY_ENABLED", "true").lower() == "true",
+            "timeout": int(os.getenv("YOUTUBE_PROXY_TIMEOUT", "30")),
+            "retry_count": int(os.getenv("YOUTUBE_PROXY_RETRY_COUNT", "3")),
+            "retry_delay": float(os.getenv("YOUTUBE_PROXY_RETRY_DELAY", "1.0")),
+            "direct_fallback": os.getenv("YOUTUBE_DIRECT_FALLBACK", "true").lower() == "true",
+        }
+
+
+def _build_proxy_dict(proxy_url: str) -> Optional[Dict[str, str]]:
+    """
+    Build a proxies dict for requests/youtube-transcript-api.
+    
+    Args:
+        proxy_url: Proxy URL in format http://user:pass@host:port
+        
+    Returns:
+        Dict suitable for requests library, or None if invalid
+    """
+    if not proxy_url:
+        return None
+    
+    try:
+        parsed = urlparse(proxy_url)
+        if parsed.scheme not in ("http", "https", "socks5", "socks5h"):
+            logger.warning(f"⚠️ [YouTubeProxy] Unsupported proxy scheme: {parsed.scheme}")
+            return None
+        
+        # Build proxy dict for both HTTP and HTTPS traffic
+        return {
+            "http": proxy_url,
+            "https": proxy_url,
+        }
+    except Exception as e:
+        logger.error(f"❌ [YouTubeProxy] Failed to parse proxy URL: {e}")
+        return None
+
+
+class YouTubeProxyError(Exception):
+    """Raised when YouTube transcript fetch fails due to proxy/IP issues."""
+    
+    def __init__(self, message: str, is_ip_blocked: bool = False, original_error: Exception = None):
+        super().__init__(message)
+        self.is_ip_blocked = is_ip_blocked
+        self.original_error = original_error
 
 # Alias for backward compatibility
 YOUTUBE_PATTERNS = YOUTUBE_URL_PATTERNS
@@ -328,7 +402,12 @@ class WebConnector(EnhancedConnector, BaseConnector):
     
     def fetch_youtube_transcript(self, video_url: str) -> Optional[str]:
         """
-        Fetch transcript from a YouTube video.
+        Fetch transcript from a YouTube video with residential proxy support.
+        
+        This method handles YouTube's aggressive IP blocking of cloud providers by:
+        1. Using configured residential proxy (Bright Data, etc.)
+        2. Implementing retry logic with exponential backoff
+        3. Falling back to direct connection if proxy fails (configurable)
         
         Args:
             video_url: YouTube video URL
@@ -336,70 +415,233 @@ class WebConnector(EnhancedConnector, BaseConnector):
         Returns:
             Full transcript text or None if not available
         """
+        video_id = self._extract_youtube_video_id(video_url)
+        if not video_id:
+            logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
+            return None
+        
+        # Load proxy configuration
+        config = _get_youtube_proxy_config()
+        proxy_url = config["proxy_url"]
+        proxy_enabled = config["enabled"]
+        retry_count = config["retry_count"]
+        retry_delay = config["retry_delay"]
+        direct_fallback = config["direct_fallback"]
+        
+        # Build proxy dict if configured
+        proxies = None
+        if proxy_url and proxy_enabled:
+            proxies = _build_proxy_dict(proxy_url)
+            if proxies:
+                logger.info(f"🔒 [YouTube] Using proxy for transcript fetch: {video_id}")
+        
+        # Try with proxy first, then fallback to direct if configured
+        attempts = [
+            ("proxy", proxies) if proxies else ("direct", None),
+        ]
+        
+        # Add fallback attempt if configured
+        if proxies and direct_fallback:
+            attempts.append(("direct_fallback", None))
+        elif not proxies and proxy_url and proxy_enabled:
+            logger.warning(f"⚠️ [YouTube] Proxy configured but invalid, using direct connection")
+        
+        last_error = None
+        
+        for attempt_name, attempt_proxies in attempts:
+            result = self._fetch_transcript_with_retry(
+                video_id=video_id,
+                video_url=video_url,
+                proxies=attempt_proxies,
+                retry_count=retry_count,
+                retry_delay=retry_delay,
+                attempt_name=attempt_name,
+            )
+            
+            if result is not None:
+                return result
+            
+            # If proxy attempt failed with IP block, try fallback
+            if attempt_name == "proxy":
+                logger.warning(f"⚠️ [YouTube] Proxy attempt failed for {video_id}, trying fallback...")
+        
+        # All attempts failed
+        logger.error(f"❌ [YouTube] All transcript fetch attempts failed for {video_url}")
+        return None
+    
+    def _fetch_transcript_with_retry(
+        self,
+        video_id: str,
+        video_url: str,
+        proxies: Optional[Dict[str, str]],
+        retry_count: int,
+        retry_delay: float,
+        attempt_name: str,
+    ) -> Optional[str]:
+        """
+        Fetch transcript with retry logic and exponential backoff.
+        
+        Args:
+            video_id: YouTube video ID
+            video_url: Full YouTube URL (for logging)
+            proxies: Proxy configuration dict or None
+            retry_count: Number of retry attempts
+            retry_delay: Base delay between retries
+            attempt_name: Name of this attempt for logging
+            
+        Returns:
+            Transcript text or None if all retries failed
+        """
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
             from youtube_transcript_api._errors import (
                 TranscriptsDisabled,
                 NoTranscriptFound,
-                VideoUnavailable
+                VideoUnavailable,
             )
-            
-            video_id = self._extract_youtube_video_id(video_url)
-            if not video_id:
-                logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
-                return None
-            
-            # Create API instance (new in v1.2.0)
-            ytt_api = YouTubeTranscriptApi()
-            
-            # Try to get transcript (auto-generated or manual)
-            transcript_list = ytt_api.list(video_id)
-            
-            # Prefer manual transcripts, fall back to auto-generated
-            transcript = None
-            try:
-                transcript = transcript_list.find_manually_created_transcript(['en'])
-            except:
-                try:
-                    transcript = transcript_list.find_generated_transcript(['en'])
-                except:
-                    # Try any available language
-                    for t in transcript_list:
-                        transcript = t
-                        break
-            
-            if not transcript:
-                logger.warning(f"⚠️ [YouTube] No transcript available for: {video_id}")
-                return None
-            
-            # Fetch and combine transcript segments
-            segments = transcript.fetch()
-            
-            # Extract text from segments (polymorphic: handles both dict and object types)
-            text_parts = []
-            for seg in segments:
-                if isinstance(seg, dict):
-                    # Legacy dict format: {"text": "...", "start": ..., "duration": ...}
-                    text_parts.append(seg.get("text", ""))
-                elif hasattr(seg, "text"):
-                    # New FetchedTranscriptSnippet object format (v1.2.0+)
-                    text_parts.append(seg.text)
-                else:
-                    # Fallback: convert to string to avoid crash
-                    logger.warning(f"⚠️ [YouTube] Unknown segment type: {type(seg).__name__}")
-                    text_parts.append(str(seg))
-            
-            full_text = " ".join(text_parts)
-            
-            logger.info(f"✅ [YouTube] Fetched transcript: {len(full_text)} chars from {video_id}")
-            return full_text
-            
         except ImportError:
             logger.error("❌ [YouTube] youtube-transcript-api not installed")
             return None
-        except Exception as e:
-            logger.error(f"❌ [YouTube] Transcript fetch failed for {video_url}: {e}")
-            return None
+        
+        # IP block error signatures
+        IP_BLOCK_SIGNATURES = [
+            "YouTube is blocking requests from your IP",
+            "IP belonging to a cloud provider",
+            "RequestBlocked",
+            "IpBlocked",
+            "too many requests",
+            "blocked by YouTube",
+        ]
+        
+        for attempt in range(retry_count):
+            try:
+                # Create API instance with proxy support
+                ytt_api = YouTubeTranscriptApi()
+                
+                # Try to get transcript list
+                transcript_list = ytt_api.list(video_id, proxies=proxies)
+                
+                # Prefer manual transcripts, fall back to auto-generated
+                transcript = self._select_best_transcript(transcript_list)
+                
+                if not transcript:
+                    logger.warning(f"⚠️ [YouTube] No transcript available for: {video_id}")
+                    return None
+                
+                # Fetch and combine transcript segments
+                segments = transcript.fetch()
+                full_text = self._extract_transcript_text(segments, video_id)
+                
+                proxy_status = "via proxy" if proxies else "direct"
+                logger.info(
+                    f"✅ [YouTube] Fetched transcript ({proxy_status}): "
+                    f"{len(full_text)} chars from {video_id}"
+                )
+                return full_text
+                
+            except (TranscriptsDisabled, NoTranscriptFound) as e:
+                # These are permanent failures - no point retrying
+                logger.warning(f"⚠️ [YouTube] Transcript not available for {video_id}: {e}")
+                return None
+                
+            except VideoUnavailable as e:
+                # Video is private, deleted, or region-locked
+                logger.warning(f"⚠️ [YouTube] Video unavailable {video_id}: {e}")
+                return None
+                
+            except Exception as e:
+                error_str = str(e)
+                
+                # Check if this is an IP block error
+                is_ip_blocked = any(sig.lower() in error_str.lower() for sig in IP_BLOCK_SIGNATURES)
+                
+                if is_ip_blocked:
+                    logger.warning(
+                        f"⚠️ [YouTube] IP blocked ({attempt_name}, attempt {attempt + 1}/{retry_count}): {video_id}"
+                    )
+                    # Don't retry IP blocks - they need different approach
+                    return None
+                
+                # Log retry attempt
+                if attempt < retry_count - 1:
+                    delay = retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(
+                        f"⚠️ [YouTube] Attempt {attempt + 1}/{retry_count} failed for {video_id}: {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(
+                        f"❌ [YouTube] Transcript fetch failed for {video_url} "
+                        f"({attempt_name}, {retry_count} attempts): {e}"
+                    )
+        
+        return None
+    
+    def _select_best_transcript(self, transcript_list) -> Optional[Any]:
+        """
+        Select the best available transcript from the list.
+        
+        Preference order:
+        1. Manual English transcript
+        2. Auto-generated English transcript
+        3. Any available transcript (first available language)
+        
+        Args:
+            transcript_list: TranscriptList from youtube-transcript-api
+            
+        Returns:
+            Selected Transcript object or None
+        """
+        # Try manual English first
+        try:
+            return transcript_list.find_manually_created_transcript(['en', 'en-US', 'en-GB'])
+        except Exception:
+            pass
+        
+        # Try auto-generated English
+        try:
+            return transcript_list.find_generated_transcript(['en', 'en-US', 'en-GB'])
+        except Exception:
+            pass
+        
+        # Fallback: any available language
+        try:
+            for transcript in transcript_list:
+                return transcript
+        except Exception:
+            pass
+        
+        return None
+    
+    def _extract_transcript_text(self, segments, video_id: str) -> str:
+        """
+        Extract text from transcript segments.
+        
+        Handles both legacy dict format and new object format (v1.2.0+).
+        
+        Args:
+            segments: List of transcript segments
+            video_id: Video ID for logging
+            
+        Returns:
+            Combined transcript text
+        """
+        text_parts = []
+        
+        for seg in segments:
+            if isinstance(seg, dict):
+                # Legacy dict format: {"text": "...", "start": ..., "duration": ...}
+                text_parts.append(seg.get("text", ""))
+            elif hasattr(seg, "text"):
+                # New FetchedTranscriptSnippet object format (v1.2.0+)
+                text_parts.append(seg.text)
+            else:
+                # Fallback: convert to string
+                logger.warning(f"⚠️ [YouTube] Unknown segment type for {video_id}: {type(seg).__name__}")
+                text_parts.append(str(seg))
+        
+        return " ".join(text_parts)
     
     def get_youtube_metadata(self, video_url: str) -> Dict[str, str]:
         """Get basic metadata for a YouTube video."""

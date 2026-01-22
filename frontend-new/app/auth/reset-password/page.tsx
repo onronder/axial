@@ -173,6 +173,7 @@ export default function ResetPasswordPage() {
                                                 <Input
                                                     type="password"
                                                     placeholder="••••••••"
+                                                    autoComplete="new-password"
                                                     {...field}
                                                 />
                                             </FormControl>
@@ -191,6 +192,7 @@ export default function ResetPasswordPage() {
                                                 <Input
                                                     type="password"
                                                     placeholder="••••••••"
+                                                    autoComplete="new-password"
                                                     {...field}
                                                 />
                                             </FormControl>

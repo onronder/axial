@@ -181,6 +181,7 @@ export function LoginForm() {
                       className="input-glass w-full pr-10"
                       type={showPassword ? "text" : "password"}
                       placeholder="••••••••"
+                      autoComplete="current-password"
                       {...field}
                     />
                     <button

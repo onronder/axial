@@ -48,6 +48,25 @@ export interface GroupedNotification {
 
 const POLL_INTERVAL = 30000; // 30 seconds fallback
 
+/**
+ * INGESTION NOTIFICATIONS ARE HANDLED BY GlobalProgress
+ * 
+ * To prevent duplicate toasts, we skip showing toasts for ingestion-related
+ * notifications here. GlobalProgress is the single source of truth for
+ * ingestion progress and completion toasts.
+ */
+const SILENT_NOTIFICATION_TITLES = [
+    "Ingestion Complete",
+    "Ingestion Failed",
+    "Ingestion Cancelled",
+    "Processing Started",
+    "Web Crawl",
+    "YouTube",
+    "Authentication Required",
+    "Subscription Required",
+    "Scope limit",
+] as const;
+
 // Supabase client will be initialized on-demand using shared singleton
 
 type NotificationPayload = {
@@ -104,15 +123,24 @@ export function useNotifications() {
         };
     };
 
-    // Show toast for new notification
+    // Show toast for new notification (skip ingestion-related ones)
     const showNotificationToast = useCallback((notification: Notification) => {
+        // Skip toast for ingestion-related notifications - GlobalProgress handles these
+        const isIngestionNotification = SILENT_NOTIFICATION_TITLES.some(
+            (title) => notification.title.includes(title)
+        );
+        
+        if (isIngestionNotification) {
+            console.log("🔔 [Notifications] Skipping toast for ingestion notification (handled by GlobalProgress):", notification.title);
+            return;
+        }
+
         const variant = notification.type === "error" ? "destructive" : "default";
 
         toast({
             title: notification.title,
             description: notification.message,
             variant,
-            // Include action_url in the toast if needed
         });
     }, [toast]);
 

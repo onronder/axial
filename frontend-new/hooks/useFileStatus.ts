@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -74,10 +74,16 @@ interface UseFileStatusReturn {
 }
 
 /**
+ * Throttle interval for batching realtime updates (ms)
+ * This prevents excessive re-renders when many files update rapidly
+ */
+const THROTTLE_INTERVAL = 150;
+
+/**
  * Hook for tracking per-file ingestion status with real-time updates.
  * 
- * Subscribes to the ingestion_file_status table for a specific job
- * and receives instant updates as files are processed.
+ * Uses THROTTLED BATCHING to prevent UI thrashing when many files update.
+ * Updates are collected and applied in batches every 150ms.
  * 
  * @param jobId - The parent ingestion job ID
  */
@@ -85,6 +91,66 @@ export function useFileStatus(jobId: string | null): UseFileStatusReturn {
     const [files, setFiles] = useState<FileStatus[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Batching refs for throttled updates
+    const pendingUpdates = useRef<Map<string, FileStatus>>(new Map());
+    const pendingInserts = useRef<FileStatus[]>([]);
+    const pendingDeletes = useRef<Set<string>>(new Set());
+    const throttleTimer = useRef<NodeJS.Timeout | null>(null);
+
+    /**
+     * Apply all pending changes in a single batch update
+     */
+    const flushPendingChanges = useCallback(() => {
+        const hasUpdates = pendingUpdates.current.size > 0;
+        const hasInserts = pendingInserts.current.length > 0;
+        const hasDeletes = pendingDeletes.current.size > 0;
+
+        if (!hasUpdates && !hasInserts && !hasDeletes) return;
+
+        setFiles((prev) => {
+            let result = [...prev];
+
+            // Apply deletes
+            if (hasDeletes) {
+                result = result.filter((f) => !pendingDeletes.current.has(f.id));
+                pendingDeletes.current.clear();
+            }
+
+            // Apply updates
+            if (hasUpdates) {
+                result = result.map((f) => {
+                    const update = pendingUpdates.current.get(f.id);
+                    return update || f;
+                });
+                pendingUpdates.current.clear();
+            }
+
+            // Apply inserts (avoid duplicates)
+            if (hasInserts) {
+                const existingIds = new Set(result.map((f) => f.id));
+                const newFiles = pendingInserts.current.filter(
+                    (f) => !existingIds.has(f.id)
+                );
+                result = [...result, ...newFiles];
+                pendingInserts.current = [];
+            }
+
+            return result;
+        });
+    }, []);
+
+    /**
+     * Schedule a batched flush (debounced)
+     */
+    const scheduleFlush = useCallback(() => {
+        if (throttleTimer.current) return; // Already scheduled
+
+        throttleTimer.current = setTimeout(() => {
+            flushPendingChanges();
+            throttleTimer.current = null;
+        }, THROTTLE_INTERVAL);
+    }, [flushPendingChanges]);
 
     const fetchFiles = useCallback(async () => {
         if (!jobId) {
@@ -137,17 +203,24 @@ export function useFileStatus(jobId: string | null): UseFileStatusReturn {
                     const oldFile = payload.old as FileStatus;
 
                     if (payload.eventType === "INSERT") {
-                        setFiles((prev) => [...prev, newFile]);
+                        pendingInserts.current.push(newFile);
+                        scheduleFlush();
                     }
 
                     if (payload.eventType === "UPDATE") {
-                        setFiles((prev) =>
-                            prev.map((f) => (f.id === newFile.id ? newFile : f))
-                        );
+                        // For terminal statuses, apply immediately for better UX
+                        if (isTerminalStatus(newFile.status)) {
+                            pendingUpdates.current.set(newFile.id, newFile);
+                            flushPendingChanges(); // Immediate flush for completion
+                        } else {
+                            pendingUpdates.current.set(newFile.id, newFile);
+                            scheduleFlush();
+                        }
                     }
 
                     if (payload.eventType === "DELETE") {
-                        setFiles((prev) => prev.filter((f) => f.id !== oldFile?.id));
+                        pendingDeletes.current.add(oldFile?.id);
+                        scheduleFlush();
                     }
                 }
             )
@@ -159,10 +232,16 @@ export function useFileStatus(jobId: string | null): UseFileStatusReturn {
 
         // ✅ CLEANUP - Prevent memory leaks
         return () => {
+            if (throttleTimer.current) {
+                clearTimeout(throttleTimer.current);
+                throttleTimer.current = null;
+            }
+            // Flush any remaining changes before unmount
+            flushPendingChanges();
             channel.unsubscribe();
             supabase.removeChannel(channel);
         };
-    }, [jobId, fetchFiles]);
+    }, [jobId, fetchFiles, scheduleFlush, flushPendingChanges]);
 
     return {
         files,
@@ -175,12 +254,70 @@ export function useFileStatus(jobId: string | null): UseFileStatusReturn {
 /**
  * Hook for tracking all active file statuses for the current user.
  * 
- * Useful for a global progress panel that shows all files being processed.
+ * Uses THROTTLED BATCHING to prevent UI thrashing.
  */
 export function useAllActiveFiles(): UseFileStatusReturn {
     const [files, setFiles] = useState<FileStatus[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Batching refs for throttled updates
+    const pendingUpdates = useRef<Map<string, FileStatus | null>>(new Map());
+    const pendingInserts = useRef<FileStatus[]>([]);
+    const throttleTimer = useRef<NodeJS.Timeout | null>(null);
+
+    const flushPendingChanges = useCallback(() => {
+        const hasUpdates = pendingUpdates.current.size > 0;
+        const hasInserts = pendingInserts.current.length > 0;
+
+        if (!hasUpdates && !hasInserts) return;
+
+        setFiles((prev) => {
+            let result = [...prev];
+
+            // Apply updates (null means remove)
+            if (hasUpdates) {
+                const toRemove = new Set<string>();
+                pendingUpdates.current.forEach((file, id) => {
+                    if (file === null) {
+                        toRemove.add(id);
+                    } else {
+                        const idx = result.findIndex((f) => f.id === id);
+                        if (idx >= 0) {
+                            result[idx] = file;
+                        } else {
+                            result = [file, ...result];
+                        }
+                    }
+                });
+                if (toRemove.size > 0) {
+                    result = result.filter((f) => !toRemove.has(f.id));
+                }
+                pendingUpdates.current.clear();
+            }
+
+            // Apply inserts
+            if (hasInserts) {
+                const existingIds = new Set(result.map((f) => f.id));
+                const newFiles = pendingInserts.current.filter(
+                    (f) => !existingIds.has(f.id)
+                );
+                result = [...newFiles, ...result].slice(0, 20);
+                pendingInserts.current = [];
+            }
+
+            return result;
+        });
+    }, []);
+
+    const scheduleFlush = useCallback(() => {
+        if (throttleTimer.current) return;
+
+        throttleTimer.current = setTimeout(() => {
+            flushPendingChanges();
+            throttleTimer.current = null;
+        }, THROTTLE_INTERVAL);
+    }, [flushPendingChanges]);
 
     const fetchFiles = useCallback(async () => {
         try {
@@ -219,36 +356,36 @@ export function useAllActiveFiles(): UseFileStatusReturn {
                     const newFile = payload.new as FileStatus;
 
                     if (payload.eventType === "INSERT") {
-                        // Add new files that aren't completed
                         if (!isTerminalStatus(newFile.status)) {
-                            setFiles((prev) => [newFile, ...prev].slice(0, 20));
+                            pendingInserts.current.push(newFile);
+                            scheduleFlush();
                         }
                     }
 
                     if (payload.eventType === "UPDATE") {
-                        setFiles((prev) => {
-                            // If completed/failed or equivalent, remove from active list
-                            if (isTerminalStatus(newFile.status)) {
-                                return prev.filter((f) => f.id !== newFile.id);
-                            }
-                            // Otherwise update in place
-                            const idx = prev.findIndex((f) => f.id === newFile.id);
-                            if (idx >= 0) {
-                                return [...prev.slice(0, idx), newFile, ...prev.slice(idx + 1)];
-                            }
-                            return [newFile, ...prev].slice(0, 20);
-                        });
+                        if (isTerminalStatus(newFile.status)) {
+                            // Remove completed files
+                            pendingUpdates.current.set(newFile.id, null);
+                        } else {
+                            pendingUpdates.current.set(newFile.id, newFile);
+                        }
+                        scheduleFlush();
                     }
                 }
             )
             .subscribe();
 
-        // ✅ CLEANUP - Prevent memory leaks
+        // ✅ CLEANUP
         return () => {
+            if (throttleTimer.current) {
+                clearTimeout(throttleTimer.current);
+                throttleTimer.current = null;
+            }
+            flushPendingChanges();
             channel.unsubscribe();
             supabase.removeChannel(channel);
         };
-    }, [fetchFiles]);
+    }, [fetchFiles, scheduleFlush, flushPendingChanges]);
 
     return {
         files,
