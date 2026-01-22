@@ -196,12 +196,16 @@ export function KnowledgeBaseBrowser() {
   );
 
   // Get items to display (search or current folder contents)
+  // Note: currentFolder is always valid since we start at root ("/") and
+  // only navigate to valid folders via navigateToFolder. The non-null
+  // assertion is safe because buildFolderTree always creates a root node.
   const displayItems = useMemo(() => {
-    if (debouncedSearch && currentFolder) {
+    const folder = currentFolder!;
+    if (debouncedSearch) {
       // Search within current folder's subtree
-      return searchTree(currentFolder, debouncedSearch);
+      return searchTree(folder, debouncedSearch);
     }
-    return currentFolder?.children || [];
+    return folder.children;
   }, [currentFolder, debouncedSearch]);
 
   // Pagination
@@ -328,7 +332,7 @@ export function KnowledgeBaseBrowser() {
   };
 
   const handleBulkDeleteSelected = async () => {
-    if (isViewer || selectedIds.size === 0) return;
+    // Note: Button is already disabled when no selections, so selectedIds.size > 0 here
     const confirmed = confirm(`Delete ${selectedIds.size} selected item(s)? This cannot be undone.`);
     if (!confirmed) return;
     

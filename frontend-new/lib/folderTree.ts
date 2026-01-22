@@ -94,23 +94,6 @@ function formatSourceName(sourceType: string): string {
 }
 
 /**
- * Extract folder path from a full file path
- * e.g., "/folder1/folder2/file.txt" -> "/folder1/folder2"
- */
-function extractFolderPath(filePath: string | undefined): string {
-  if (!filePath) return "/";
-  
-  // Normalize path separators
-  const normalized = filePath.replace(/\\/g, "/");
-  
-  // Remove filename to get folder path
-  const lastSlash = normalized.lastIndexOf("/");
-  if (lastSlash <= 0) return "/";
-  
-  return normalized.substring(0, lastSlash) || "/";
-}
-
-/**
  * Get path segments from a path string
  */
 function getPathSegments(path: string): string[] {
@@ -237,9 +220,12 @@ function buildSubtree(parent: FolderNode, documents: Document[]): void {
     }
     
     // Add document to the deepest folder
+    // Note: segments[segments.length - 1] is always truthy here because:
+    // 1. getPathSegments uses filter(Boolean) which removes empty strings
+    // 2. We only reach here when segments.length > 1
     const docNode: DocumentNode = {
       id: doc.id,
-      name: segments[segments.length - 1] || doc.name,
+      name: segments[segments.length - 1],
       path: docPath,
       type: "file",
       document: doc,
