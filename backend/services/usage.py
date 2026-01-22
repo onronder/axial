@@ -391,46 +391,132 @@ async def record_llm_usage(
     model: Optional[str] = None,
 ) -> None:
     """
-    Increment LLM token usage for the org and decrement balance overrides.
+    Atomically increment LLM token usage for the org and decrement balance overrides.
+    
+    RACE CONDITION FIX: Uses database RPC for atomic increment instead of
+    read-modify-write pattern which could cause token drift under concurrent requests.
     """
     if tokens_used <= 0:
         return
     supabase = get_supabase()
     tokens_used = int(tokens_used)
 
-    current_used = await _get_org_llm_usage(supabase, org_id)
-    next_used = current_used + tokens_used
-
     try:
-        supabase.table("org_usage").upsert(
+        # ATOMIC INCREMENT: Uses database function to prevent race conditions
+        # This replaces the previous read-modify-write pattern
+        result = supabase.rpc(
+            "increment_llm_tokens",
             {
-                "org_id": org_id,
-                "llm_tokens_used": next_used,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            },
-            on_conflict="org_id",
+                "p_org_id": org_id,
+                "p_tokens": tokens_used,
+                "p_provider": provider,
+                "p_model": model,
+            }
         ).execute()
+        
+        # Extract new total from result
+        new_total = None
+        previous_total = None
+        if result.data:
+            # RPC returns a table, get first row
+            row = result.data[0] if isinstance(result.data, list) else result.data
+            new_total = row.get("new_total") if isinstance(row, dict) else None
+            previous_total = row.get("previous_total") if isinstance(row, dict) else None
+        
         logger.info(
-            "✅ [Usage] LLM usage org=%s tokens+=%s provider=%s model=%s",
+            "✅ [Usage] LLM usage org=%s tokens+=%s total=%s->%s provider=%s model=%s",
             org_id,
             tokens_used,
+            previous_total,
+            new_total,
             provider or "unknown",
             model or "unknown",
         )
     except Exception as exc:
-        logger.error("❌ [Usage] Failed to update LLM usage for %s: %s", org_id, exc)
-        raise
+        # Fallback to upsert if RPC doesn't exist (migration not applied yet)
+        error_msg = str(exc)
+        if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+            logger.warning("⚠️ [Usage] increment_llm_tokens RPC not found, using fallback")
+            await _record_llm_usage_fallback(supabase, org_id, tokens_used, provider, model)
+        else:
+            logger.error("❌ [Usage] Failed to update LLM usage for %s: %s", org_id, exc)
+            raise
 
+    # Decrement balance override if set (also atomic)
     try:
-        balance_override = await _get_org_llm_balance_override(supabase, org_id)
-        if balance_override is not None:
-            next_balance = max(0, int(balance_override) - tokens_used)
-            supabase.table("teams").update(
-                {"llm_token_balance": next_balance}
-            ).eq("id", org_id).execute()
+        # Try atomic decrement first
+        result = supabase.rpc(
+            "decrement_llm_balance",
+            {
+                "p_org_id": org_id,
+                "p_tokens": tokens_used,
+            }
+        ).execute()
+        
+        # Result is NULL if no balance override exists, which is fine
+        if result.data is not None:
+            logger.debug("✅ [Usage] Decremented LLM balance for %s by %s", org_id, tokens_used)
+            
     except Exception as exc:
-        logger.error("❌ [Usage] Failed to decrement LLM balance for %s: %s", org_id, exc)
-        raise
+        error_msg = str(exc)
+        if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+            # Fallback if RPC doesn't exist
+            await _decrement_llm_balance_fallback(supabase, org_id, tokens_used)
+        else:
+            logger.error("❌ [Usage] Failed to decrement LLM balance for %s: %s", org_id, exc)
+            raise
+
+
+async def _record_llm_usage_fallback(
+    supabase,
+    org_id: str,
+    tokens_used: int,
+    provider: Optional[str],
+    model: Optional[str],
+) -> None:
+    """
+    Fallback for record_llm_usage when atomic RPC is not available.
+    
+    NOTE: This has a race condition - use only as fallback during migration.
+    """
+    current_used = await _get_org_llm_usage(supabase, org_id)
+    next_used = current_used + tokens_used
+
+    supabase.table("org_usage").upsert(
+        {
+            "org_id": org_id,
+            "llm_tokens_used": next_used,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        on_conflict="org_id",
+    ).execute()
+    
+    logger.warning(
+        "⚠️ [Usage] LLM usage (FALLBACK) org=%s tokens+=%s provider=%s model=%s",
+        org_id,
+        tokens_used,
+        provider or "unknown",
+        model or "unknown",
+    )
+
+
+async def _decrement_llm_balance_fallback(
+    supabase,
+    org_id: str,
+    tokens_used: int,
+) -> None:
+    """
+    Fallback for balance decrement when atomic RPC is not available.
+    
+    NOTE: This has a race condition - use only as fallback during migration.
+    """
+    balance_override = await _get_org_llm_balance_override(supabase, org_id)
+    if balance_override is not None:
+        next_balance = max(0, int(balance_override) - tokens_used)
+        supabase.table("teams").update(
+            {"llm_token_balance": next_balance}
+        ).eq("id", org_id).execute()
+        logger.warning("⚠️ [Usage] Decremented LLM balance (FALLBACK) for %s", org_id)
 
 
 async def check_feature_access(user_id: UUID, feature: str) -> dict:

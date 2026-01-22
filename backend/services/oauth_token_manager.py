@@ -411,6 +411,66 @@ class OAuthTokenManager:
             raise TokenRefreshError(f"GitHub token validation failed: {e}") from e
     
     @staticmethod
+    def _acquire_refresh_lock(supabase, lock_key: str, locked_by: str, ttl_seconds: int = 30) -> bool:
+        """
+        Acquire a distributed lock for token refresh operations.
+        
+        Returns True if lock acquired, False if already locked by another process.
+        """
+        try:
+            result = supabase.rpc(
+                "acquire_lock",
+                {
+                    "p_lock_key": lock_key,
+                    "p_locked_by": locked_by,
+                    "p_ttl_seconds": ttl_seconds,
+                }
+            ).execute()
+            return result.data if isinstance(result.data, bool) else False
+        except Exception as exc:
+            error_msg = str(exc)
+            if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+                # RPC doesn't exist yet (migration not applied), proceed without lock
+                logger.warning("⚠️ [Lock] acquire_lock RPC not found, proceeding without lock")
+                return True
+            logger.error(f"❌ [Lock] Failed to acquire lock: {exc}")
+            return True  # Fail open to avoid blocking operations
+    
+    @staticmethod
+    def _release_refresh_lock(supabase, lock_key: str, locked_by: str) -> None:
+        """Release a distributed lock."""
+        try:
+            supabase.rpc(
+                "release_lock",
+                {
+                    "p_lock_key": lock_key,
+                    "p_locked_by": locked_by,
+                }
+            ).execute()
+        except Exception as exc:
+            error_msg = str(exc)
+            if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+                return  # RPC doesn't exist yet
+            logger.error(f"❌ [Lock] Failed to release lock: {exc}")
+    
+    @staticmethod
+    def _get_fresh_integration_tokens(supabase, integration_id: str) -> Dict[str, Any]:
+        """
+        Re-fetch integration tokens from database to get the freshest data.
+        
+        This is crucial for race condition handling - another process may have
+        already refreshed the token while we were waiting for the lock.
+        """
+        try:
+            result = supabase.table("user_integrations").select(
+                "access_token, refresh_token, expires_at"
+            ).eq("id", integration_id).single().execute()
+            return result.data if result.data else {}
+        except Exception as exc:
+            logger.error(f"❌ [Box] Failed to re-fetch integration: {exc}")
+            return {}
+    
+    @staticmethod
     def refresh_box_token(
         integration_id: str,
         access_token: str,
@@ -418,11 +478,14 @@ class OAuthTokenManager:
         expires_at: Optional[str] = None,
     ) -> tuple[str, str, Optional[str]]:
         """
-        Refresh Box OAuth token.
+        Refresh Box OAuth token with distributed locking.
         
         CRITICAL: Box refresh tokens are SINGLE-USE and rotate on each refresh.
         Each refresh returns a NEW refresh token that invalidates the previous one.
         We must atomically update BOTH access_token AND refresh_token.
+        
+        RACE CONDITION FIX: Uses distributed lock to prevent concurrent refresh
+        attempts from invalidating each other's refresh tokens.
         
         Box Token Lifecycle:
         - Access tokens expire after 60 minutes
@@ -440,10 +503,14 @@ class OAuthTokenManager:
         Raises:
             TokenRefreshError: If refresh fails
         """
+        import uuid
+        
         try:
             from core.security import decrypt_token, encrypt_token
             from core.db import get_supabase
             from core.config import settings
+            
+            supabase = get_supabase()
 
             decrypted_access = decrypt_token(access_token) if access_token else None
             decrypted_refresh = decrypt_token(refresh_token) if refresh_token else None
@@ -451,7 +518,7 @@ class OAuthTokenManager:
             if not decrypted_refresh:
                 raise TokenRefreshError("No Box refresh token available")
 
-            # Check if refresh is needed
+            # Check if refresh is needed BEFORE acquiring lock
             if not OAuthTokenManager.is_token_expired(expires_at):
                 logger.debug(f"Box token for integration {integration_id} is still valid")
                 return decrypted_access, decrypted_refresh, expires_at
@@ -459,69 +526,119 @@ class OAuthTokenManager:
             if not settings.BOX_CLIENT_ID or not settings.BOX_CLIENT_SECRET:
                 raise TokenRefreshError("Box client credentials not configured")
 
-            logger.info(f"🔄 Refreshing Box token for integration {integration_id}")
-
-            # Box token refresh endpoint
-            token_url = "https://api.box.com/oauth2/token"
-            token_payload = {
-                "grant_type": "refresh_token",
-                "refresh_token": decrypted_refresh,
-                "client_id": settings.BOX_CLIENT_ID,
-                "client_secret": settings.BOX_CLIENT_SECRET,
-            }
-
-            response = requests.post(
-                token_url,
-                data=token_payload,
-                timeout=30,
+            # RACE CONDITION FIX: Acquire distributed lock
+            lock_key = f"box_token_refresh:{integration_id}"
+            locked_by = str(uuid.uuid4())
+            
+            lock_acquired = OAuthTokenManager._acquire_refresh_lock(
+                supabase, lock_key, locked_by, ttl_seconds=60
             )
-
-            if response.status_code != 200:
-                error_detail = response.text[:500] if response.text else "Unknown error"
-                logger.error(f"❌ Box token refresh failed: {error_detail}")
+            
+            if not lock_acquired:
+                # Another process is refreshing - wait and re-check
+                logger.info(f"🔒 [Box] Token refresh locked for {integration_id}, waiting...")
+                import time
+                time.sleep(2)  # Wait for other process to finish
                 
-                # Check for specific Box errors
-                try:
-                    error_json = response.json()
-                    error_code = error_json.get("error", "")
-                    if error_code == "invalid_grant":
-                        raise TokenRefreshError(
-                            "Box refresh token has expired or been revoked. Please reconnect your Box account."
-                        )
-                except Exception:
-                    pass
+                # Re-fetch tokens from database - another process may have refreshed them
+                fresh_tokens = OAuthTokenManager._get_fresh_integration_tokens(supabase, integration_id)
+                if fresh_tokens:
+                    fresh_expires = fresh_tokens.get("expires_at")
+                    if not OAuthTokenManager.is_token_expired(fresh_expires):
+                        # Token was refreshed by another process
+                        logger.info(f"✅ [Box] Token already refreshed by another process for {integration_id}")
+                        fresh_access = decrypt_token(fresh_tokens.get("access_token")) if fresh_tokens.get("access_token") else None
+                        fresh_refresh = decrypt_token(fresh_tokens.get("refresh_token")) if fresh_tokens.get("refresh_token") else None
+                        return fresh_access, fresh_refresh, fresh_expires
+                
+                # Still need to refresh - try to acquire lock again
+                lock_acquired = OAuthTokenManager._acquire_refresh_lock(
+                    supabase, lock_key, locked_by, ttl_seconds=60
+                )
+                if not lock_acquired:
+                    raise TokenRefreshError("Could not acquire lock for Box token refresh")
+            
+            try:
+                # Double-check token validity after acquiring lock
+                # Another process may have refreshed while we were acquiring
+                fresh_tokens = OAuthTokenManager._get_fresh_integration_tokens(supabase, integration_id)
+                if fresh_tokens:
+                    fresh_expires = fresh_tokens.get("expires_at")
+                    if not OAuthTokenManager.is_token_expired(fresh_expires):
+                        logger.info(f"✅ [Box] Token already refreshed (post-lock check) for {integration_id}")
+                        fresh_access = decrypt_token(fresh_tokens.get("access_token")) if fresh_tokens.get("access_token") else None
+                        fresh_refresh = decrypt_token(fresh_tokens.get("refresh_token")) if fresh_tokens.get("refresh_token") else None
+                        return fresh_access, fresh_refresh, fresh_expires
                     
-                raise TokenRefreshError(f"Box token refresh failed: {error_detail}")
+                    # Use the fresh refresh token from database
+                    decrypted_refresh = decrypt_token(fresh_tokens.get("refresh_token")) if fresh_tokens.get("refresh_token") else decrypted_refresh
+                
+                logger.info(f"🔄 Refreshing Box token for integration {integration_id}")
 
-            payload = response.json()
-            new_access = payload.get("access_token")
-            # CRITICAL: Box ALWAYS returns a new refresh token - we MUST save it
-            new_refresh = payload.get("refresh_token")
-            
-            if not new_refresh:
-                logger.warning("⚠️ [Box] No new refresh token returned - using existing")
-                new_refresh = decrypted_refresh
-            
-            expires_in = payload.get("expires_in")
-            
-            new_expires = None
-            if expires_in:
-                new_expires = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+                # Box token refresh endpoint
+                token_url = "https://api.box.com/oauth2/token"
+                token_payload = {
+                    "grant_type": "refresh_token",
+                    "refresh_token": decrypted_refresh,
+                    "client_id": settings.BOX_CLIENT_ID,
+                    "client_secret": settings.BOX_CLIENT_SECRET,
+                }
 
-            # ATOMIC UPDATE: Must update both tokens together
-            supabase = get_supabase()
-            update_data = {
-                "access_token": encrypt_token(new_access),
-                "refresh_token": encrypt_token(new_refresh),  # ALWAYS update refresh token
-                "expires_at": new_expires,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
+                response = requests.post(
+                    token_url,
+                    data=token_payload,
+                    timeout=30,
+                )
+
+                if response.status_code != 200:
+                    error_detail = response.text[:500] if response.text else "Unknown error"
+                    logger.error(f"❌ Box token refresh failed: {error_detail}")
+                    
+                    # Check for specific Box errors
+                    try:
+                        error_json = response.json()
+                        error_code = error_json.get("error", "")
+                        if error_code == "invalid_grant":
+                            raise TokenRefreshError(
+                                "Box refresh token has expired or been revoked. Please reconnect your Box account."
+                            )
+                    except Exception:
+                        pass
+                        
+                    raise TokenRefreshError(f"Box token refresh failed: {error_detail}")
+
+                payload = response.json()
+                new_access = payload.get("access_token")
+                # CRITICAL: Box ALWAYS returns a new refresh token - we MUST save it
+                new_refresh = payload.get("refresh_token")
+                
+                if not new_refresh:
+                    logger.warning("⚠️ [Box] No new refresh token returned - using existing")
+                    new_refresh = decrypted_refresh
+                
+                expires_in = payload.get("expires_in")
+                
+                new_expires = None
+                if expires_in:
+                    new_expires = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+
+                # ATOMIC UPDATE: Must update both tokens together
+                update_data = {
+                    "access_token": encrypt_token(new_access),
+                    "refresh_token": encrypt_token(new_refresh),  # ALWAYS update refresh token
+                    "expires_at": new_expires,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                
+                supabase.table("user_integrations").update(update_data).eq("id", integration_id).execute()
+
+                logger.info(f"✅ Box token refreshed for integration {integration_id}")
+
+                return new_access, new_refresh, new_expires
             
-            supabase.table("user_integrations").update(update_data).eq("id", integration_id).execute()
-
-            logger.info(f"✅ Box token refreshed for integration {integration_id}")
-
-            return new_access, new_refresh, new_expires
+            finally:
+                # Always release the lock
+                OAuthTokenManager._release_refresh_lock(supabase, lock_key, locked_by)
 
         except TokenRefreshError:
             raise

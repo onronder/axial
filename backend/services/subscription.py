@@ -10,6 +10,51 @@ from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
 
+
+def _check_webhook_idempotency(supabase, event_id: str, source: str, event_type: str = None) -> bool:
+    """
+    Check if webhook has already been processed using atomic database operation.
+    
+    Returns True if this is the first time seeing this event (should process).
+    Returns False if already processed (should skip).
+    
+    RACE CONDITION FIX: Uses database RPC for atomic check-and-insert.
+    """
+    if not event_id:
+        # No event_id means we can't deduplicate, process anyway
+        logger.warning("⚠️ [Webhook] No event_id provided, skipping idempotency check")
+        return True
+    
+    try:
+        # Try atomic idempotency check via RPC
+        result = supabase.rpc(
+            "try_process_webhook",
+            {
+                "p_event_id": event_id,
+                "p_source": source,
+                "p_event_type": event_type,
+            }
+        ).execute()
+        
+        # RPC returns boolean - true if we should process, false if duplicate
+        should_process = result.data if isinstance(result.data, bool) else True
+        
+        if not should_process:
+            logger.info(f"🔄 [Webhook] Duplicate event detected: {event_id} from {source}")
+        
+        return should_process
+        
+    except Exception as exc:
+        error_msg = str(exc)
+        if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+            # RPC doesn't exist yet (migration not applied), process anyway
+            logger.warning("⚠️ [Webhook] try_process_webhook RPC not found, skipping idempotency check")
+            return True
+        
+        # Other errors - log but don't block processing
+        logger.error(f"❌ [Webhook] Idempotency check failed: {exc}")
+        return True  # Fail open to avoid blocking legitimate events
+
 class SubscriptionService:
     """
     Handles subscription logic via Polar.sh webhooks.
@@ -150,6 +195,15 @@ class SubscriptionService:
         await self._cancel_subscription(data, "revoked")
 
     async def _upsert_subscription(self, body: Dict[str, Any]):
+        # RACE CONDITION FIX: Check idempotency first
+        supabase = get_supabase()
+        event_id = body.get("id")
+        event_type = body.get("type", "subscription.upsert")
+        
+        if not _check_webhook_idempotency(supabase, event_id, "polar", event_type):
+            logger.info(f"[SubscriptionService] Duplicate webhook {event_id}, skipping")
+            return
+        
         # Safe extraction of team_id from different possible locations
         metadata = body.get("metadata") or body.get("checkout", {}).get("metadata") or {}
         team_id = metadata.get("team_id")
@@ -168,7 +222,7 @@ class SubscriptionService:
             logger.warning(f"Webhook Product ID {product_id} not found in configuration mapping. Ignored.")
             return
         
-        supabase = get_supabase()
+        # Note: supabase already obtained at top of method for idempotency check
         
         # Logic: If Enterprise Product ID matches, force enterprise
         if product_id == settings.POLAR_PRODUCT_ID_ENTERPRISE:
@@ -199,6 +253,7 @@ class SubscriptionService:
             internal_status = "active"
             logger.info(f"[SubscriptionService] Trial active for team {team_id}, granting {plan} access")
         
+        # supabase already obtained at top of method for idempotency check
         supabase.table("subscriptions").upsert({
             "team_id": team_id,
             "polar_id": body.get("id"),

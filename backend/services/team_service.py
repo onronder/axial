@@ -742,7 +742,19 @@ class TeamService:
                 "invited_at": now
             }
             
-            response = supabase.table("team_members").insert(member_data).execute()
+            try:
+                response = supabase.table("team_members").insert(member_data).execute()
+            except Exception as insert_exc:
+                # RACE CONDITION FIX: Catch database trigger rejection for seat limit
+                error_msg = str(insert_exc)
+                if "P0001" in error_msg or "seat limit exceeded" in error_msg.lower():
+                    logger.warning(f"[TeamService] Seat limit enforced by database trigger for {team_id[:8]}...")
+                    return {
+                        "success": False, 
+                        "error": f"Team seat limit reached (race condition prevented by database)",
+                        "code": "SEAT_LIMIT"
+                    }
+                raise  # Re-raise other exceptions
             
             if response.data:
                 member = response.data[0]

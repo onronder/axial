@@ -884,6 +884,9 @@ def update_file_status(
     
     Status progression: pending → uploading → parsing → embedding → indexing → completed/failed/skipped
     
+    RACE CONDITION FIX: Uses idempotent update that only writes if status/progress
+    actually changed. This reduces unnecessary writes during task retries.
+    
     Args:
         file_status_id: The file status record ID
         job_id: Parent ingestion job ID for metrics and counters
@@ -899,6 +902,44 @@ def update_file_status(
         return
         
     try:
+        # Try idempotent update via RPC first (reduces unnecessary writes on retries)
+        try:
+            result = supabase.rpc(
+                "update_file_status_if_changed",
+                {
+                    "p_file_status_id": file_status_id,
+                    "p_new_status": status,
+                    "p_progress": min(100, max(0, progress)) if progress is not None else None,
+                    "p_message": message,
+                    "p_error_message": error,
+                    "p_document_id": document_id,
+                    "p_chunks_processed": chunks_processed,
+                }
+            ).execute()
+            
+            # RPC returns boolean - true if update was made
+            updated = result.data if isinstance(result.data, bool) else True
+            
+            if updated:
+                if status_updates_total:
+                    status_updates_total.labels("file", status or "unknown").inc()
+                if job_id:
+                    record_ingest_file_update(job_id)
+            else:
+                logger.debug(f"🔄 File status {file_status_id[:8]}... unchanged (idempotent skip)")
+                
+            return
+            
+        except Exception as rpc_exc:
+            error_msg = str(rpc_exc)
+            if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+                # RPC doesn't exist yet (migration not applied), fall through to legacy update
+                logger.debug("⚠️ update_file_status_if_changed RPC not found, using fallback")
+            else:
+                # Log but continue to fallback
+                logger.warning(f"⚠️ Idempotent update failed, using fallback: {rpc_exc}")
+        
+        # Fallback to legacy update
         update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
         
         if status:
