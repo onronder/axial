@@ -212,9 +212,12 @@ class AccountCleanupService:
             else:
                 query = query.eq("user_id", user_id)
             
-            doc = query.single().execute()
+            # Use maybe_single() to gracefully handle 0 rows (already deleted)
+            doc = query.maybe_single().execute()
             if not doc.data:
-                raise Exception("Document not found")
+                # Document already deleted or doesn't exist - consider success
+                logger.info(f"📄 [DocCleanup] Document {doc_id} not found (already deleted)")
+                return {"status": "success", "id": doc_id, "already_deleted": True}
                 
             doc_data = doc.data
             storage_path = None
