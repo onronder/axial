@@ -180,7 +180,8 @@ export interface Document {
     name: string;
     source: string;
     sourceType: DocumentSourceType;
-    sourceUrl?: string;  // File path or URL
+    sourceUrl?: string;  // Web URL or external link
+    path?: string;  // File path within source (e.g., folder path in Drive, S3 key)
     status: DocumentStatus;
     indexingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
     addedAt: string;

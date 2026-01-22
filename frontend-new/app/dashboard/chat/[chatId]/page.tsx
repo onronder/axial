@@ -756,6 +756,7 @@ export default function ChatPage() {
                 onModelSelect={setSelectedModel}
                 isResending={isResending}
                 thinkingStatus={thinkingStatus}
+                conversationId={activeConversationId || undefined}
             />
 
             {/* Onboarding Modal for new users */}

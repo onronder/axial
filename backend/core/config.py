@@ -184,27 +184,32 @@ class Settings(BaseSettings):
     CONNECTOR_CONCURRENCY_SFTP: int = 2  # SSH connection limits
 
     # =========================================================================
-    # YouTube Proxy Configuration (Bright Data / Residential Proxy)
+    # YouTube / Bright Data Unlocker API Configuration
     # =========================================================================
     # Required for YouTube transcript fetching from cloud infrastructure.
     # YouTube blocks most cloud provider IPs (AWS, GCP, Azure, Railway, etc.)
     # 
-    # Supported proxy formats:
-    #   - HTTP: http://user:pass@proxy.brightdata.com:22225
-    #   - HTTPS: https://user:pass@proxy.brightdata.com:22225
-    #   - SOCKS5: socks5://user:pass@proxy.brightdata.com:22225
+    # Bright Data Unlocker API setup:
+    #   1. Create an "Unlocker API" zone in Bright Data dashboard
+    #   2. Get your API token from Bright Data settings
+    #   3. Set BRIGHTDATA_API_KEY and BRIGHTDATA_UNLOCKER_ZONE
     #
-    # Bright Data setup:
-    #   1. Create a "Residential" or "Datacenter" zone in Bright Data dashboard
-    #   2. Get your zone credentials (username, password, host, port)
-    #   3. Format: http://<username>:<password>@<host>:<port>
+    # API endpoint: https://api.brightdata.com/request
+    # Docs: https://docs.brightdata.com/scraping-automation/web-unlocker/web-unlocker-api
     #
+    BRIGHTDATA_API_KEY: Optional[str] = None  # Bearer token for Bright Data API
+    BRIGHTDATA_UNLOCKER_ZONE: str = "axio_unlocker"  # Zone name for Unlocker API
+    BRIGHTDATA_TIMEOUT: int = 60  # Request timeout in seconds (YouTube can be slow)
+    BRIGHTDATA_RETRY_COUNT: int = 3  # Retry attempts on failure
+    BRIGHTDATA_RETRY_DELAY: float = 2.0  # Base delay between retries (exponential backoff)
+    
+    # Legacy proxy settings (kept for backwards compatibility)
     YOUTUBE_PROXY_URL: Optional[str] = None
-    YOUTUBE_PROXY_ENABLED: bool = True  # Set False to skip proxy even if configured
-    YOUTUBE_PROXY_TIMEOUT: int = 30  # Proxy request timeout in seconds
-    YOUTUBE_PROXY_RETRY_COUNT: int = 3  # Retry attempts on proxy failure
-    YOUTUBE_PROXY_RETRY_DELAY: float = 1.0  # Base delay between retries (exponential backoff)
-    YOUTUBE_DIRECT_FALLBACK: bool = True  # Try direct connection if proxy fails
+    YOUTUBE_PROXY_ENABLED: bool = False  # Disabled - use Unlocker API instead
+    YOUTUBE_PROXY_TIMEOUT: int = 30
+    YOUTUBE_PROXY_RETRY_COUNT: int = 3
+    YOUTUBE_PROXY_RETRY_DELAY: float = 1.0
+    YOUTUBE_DIRECT_FALLBACK: bool = True  # Try direct connection if Unlocker API fails
  
 
     # =========================================================================

@@ -4,11 +4,12 @@
  * Clean, scrollable message list without virtualization complexity.
  * Includes Universal Context support for scope clarification.
  * Features ThinkingIndicator for RAG pipeline visualization.
+ * Includes user feedback collection (thumbs up/down) for quality analytics.
  */
 
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { Message } from "@/hooks/useChatHistory";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
@@ -16,6 +17,8 @@ import { EmptyState } from "./EmptyState";
 import { ClarificationCard } from "./ClarificationCard";
 import { ThinkingIndicator, ThinkingStatus, TypingIndicator } from "./ThinkingIndicator";
 import { ModelId } from "@/lib/types";
+import { useFeedback, type FeedbackRating, type SourceSnapshot } from "@/hooks/useFeedback";
+import { SourceMetadata } from "./SourceCard";
 
 interface ChatAreaProps {
   messages: Message[];
@@ -31,6 +34,8 @@ interface ChatAreaProps {
   isResending?: boolean;
   /** RAG processing status for thinking indicator */
   thinkingStatus?: ThinkingStatus | null;
+  /** Current conversation ID for feedback tracking */
+  conversationId?: string;
 }
 
 export function ChatArea({
@@ -44,10 +49,69 @@ export function ChatArea({
   onModelSelect,
   isResending = false,
   thinkingStatus = null,
+  conversationId,
 }: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const showEmptyState = messages.length === 0 && !isTyping && !streamingMessage && !thinkingStatus;
+  
+  // Feedback hook for collecting user ratings on AI responses
+  const { submitFeedback, isSubmitting: isFeedbackSubmitting, feedbackState } = useFeedback(conversationId);
+  
+  /**
+   * Find the previous user message for context.
+   * Used to provide the user's question when submitting feedback.
+   */
+  const getPreviousUserQuery = useCallback((messageIndex: number): string => {
+    // Look backwards from current message to find the user's question
+    for (let i = messageIndex - 1; i >= 0; i--) {
+      if (messages[i]?.role === 'user') {
+        return messages[i].content;
+      }
+    }
+    return '';
+  }, [messages]);
+  
+  /**
+   * Handle feedback submission from MessageBubble.
+   */
+  const handleFeedbackSubmit = useCallback(async (
+    messageId: string,
+    rating: FeedbackRating,
+    feedbackText?: string
+  ) => {
+    // Find the message to get its sources and content
+    const message = messages.find(m => m.id === messageId);
+    if (!message) return;
+    
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    const queryText = getPreviousUserQuery(messageIndex);
+    
+    // Convert sources to SourceSnapshot format
+    const sources: SourceSnapshot[] = (message.sources || []).map((source, idx) => {
+      if (typeof source === 'string') {
+        return { label: source, index: idx + 1 };
+      }
+      const s = source as SourceMetadata;
+      return {
+        index: s.index ?? idx + 1,
+        type: s.type ?? s.source_type ?? s.source,
+        label: s.label ?? s.title ?? s.source,
+        url: s.url ?? s.source_url,
+        page: s.page,
+        section: s.section,
+      };
+    });
+    
+    await submitFeedback({
+      messageId,
+      rating,
+      queryText,
+      answerPreview: message.content.slice(0, 500),
+      sources,
+      feedbackText,
+    });
+  }, [messages, getPreviousUserQuery, submitFeedback]);
 
   // Smooth scroll to bottom when new messages arrive or thinking status changes
   useEffect(() => {
@@ -89,7 +153,7 @@ export function ChatArea({
         <div className="mx-auto w-full max-w-5xl rounded-2xl border border-border bg-card/50 backdrop-blur-xl shadow-lg p-3 sm:p-4">
           {/* Messages stack naturally with proper spacing */}
           <div className="flex flex-col gap-4">
-            {messages.map((message) => {
+            {messages.map((message, index) => {
               // Handle clarification messages specially
               if (message.role === 'clarification' && message.candidates) {
                 return (
@@ -107,7 +171,12 @@ export function ChatArea({
                 );
               }
               
-              // Regular message bubble
+              // Get the previous user query for feedback context
+              const previousUserQuery = message.role === 'assistant' 
+                ? getPreviousUserQuery(index) 
+                : undefined;
+              
+              // Regular message bubble with feedback support
               return (
                 <MessageBubble
                   key={message.id}
@@ -115,6 +184,10 @@ export function ChatArea({
                     ...message,
                     timestamp: message.created_at,
                   }}
+                  previousUserQuery={previousUserQuery}
+                  feedbackRating={feedbackState[message.id]}
+                  onFeedbackSubmit={handleFeedbackSubmit}
+                  isFeedbackSubmitting={isFeedbackSubmitting}
                 />
               );
             })}

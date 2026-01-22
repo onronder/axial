@@ -252,6 +252,9 @@ app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 from api.v1.dlq import router as dlq_router
 app.include_router(dlq_router, prefix="/api/v1/dlq", tags=["Dead Letter Queue"])
 
+from api.v1.feedback import router as feedback_router
+app.include_router(feedback_router, prefix="/api/v1", tags=["feedback"])
+
 
 # =============================================================================
 # Health & Root Endpoints

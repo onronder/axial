@@ -38,18 +38,111 @@ from core.url_utils import is_youtube_url, extract_youtube_video_id, YOUTUBE_URL
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# YouTube Proxy Configuration
+# Bright Data Unlocker API Configuration
 # =============================================================================
-# YouTube aggressively blocks cloud provider IPs. We use residential proxies
-# (Bright Data, SmartProxy, etc.) to bypass this restriction.
+# YouTube aggressively blocks cloud provider IPs. We use Bright Data's 
+# Unlocker API to bypass this restriction with residential IP routing.
+#
+# API Docs: https://docs.brightdata.com/scraping-automation/web-unlocker/web-unlocker-api
+
+BRIGHTDATA_API_URL = "https://api.brightdata.com/request"
 
 
-def _get_youtube_proxy_config() -> Dict[str, Any]:
+def _get_brightdata_config() -> Dict[str, Any]:
     """
-    Load YouTube proxy configuration from environment/settings.
+    Load Bright Data Unlocker API configuration from settings.
     
-    Returns a dict with proxy settings. Lazy-loaded to avoid import cycles.
+    Returns a dict with API settings. Lazy-loaded to avoid import cycles.
     """
+    try:
+        from core.config import settings
+        return {
+            "api_key": settings.BRIGHTDATA_API_KEY,
+            "zone": settings.BRIGHTDATA_UNLOCKER_ZONE,
+            "timeout": settings.BRIGHTDATA_TIMEOUT,
+            "retry_count": settings.BRIGHTDATA_RETRY_COUNT,
+            "retry_delay": settings.BRIGHTDATA_RETRY_DELAY,
+            "direct_fallback": settings.YOUTUBE_DIRECT_FALLBACK,
+        }
+    except Exception:
+        # Fallback to environment variables if settings not available
+        return {
+            "api_key": os.getenv("BRIGHTDATA_API_KEY"),
+            "zone": os.getenv("BRIGHTDATA_UNLOCKER_ZONE", "axio_unlocker"),
+            "timeout": int(os.getenv("BRIGHTDATA_TIMEOUT", "60")),
+            "retry_count": int(os.getenv("BRIGHTDATA_RETRY_COUNT", "3")),
+            "retry_delay": float(os.getenv("BRIGHTDATA_RETRY_DELAY", "2.0")),
+            "direct_fallback": os.getenv("YOUTUBE_DIRECT_FALLBACK", "true").lower() == "true",
+        }
+
+
+def _fetch_via_brightdata_unlocker(url: str, config: Dict[str, Any]) -> Optional[str]:
+    """
+    Fetch a URL's content via Bright Data Unlocker API.
+    
+    Args:
+        url: Target URL to fetch
+        config: Bright Data configuration dict
+        
+    Returns:
+        Response content as string, or None on failure
+    """
+    api_key = config.get("api_key")
+    zone = config.get("zone", "axio_unlocker")
+    timeout = config.get("timeout", 60)
+    
+    if not api_key:
+        logger.warning("⚠️ [BrightData] API key not configured")
+        return None
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    
+    payload = {
+        "zone": zone,
+        "url": url,
+        "format": "raw",
+    }
+    
+    try:
+        response = requests.post(
+            BRIGHTDATA_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=timeout
+        )
+        
+        if response.status_code == 200:
+            logger.debug(f"✅ [BrightData] Successfully fetched: {url}")
+            return response.text
+        else:
+            logger.warning(
+                f"⚠️ [BrightData] Request failed ({response.status_code}): {url} - {response.text[:200]}"
+            )
+            return None
+            
+    except requests.Timeout:
+        logger.warning(f"⚠️ [BrightData] Request timed out ({timeout}s): {url}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ [BrightData] Request failed: {url} - {e}")
+        return None
+
+
+class YouTubeProxyError(Exception):
+    """Raised when YouTube transcript fetch fails due to proxy/IP issues."""
+    
+    def __init__(self, message: str, is_ip_blocked: bool = False, original_error: Exception = None):
+        super().__init__(message)
+        self.is_ip_blocked = is_ip_blocked
+        self.original_error = original_error
+
+
+# Legacy proxy support (deprecated in favor of Unlocker API)
+def _get_youtube_proxy_config() -> Dict[str, Any]:
+    """Legacy proxy config - kept for backwards compatibility."""
     try:
         from core.config import settings
         return {
@@ -61,53 +154,27 @@ def _get_youtube_proxy_config() -> Dict[str, Any]:
             "direct_fallback": settings.YOUTUBE_DIRECT_FALLBACK,
         }
     except Exception:
-        # Fallback to environment variables if settings not available
         return {
             "proxy_url": os.getenv("YOUTUBE_PROXY_URL"),
-            "enabled": os.getenv("YOUTUBE_PROXY_ENABLED", "true").lower() == "true",
-            "timeout": int(os.getenv("YOUTUBE_PROXY_TIMEOUT", "30")),
-            "retry_count": int(os.getenv("YOUTUBE_PROXY_RETRY_COUNT", "3")),
-            "retry_delay": float(os.getenv("YOUTUBE_PROXY_RETRY_DELAY", "1.0")),
-            "direct_fallback": os.getenv("YOUTUBE_DIRECT_FALLBACK", "true").lower() == "true",
+            "enabled": False,
+            "timeout": 30,
+            "retry_count": 3,
+            "retry_delay": 1.0,
+            "direct_fallback": True,
         }
 
 
 def _build_proxy_dict(proxy_url: str) -> Optional[Dict[str, str]]:
-    """
-    Build a proxies dict for requests/youtube-transcript-api.
-    
-    Args:
-        proxy_url: Proxy URL in format http://user:pass@host:port
-        
-    Returns:
-        Dict suitable for requests library, or None if invalid
-    """
+    """Build a proxies dict for requests library (legacy)."""
     if not proxy_url:
         return None
-    
     try:
         parsed = urlparse(proxy_url)
         if parsed.scheme not in ("http", "https", "socks5", "socks5h"):
-            logger.warning(f"⚠️ [YouTubeProxy] Unsupported proxy scheme: {parsed.scheme}")
             return None
-        
-        # Build proxy dict for both HTTP and HTTPS traffic
-        return {
-            "http": proxy_url,
-            "https": proxy_url,
-        }
-    except Exception as e:
-        logger.error(f"❌ [YouTubeProxy] Failed to parse proxy URL: {e}")
+        return {"http": proxy_url, "https": proxy_url}
+    except Exception:
         return None
-
-
-class YouTubeProxyError(Exception):
-    """Raised when YouTube transcript fetch fails due to proxy/IP issues."""
-    
-    def __init__(self, message: str, is_ip_blocked: bool = False, original_error: Exception = None):
-        super().__init__(message)
-        self.is_ip_blocked = is_ip_blocked
-        self.original_error = original_error
 
 # Alias for backward compatibility
 YOUTUBE_PATTERNS = YOUTUBE_URL_PATTERNS
@@ -402,12 +469,12 @@ class WebConnector(EnhancedConnector, BaseConnector):
     
     def fetch_youtube_transcript(self, video_url: str) -> Optional[str]:
         """
-        Fetch transcript from a YouTube video with residential proxy support.
+        Fetch transcript from a YouTube video using Bright Data Unlocker API.
         
         This method handles YouTube's aggressive IP blocking of cloud providers by:
-        1. Using configured residential proxy (Bright Data, etc.)
-        2. Implementing retry logic with exponential backoff
-        3. Falling back to direct connection if proxy fails (configurable)
+        1. Using Bright Data Unlocker API (primary method)
+        2. Falling back to direct connection if Unlocker fails (configurable)
+        3. Implementing retry logic with exponential backoff
         
         Args:
             video_url: YouTube video URL
@@ -420,54 +487,258 @@ class WebConnector(EnhancedConnector, BaseConnector):
             logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
             return None
         
-        # Load proxy configuration
-        config = _get_youtube_proxy_config()
-        proxy_url = config["proxy_url"]
-        proxy_enabled = config["enabled"]
-        retry_count = config["retry_count"]
-        retry_delay = config["retry_delay"]
-        direct_fallback = config["direct_fallback"]
+        # Load Bright Data configuration
+        bd_config = _get_brightdata_config()
+        retry_count = bd_config["retry_count"]
+        retry_delay = bd_config["retry_delay"]
+        direct_fallback = bd_config["direct_fallback"]
         
-        # Build proxy dict if configured
-        proxies = None
-        if proxy_url and proxy_enabled:
-            proxies = _build_proxy_dict(proxy_url)
-            if proxies:
-                logger.info(f"🔒 [YouTube] Using proxy for transcript fetch: {video_id}")
+        # Attempt 1: Try Bright Data Unlocker API
+        if bd_config.get("api_key"):
+            logger.info(f"🔒 [YouTube] Attempting transcript fetch via Bright Data Unlocker: {video_id}")
+            result = self._fetch_transcript_via_unlocker(video_id, video_url, bd_config)
+            if result is not None:
+                return result
+            logger.warning(f"⚠️ [YouTube] Bright Data Unlocker failed for {video_id}")
+        else:
+            logger.info(f"ℹ️ [YouTube] Bright Data API key not configured, using direct connection")
         
-        # Try with proxy first, then fallback to direct if configured
-        attempts = [
-            ("proxy", proxies) if proxies else ("direct", None),
-        ]
-        
-        # Add fallback attempt if configured
-        if proxies and direct_fallback:
-            attempts.append(("direct_fallback", None))
-        elif not proxies and proxy_url and proxy_enabled:
-            logger.warning(f"⚠️ [YouTube] Proxy configured but invalid, using direct connection")
-        
-        last_error = None
-        
-        for attempt_name, attempt_proxies in attempts:
+        # Attempt 2: Direct connection fallback
+        if direct_fallback:
+            logger.info(f"🔄 [YouTube] Attempting direct connection fallback: {video_id}")
             result = self._fetch_transcript_with_retry(
                 video_id=video_id,
                 video_url=video_url,
-                proxies=attempt_proxies,
+                proxies=None,
                 retry_count=retry_count,
                 retry_delay=retry_delay,
-                attempt_name=attempt_name,
+                attempt_name="direct_fallback",
             )
-            
             if result is not None:
                 return result
-            
-            # If proxy attempt failed with IP block, try fallback
-            if attempt_name == "proxy":
-                logger.warning(f"⚠️ [YouTube] Proxy attempt failed for {video_id}, trying fallback...")
         
         # All attempts failed
         logger.error(f"❌ [YouTube] All transcript fetch attempts failed for {video_url}")
         return None
+    
+    def _fetch_transcript_via_unlocker(
+        self,
+        video_id: str,
+        video_url: str,
+        config: Dict[str, Any],
+    ) -> Optional[str]:
+        """
+        Fetch YouTube transcript using Bright Data Unlocker API.
+        
+        This method extracts the embedded captions data from the YouTube page
+        HTML, which YouTube includes as JSON in the page source.
+        
+        Args:
+            video_id: YouTube video ID
+            video_url: Full YouTube URL
+            config: Bright Data configuration dict
+            
+        Returns:
+            Transcript text or None if not available
+        """
+        import json
+        import html
+        
+        retry_count = config.get("retry_count", 3)
+        retry_delay = config.get("retry_delay", 2.0)
+        
+        for attempt in range(retry_count):
+            try:
+                # Canonical YouTube URL for consistency
+                canonical_url = f"https://www.youtube.com/watch?v={video_id}"
+                
+                # Fetch page via Bright Data Unlocker API
+                page_html = _fetch_via_brightdata_unlocker(canonical_url, config)
+                
+                if not page_html:
+                    if attempt < retry_count - 1:
+                        delay = retry_delay * (2 ** attempt)
+                        logger.warning(
+                            f"⚠️ [YouTube/Unlocker] Attempt {attempt + 1}/{retry_count} failed. "
+                            f"Retrying in {delay:.1f}s..."
+                        )
+                        time.sleep(delay)
+                        continue
+                    return None
+                
+                # Extract captions from page HTML
+                transcript_text = self._extract_captions_from_html(page_html, video_id)
+                
+                if transcript_text:
+                    logger.info(
+                        f"✅ [YouTube/Unlocker] Fetched transcript: "
+                        f"{len(transcript_text)} chars from {video_id}"
+                    )
+                    return transcript_text
+                
+                # Page fetched but no captions found
+                logger.warning(f"⚠️ [YouTube/Unlocker] No captions found in page for: {video_id}")
+                return None
+                
+            except Exception as e:
+                if attempt < retry_count - 1:
+                    delay = retry_delay * (2 ** attempt)
+                    logger.warning(
+                        f"⚠️ [YouTube/Unlocker] Attempt {attempt + 1}/{retry_count} error: {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(f"❌ [YouTube/Unlocker] Failed after {retry_count} attempts: {e}")
+        
+        return None
+    
+    def _extract_captions_from_html(self, page_html: str, video_id: str) -> Optional[str]:
+        """
+        Extract captions/transcript from YouTube page HTML.
+        
+        YouTube embeds caption data as JSON in the page source within
+        the ytInitialPlayerResponse variable.
+        
+        Args:
+            page_html: Raw HTML of YouTube video page
+            video_id: Video ID for logging
+            
+        Returns:
+            Transcript text or None if not found
+        """
+        import json
+        import html as html_module
+        import re
+        
+        try:
+            # Look for ytInitialPlayerResponse JSON in the page
+            pattern = r'var ytInitialPlayerResponse\s*=\s*(\{.+?\});'
+            match = re.search(pattern, page_html)
+            
+            if not match:
+                # Try alternative pattern (sometimes it's in a different format)
+                pattern = r'ytInitialPlayerResponse\s*=\s*(\{.+?\});'
+                match = re.search(pattern, page_html)
+            
+            if not match:
+                logger.warning(f"⚠️ [YouTube] Could not find ytInitialPlayerResponse for {video_id}")
+                return None
+            
+            player_response = json.loads(match.group(1))
+            
+            # Check for playability issues
+            playability = player_response.get("playabilityStatus", {})
+            status = playability.get("status")
+            
+            if status == "ERROR":
+                reason = playability.get("reason", "Unknown error")
+                logger.warning(f"⚠️ [YouTube] Video unavailable: {video_id} - {reason}")
+                return None
+            
+            if status == "LOGIN_REQUIRED":
+                logger.warning(f"⚠️ [YouTube] Video requires login: {video_id}")
+                return None
+            
+            # Get captions info
+            captions = player_response.get("captions", {})
+            caption_tracks = captions.get("playerCaptionsTracklistRenderer", {}).get("captionTracks", [])
+            
+            if not caption_tracks:
+                logger.warning(f"⚠️ [YouTube] No caption tracks available for: {video_id}")
+                return None
+            
+            # Prefer English, then any available language
+            selected_track = None
+            for track in caption_tracks:
+                lang = track.get("languageCode", "")
+                if lang.startswith("en"):
+                    # Prefer manual captions over auto-generated
+                    if track.get("kind") != "asr" or selected_track is None:
+                        selected_track = track
+                        if track.get("kind") != "asr":
+                            break  # Found manual English, stop looking
+            
+            if not selected_track and caption_tracks:
+                selected_track = caption_tracks[0]  # Fallback to first available
+            
+            if not selected_track:
+                return None
+            
+            # Fetch the actual captions
+            captions_url = selected_track.get("baseUrl")
+            if not captions_url:
+                logger.warning(f"⚠️ [YouTube] No captions URL for: {video_id}")
+                return None
+            
+            # Fetch captions XML via Bright Data
+            bd_config = _get_brightdata_config()
+            captions_xml = _fetch_via_brightdata_unlocker(captions_url, bd_config)
+            
+            if not captions_xml:
+                logger.warning(f"⚠️ [YouTube] Failed to fetch captions XML for: {video_id}")
+                return None
+            
+            # Parse captions XML
+            return self._parse_captions_xml(captions_xml, video_id)
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"⚠️ [YouTube] Failed to parse player response JSON: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ [YouTube] Error extracting captions from HTML: {e}")
+            return None
+    
+    def _parse_captions_xml(self, xml_content: str, video_id: str) -> Optional[str]:
+        """
+        Parse YouTube captions XML format.
+        
+        YouTube returns captions in XML format like:
+        <transcript>
+            <text start="0.12" dur="2.34">Caption text here</text>
+            ...
+        </transcript>
+        
+        Args:
+            xml_content: Raw XML captions content
+            video_id: Video ID for logging
+            
+        Returns:
+            Combined transcript text
+        """
+        import html as html_module
+        
+        try:
+            from bs4 import BeautifulSoup
+            
+            soup = BeautifulSoup(xml_content, "lxml-xml")
+            text_elements = soup.find_all("text")
+            
+            if not text_elements:
+                # Try HTML parser as fallback
+                soup = BeautifulSoup(xml_content, "html.parser")
+                text_elements = soup.find_all("text")
+            
+            if not text_elements:
+                logger.warning(f"⚠️ [YouTube] No text elements in captions XML for: {video_id}")
+                return None
+            
+            text_parts = []
+            for elem in text_elements:
+                text = elem.get_text() if hasattr(elem, 'get_text') else str(elem.string or "")
+                # Decode HTML entities
+                text = html_module.unescape(text)
+                if text.strip():
+                    text_parts.append(text.strip())
+            
+            if not text_parts:
+                return None
+            
+            return " ".join(text_parts)
+            
+        except Exception as e:
+            logger.error(f"❌ [YouTube] Error parsing captions XML for {video_id}: {e}")
+            return None
     
     def _fetch_transcript_with_retry(
         self,
@@ -479,12 +750,15 @@ class WebConnector(EnhancedConnector, BaseConnector):
         attempt_name: str,
     ) -> Optional[str]:
         """
-        Fetch transcript with retry logic and exponential backoff.
+        Fetch transcript with retry logic and exponential backoff (direct connection).
+        
+        Note: This is the fallback method using youtube-transcript-api directly.
+        For proxy support, use the Bright Data Unlocker API method instead.
         
         Args:
             video_id: YouTube video ID
             video_url: Full YouTube URL (for logging)
-            proxies: Proxy configuration dict or None
+            proxies: Deprecated - not used in current API version
             retry_count: Number of retry attempts
             retry_delay: Base delay between retries
             attempt_name: Name of this attempt for logging
@@ -515,11 +789,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
         
         for attempt in range(retry_count):
             try:
-                # Create API instance with proxy support
+                # Create API instance (direct connection only - proxies not supported in newer API)
                 ytt_api = YouTubeTranscriptApi()
                 
-                # Try to get transcript list
-                transcript_list = ytt_api.list(video_id, proxies=proxies)
+                # Try to get transcript list (no proxy support in current API version)
+                transcript_list = ytt_api.list(video_id)
                 
                 # Prefer manual transcripts, fall back to auto-generated
                 transcript = self._select_best_transcript(transcript_list)

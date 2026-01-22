@@ -25,6 +25,7 @@ interface BackendDocument {
     name?: string;
     source_type?: string;
     source_url?: string;
+    path?: string;  // File path within source (e.g., folder path, S3 key)
     status?: string;
     indexing_status?: string;
     created_at?: string;
@@ -46,6 +47,7 @@ function mapDocument(d: BackendDocument): Document {
         source: formatSourceTypeLabel(normalizedSource),
         sourceType: normalizedSource as Document['sourceType'],
         sourceUrl: d.source_url || undefined,
+        path: d.path || undefined,  // File path within source (folder, S3 key, etc.)
         status: (d.status as Document['status']) || "indexed",
         indexingStatus: (d.indexing_status as Document['indexingStatus']) || "completed",
         addedAt: d.created_at || new Date().toISOString(),

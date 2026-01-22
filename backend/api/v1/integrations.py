@@ -2557,3 +2557,72 @@ async def get_sync_history(
     except Exception as e:
         logger.error(f"Failed to get sync history: {e}")
         raise HTTPException(status_code=500, detail="Failed to get sync history")
+
+
+# =============================================================================
+# Ingested Files Endpoint (for FileBrowser "already added" indicator)
+# =============================================================================
+
+class IngestedFilesResponse(BaseModel):
+    """Response model for ingested files lookup."""
+    source_type: str
+    ingested_ids: List[str]
+    total_count: int
+
+
+@router.get("/integrations/{provider}/ingested-files", response_model=IngestedFilesResponse)
+@limiter.limit("60/minute")
+async def get_ingested_files(
+    request: Request,
+    provider: str,
+    user_id: str = Depends(get_current_user),
+    organization_id: str = Depends(get_user_organization_id),
+):
+    """
+    Get list of file IDs that have already been ingested from a specific connector.
+    
+    Used by FileBrowser to show "already added" indicators for files that
+    are already in the knowledge base.
+    
+    Returns:
+        - source_type: Normalized provider name
+        - ingested_ids: List of source_id values (original file IDs from the connector)
+        - total_count: Total number of ingested files from this source
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Normalize provider name
+        canonical_provider = _require_provider(provider)
+        
+        # Query documents table for this source type within the organization
+        # The source_id field contains the original file ID from the connector
+        docs_response = supabase.table("documents")\
+            .select("source_id")\
+            .eq("organization_id", organization_id)\
+            .eq("source_type", canonical_provider)\
+            .execute()
+        
+        # Extract unique source_ids (filter out None values)
+        ingested_ids = list({
+            str(d["source_id"]) 
+            for d in (docs_response.data or []) 
+            if d.get("source_id")
+        })
+        
+        logger.debug(
+            f"[IngestedFiles] Found {len(ingested_ids)} ingested files "
+            f"for {canonical_provider} in org {organization_id}"
+        )
+        
+        return IngestedFilesResponse(
+            source_type=canonical_provider,
+            ingested_ids=ingested_ids,
+            total_count=len(ingested_ids),
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get ingested files for {provider}: {e}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_ingested_files")

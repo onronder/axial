@@ -1,0 +1,459 @@
+'use client';
+
+/**
+ * Feedback Analytics Dashboard
+ * 
+ * Shows chat response quality analytics for team admins.
+ * Includes:
+ * - Summary statistics (positive/negative rates)
+ * - Recent negative feedback with context
+ * - Source quality metrics (problematic documents)
+ * 
+ * Related Files:
+ * - backend/api/v1/feedback.py (API endpoints)
+ * - docs/ChatFeedback_Implementation_Spec.md (specification)
+ */
+
+import { useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { 
+    BarChart3, 
+    ThumbsUp, 
+    ThumbsDown, 
+    FileText, 
+    RefreshCw,
+    TrendingDown,
+    AlertTriangle,
+    MessageSquare,
+} from 'lucide-react';
+import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+
+// =============================================================================
+// Types
+// =============================================================================
+
+interface FeedbackSummary {
+    positive_count: number;
+    negative_count: number;
+    total_count: number;
+    negative_rate_pct: number;
+}
+
+interface FeedbackItem {
+    id: string;
+    rating: 'positive' | 'negative';
+    feedback_text: string | null;
+    query_text: string;
+    answer_preview: string;
+    sources: Array<{
+        label?: string;
+        type?: string;
+        url?: string;
+    }>;
+    user_email: string;
+    created_at: string;
+}
+
+interface FeedbackResponse {
+    items: FeedbackItem[];
+    total: number;
+    has_more: boolean;
+    summary: FeedbackSummary;
+}
+
+interface SourceMetric {
+    source_label: string;
+    source_type: string | null;
+    source_url: string | null;
+    positive_count: number;
+    negative_count: number;
+    total_feedback: number;
+    negative_rate_pct: number;
+    last_feedback_at: string | null;
+}
+
+interface SourceMetricsResponse {
+    items: SourceMetric[];
+    total: number;
+}
+
+// =============================================================================
+// API Functions
+// =============================================================================
+
+async function fetchFeedback(rating?: string): Promise<FeedbackResponse> {
+    const params = new URLSearchParams();
+    params.set('limit', '20');
+    if (rating) params.set('rating', rating);
+    
+    const response = await api.get(`/analytics/feedback?${params.toString()}`);
+    return response.data;
+}
+
+async function fetchSourceMetrics(): Promise<SourceMetricsResponse> {
+    const response = await api.get('/analytics/feedback/sources?min_feedback_count=3&limit=10');
+    return response.data;
+}
+
+// =============================================================================
+// Component
+// =============================================================================
+
+export default function FeedbackAnalyticsPage() {
+    const [ratingFilter, setRatingFilter] = useState<string>('all');
+    
+    // Fetch feedback data
+    const { 
+        data: feedbackData, 
+        isLoading: feedbackLoading, 
+        error: feedbackError,
+        refetch: refetchFeedback,
+    } = useQuery({
+        queryKey: ['feedback', ratingFilter],
+        queryFn: () => fetchFeedback(ratingFilter === 'all' ? undefined : ratingFilter),
+        staleTime: 60_000, // 1 minute
+    });
+    
+    // Fetch source metrics
+    const { 
+        data: sourceMetrics, 
+        isLoading: metricsLoading,
+        refetch: refetchMetrics,
+    } = useQuery({
+        queryKey: ['sourceMetrics'],
+        queryFn: fetchSourceMetrics,
+        staleTime: 60_000,
+    });
+    
+    const handleRefresh = useCallback(() => {
+        refetchFeedback();
+        refetchMetrics();
+    }, [refetchFeedback, refetchMetrics]);
+    
+    const summary = feedbackData?.summary;
+    
+    return (
+        <div className="container max-w-6xl py-8 space-y-8">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Feedback Analytics</h1>
+                    <p className="text-muted-foreground mt-1">
+                        Monitor AI response quality based on user feedback
+                    </p>
+                </div>
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleRefresh}
+                    className="gap-2"
+                >
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
+                </Button>
+            </div>
+            
+            {/* Summary Cards */}
+            <div className="grid gap-4 md:grid-cols-4">
+                <SummaryCard
+                    title="Total Feedback"
+                    value={summary?.total_count ?? 0}
+                    icon={<MessageSquare className="h-4 w-4" />}
+                    loading={feedbackLoading}
+                />
+                <SummaryCard
+                    title="Positive"
+                    value={summary?.positive_count ?? 0}
+                    icon={<ThumbsUp className="h-4 w-4 text-green-500" />}
+                    loading={feedbackLoading}
+                    className="border-green-200 dark:border-green-900"
+                />
+                <SummaryCard
+                    title="Negative"
+                    value={summary?.negative_count ?? 0}
+                    icon={<ThumbsDown className="h-4 w-4 text-red-500" />}
+                    loading={feedbackLoading}
+                    className="border-red-200 dark:border-red-900"
+                />
+                <SummaryCard
+                    title="Negative Rate"
+                    value={`${summary?.negative_rate_pct ?? 0}%`}
+                    icon={<TrendingDown className="h-4 w-4 text-amber-500" />}
+                    loading={feedbackLoading}
+                    description={
+                        (summary?.negative_rate_pct ?? 0) > 20 
+                            ? "Above average" 
+                            : "Looking good"
+                    }
+                />
+            </div>
+            
+            {/* Source Quality Metrics */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 text-amber-500" />
+                        <CardTitle>Problem Sources</CardTitle>
+                    </div>
+                    <CardDescription>
+                        Documents that frequently appear in negative feedback
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {metricsLoading ? (
+                        <div className="space-y-2">
+                            {[...Array(5)].map((_, i) => (
+                                <Skeleton key={i} className="h-12 w-full" />
+                            ))}
+                        </div>
+                    ) : sourceMetrics?.items.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                            <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                            <p>No problem sources identified yet</p>
+                            <p className="text-sm">Sources with 3+ feedback ratings will appear here</p>
+                        </div>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Source</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead className="text-center">👍</TableHead>
+                                    <TableHead className="text-center">👎</TableHead>
+                                    <TableHead className="text-right">Negative Rate</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {sourceMetrics?.items.map((source) => (
+                                    <TableRow key={`${source.source_label}-${source.source_type}`}>
+                                        <TableCell className="font-medium max-w-[200px] truncate">
+                                            {source.source_label}
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline" className="text-xs">
+                                                {source.source_type || 'Unknown'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-center text-green-600">
+                                            {source.positive_count}
+                                        </TableCell>
+                                        <TableCell className="text-center text-red-600">
+                                            {source.negative_count}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <span className={cn(
+                                                "font-medium",
+                                                source.negative_rate_pct > 50 
+                                                    ? "text-red-600" 
+                                                    : source.negative_rate_pct > 25 
+                                                        ? "text-amber-600" 
+                                                        : "text-muted-foreground"
+                                            )}>
+                                                {source.negative_rate_pct}%
+                                            </span>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
+            
+            {/* Recent Feedback */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <BarChart3 className="h-5 w-5" />
+                            <CardTitle>Recent Feedback</CardTitle>
+                        </div>
+                        <Select value={ratingFilter} onValueChange={setRatingFilter}>
+                            <SelectTrigger className="w-[150px]">
+                                <SelectValue placeholder="Filter by rating" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Ratings</SelectItem>
+                                <SelectItem value="positive">Positive Only</SelectItem>
+                                <SelectItem value="negative">Negative Only</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <CardDescription>
+                        User feedback on AI responses
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {feedbackLoading ? (
+                        <div className="space-y-4">
+                            {[...Array(5)].map((_, i) => (
+                                <Skeleton key={i} className="h-24 w-full" />
+                            ))}
+                        </div>
+                    ) : feedbackError ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                            <p>Failed to load feedback. You may not have admin access.</p>
+                        </div>
+                    ) : feedbackData?.items.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                            <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                            <p>No feedback collected yet</p>
+                            <p className="text-sm">User ratings on AI responses will appear here</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {feedbackData?.items.map((item) => (
+                                <FeedbackCard key={item.id} feedback={item} />
+                            ))}
+                            
+                            {feedbackData?.has_more && (
+                                <div className="text-center pt-4">
+                                    <Button variant="outline" size="sm">
+                                        Load More
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
+
+// =============================================================================
+// Sub-components
+// =============================================================================
+
+interface SummaryCardProps {
+    title: string;
+    value: number | string;
+    icon: React.ReactNode;
+    loading?: boolean;
+    description?: string;
+    className?: string;
+}
+
+function SummaryCard({ title, value, icon, loading, description, className }: SummaryCardProps) {
+    return (
+        <Card className={cn("", className)}>
+            <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-sm font-medium text-muted-foreground">{title}</p>
+                        {loading ? (
+                            <Skeleton className="h-8 w-16 mt-1" />
+                        ) : (
+                            <p className="text-2xl font-bold">{value}</p>
+                        )}
+                        {description && (
+                            <p className="text-xs text-muted-foreground mt-1">{description}</p>
+                        )}
+                    </div>
+                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                        {icon}
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+interface FeedbackCardProps {
+    feedback: FeedbackItem;
+}
+
+function FeedbackCard({ feedback }: FeedbackCardProps) {
+    const isNegative = feedback.rating === 'negative';
+    
+    return (
+        <div className={cn(
+            "p-4 rounded-lg border",
+            isNegative 
+                ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20" 
+                : "border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/20"
+        )}>
+            <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0 space-y-2">
+                    {/* Query */}
+                    <div>
+                        <p className="text-xs font-medium text-muted-foreground">Question</p>
+                        <p className="text-sm truncate">{feedback.query_text}</p>
+                    </div>
+                    
+                    {/* Answer Preview */}
+                    <div>
+                        <p className="text-xs font-medium text-muted-foreground">Response</p>
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                            {feedback.answer_preview}
+                        </p>
+                    </div>
+                    
+                    {/* Comment (if any) */}
+                    {feedback.feedback_text && (
+                        <div className="pt-2 border-t">
+                            <p className="text-xs font-medium text-muted-foreground">User Comment</p>
+                            <p className="text-sm italic">&quot;{feedback.feedback_text}&quot;</p>
+                        </div>
+                    )}
+                    
+                    {/* Sources */}
+                    {feedback.sources.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                            {feedback.sources.slice(0, 3).map((source, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs">
+                                    {source.label || source.type || 'Source'}
+                                </Badge>
+                            ))}
+                            {feedback.sources.length > 3 && (
+                                <Badge variant="secondary" className="text-xs">
+                                    +{feedback.sources.length - 3} more
+                                </Badge>
+                            )}
+                        </div>
+                    )}
+                </div>
+                
+                {/* Rating & Meta */}
+                <div className="flex flex-col items-end gap-1 text-right shrink-0">
+                    <div className={cn(
+                        "p-2 rounded-full",
+                        isNegative ? "bg-red-100 dark:bg-red-900/30" : "bg-green-100 dark:bg-green-900/30"
+                    )}>
+                        {isNegative ? (
+                            <ThumbsDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                        ) : (
+                            <ThumbsUp className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        {feedback.user_email}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        {new Date(feedback.created_at).toLocaleDateString()}
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}

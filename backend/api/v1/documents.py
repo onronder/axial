@@ -28,6 +28,8 @@ class DocumentDTO(BaseModel):
     title: str
     source_type: str
     source_url: Optional[str] = None
+    # Path/location within the source (e.g., folder path in Drive, S3 key, etc.)
+    path: Optional[str] = None
     created_at: str
     status: str = "indexed"
     # Documents only exist after successful ingestion, so default to completed
@@ -35,6 +37,55 @@ class DocumentDTO(BaseModel):
     size: Optional[int] = 0
     file_size_bytes: Optional[int] = 0
     metadata: Dict[str, Any]
+
+
+def _extract_path_from_document(doc: Dict[str, Any]) -> Optional[str]:
+    """
+    Extract path/location from document metadata based on source type.
+    
+    Different connectors store path info in different metadata fields:
+    - Google Drive: path, file_path
+    - Dropbox: path, path_display, path_lower
+    - OneDrive/SharePoint: path, parent_path
+    - GitHub: path (e.g., src/main.py)
+    - S3: key (full S3 path)
+    - Box: folder_name + name
+    - SFTP: source_id contains full path
+    - File Upload: storage_path
+    - Web/YouTube: source_url (already displayed separately)
+    """
+    meta = doc.get("metadata") or {}
+    source_type = (doc.get("source_type") or "").lower()
+    
+    # Try common path fields in order of preference
+    path = (
+        meta.get("path") or
+        meta.get("path_display") or
+        meta.get("path_lower") or
+        meta.get("file_path") or
+        meta.get("parent_path") or
+        meta.get("key") or  # S3
+        meta.get("storage_path") or  # File upload
+        None
+    )
+    
+    # For Box, construct path from folder_name
+    if not path and source_type == "box":
+        folder_name = meta.get("folder_name")
+        if folder_name:
+            path = f"/{folder_name}"
+    
+    # For GitHub, the path field should contain the file path (e.g., src/main.py)
+    # Already handled above
+    
+    # Clean up storage paths for file uploads (remove user ID prefix)
+    if path and source_type == "file_upload" and path.startswith("uploads/"):
+        # Format: uploads/{user_id}/{hash}/{filename} -> just show filename or short path
+        parts = path.split("/")
+        if len(parts) >= 4:
+            path = parts[-1]  # Just filename
+    
+    return path
 
 
 class DocumentStatsDTO(BaseModel):
@@ -196,13 +247,15 @@ async def list_documents(
         if db_res.count is not None:
              response.headers["X-Total-Count"] = str(db_res.count)
             
-        # Enrich completed documents with status
+        # Enrich completed documents with status and path
         docs = []
         for d in db_res.data:
             d["source_type"] = normalize_provider(d.get("source_type")) or d.get("source_type")
             d['status'] = d.get('status', 'indexed')
             d['indexing_status'] = 'completed'
             d["metadata"] = d.get("metadata") or {}
+            # Extract path from metadata
+            d["path"] = _extract_path_from_document(d)
             # Fallback for size if not top-level
             meta = d["metadata"]
             file_size = d.get("file_size_bytes")
@@ -247,11 +300,22 @@ async def list_documents(
                 for f in failed_files:
                     provider = provider_map.get(str(f.get("job_id"))) or "file_upload"
                     file_size = f.get("file_size_bytes", 0)
+                    # Extract path from failed file metadata if available
+                    failed_meta = f.get("metadata") or {}
+                    failed_path = (
+                        failed_meta.get("path") or
+                        failed_meta.get("path_display") or
+                        failed_meta.get("file_path") or
+                        failed_meta.get("key") or
+                        f.get("remote_id") or  # Some connectors store path as remote_id
+                        None
+                    )
                     docs.append({
                         "id": f["id"],
                         "title": f["filename"],
                         "source_type": provider,
                         "source_url": None,
+                        "path": failed_path,
                         "created_at": f["created_at"],
                         "status": "failed",
                         "indexing_status": "failed",
@@ -520,6 +584,8 @@ async def update_document(
         # Return updated document
         updated_doc['status'] = updated_doc.get('status', 'indexed')
         updated_doc['indexing_status'] = 'completed'
+        updated_doc['metadata'] = updated_doc.get('metadata') or {}
+        updated_doc['path'] = _extract_path_from_document(updated_doc)
         meta = updated_doc.get('metadata') or {}
         file_size = updated_doc.get("file_size_bytes")
         if file_size is None:

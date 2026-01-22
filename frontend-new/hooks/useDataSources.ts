@@ -437,6 +437,20 @@ export const useDataSources = () => {
         }
     }, []);
 
+    // Get list of file IDs that have already been ingested from a source
+    const getIngestedFileIds = useCallback(async (sourceType: string): Promise<Set<string>> => {
+        console.log('📦 [useDataSources] Fetching ingested file IDs for:', sourceType);
+        try {
+            const res = await api.get(`/integrations/${sourceType}/ingested-files`);
+            const ids = res.data?.ingested_ids || [];
+            console.log('📦 [useDataSources] ✅ Found', ids.length, 'ingested files');
+            return new Set(ids);
+        } catch (err) {
+            console.error('📦 [useDataSources] ❌ Failed to fetch ingested files:', err);
+            return new Set();
+        }
+    }, []);
+
     // Refresh data
     const refresh = useCallback(() => {
         hasFetched.current = false;
@@ -471,6 +485,7 @@ export const useDataSources = () => {
         getFiles,
         ingestFiles,
         syncIntegration,
+        getIngestedFileIds,
 
         // Legacy compatibility
         connectedSources,

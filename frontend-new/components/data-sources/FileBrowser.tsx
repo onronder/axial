@@ -9,6 +9,7 @@ import {
   Loader2,
   Check,
   Search,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { useDataSources } from "@/hooks/useDataSources";
 import { useToast } from "@/hooks/use-toast";
 import { DataSourceIcon } from "./DataSourceIcon";
@@ -104,7 +106,7 @@ const getFileTypeLabel = (file: FileItem): string => {
 };
 
 export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserProps) {
-  const { getFiles, ingestFiles } = useDataSources();
+  const { getFiles, ingestFiles, getIngestedFileIds } = useDataSources();
   const { toast } = useToast();
   // Use 'any' temporarily if FileItem isn't strictly defined in the mock hook result or define strict LocalFileItem
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -115,12 +117,28 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([
     { id: "root", name: "Home" },
   ]);
+  // Track which files have already been ingested (shown with "Added" badge)
+  const [ingestedIds, setIngestedIds] = useState<Set<string>>(new Set());
 
   const currentFolderId = breadcrumbs[breadcrumbs.length - 1].id;
 
   const filteredFiles = files.filter((f: FileItem) =>
     f.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Fetch list of already-ingested file IDs on mount
+  useEffect(() => {
+    const fetchIngestedIds = async () => {
+      try {
+        const ids = await getIngestedFileIds(source.type);
+        setIngestedIds(ids);
+      } catch {
+        // Non-critical - just don't show badges
+        console.warn('Failed to fetch ingested file IDs');
+      }
+    };
+    fetchIngestedIds();
+  }, [source.type, getIngestedFileIds]);
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
@@ -141,6 +159,11 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
   useEffect(() => {
     loadFiles();
   }, [loadFiles]);
+
+  // Helper to check if a file is already ingested
+  const isFileIngested = useCallback((fileId: string): boolean => {
+    return ingestedIds.has(fileId);
+  }, [ingestedIds]);
 
   const handleFolderClick = (folder: FileItem) => {
     setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
@@ -187,11 +210,18 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
     }
 
     setIngesting(true);
+    const ingestedFileIds = Array.from(selectedIds);
     try {
-      await ingestFiles(source.id, Array.from(selectedIds));
+      await ingestFiles(source.id, ingestedFileIds);
       toast({
-        title: "Files ingested successfully",
-        description: `${selectedIds.size} file(s) added to your knowledge base.`,
+        title: "Files queued for ingestion",
+        description: `${selectedIds.size} file(s) are being added to your knowledge base.`,
+      });
+      // Optimistically update ingested IDs to show "Added" badge immediately
+      setIngestedIds(prev => {
+        const updated = new Set(prev);
+        ingestedFileIds.forEach(id => updated.add(id));
+        return updated;
       });
       setSelectedIds(new Set());
     } catch (err: unknown) {
@@ -294,44 +324,62 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
                 </TableCell>
               </TableRow>
             ) : (
-              filteredFiles.map((file) => (
-                <TableRow
-                  key={file.id}
-                  className={`cursor-pointer transition-colors ${selectedIds.has(file.id) ? "bg-muted/50" : ""
+              filteredFiles.map((file) => {
+                const alreadyIngested = file.type !== "folder" && isFileIngested(file.id);
+                return (
+                  <TableRow
+                    key={file.id}
+                    className={`cursor-pointer transition-colors ${
+                      selectedIds.has(file.id) 
+                        ? "bg-muted/50" 
+                        : alreadyIngested 
+                          ? "bg-green-500/5" 
+                          : ""
                     }`}
-                  onClick={() => {
-                    if (file.type === "folder") {
-                      handleFolderClick(file);
-                    } else if (!isViewer) {
-                      toggleSelection(file.id);
-                    }
-                  }}
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                 <Checkbox
-                  checked={selectedIds.has(file.id)}
-                  onCheckedChange={() => toggleSelection(file.id)}
-                  disabled={isViewer}
-                />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {file.type === "folder" ? (
-                        <Folder className="h-4 w-4 text-primary" />
-                      ) : (
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                      )}
-                      <span className="font-medium">{file.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {getFileTypeLabel(file)}
-                  </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {formatSize(file.size)}
-                  </TableCell>
-                </TableRow>
-              ))
+                    onClick={() => {
+                      if (file.type === "folder") {
+                        handleFolderClick(file);
+                      } else if (!isViewer) {
+                        toggleSelection(file.id);
+                      }
+                    }}
+                  >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.has(file.id)}
+                        onCheckedChange={() => toggleSelection(file.id)}
+                        disabled={isViewer}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {file.type === "folder" ? (
+                          <Folder className="h-4 w-4 text-primary" />
+                        ) : alreadyIngested ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="font-medium">{file.name}</span>
+                        {alreadyIngested && (
+                          <Badge 
+                            variant="outline" 
+                            className="ml-2 text-xs bg-green-500/10 text-green-600 border-green-500/30"
+                          >
+                            Added
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {getFileTypeLabel(file)}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatSize(file.size)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

@@ -8,10 +8,24 @@ import { cn } from "@/lib/utils";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { SourceMetadata } from "./SourceCard";
 import { SourcePillList } from "./SourcePill";
+import { FeedbackButtons } from "./FeedbackButtons";
+import { type FeedbackRating, type SourceSnapshot } from "@/hooks/useFeedback";
 
 interface MessageBubbleProps {
   message: MockMessage & { sources?: SourceMetadata[] | Source[] };
   isStreaming?: boolean;
+  /** The user's question that prompted this response (for feedback context) */
+  previousUserQuery?: string;
+  /** Current feedback rating for this message (if any) */
+  feedbackRating?: FeedbackRating;
+  /** Callback when user submits feedback */
+  onFeedbackSubmit?: (
+    messageId: string,
+    rating: FeedbackRating,
+    feedbackText?: string
+  ) => Promise<void>;
+  /** Whether feedback submission is in progress */
+  isFeedbackSubmitting?: boolean;
 }
 
 /**
@@ -100,7 +114,14 @@ function renderLine(
   );
 }
 
-export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
+export function MessageBubble({ 
+  message, 
+  isStreaming,
+  previousUserQuery,
+  feedbackRating,
+  onFeedbackSubmit,
+  isFeedbackSubmitting,
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
   const [highlightedCitationIndex, setHighlightedCitationIndex] = useState<number | null>(null);
 
@@ -184,6 +205,27 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
             className="mt-3"
             highlightedIndex={highlightedCitationIndex}
             onSourceHover={setHighlightedCitationIndex}
+          />
+        )}
+        
+        {/* Feedback Buttons - Only for assistant messages, not during streaming */}
+        {!isUser && !isStreaming && onFeedbackSubmit && message.id && (
+          <FeedbackButtons
+            messageId={message.id}
+            sources={normalizedSources.map((s): SourceSnapshot => ({
+              index: s.index,
+              type: s.type,
+              label: s.label,
+              url: s.url,
+              page: s.page,
+              section: s.section,
+            }))}
+            queryText={previousUserQuery || ""}
+            answerPreview={message.content.slice(0, 500)}
+            currentRating={feedbackRating}
+            onSubmit={onFeedbackSubmit}
+            isSubmitting={isFeedbackSubmitting}
+            className="mt-2"
           />
         )}
       </div>

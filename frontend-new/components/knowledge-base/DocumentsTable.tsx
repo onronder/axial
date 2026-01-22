@@ -443,7 +443,14 @@ export function DocumentsTable() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {doc.sourceUrl ? (
+                        {doc.path ? (
+                          <span 
+                            className="text-sm text-muted-foreground truncate max-w-[180px] block" 
+                            title={doc.path}
+                          >
+                            {doc.path}
+                          </span>
+                        ) : doc.sourceUrl ? (
                           <a
                             href={doc.sourceUrl}
                             target="_blank"
@@ -452,7 +459,7 @@ export function DocumentsTable() {
                             title={doc.sourceUrl}
                           >
                             <Link2 className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">{new URL(doc.sourceUrl).hostname || 'Link'}</span>
+                            <span className="truncate">{(() => { try { return new URL(doc.sourceUrl).hostname; } catch { return 'Link'; } })()}</span>
                           </a>
                         ) : (
                           <span className="text-sm text-muted-foreground">—</span>

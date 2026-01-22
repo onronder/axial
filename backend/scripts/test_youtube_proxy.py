@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-YouTube Proxy Testing Utility
+YouTube Bright Data Unlocker API Testing Utility
 
-Tests the Bright Data / residential proxy configuration for YouTube transcript fetching.
+Tests the Bright Data Unlocker API configuration for YouTube transcript fetching.
 Run from backend directory: python scripts/test_youtube_proxy.py
 
 Usage:
@@ -12,7 +12,7 @@ Usage:
     # Test with specific video
     python scripts/test_youtube_proxy.py https://www.youtube.com/watch?v=dQw4w9WgXcQ
     
-    # Test proxy health only (no transcript fetch)
+    # Test API health only (no transcript fetch)
     python scripts/test_youtube_proxy.py --health-check
 """
 import os
@@ -34,135 +34,199 @@ def print_header(title: str):
     print("=" * 80)
 
 
-def test_proxy_configuration():
-    """Test and display proxy configuration."""
-    print_header("🔧 PROXY CONFIGURATION")
+def test_unlocker_configuration():
+    """Test and display Bright Data Unlocker API configuration."""
+    print_header("🔧 BRIGHT DATA UNLOCKER API CONFIGURATION")
     
-    from connectors.web import _get_youtube_proxy_config, _build_proxy_dict
+    from connectors.web import _get_brightdata_config
     
-    config = _get_youtube_proxy_config()
+    config = _get_brightdata_config()
     
-    proxy_url = config.get("proxy_url")
-    if proxy_url:
-        # Mask password in output
-        from urllib.parse import urlparse
-        parsed = urlparse(proxy_url)
-        if parsed.password:
-            masked_url = proxy_url.replace(parsed.password, "***")
-        else:
-            masked_url = proxy_url
-        print(f"✅ Proxy URL: {masked_url}")
+    api_key = config.get("api_key")
+    if api_key:
+        # Mask API key in output (show first/last 4 chars)
+        masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+        print(f"✅ API Key: {masked_key}")
     else:
-        print("❌ Proxy URL: NOT CONFIGURED")
-        print("   Set YOUTUBE_PROXY_URL environment variable")
+        print("❌ API Key: NOT CONFIGURED")
+        print("   Set BRIGHTDATA_API_KEY environment variable")
     
-    print(f"   Proxy Enabled: {config.get('enabled')}")
+    print(f"   Zone: {config.get('zone')}")
     print(f"   Timeout: {config.get('timeout')}s")
     print(f"   Retry Count: {config.get('retry_count')}")
     print(f"   Retry Delay: {config.get('retry_delay')}s")
     print(f"   Direct Fallback: {config.get('direct_fallback')}")
     
-    # Test proxy dict building
-    if proxy_url:
-        proxies = _build_proxy_dict(proxy_url)
-        if proxies:
-            print(f"✅ Proxy dict valid: {list(proxies.keys())}")
-        else:
-            print("❌ Proxy dict: INVALID (check URL format)")
-    
     return config
 
 
-def test_proxy_connectivity(config: dict) -> bool:
-    """Test basic proxy connectivity using a simple HTTP request."""
-    print_header("🌐 PROXY CONNECTIVITY TEST")
+def test_unlocker_connectivity(config: dict) -> bool:
+    """Test basic Bright Data Unlocker API connectivity."""
+    print_header("🌐 UNLOCKER API CONNECTIVITY TEST")
     
-    proxy_url = config.get("proxy_url")
-    if not proxy_url:
-        print("⚠️  Skipping connectivity test - no proxy configured")
+    api_key = config.get("api_key")
+    if not api_key:
+        print("⚠️  Skipping connectivity test - no API key configured")
         return False
     
-    from connectors.web import _build_proxy_dict
-    import requests
+    from connectors.web import _fetch_via_brightdata_unlocker
     
-    proxies = _build_proxy_dict(proxy_url)
-    if not proxies:
-        print("❌ Cannot test - invalid proxy configuration")
+    # Test with Bright Data's test endpoint
+    test_url = "https://geo.brdtest.com/welcome.txt?product=unlocker&method=api"
+    
+    print(f"\n📡 Testing API connectivity...")
+    print(f"   URL: {test_url}")
+    
+    try:
+        start = time.time()
+        result = _fetch_via_brightdata_unlocker(test_url, config)
+        elapsed = time.time() - start
+        
+        if result:
+            print(f"   ✅ Success! Response in {elapsed:.2f}s")
+            print(f"   📄 Response: {result[:100]}...")
+            return True
+        else:
+            print(f"   ❌ Failed: No response received")
+            return False
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        return False
+
+
+def test_unlocker_ip(config: dict) -> bool:
+    """Test IP resolution via Bright Data Unlocker API."""
+    print_header("🌍 IP RESOLUTION TEST")
+    
+    api_key = config.get("api_key")
+    if not api_key:
+        print("⚠️  Skipping IP test - no API key configured")
         return False
     
-    # Test with a simple endpoint that returns your IP
-    test_urls = [
-        ("httpbin.org", "https://httpbin.org/ip"),
-        ("ipinfo.io", "https://ipinfo.io/json"),
-    ]
+    from connectors.web import _fetch_via_brightdata_unlocker
+    import json
     
-    for name, url in test_urls:
-        print(f"\n📡 Testing via {name}...")
-        try:
-            start = time.time()
-            response = requests.get(
-                url,
-                proxies=proxies,
-                timeout=config.get("timeout", 30),
-            )
-            elapsed = time.time() - start
-            
-            if response.status_code == 200:
-                data = response.json()
-                ip = data.get("origin") or data.get("ip", "unknown")
+    test_url = "https://httpbin.org/ip"
+    
+    print(f"\n📡 Testing IP via httpbin.org...")
+    
+    try:
+        start = time.time()
+        result = _fetch_via_brightdata_unlocker(test_url, config)
+        elapsed = time.time() - start
+        
+        if result:
+            try:
+                data = json.loads(result)
+                ip = data.get("origin", "unknown")
                 print(f"   ✅ Success! Response in {elapsed:.2f}s")
-                print(f"   🌍 Your proxy IP: {ip}")
-                
-                # Check if it's a residential IP (basic heuristic)
-                if "cloud" in str(data).lower() or "datacenter" in str(data).lower():
-                    print("   ⚠️  Warning: IP may be detected as datacenter")
-                else:
-                    print("   ✅ IP appears residential")
+                print(f"   🌍 Your Bright Data IP: {ip}")
                 return True
-            else:
-                print(f"   ❌ Failed: HTTP {response.status_code}")
-        except requests.exceptions.ProxyError as e:
-            print(f"   ❌ Proxy Error: {e}")
-        except requests.exceptions.Timeout:
-            print(f"   ❌ Timeout after {config.get('timeout')}s")
-        except Exception as e:
-            print(f"   ❌ Error: {e}")
-    
-    return False
+            except json.JSONDecodeError:
+                print(f"   ⚠️  Response received but not JSON: {result[:100]}...")
+                return True
+        else:
+            print(f"   ❌ Failed: No response received")
+            return False
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        return False
 
 
 def test_youtube_connectivity(config: dict) -> bool:
-    """Test connectivity to YouTube specifically."""
+    """Test connectivity to YouTube via Bright Data Unlocker API."""
     print_header("🎥 YOUTUBE CONNECTIVITY TEST")
     
-    proxy_url = config.get("proxy_url")
-    from connectors.web import _build_proxy_dict
-    import requests
+    api_key = config.get("api_key")
+    if not api_key:
+        print("⚠️  Skipping YouTube test - no API key configured")
+        print("   Attempting direct connection...")
+        
+        import requests
+        try:
+            response = requests.get(
+                "https://www.youtube.com/robots.txt",
+                timeout=30,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; AxioBot/1.0)"},
+            )
+            if response.status_code == 200:
+                print(f"   ✅ YouTube accessible directly (robots.txt: {len(response.text)} bytes)")
+                return True
+            else:
+                print(f"   ❌ Failed: HTTP {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"   ❌ Direct connection failed: {e}")
+            return False
     
-    proxies = _build_proxy_dict(proxy_url) if proxy_url else None
+    from connectors.web import _fetch_via_brightdata_unlocker
     
-    # Test YouTube homepage
-    print("\n📡 Testing YouTube access...")
+    # Test YouTube robots.txt via Unlocker
+    test_url = "https://www.youtube.com/robots.txt"
+    
+    print(f"\n📡 Testing YouTube access via Unlocker API...")
+    
     try:
         start = time.time()
-        response = requests.get(
-            "https://www.youtube.com/robots.txt",
-            proxies=proxies,
-            timeout=config.get("timeout", 30),
-            headers={"User-Agent": "Mozilla/5.0 (compatible; AxioBot/1.0)"},
-        )
+        result = _fetch_via_brightdata_unlocker(test_url, config)
         elapsed = time.time() - start
         
-        if response.status_code == 200:
+        if result:
             print(f"   ✅ YouTube accessible in {elapsed:.2f}s")
-            print(f"   📄 robots.txt: {len(response.text)} bytes")
+            print(f"   📄 robots.txt: {len(result)} bytes")
             return True
         else:
-            print(f"   ❌ Failed: HTTP {response.status_code}")
+            print(f"   ❌ Failed: No response received")
+            return False
     except Exception as e:
         print(f"   ❌ Error: {e}")
+        return False
+
+
+def test_youtube_page_fetch(config: dict) -> bool:
+    """Test fetching a YouTube video page via Unlocker API."""
+    print_header("📄 YOUTUBE PAGE FETCH TEST")
     
-    return False
+    api_key = config.get("api_key")
+    if not api_key:
+        print("⚠️  Skipping page fetch test - no API key configured")
+        return False
+    
+    from connectors.web import _fetch_via_brightdata_unlocker
+    
+    # Use a well-known video
+    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    
+    print(f"\n📡 Testing YouTube page fetch...")
+    print(f"   URL: {test_url}")
+    
+    try:
+        start = time.time()
+        result = _fetch_via_brightdata_unlocker(test_url, config)
+        elapsed = time.time() - start
+        
+        if result:
+            print(f"   ✅ Page fetched in {elapsed:.2f}s")
+            print(f"   📄 Page size: {len(result)} bytes")
+            
+            # Check for key indicators
+            has_player_response = "ytInitialPlayerResponse" in result
+            has_title = "<title>" in result.lower()
+            
+            print(f"   📋 Has player response: {'Yes' if has_player_response else 'No'}")
+            print(f"   📋 Has title tag: {'Yes' if has_title else 'No'}")
+            
+            if has_player_response:
+                return True
+            else:
+                print("   ⚠️  Warning: Page may be incomplete or blocked")
+                return True  # Still count as partial success
+        else:
+            print(f"   ❌ Failed: No response received")
+            return False
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        return False
 
 
 def test_transcript_fetch(video_url: str, config: dict) -> bool:
@@ -181,7 +245,7 @@ def test_transcript_fetch(video_url: str, config: dict) -> bool:
     
     print(f"🎬 Video URL: {video_url}")
     print(f"🔑 Video ID: {video_id}")
-    print(f"🔒 Using Proxy: {'Yes' if config.get('proxy_url') and config.get('enabled') else 'No'}")
+    print(f"🔒 Using Unlocker API: {'Yes' if config.get('api_key') else 'No (direct only)'}")
     print("\n⏳ Fetching transcript (this may take a few seconds)...")
     
     start = time.time()
@@ -207,7 +271,7 @@ def test_transcript_fetch(video_url: str, config: dict) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Test YouTube proxy configuration for transcript fetching"
+        description="Test Bright Data Unlocker API configuration for YouTube transcript fetching"
     )
     parser.add_argument(
         "video_url",
@@ -218,7 +282,7 @@ def main():
     parser.add_argument(
         "--health-check",
         action="store_true",
-        help="Only test proxy connectivity, don't fetch transcript"
+        help="Only test API connectivity, don't fetch transcript"
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -235,28 +299,43 @@ def main():
             level=logging.DEBUG,
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
         )
+    else:
+        # Enable INFO logging to see connector logs
+        import logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s"
+        )
     
     print("\n" + "🚀 " + "=" * 76)
-    print("   YOUTUBE PROXY TEST UTILITY")
+    print("   BRIGHT DATA UNLOCKER API - YOUTUBE TRANSCRIPT TEST UTILITY")
     print("   " + "=" * 76)
     
     # Run tests
     results = {}
     
     # 1. Configuration test
-    config = test_proxy_configuration()
-    results["configuration"] = bool(config.get("proxy_url"))
+    config = test_unlocker_configuration()
+    results["configuration"] = bool(config.get("api_key"))
     
-    # 2. Proxy connectivity test
-    if config.get("proxy_url"):
-        results["proxy_connectivity"] = test_proxy_connectivity(config)
+    # 2. Unlocker API connectivity test
+    if config.get("api_key"):
+        results["api_connectivity"] = test_unlocker_connectivity(config)
+        results["ip_resolution"] = test_unlocker_ip(config)
     else:
-        results["proxy_connectivity"] = None  # N/A
+        results["api_connectivity"] = None  # N/A
+        results["ip_resolution"] = None  # N/A
     
     # 3. YouTube connectivity test
     results["youtube_connectivity"] = test_youtube_connectivity(config)
     
-    # 4. Transcript fetch test (unless health-check only)
+    # 4. YouTube page fetch test
+    if config.get("api_key"):
+        results["youtube_page_fetch"] = test_youtube_page_fetch(config)
+    else:
+        results["youtube_page_fetch"] = None  # N/A
+    
+    # 5. Transcript fetch test (unless health-check only)
     if not args.health_check:
         results["transcript_fetch"] = test_transcript_fetch(args.video_url, config)
     else:
