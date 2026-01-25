@@ -37,6 +37,12 @@ interface IngestionProgressContextValue {
     
     /** Check if a job is currently registered */
     isJobRegistered: (jobId: string) => boolean;
+    
+    /** Mark a job as having triggered its completion callback (prevents duplicate triggers) */
+    markJobCompleted: (jobId: string) => void;
+    
+    /** Check if a job has already triggered its completion callback */
+    hasJobCompleted: (jobId: string) => boolean;
 }
 
 // =============================================================================
@@ -56,6 +62,10 @@ interface IngestionProgressProviderProps {
 export function IngestionProgressProvider({ children }: IngestionProgressProviderProps) {
     const [activeJobIds, setActiveJobIds] = useState<Set<string>>(new Set());
     const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+    
+    // Track jobs that have already triggered their completion callback
+    // This prevents infinite refresh loops when components remount
+    const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
     
     // Use ref to track if a job was just registered (to auto-expand)
     const justRegisteredRef = useRef<string | null>(null);
@@ -98,7 +108,37 @@ export function IngestionProgressProvider({ children }: IngestionProgressProvide
         
         // Clear expanded if this job was expanded
         setExpandedJobId(prev => prev === jobId ? null : prev);
+        
+        // Clean up completion tracking for this job
+        setCompletedJobIds(prev => {
+            if (!prev.has(jobId)) return prev;
+            const next = new Set(prev);
+            next.delete(jobId);
+            return next;
+        });
     }, []);
+    
+    /**
+     * Mark a job as having triggered its completion callback.
+     * This prevents infinite refresh loops when components remount.
+     */
+    const markJobCompleted = useCallback((jobId: string) => {
+        if (!jobId) return;
+        
+        setCompletedJobIds(prev => {
+            if (prev.has(jobId)) return prev;
+            const next = new Set(prev);
+            next.add(jobId);
+            return next;
+        });
+    }, []);
+    
+    /**
+     * Check if a job has already triggered its completion callback.
+     */
+    const hasJobCompleted = useCallback((jobId: string): boolean => {
+        return completedJobIds.has(jobId);
+    }, [completedJobIds]);
 
     /**
      * Expand a job to show the detailed progress modal.
@@ -122,6 +162,8 @@ export function IngestionProgressProvider({ children }: IngestionProgressProvide
         unregisterJob,
         expandJob,
         isJobRegistered,
+        markJobCompleted,
+        hasJobCompleted,
     };
 
     return (

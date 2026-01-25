@@ -13,6 +13,7 @@ import { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
 import { ChevronDown, ChevronUp, X, FileText, Loader2, CheckCircle2, XCircle, Clock, SkipForward } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileStatus, getStatusLabel } from "@/hooks/useFileStatus";
+import { useIngestionProgress } from "@/hooks/useIngestionProgress";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,8 +52,10 @@ export function IngestionProgressModal({
     const modalRef = useRef<HTMLDivElement>(null);
     const keyboardShortcuts = useRef<KeyboardShortcuts | null>(null);
     const focusTrap = useRef<FocusTrap | null>(null);
-    const hasCalledComplete = useRef(false);
     const completeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    
+    // Use context-level completion tracking to prevent infinite loops on remount
+    const { hasJobCompleted, markJobCompleted } = useIngestionProgress();
 
     /**
      * MEMOIZED DERIVED VALUES
@@ -115,9 +118,11 @@ export function IngestionProgressModal({
     }, [handleClose, toggleExpand]);
 
     // Trigger completion callback ONCE when all files finish
+    // Uses context-level tracking (not local ref) to survive component remounts
     useEffect(() => {
-        if (allComplete && !hasCalledComplete.current && onComplete) {
-            hasCalledComplete.current = true;
+        if (allComplete && !hasJobCompleted(jobId) && onComplete) {
+            // Mark at context level IMMEDIATELY to prevent re-triggers on remount
+            markJobCompleted(jobId);
             
             announceToScreenReader(
                 `Processing complete. ${completedFiles} files completed${failedFiles > 0 ? `, ${failedFiles} failed` : ''}`,
@@ -140,7 +145,7 @@ export function IngestionProgressModal({
                 clearTimeout(completeTimeoutRef.current);
             }
         };
-    }, [allComplete, completedFiles, failedFiles, onComplete]);
+    }, [allComplete, completedFiles, failedFiles, onComplete, jobId, hasJobCompleted, markJobCompleted]);
 
     return (
         <div
