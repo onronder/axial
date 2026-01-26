@@ -28,6 +28,7 @@ Usage:
 """
 
 import logging
+import asyncio
 from typing import Optional, Dict, Any
 from uuid import UUID
 
@@ -35,6 +36,7 @@ from async_lru import alru_cache
 
 from core.db import get_supabase
 from core.quotas import get_plan_limits
+from core.resilience import is_retryable_error
 
 logger = logging.getLogger(__name__)
 
@@ -405,42 +407,59 @@ class TeamService:
         Returns:
             Team dict with id, name, slug, owner_id, or None
         """
-        try:
-            supabase = get_supabase()
-            
-            # Find user's team via membership
-            member_response = supabase.table("team_members").select(
-                "team_id, role, joined_at"
-            ).eq("member_user_id", user_id).limit(1).execute()
-            
-            if not member_response.data:
-                return None
-            
-            team_id = member_response.data[0].get("team_id")
-            member_role = member_response.data[0].get("role")
-            joined_at = member_response.data[0].get("joined_at")
-            
-            if not team_id:
-                return None
-            
-            # Get team details
-            team_response = supabase.table("teams").select(
-                "id, name, slug, owner_id, created_at, plan"
-            ).eq("id", team_id).single().execute()
-            
-            if team_response.data:
+        max_retries = 3
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                supabase = get_supabase()
+                
+                # Find user's team via membership
+                member_response = supabase.table("team_members").select(
+                    "team_id, role, joined_at"
+                ).eq("member_user_id", user_id).limit(1).execute()
+                
+                if not member_response.data:
+                    return None
+                
+                team_id = member_response.data[0].get("team_id")
+                member_role = member_response.data[0].get("role")
+                joined_at = member_response.data[0].get("joined_at")
+                
+                if not team_id:
+                    return None
+                
+                # Get team details - use maybe_single() to handle missing teams gracefully
+                team_response = supabase.table("teams").select(
+                    "id, name, slug, owner_id, created_at, plan"
+                ).eq("id", team_id).maybe_single().execute()
+                
+                if team_response is None or not team_response.data:
+                    return None
+                
                 team = team_response.data
                 team["user_role"] = member_role
                 team["user_joined_at"] = joined_at
                 team["is_owner"] = team["owner_id"] == user_id
                 team["plan"] = team.get("plan") or "free"
                 return team
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"[TeamService] get_user_team failed: {e}")
-            return None
+                
+            except Exception as e:
+                last_exception = e
+                # Check if this is a retryable transient error
+                if is_retryable_error(e) and attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 0.5  # Exponential backoff: 0.5s, 1s, 2s
+                    logger.warning(f"[TeamService] get_user_team transient error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    # Non-retryable error or max retries reached
+                    logger.error(f"[TeamService] get_user_team failed: {e}")
+                    return None
+        
+        # Should not reach here, but just in case
+        logger.error(f"[TeamService] get_user_team failed after {max_retries} attempts: {last_exception}")
+        return None
 
     async def get_organization_id(self, user_id: str) -> str:
         """

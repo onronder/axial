@@ -466,13 +466,14 @@ async def delete_document(
             )
 
         # First, get document info for audit log (org-scoped access)
+        # Use maybe_single() to gracefully handle missing documents (PGRST116 prevention)
         doc_response = supabase.table("documents")\
             .select("title")\
             .eq("id", doc_id)\
             .eq("organization_id", organization_id)\
-            .single()\
+            .maybe_single()\
             .execute()
-        if not doc_response.data:
+        if doc_response is None or not doc_response.data:
             raise HTTPException(status_code=404, detail="Document not found")
 
         doc_title = doc_response.data.get("title", "Unknown")

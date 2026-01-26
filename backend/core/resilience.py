@@ -45,7 +45,19 @@ TRANSIENT_EXCEPTIONS = (
     ssl.SSLError,                   # SSL/TLS errors (EOF, handshake failures)
     http.client.IncompleteRead,     # Partial response received
     OSError,                        # Generic I/O errors (includes many network issues)
+    BrokenPipeError,                # Broken pipe (connection closed by peer)
 )
+
+# HTTP/2 specific errors (from httpcore/h2)
+# ConnectionTerminated is raised when HTTP/2 connection is unexpectedly closed
+try:
+    from httpcore import ConnectionNotAvailable, RemoteProtocolError
+    HTTP2_TRANSIENT_EXCEPTIONS = (ConnectionNotAvailable, RemoteProtocolError)
+except ImportError:
+    HTTP2_TRANSIENT_EXCEPTIONS = ()
+
+# Combined transient exceptions including HTTP/2 errors
+ALL_TRANSIENT_EXCEPTIONS = TRANSIENT_EXCEPTIONS + HTTP2_TRANSIENT_EXCEPTIONS
 
 # Rate limit status codes
 RATE_LIMIT_STATUS_CODES = {429, 503, 502, 504}
@@ -55,8 +67,19 @@ def is_retryable_error(exception: BaseException) -> bool:
     """
     Determine if an exception should trigger a retry.
     """
-    # Check for transient network errors
+    # Check for transient network errors (including HTTP/2 specific)
     if isinstance(exception, TRANSIENT_EXCEPTIONS):
+        return True
+    
+    # Check for HTTP/2 specific transient errors
+    if HTTP2_TRANSIENT_EXCEPTIONS and isinstance(exception, HTTP2_TRANSIENT_EXCEPTIONS):
+        return True
+    
+    # Check for HTTP/2 ConnectionTerminated by string match (when class isn't importable)
+    exc_name = type(exception).__name__
+    exc_str = str(exception)
+    if "ConnectionTerminated" in exc_name or "ConnectionTerminated" in exc_str:
+        logger.debug(f"🔄 HTTP/2 connection terminated, will retry: {exception}")
         return True
     
     # Check for HTTP rate limit or server errors
