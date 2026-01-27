@@ -157,11 +157,11 @@ export function ArticleViewer({ title, category, content }: ArticleViewerProps) 
                     remarkPlugins={[remarkGfm]}
                     components={{
                         // Custom rendering for specific elements
-                        a: ({ node, ...props }) => (
+                        a: ({ node: _node, ...props }) => (
                             <a {...props} target={props.href?.startsWith('http') ? '_blank' : undefined} rel={props.href?.startsWith('http') ? 'noopener noreferrer' : undefined} />
                         ),
                         // Add copy button to code blocks in the future
-                        pre: ({ node, ...props }) => (
+                        pre: ({ node: _node, ...props }) => (
                             <div className="relative group">
                                 <pre {...props} />
                             </div>

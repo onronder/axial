@@ -151,40 +151,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
       console.error(`Failed to upload ${file.name}:`, message);
       return false;
     }
-  }, [disabled, toast]);
-
-  /**
-   * Handle user's decision on duplicate file modal
-   */
-  const handleDuplicateAction = useCallback(async (action: DuplicateAction) => {
-    if (!pendingDuplicate) return;
-
-    const { file, contentHash } = pendingDuplicate;
-    setPendingDuplicate(null);
-
-    if (action === "overwrite") {
-      // User chose to overwrite - proceed with upload
-      console.log(`✅ [Upload] User confirmed overwrite for ${file.name}`);
-      const success = await uploadFile(file, contentHash, true);
-      
-      if (success) {
-        uploadResultsRef.current.success++;
-        setUploadedCount((c) => c + 1);
-      } else {
-        uploadResultsRef.current.fail++;
-      }
-    } else {
-      // User cancelled - skip this file
-      console.log(`❌ [Upload] User cancelled upload for ${file.name}`);
-      toast({
-        title: "Upload Cancelled",
-        description: `Skipped ${file.name} (duplicate).`,
-      });
-    }
-
-    // Continue with remaining files
-    processNextFile();
-  }, [pendingDuplicate, uploadFile, toast]);
+  }, [disabled, registerJob, toast]);
 
   /**
    * Process the next file in the queue
@@ -236,6 +203,39 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
     }
     // If pendingDuplicate is set, wait for user action via handleDuplicateAction
   }, [uploadFile, refresh, toast, pendingDuplicate]);
+
+  /**
+   * Handle user's decision on duplicate file modal
+   */
+  const handleDuplicateAction = useCallback(async (action: DuplicateAction) => {
+    if (!pendingDuplicate) return;
+
+    const { file, contentHash } = pendingDuplicate;
+    setPendingDuplicate(null);
+
+    if (action === "overwrite") {
+      // User chose to overwrite - proceed with upload
+      console.log(`✅ [Upload] User confirmed overwrite for ${file.name}`);
+      const success = await uploadFile(file, contentHash, true);
+      
+      if (success) {
+        uploadResultsRef.current.success++;
+        setUploadedCount((c) => c + 1);
+      } else {
+        uploadResultsRef.current.fail++;
+      }
+    } else {
+      // User cancelled - skip this file
+      console.log(`❌ [Upload] User cancelled upload for ${file.name}`);
+      toast({
+        title: "Upload Cancelled",
+        description: `Skipped ${file.name} (duplicate).`,
+      });
+    }
+
+    // Continue with remaining files
+    processNextFile();
+  }, [pendingDuplicate, processNextFile, toast, uploadFile]);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {

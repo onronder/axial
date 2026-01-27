@@ -166,7 +166,7 @@ export function YoutubeInput({
     } finally {
       setIsLoading(false);
     }
-  }, [url, disabled, disabledReason, toast]);
+  }, [url, disabled, disabledReason, registerJob, toast]);
 
   /**
    * Handle Enter key press

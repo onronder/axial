@@ -556,7 +556,7 @@ async function performSearch(page: Page, query: string): Promise<SearchResult> {
         
         const messageItems = messagesContainer.querySelectorAll(':scope > div');
         let assistantText = '';
-        let debugInfo: string[] = [];
+        const debugInfo: string[] = [];
         
         messageItems.forEach((item, index) => {
             // Check if this message has bg-muted (assistant) vs bg-axio-gradient (user)

@@ -6,7 +6,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { ModelId } from '@/lib/types';
-import type { ClarificationResponse, ScopeContext, ScopeCandidate } from '@/types';
+import type { ClarificationResponse, ScopeContext } from '@/types';
 
 export type ApiErrorDetail = {
     error?: string;

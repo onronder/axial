@@ -21,6 +21,17 @@ import {
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 import type { ConnectorDefinition, UserIntegration, MergedDataSource } from "@/types";
 
+type IntegrationItem = {
+    id?: string | number;
+    name?: string;
+    type?: string;
+    size?: number | null;
+    mimeType?: string | null;
+    mime_type?: string | null;
+    parent_id?: string | null;
+    web_view_url?: string | null;
+};
+
 /**
  * Hook for managing data sources with real API integration.
  * Fetches available connectors and user's connected integrations,
@@ -378,7 +389,7 @@ export const useDataSources = () => {
             const { data } = await api.get(`/integrations/${type}/items`, {
                 params: parentId ? { parent_id: parentId } : undefined
             });
-            const normalized = (data || []).map((item: any) => {
+            const normalized = (data || []).map((item: IntegrationItem) => {
                 const id = String(item?.id ?? "");
                 const name = String(item?.name ?? item?.id ?? "Untitled");
                 const typeSafe = item?.type === "folder" ? "folder" : "file";

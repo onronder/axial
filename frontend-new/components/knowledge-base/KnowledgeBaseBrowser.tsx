@@ -13,7 +13,6 @@ import {
   MoreVertical,
   Download,
   ExternalLink,
-  Filter,
   Home,
   ArrowLeft,
 } from "lucide-react";
@@ -67,7 +66,6 @@ import {
   isFolderNode,
   isDocumentNode,
   type FolderNode,
-  type TreeNode,
   type BreadcrumbItem,
 } from "@/lib/folderTree";
 
@@ -169,7 +167,6 @@ export function KnowledgeBaseBrowser() {
   // Hooks
   const {
     documents,
-    totalCount,
     isLoading: isRefreshing,
     refresh: handleRefresh,
     deleteDocument,
@@ -231,10 +228,6 @@ export function KnowledgeBaseBrowser() {
   // Selection helpers
   const allVisibleSelected = paginatedItems.length > 0 && 
     paginatedItems.filter(isDocumentNode).every(item => selectedIds.has(item.id));
-
-  const selectedDocumentCount = Array.from(selectedIds).filter(id => 
-    paginatedItems.some(item => isDocumentNode(item) && item.id === id)
-  ).length;
 
   // Reset selection when navigating
   useEffect(() => {

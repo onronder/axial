@@ -13,7 +13,7 @@
  * - Accessible with ARIA labels
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Search, X, Clock, ChevronRight, FileText } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -78,13 +78,14 @@ export function HelpSearch({ articles, placeholder = "Search help articles...", 
     const itemRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
     // Filter articles based on query
-    const filteredArticles = query.trim()
-        ? articles.filter(
+    const filteredArticles = useMemo(() => {
+        if (!query.trim()) return [];
+        return articles.filter(
             (article) =>
                 article.title.toLowerCase().includes(query.toLowerCase()) ||
                 article.category.toLowerCase().includes(query.toLowerCase())
-        ).slice(0, 8) // Limit to 8 results
-        : [];
+        ).slice(0, 8);
+    }, [articles, query]);
 
     const showResults = isFocused && query.trim().length > 0;
 
