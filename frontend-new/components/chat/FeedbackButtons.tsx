@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -19,7 +20,9 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { ThumbsUp, ThumbsDown, Check, Loader2 } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, Check } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -207,7 +210,7 @@ export function FeedbackButtons({
                     title={isPositiveSelected ? "Marked as helpful" : "Mark as helpful"}
                 >
                     {isSubmitting && isPositiveSelected ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Spinner className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                         <ThumbsUp className={cn(
                             "h-3.5 w-3.5",
@@ -233,7 +236,7 @@ export function FeedbackButtons({
                     title={isNegativeSelected ? "Marked as not helpful" : "Mark as not helpful"}
                 >
                     {isSubmitting && isNegativeSelected ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Spinner className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                         <ThumbsDown className={cn(
                             "h-3.5 w-3.5",
@@ -280,7 +283,7 @@ export function FeedbackButtons({
                         >
                             {isSubmitting ? (
                                 <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    <Spinner className="mr-2 h-4 w-4 animate-spin" />
                                     Submitting...
                                 </>
                             ) : (
@@ -293,4 +296,3 @@ export function FeedbackButtons({
         </>
     );
 }
-

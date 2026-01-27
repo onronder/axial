@@ -1,26 +1,9 @@
+
 "use client";
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import {
-  UserPlus,
-  Upload,
-  MoreHorizontal,
-  Users,
-  Clock,
-  Mail,
-  UserCog,
-  UserX,
-  Send,
-  Search,
-  Filter,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Download,
-  Lock,
-  Sparkles,
-} from "lucide-react";
+import { UserPlus, Upload, MoreHorizontal, Users, Clock, Mail, UserCog, UserX, Send, Search, Filter, ChevronLeft, ChevronRight, Download, Lock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +53,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { bulkInvite } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { Spinner } from "@/components/ui/spinner";
 
 const statusStyles: Record<MemberStatus, { label: string; className: string }> = {
   active: { label: "Active", className: "bg-success/10 text-success border-success/20" },
@@ -298,7 +282,7 @@ export function TeamSettings() {
   if (isLoading || profileLoading || usageLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Spinner className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -450,7 +434,7 @@ export function TeamSettings() {
                 disabled={isInviting || !inviteEmail.trim() || !isEmailValid || !canManageMembers}
               >
                 {isInviting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Spinner className="h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
@@ -533,7 +517,7 @@ export function TeamSettings() {
                 disabled={!bulkFile || isBulkImporting || !canManageMembers}
               >
                 {isBulkImporting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Spinner className="h-4 w-4 animate-spin" />
                 ) : (
                   <Upload className="h-4 w-4" />
                 )}

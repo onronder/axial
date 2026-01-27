@@ -2,9 +2,10 @@
 
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { useState, ReactNode } from "react";
+import { useEffect, useState, ReactNode } from "react";
 import { toast } from "sonner"; // Using sonner as per package.json
 import { AxiosError } from "axios";
+import { setupCrossTabSync } from "@/lib/crossTabSync";
 
 interface QueryProviderProps {
     children: ReactNode;
@@ -65,6 +66,11 @@ export function QueryProvider({ children }: QueryProviderProps) {
                 },
             })
     );
+
+    useEffect(() => {
+        const cleanup = setupCrossTabSync(queryClient);
+        return cleanup;
+    }, [queryClient]);
 
     return (
         <QueryClientProvider client={queryClient}>

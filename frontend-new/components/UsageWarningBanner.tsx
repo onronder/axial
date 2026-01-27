@@ -13,6 +13,7 @@ import { useUsage } from "@/hooks/useUsage";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import Link from "next/link";
+import { safeLocalStorage } from "@/lib/storage";
 
 const DISMISSED_KEY = "usage_warning_dismissed";
 const DISMISSED_EXPIRY_HOURS = 24;
@@ -23,7 +24,7 @@ export function UsageWarningBanner() {
 
     // Check localStorage for dismissal
     useEffect(() => {
-        const dismissed = localStorage.getItem(DISMISSED_KEY);
+        const dismissed = safeLocalStorage.getItem(DISMISSED_KEY);
         if (dismissed) {
             const expiry = parseInt(dismissed, 10);
             if (Date.now() < expiry) {
@@ -40,7 +41,7 @@ export function UsageWarningBanner() {
     const handleDismiss = () => {
         // Dismiss for 24 hours
         const expiry = Date.now() + DISMISSED_EXPIRY_HOURS * 60 * 60 * 1000;
-        localStorage.setItem(DISMISSED_KEY, expiry.toString());
+        safeLocalStorage.setItem(DISMISSED_KEY, expiry.toString());
         setIsDismissed(true);
     };
 

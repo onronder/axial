@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -7,11 +8,12 @@ import { useDocumentCount } from "@/hooks/useDocumentCount";
 import { useProfile } from "@/hooks/useProfile";
 import { ChatArea } from "@/components/chat/ChatArea";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
-import { Loader2 } from "lucide-react";
+
 import { generateSmartTitle, streamChatResponse, isChatApiError } from "@/lib/chat-utils";
 import { ModelId } from "@/lib/types";
 import { Source, ScopeContext } from "@/types";
 import { useToast } from "@/hooks/use-toast";
+import { Spinner } from "@/components/ui/spinner";
 
 // =============================================================================
 // PRODUCTION UTILITIES
@@ -736,7 +738,7 @@ export default function ChatPage() {
     if (showLoadingSpinner) {
         return (
             <div className="flex h-full items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <Spinner className="h-8 w-8 animate-spin text-primary" />
             </div>
         );
     }

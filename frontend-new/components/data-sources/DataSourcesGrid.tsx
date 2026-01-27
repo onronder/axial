@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState } from "react";
-import { Search, Filter, Loader2, RefreshCw } from "lucide-react";
+import { Search, Filter, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -25,6 +26,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { useQuotaStatus } from "@/hooks/useQuotaStatus";
 import type { DataSourceCategory, MergedDataSource } from "@/types";
+import { Spinner } from "@/components/ui/spinner";
 
 // Category labels for display
 const CATEGORY_LABELS: Record<string, string> = {
@@ -198,7 +200,7 @@ export function DataSourcesGrid() {
   if (loading || profileLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <Spinner className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -362,7 +364,6 @@ export function DataSourcesGrid() {
           </div>
             );
           })}
-
 
         {/* Empty state */}
         {Object.keys(groupedSources).length === 0 && (

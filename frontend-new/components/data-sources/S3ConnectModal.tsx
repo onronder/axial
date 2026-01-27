@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
@@ -37,18 +38,9 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
-import {
-  Loader2,
-  Shield,
-  AlertTriangle,
-  Info,
-  CheckCircle2,
-  Copy,
-  Eye,
-  EyeOff,
-  ExternalLink,
-} from "lucide-react";
+import { Shield, AlertTriangle, Info, CheckCircle2, Copy, Eye, EyeOff, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
 
 // =============================================================================
 // Constants
@@ -659,7 +651,7 @@ export function S3ConnectModal({
             >
               {submitting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Spinner className="mr-2 h-4 w-4 animate-spin" />
                   Connecting...
                 </>
               ) : (

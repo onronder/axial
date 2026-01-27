@@ -1,13 +1,15 @@
+
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { getMicrosoftRedirectUri, getMicrosoftTenantId } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GitHubRepoSelector } from "@/components/data-sources/GitHubRepoSelector";
+import { Spinner } from "@/components/ui/spinner";
 
 type Provider = "google" | "notion" | "onedrive" | "sharepoint" | "dropbox" | "github" | "box";
 
@@ -230,7 +232,7 @@ function OAuthCallbackContent() {
                 <CardHeader className="text-center">
                     <div className="mx-auto mb-4">
                         {status === "loading" && (
-                            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                            <Spinner className="h-12 w-12 animate-spin text-primary" />
                         )}
                         {status === "success" && (
                             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
@@ -291,7 +293,7 @@ export default function OAuthCallbackPage() {
     return (
         <Suspense fallback={
             <div className="flex min-h-screen items-center justify-center p-4 bg-background">
-                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                <Spinner className="h-12 w-12 animate-spin text-primary" />
             </div>
         }>
             <OAuthCallbackContent />

@@ -59,13 +59,13 @@ interface ChatHistoryContextType {
 const ChatHistoryContext = createContext<ChatHistoryContextType | null>(null);
 
 // Query key for chat history
-const CHAT_HISTORY_KEY = ['chatHistory'] as const;
+export const CHAT_HISTORY_KEY = ['chatHistory'] as const;
 
 /**
  * Fetch conversations from API.
  */
-async function fetchConversations(): Promise<ChatConversation[]> {
-    const { data } = await api.get('/conversations');
+export async function fetchConversations(signal?: AbortSignal): Promise<ChatConversation[]> {
+    const { data } = await api.get('/conversations', { signal });
     return data || [];
 }
 
@@ -89,7 +89,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
         refetch
     } = useQuery({
         queryKey: CHAT_HISTORY_KEY,
-        queryFn: fetchConversations,
+        queryFn: ({ signal }) => fetchConversations(signal),
         enabled: hasChatAccess,
         staleTime: 5 * 60 * 1000, // 5 minutes
         gcTime: 10 * 60 * 1000,   // 10 minutes cache

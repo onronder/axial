@@ -1,9 +1,10 @@
+
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
-import { MoreHorizontal, Pencil, Trash2, Loader2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ChatConversation, useChatHistory } from "@/hooks/useChatHistory";
+import { Spinner } from "@/components/ui/spinner";
 
 interface ChatHistoryItemProps {
   conversation: ChatConversation;
@@ -189,7 +191,7 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
             >
               {isDeleting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Spinner className="mr-2 h-4 w-4 animate-spin" />
                   Deleting...
                 </>
               ) : (

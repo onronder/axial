@@ -1,11 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 interface DocumentStats {
     total_documents: number;
     last_updated: string | null;
+}
+
+export const DOCUMENT_COUNT_KEY = ["documentCount"] as const;
+
+async function fetchDocumentStats(signal?: AbortSignal): Promise<DocumentStats> {
+    const { data } = await api.get<DocumentStats>("/documents/stats", { signal });
+    return data;
 }
 
 /**
@@ -14,37 +21,24 @@ interface DocumentStats {
  * Used to determine if onboarding should be shown.
  */
 export function useDocumentCount() {
-    const [count, setCount] = useState<number | null>(null);
-    const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { data, isLoading, error, refetch } = useQuery({
+        queryKey: DOCUMENT_COUNT_KEY,
+        queryFn: ({ signal }) => fetchDocumentStats(signal),
+        staleTime: 60 * 1000,
+        refetchOnWindowFocus: true,
+    });
 
-    useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                // Use optimized /stats endpoint - only fetches count, not documents
-                const { data } = await api.get<DocumentStats>('/documents/stats');
-                setCount(data.total_documents);
-                setLastUpdated(data.last_updated);
-            } catch (err: unknown) {
-                console.error('[useDocumentCount] Error:', err);
-                const message = err instanceof Error ? err.message : "Failed to load document count";
-                setError(message);
-                setCount(0); // Assume 0 on error to show onboarding
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchStats();
-    }, []);
+    const errorMessage = error instanceof Error ? error.message : null;
+    const count = data?.total_documents ?? (errorMessage ? 0 : null);
+    const lastUpdated = data?.last_updated ?? null;
 
     return {
         count,
         lastUpdated,
         isLoading,
-        error,
+        error: errorMessage,
         isEmpty: count === 0,
         hasDocuments: count !== null && count > 0,
+        refresh: refetch,
     };
 }

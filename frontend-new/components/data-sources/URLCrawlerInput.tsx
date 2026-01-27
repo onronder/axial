@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState } from "react";
-import { Globe, Loader2, ArrowRight } from "lucide-react";
+import { Globe, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -10,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useIngestionProgress } from "@/hooks/useIngestionProgress";
 import { api } from "@/lib/api";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
+import { Spinner } from "@/components/ui/spinner";
 
 interface URLCrawlerInputProps {
   source: DataSource;
@@ -153,7 +155,7 @@ export function URLCrawlerInput({ source, disabled = false, disabledReason }: UR
             size="icon"
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Spinner className="h-4 w-4 animate-spin" />
             ) : (
               <ArrowRight className="h-4 w-4" />
             )}

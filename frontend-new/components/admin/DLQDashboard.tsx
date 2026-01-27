@@ -1,17 +1,10 @@
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import {
-    AlertTriangle,
-    RefreshCw,
-    Clock,
-    CheckCircle,
-    XCircle,
-    Filter,
-    RotateCcw,
-    Loader2,
-    Search,
-} from 'lucide-react';
+import { AlertTriangle, RefreshCw, Clock, CheckCircle, XCircle, Filter, RotateCcw, Search } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -403,7 +396,7 @@ export function DLQDashboard() {
                             {isLoading ? (
                                 <TableRow>
                                     <TableCell colSpan={8} className="h-32 text-center">
-                                        <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+                                        <Spinner className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                                     </TableCell>
                                 </TableRow>
                             ) : filteredTasks.length === 0 ? (
@@ -470,7 +463,7 @@ export function DLQDashboard() {
                                                         disabled={isRetrying === task.id || isReadOnly}
                                                     >
                                                         {isRetrying === task.id ? (
-                                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                                            <Spinner className="h-4 w-4 animate-spin" />
                                                         ) : (
                                                             <RotateCcw className="h-4 w-4" />
                                                         )}

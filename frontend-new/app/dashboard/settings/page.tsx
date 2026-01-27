@@ -1,8 +1,9 @@
+
 "use client";
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function SettingsPage() {
     const router = useRouter();
@@ -13,7 +14,7 @@ export default function SettingsPage() {
 
     return (
         <div className="flex h-[50vh] items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <Spinner className="h-8 w-8 animate-spin text-primary" />
         </div>
     );
 }

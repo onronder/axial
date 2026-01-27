@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState } from "react";
-import { Loader2, Building2, Send } from "lucide-react";
+import { Building2, Send } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -23,6 +24,7 @@ import {
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useProfile } from "@/hooks/useProfile";
+import { Spinner } from "@/components/ui/spinner";
 
 interface EnterpriseContactModalProps {
     open: boolean;
@@ -170,7 +172,7 @@ export function EnterpriseContactModal({ open, onOpenChange }: EnterpriseContact
                         </Button>
                         <Button type="submit" disabled={isSubmitting}>
                             {isSubmitting ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                <Spinner className="h-4 w-4 animate-spin mr-2" />
                             ) : (
                                 <Send className="h-4 w-4 mr-2" />
                             )}

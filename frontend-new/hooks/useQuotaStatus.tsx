@@ -149,6 +149,7 @@ export function QuotaStatusProvider({ children }: { children: ReactNode }) {
 
     return () => {
       channel.unsubscribe();
+      supabase.removeChannel(channel);
     };
   }, [user?.id, isQuotaError]);
 

@@ -1,3 +1,4 @@
+
 "use client";
 
 /**
@@ -19,17 +20,7 @@
 import { useEffect, useRef, useState, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-    CheckCircle2,
-    Loader2,
-    XCircle,
-    FileText,
-    ChevronRight,
-    X,
-    Upload,
-    Globe,
-    Database
-} from "lucide-react";
+import { CheckCircle2, XCircle, FileText, ChevronRight, X, Upload, Globe, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,6 +30,7 @@ import { useFileStatus } from "@/hooks/useFileStatus";
 import { useIngestionProgress } from "@/hooks/useIngestionProgress";
 import { IngestionProgressModal } from "@/components/ingestion/IngestionProgressModal";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
+import { Spinner } from "@/components/ui/spinner";
 
 interface IngestionJob {
     id: string;
@@ -428,7 +420,7 @@ const JobCard = memo(function JobCard({
                 isCancelled && "bg-amber-100 dark:bg-amber-900/30"
             )}>
                 {isActive ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <Spinner className="h-5 w-5 animate-spin text-primary" />
                 ) : isComplete ? (
                     <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
                 ) : isCancelled ? (

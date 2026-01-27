@@ -1,3 +1,4 @@
+
 /**
  * Processing Stages Component
  * 
@@ -6,7 +7,9 @@
  */
 
 import React from 'react';
-import { Activity, Upload, FileText, Scissors, Sparkles, Database, CheckCircle2, Loader2, Clock, XCircle } from 'lucide-react';
+import { Activity, Upload, FileText, Scissors, Sparkles, Database, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+
 import { cn } from '@/lib/utils';
 
 type Stage = 'uploading' | 'parsing' | 'chunking' | 'embedding' | 'indexing';
@@ -31,7 +34,7 @@ function getStatusIcon(status: StageStatus) {
         case 'complete':
             return <CheckCircle2 className="h-4 w-4 text-green-500" />;
         case 'in_progress':
-            return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+            return <Spinner className="h-4 w-4 animate-spin text-primary" />;
         case 'failed':
             return <XCircle className="h-4 w-4 text-red-500" />;
         case 'pending':

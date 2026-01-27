@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -5,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Loader2, CheckCircle, Lock } from "lucide-react";
+import { CheckCircle, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { Spinner } from "@/components/ui/spinner";
 
 const resetPasswordSchema = z.object({
     password: z
@@ -114,7 +116,7 @@ export default function ResetPasswordPage() {
     if (isCheckingSession) {
         return (
             <div className="flex min-h-screen items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <Spinner className="h-8 w-8 animate-spin text-primary" />
             </div>
         );
     }
@@ -212,7 +214,7 @@ export default function ResetPasswordPage() {
                                 </div>
 
                                 <Button type="submit" variant="gradient" className="w-full" disabled={isLoading}>
-                                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    {isLoading && <Spinner className="mr-2 h-4 w-4 animate-spin" />}
                                     Update password
                                 </Button>
                             </form>

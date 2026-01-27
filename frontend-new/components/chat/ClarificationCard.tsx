@@ -1,3 +1,4 @@
+
 "use client";
 
 /**
@@ -8,20 +9,11 @@
  */
 
 import { useState } from "react";
-import { 
-    FolderOpen, 
-    Github, 
-    Cloud, 
-    Globe, 
-    FileText, 
-    BookOpen,
-    HelpCircle,
-    ChevronRight,
-    Loader2,
-} from "lucide-react";
+import { FolderOpen, Github, Cloud, Globe, FileText, BookOpen, HelpCircle, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getScopeTypeName, extractScopeName } from "@/lib/chat-utils";
 import type { ScopeCandidate } from "@/types";
+import { Spinner } from "@/components/ui/spinner";
 
 interface ClarificationCardProps {
     message: string;
@@ -101,7 +93,7 @@ function ScopeCandidateItem({
                         {scopeName}
                     </span>
                     {isSelected && (
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        <Spinner className="h-4 w-4 animate-spin text-primary" />
                     )}
                 </div>
                 <span className="text-xs text-muted-foreground">

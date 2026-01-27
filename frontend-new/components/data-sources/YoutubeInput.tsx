@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { Youtube, Loader2, ArrowRight, AlertCircle } from "lucide-react";
+import { Youtube, ArrowRight, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataSource } from "@/lib/mockData";
@@ -10,12 +11,14 @@ import { useIngestionProgress } from "@/hooks/useIngestionProgress";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { 
+
   isValidYoutubeUrl, 
   normalizeYoutubeUrl, 
   extractYoutubeVideoId,
   YOUTUBE_ERROR_MESSAGES 
 } from "@/lib/youtube-utils";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
+import { Spinner } from "@/components/ui/spinner";
 
 // =============================================================================
 // Types
@@ -222,7 +225,7 @@ export function YoutubeInput({
               aria-label="Ingest YouTube video"
             >
               {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner className="h-4 w-4 animate-spin" />
               ) : (
                 <ArrowRight className="h-4 w-4" />
               )}

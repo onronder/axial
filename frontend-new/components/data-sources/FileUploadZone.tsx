@@ -1,8 +1,9 @@
+
 "use client";
 
 import { useCallback, useState, useRef } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
-import { Upload, FileText, Loader2, AlertCircle } from "lucide-react";
+import { Upload, FileText, AlertCircle } from "lucide-react";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ import {
   getDropRejectionMessage,
 } from "@/lib/file-validation";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
+import { Spinner } from "@/components/ui/spinner";
 
 interface FileUploadZoneProps {
   source: DataSource;
@@ -344,7 +346,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
             isUploading ? "bg-primary/10" : isDragActive ? "bg-axio-gradient shadow-brand" : "bg-muted"
           )}>
             {isUploading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <Spinner className="h-5 w-5 animate-spin text-primary" />
             ) : (
               <Upload className={cn("h-5 w-5", isDragActive ? "text-white" : "text-primary")} />
             )}

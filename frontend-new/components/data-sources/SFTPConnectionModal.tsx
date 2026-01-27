@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Server, Loader2, Eye, EyeOff } from "lucide-react";
+import { Server, Eye, EyeOff } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/form";
 import { useDataSources } from "@/hooks/useDataSources";
 import { useToast } from "@/hooks/use-toast";
+import { Spinner } from "@/components/ui/spinner";
 
 const sftpSchema = z.object({
   host: z.string().min(1, "Host is required"),
@@ -212,7 +213,7 @@ export function SFTPConnectionModal({
                 Cancel
               </Button>
               <Button type="submit" variant="gradient" disabled={isConnecting}>
-                {isConnecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isConnecting && <Spinner className="mr-2 h-4 w-4 animate-spin" />}
                 Connect
               </Button>
             </DialogFooter>

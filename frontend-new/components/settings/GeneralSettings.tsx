@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
-import { Moon, Sun, Monitor, Loader2, User, Palette, Check, AlertTriangle, Trash2 } from "lucide-react";
+import { Moon, Sun, Monitor, User, Palette, Check, AlertTriangle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +22,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
 
 export function GeneralSettings() {
   const { profile, isLoading, updateProfile } = useProfile();
@@ -63,7 +65,7 @@ export function GeneralSettings() {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <Spinner className="h-8 w-8 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground">Loading your settings...</p>
         </div>
       </div>
@@ -131,7 +133,7 @@ export function GeneralSettings() {
             >
               {isSaving ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Spinner className="mr-2 h-4 w-4 animate-spin" />
                   Saving...
                 </>
               ) : (
@@ -313,7 +315,7 @@ export function GeneralSettings() {
                   >
                     {isDeleting ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <Spinner className="mr-2 h-4 w-4 animate-spin" />
                         Deleting...
                       </>
                     ) : (

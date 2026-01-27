@@ -1,12 +1,13 @@
+
 "use client";
 
-import { Loader2 } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { AxioLogo } from "@/components/branding/AxioLogo"
 import { ParticleBackground } from "@/components/ui/ParticleBackground"
 
+import { Spinner } from "@/components/ui/spinner";
 export default function AuthLayout({
     children,
 }: {
@@ -24,7 +25,7 @@ export default function AuthLayout({
     if (loading) {
         return (
             <div className="flex h-screen items-center justify-center bg-background">
-                <Loader2 className="animate-spin h-8 w-8 text-primary" />
+                <Spinner className="animate-spin h-8 w-8 text-primary" />
             </div>
         )
     }

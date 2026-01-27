@@ -5,8 +5,9 @@ import { authFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { useIngestionProgress } from "@/hooks/useIngestionProgress"
-import { Loader2, Folder, FileText, ChevronRight, Home, Upload, CheckSquare, Square } from "lucide-react"
+import { Folder, FileText, ChevronRight, Home, Upload, CheckSquare, Square } from "lucide-react"
 
+import { Spinner } from "@/components/ui/spinner";
 type ConnectorItem = {
     id: string
     name: string
@@ -130,7 +131,7 @@ export function DriveExplorer() {
                 <div className="flex items-center gap-2">
                     {selection.size > 0 && (
                         <Button onClick={handleIngest} disabled={ingesting} size="sm" className="ml-4 shadow-sm animate-in fade-in zoom-in-95">
-                            {ingesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                            {ingesting ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                             Ingest {selection.size} Items
                         </Button>
                     )}
@@ -148,7 +149,7 @@ export function DriveExplorer() {
             <div className="flex-1 overflow-y-auto bg-background">
                 {isLoading ? (
                     <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                        <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                        <Spinner className="h-8 w-8 animate-spin mb-2" />
                         <span className="text-sm">Loading contents...</span>
                     </div>
                 ) : items.length === 0 ? (

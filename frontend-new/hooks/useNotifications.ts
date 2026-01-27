@@ -92,6 +92,7 @@ export function useNotifications() {
 
     const subscriptionRef = useRef<RealtimeChannel | null>(null);
     const userIdRef = useRef<string | null>(null);
+    const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
 
     // Parse metadata and extract action_url
     const parseNotification = (n: NotificationPayload): Notification => {
@@ -164,6 +165,7 @@ export function useNotifications() {
         try {
             // Use shared singleton client to avoid "Multiple GoTrueClient" warning
             const supabase = createClient();
+            supabaseRef.current = supabase;
 
             // Get current user ID from profile API
             const response = await authFetch.get("/settings/profile");
@@ -206,6 +208,9 @@ export function useNotifications() {
     const cleanupSubscription = useCallback(() => {
         if (subscriptionRef.current) {
             subscriptionRef.current.unsubscribe();
+            if (supabaseRef.current) {
+                supabaseRef.current.removeChannel(subscriptionRef.current);
+            }
             subscriptionRef.current = null;
             setIsRealtimeConnected(false);
             console.log("🔔 [Realtime] Unsubscribed");

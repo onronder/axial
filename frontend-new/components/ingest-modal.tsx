@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { BookOpen, CheckCircle, Globe, Loader2, Upload, X, Youtube, AlertCircle } from "lucide-react"
+import { BookOpen, CheckCircle, Globe, Upload, X, Youtube, AlertCircle } from "lucide-react"
 
 // NotionInput removed - using OAuth flow now
 import { WebInput, validateUrl } from "@/components/ingest/WebInput"
@@ -22,6 +22,7 @@ import {
 } from "@/lib/youtube-utils"
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages"
 
+import { Spinner } from "@/components/ui/spinner";
 type TabType = 'file' | 'url' | 'website' | 'notion' | 'youtube'
 
 interface IngestModalProps {
@@ -365,7 +366,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                                             disabled={dsLoading || isViewer}
                                             className="bg-foreground text-background hover:bg-foreground/90"
                                         >
-                                            {dsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                            {dsLoading && <Spinner className="mr-2 h-4 w-4 animate-spin" />}
                                             Connect Notion
                                         </Button>
                                     </div>

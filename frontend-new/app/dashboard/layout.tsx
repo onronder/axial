@@ -1,22 +1,27 @@
+
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { ChatHistoryProvider } from "@/hooks/useChatHistory";
 import { IngestModalProvider } from "@/hooks/useIngestModal";
 import { IngestionProgressProvider } from "@/hooks/useIngestionProgress";
-import { Loader2 } from "lucide-react";
+
 import { ProfileProvider } from "@/hooks/useProfile";
 import { UsageProvider } from "@/hooks/useUsage";
 import { QuotaStatusProvider } from "@/hooks/useQuotaStatus";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
-import { GlobalProgress } from "@/components/layout/global-progress";
-import { GlobalIngestModal } from "@/components/GlobalIngestModal";
+import { LazyGlobalIngestModal, LazyGlobalProgress } from "@/components/lazy";
+import { ModalLoadingFallback } from "@/components/lazy/ModalLoadingFallback";
 import { UsageWarningBanner } from "@/components/UsageWarningBanner";
 import { PaywallGuard } from "@/components/PaywallGuard";
 import { AppErrorBoundary, SidebarErrorBoundary } from "@/components/providers/ErrorBoundary";
+import { ConnectionStatusIndicator } from "@/components/layout/ConnectionStatusIndicator";
+import { useQueryClient } from "@tanstack/react-query";
+import { prefetchDashboardData } from "@/lib/prefetch";
+import { Spinner } from "@/components/ui/spinner";
 
 interface DashboardLayoutProps {
     children: ReactNode;
@@ -26,9 +31,10 @@ interface DashboardLayoutProps {
 const SIDEBAR_WIDTH = 256; // 16rem = 256px
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-    const { isAuthenticated, loading } = useAuth();
+    const { isAuthenticated, loading, user } = useAuth();
     const router = useRouter();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const queryClient = useQueryClient();
 
     useEffect(() => {
         if (!loading && !isAuthenticated) {
@@ -39,10 +45,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         }
     }, [isAuthenticated, loading, router]);
 
+    useEffect(() => {
+        if (user?.id) {
+            void prefetchDashboardData(queryClient);
+        }
+    }, [user?.id, queryClient]);
+
     if (loading) {
         return (
             <div className="flex h-screen items-center justify-center bg-background">
-                <Loader2 className="animate-spin h-8 w-8 text-primary" />
+                <Spinner className="animate-spin h-8 w-8 text-primary" />
             </div>
         );
     }
@@ -78,6 +90,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                         onToggle={setMobileMenuOpen}
                                     />
 
+                                    <ConnectionStatusIndicator />
+
                                     {/* Usage Warning Banner */}
                                     <UsageWarningBanner />
 
@@ -91,10 +105,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
                                 {/* Global modals and overlays - isolated */}
                                 <SidebarErrorBoundary>
-                                    <GlobalIngestModal />
+                                    <Suspense fallback={<ModalLoadingFallback />}>
+                                        <LazyGlobalIngestModal />
+                                    </Suspense>
                                 </SidebarErrorBoundary>
                                 <SidebarErrorBoundary>
-                                    <GlobalProgress />
+                                    <Suspense fallback={<ModalLoadingFallback />}>
+                                        <LazyGlobalProgress />
+                                    </Suspense>
                                 </SidebarErrorBoundary>
                             </div>
                         </PaywallGuard>

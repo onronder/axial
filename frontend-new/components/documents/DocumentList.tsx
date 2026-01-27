@@ -6,21 +6,29 @@
 
 "use client";
 
-import { useState, useMemo } from 'react';
-import { Search, Grid, List, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Grid, List } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useDocuments } from '@/hooks/useDocuments';
 import { DocumentCard } from './DocumentCard';
 import { cn } from '@/lib/utils';
 import { useDebounce } from 'use-debounce';
+import { DocumentListSkeleton } from './DocumentListSkeleton';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 
 type ViewMode = 'grid' | 'list';
+const VIRTUALIZATION_THRESHOLD = 50;
+const LIST_ROW_ESTIMATE = 84;
+const GRID_ROW_ESTIMATE = 240;
 
 export function DocumentList() {
     const { documents, isLoading, deleteDocument } = useDocuments();
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
+    const [columnCount, setColumnCount] = useState(1);
+    const listRef = useRef<HTMLDivElement>(null);
+    const [scrollMargin, setScrollMargin] = useState(0);
 
     // ✅ PERFORMANCE: Debounce search to prevent excessive filtering
     const [debouncedSearch] = useDebounce(searchQuery, 300);
@@ -31,15 +39,46 @@ export function DocumentList() {
         );
     }, [documents, debouncedSearch]);
 
+    const shouldVirtualize = filteredDocuments.length >= VIRTUALIZATION_THRESHOLD;
+    const rowCount = Math.ceil(filteredDocuments.length / columnCount);
+
+    const virtualizer = useWindowVirtualizer({
+        count: shouldVirtualize ? (viewMode === 'grid' ? rowCount : filteredDocuments.length) : 0,
+        estimateSize: () => (viewMode === 'grid' ? GRID_ROW_ESTIMATE : LIST_ROW_ESTIMATE),
+        overscan: 5,
+        scrollMargin,
+    });
+
+    useEffect(() => {
+        const updateColumns = () => {
+            const width = window.innerWidth;
+            if (width >= 1024) {
+                setColumnCount(3);
+            } else if (width >= 768) {
+                setColumnCount(2);
+            } else {
+                setColumnCount(1);
+            }
+        };
+        updateColumns();
+        window.addEventListener('resize', updateColumns);
+        return () => window.removeEventListener('resize', updateColumns);
+    }, []);
+
+    useEffect(() => {
+        if (!shouldVirtualize || !listRef.current) return;
+        const updateMargin = () => {
+            if (!listRef.current) return;
+            const rect = listRef.current.getBoundingClientRect();
+            setScrollMargin(rect.top + window.scrollY);
+        };
+        updateMargin();
+        window.addEventListener('resize', updateMargin);
+        return () => window.removeEventListener('resize', updateMargin);
+    }, [shouldVirtualize, viewMode, filteredDocuments.length]);
+
     if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-sm text-muted-foreground">Loading documents...</p>
-                </div>
-            </div>
-        );
+        return <DocumentListSkeleton count={9} />;
     }
 
     return (
@@ -88,6 +127,67 @@ export function DocumentList() {
                     <p className="text-muted-foreground">
                         {searchQuery ? 'No documents found' : 'No documents yet'}
                     </p>
+                </div>
+            ) : shouldVirtualize ? (
+                <div
+                    ref={listRef}
+                    style={{
+                        height: `${virtualizer.getTotalSize()}px`,
+                        position: 'relative',
+                        width: '100%',
+                    }}
+                >
+                    {virtualizer.getVirtualItems().map((virtualRow) => {
+                        if (viewMode === 'grid') {
+                            const startIndex = virtualRow.index * columnCount;
+                            const rowItems = filteredDocuments.slice(startIndex, startIndex + columnCount);
+                            return (
+                                <div
+                                    key={virtualRow.key}
+                                    ref={virtualizer.measureElement}
+                                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                                    style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        width: '100%',
+                                        transform: `translateY(${virtualRow.start - scrollMargin}px)`,
+                                    }}
+                                >
+                                    {rowItems.map((doc) => (
+                                        <DocumentCard
+                                            key={doc.id}
+                                            document={doc}
+                                            viewMode={viewMode}
+                                            onDelete={() => deleteDocument(doc.id)}
+                                        />
+                                    ))}
+                                </div>
+                            );
+                        }
+
+                        const doc = filteredDocuments[virtualRow.index];
+                        return (
+                            <div
+                                key={virtualRow.key}
+                                ref={virtualizer.measureElement}
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    transform: `translateY(${virtualRow.start - scrollMargin}px)`,
+                                }}
+                            >
+                                <DocumentCard
+                                    key={doc.id}
+                                    document={doc}
+                                    viewMode={viewMode}
+                                    onDelete={() => deleteDocument(doc.id)}
+                                />
+                            </div>
+                        );
+                    })}
                 </div>
             ) : (
                 <div

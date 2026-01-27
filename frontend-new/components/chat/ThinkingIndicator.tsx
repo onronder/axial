@@ -1,3 +1,4 @@
+
 /**
  * ThinkingIndicator - Shows RAG processing status with animated steps
  * 
@@ -13,15 +14,8 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { AxioLogo } from "@/components/branding/AxioLogo";
-import { 
-    Search, 
-    FileSearch, 
-    CheckCircle2, 
-    Sparkles,
-    Database,
-    Brain,
-    Loader2
-} from "lucide-react";
+import { Search, FileSearch, CheckCircle2, Sparkles, Database, Brain } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 export interface ThinkingStatus {
     step: 'searching' | 'analyzing' | 'found' | 'generating' | 'complete';
@@ -128,7 +122,7 @@ export function ThinkingIndicator({ status, className }: ThinkingIndicatorProps)
                         {status.step === 'complete' ? (
                             <StepIcon className={cn("h-4 w-4", config.color)} />
                         ) : (
-                            <Loader2 className={cn("h-4 w-4 animate-spin", config.color)} />
+                            <Spinner className={cn("h-4 w-4 animate-spin", config.color)} />
                         )}
                     </div>
                     <span className={cn("text-sm font-medium", config.color)}>

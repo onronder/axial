@@ -1,18 +1,8 @@
+
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import {
-  Check,
-  CreditCard,
-  Loader2,
-  Sparkles,
-  Users,
-  Zap,
-  Building2,
-  ExternalLink,
-  Receipt,
-  Calendar,
-} from "lucide-react";
+import { Check, CreditCard, Sparkles, Users, Zap, Building2, ExternalLink, Receipt, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -39,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Spinner } from "@/components/ui/spinner";
 
 // ============================================================
 // STATIC PLANS - Always show 3 plans (Starter, Pro, Enterprise)
@@ -258,7 +249,7 @@ export function BillingSettings() {
   if (profileLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Spinner className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -312,7 +303,7 @@ export function BillingSettings() {
                 disabled={isPortalLoading}
               >
                 {isPortalLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <Spinner className="h-4 w-4 animate-spin mr-2" />
                 ) : (
                   <ExternalLink className="h-4 w-4 mr-2" />
                 )}
@@ -421,7 +412,7 @@ export function BillingSettings() {
                     onClick={onPlanAction}
                   >
                     {isLoadingAction && (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      <Spinner className="h-4 w-4 animate-spin mr-2" />
                     )}
                     {buttonLabel}
                   </Button>
@@ -456,7 +447,7 @@ export function BillingSettings() {
               disabled={isPortalLoading}
             >
               {isPortalLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner className="h-4 w-4 animate-spin" />
               ) : (
                 <>
                   <ExternalLink className="h-4 w-4 mr-2" />
@@ -480,7 +471,7 @@ export function BillingSettings() {
         <CardContent>
           {isLoadingInvoices ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Spinner className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : invoices.length === 0 ? (
             <div className="text-center py-8">
@@ -587,7 +578,7 @@ export function BillingSettings() {
             >
               {isCancelling ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <Spinner className="h-4 w-4 animate-spin mr-2" />
                   Cancelling...
                 </>
               ) : (

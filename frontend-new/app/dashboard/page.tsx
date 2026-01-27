@@ -1,8 +1,9 @@
+
 "use client";
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -15,7 +16,7 @@ export default function DashboardPage() {
     // Show loading while redirecting
     return (
         <div className="flex h-full items-center justify-center">
-            <Loader2 className="animate-spin h-8 w-8 text-primary" />
+            <Spinner className="animate-spin h-8 w-8 text-primary" />
         </div>
     );
 }

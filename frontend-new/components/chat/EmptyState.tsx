@@ -1,16 +1,8 @@
+
 "use client";
 
 import { useState, useCallback, type KeyboardEvent } from "react";
-import {
-  UploadCloud,
-  Globe,
-  FileText,
-  ArrowRight,
-  AlertTriangle,
-  GitCompare,
-  BarChart3,
-  Loader2,
-} from "lucide-react";
+import { UploadCloud, Globe, FileText, ArrowRight, AlertTriangle, GitCompare, BarChart3 } from "lucide-react";
 import { useDropzone, type FileRejection } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { useIngestModal } from "@/hooks/useIngestModal";
@@ -26,6 +18,7 @@ import {
   MIN_FILE_SIZE,
   getDropRejectionMessage,
 } from "@/lib/file-validation";
+import { Spinner } from "@/components/ui/spinner";
 
 // =============================================================================
 // TYPES
@@ -267,7 +260,7 @@ export function EmptyState({ onQuerySelect }: EmptyStateProps) {
         aria-busy="true"
       >
         <div className="flex flex-col items-center gap-4">
-          <Loader2
+          <Spinner
             className="h-8 w-8 text-muted-foreground animate-spin motion-reduce:animate-none"
             aria-hidden="true"
           />

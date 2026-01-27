@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -6,7 +7,7 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Loader2, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +20,8 @@ import {
 } from "@/components/ui/form";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { safeLocalStorage } from "@/lib/storage";
+import { Spinner } from "@/components/ui/spinner";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email"),
@@ -87,11 +90,11 @@ export function LoginForm() {
 
       // Handle remember me
       if (rememberMe) {
-        localStorage.setItem('remember_me', 'true');
-        localStorage.setItem('user_email', data.email);
+        safeLocalStorage.setItem('remember_me', 'true');
+        safeLocalStorage.setItem('user_email', data.email);
       } else {
-        localStorage.removeItem('remember_me');
-        localStorage.removeItem('user_email');
+        safeLocalStorage.removeItem('remember_me');
+        safeLocalStorage.removeItem('user_email');
       }
 
       toast({
@@ -228,7 +231,7 @@ export function LoginForm() {
             className="w-full py-3 h-auto"
             disabled={isLoading}
           >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isLoading && <Spinner className="mr-2 h-4 w-4 animate-spin" />}
             Sign In
           </Button>
         </form>

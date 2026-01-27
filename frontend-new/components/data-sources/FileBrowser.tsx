@@ -1,16 +1,8 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  ArrowLeft,
-  Folder,
-  FileText,
-  ChevronRight,
-  Loader2,
-  Check,
-  Search,
-  CheckCircle2,
-} from "lucide-react";
+import { ArrowLeft, Folder, FileText, ChevronRight, Check, Search, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -28,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { DataSourceIcon } from "./DataSourceIcon";
 import { DataSource } from "@/lib/mockData";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
+import { Spinner } from "@/components/ui/spinner";
 
 export interface FileItem {
   id: string;
@@ -314,7 +307,7 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
             {loading ? (
               <TableRow>
                 <TableCell colSpan={4} className="h-32 text-center">
-                  <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+                  <Spinner className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                 </TableCell>
               </TableRow>
             ) : filteredFiles.length === 0 ? (
@@ -394,7 +387,7 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
             </span>
             <Button onClick={handleIngest} disabled={ingesting || isViewer} className="gap-2">
               {ingesting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner className="h-4 w-4 animate-spin" />
               ) : (
                 <Check className="h-4 w-4" />
               )}

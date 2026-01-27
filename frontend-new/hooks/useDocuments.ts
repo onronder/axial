@@ -8,6 +8,9 @@ import { useToast } from "@/hooks/use-toast";
 
 // Stable fallback to avoid new array instances while queries are still loading
 const EMPTY_DOCS: Document[] = [];
+export const DOCUMENTS_KEY = ["documents"] as const;
+export const documentsQueryKey = (page: number, pageSize: number, search: string) =>
+    [...DOCUMENTS_KEY, page, pageSize, search] as const;
 
 /**
  * Backend document response interface.
@@ -63,6 +66,7 @@ interface FetchDocsParams {
     page: number;
     pageSize: number;
     search?: string;
+    signal?: AbortSignal;
 }
 
 interface BulkDeletePayload {
@@ -73,13 +77,14 @@ interface BulkDeletePayload {
 /**
  * Fetch documents from the API with pagination.
  */
-async function fetchDocuments({ page, pageSize, search }: FetchDocsParams): Promise<{ documents: Document[], total: number }> {
+export async function fetchDocuments({ page, pageSize, search, signal }: FetchDocsParams): Promise<{ documents: Document[], total: number }> {
     const response = await api.get("/documents", {
         params: {
             limit: pageSize,
             offset: (page - 1) * pageSize,
             q: search
-        }
+        },
+        signal,
     });
 
     // Check for X-Total-Count header
@@ -156,8 +161,8 @@ export const useDocuments = (
         error,
         refetch
     } = useQuery({
-        queryKey: ["documents", page, pageSize, search],
-        queryFn: () => fetchDocuments({ page, pageSize, search }),
+        queryKey: documentsQueryKey(page, pageSize, search),
+        queryFn: ({ signal }) => fetchDocuments({ page, pageSize, search, signal }),
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
         placeholderData: (previousData) => previousData // Keep prev data while fetching
@@ -172,17 +177,26 @@ export const useDocuments = (
         mutationFn: deleteDocumentApi,
         onMutate: async (deletedId) => {
             // Cancel any outgoing refetches
-            await queryClient.cancelQueries({ queryKey: ["documents"] });
+            await queryClient.cancelQueries({ queryKey: DOCUMENTS_KEY });
 
             // Snapshot current state for rollback
-            const previousDocs = queryClient.getQueryData<Document[]>(["documents"]);
+            const previous = queryClient.getQueriesData<{ documents: Document[]; total: number }>({
+                queryKey: DOCUMENTS_KEY,
+            });
 
             // Optimistic update - remove immediately from UI
-            queryClient.setQueryData<Document[]>(["documents"], (old) =>
-                old?.filter((doc) => doc.id !== deletedId) ?? []
-            );
+            queryClient.setQueriesData<{ documents: Document[]; total: number }>({ queryKey: DOCUMENTS_KEY }, (old) => {
+                if (!old) return old;
+                const filtered = old.documents.filter((doc) => doc.id !== deletedId);
+                if (filtered.length === old.documents.length) return old;
+                return {
+                    ...old,
+                    documents: filtered,
+                    total: Math.max(0, old.total - 1),
+                };
+            });
 
-            return { previousDocs };
+            return { previous };
         },
         onSuccess: () => {
             toast({
@@ -192,8 +206,10 @@ export const useDocuments = (
         },
         onError: (err: Error, _deletedId, context) => {
             // Rollback on error
-            if (context?.previousDocs) {
-                queryClient.setQueryData(["documents"], context.previousDocs);
+            if (context?.previous) {
+                context.previous.forEach(([key, data]) => {
+                    queryClient.setQueryData(key, data);
+                });
             }
             console.error("Failed to delete document", err.message);
             toast({
@@ -204,7 +220,7 @@ export const useDocuments = (
         },
         onSettled: () => {
             // Refetch to ensure consistency
-            queryClient.invalidateQueries({ queryKey: ["documents"] });
+            queryClient.invalidateQueries({ queryKey: DOCUMENTS_KEY });
         },
     });
 
@@ -216,7 +232,7 @@ export const useDocuments = (
                 title: "Documents deleted",
                 description: "Selected documents have been removed.",
             });
-            queryClient.invalidateQueries({ queryKey: ["documents"] });
+            queryClient.invalidateQueries({ queryKey: DOCUMENTS_KEY });
         },
         onError: (err: Error) => {
             console.error("Failed to bulk delete documents", err.message);
@@ -237,7 +253,7 @@ export const useDocuments = (
                 title: "Document updated",
                 description: "Document metadata has been updated.",
             });
-            queryClient.invalidateQueries({ queryKey: ["documents"] });
+            queryClient.invalidateQueries({ queryKey: DOCUMENTS_KEY });
         },
         onError: (err: unknown) => {
             console.error("Failed to update document", err);

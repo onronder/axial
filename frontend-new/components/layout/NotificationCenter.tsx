@@ -1,3 +1,4 @@
+
 "use client";
 
 /**
@@ -12,7 +13,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Bell, CheckCircle2, AlertTriangle, XCircle, Info, Check, Trash2, Loader2 } from "lucide-react";
+import { Bell, CheckCircle2, AlertTriangle, XCircle, Info, Check, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,6 +25,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNotifications, Notification } from "@/hooks/useNotifications";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
 
 // Helper to format relative time
 function formatRelativeTime(dateString?: string): string {
@@ -282,7 +284,7 @@ export function NotificationCenter() {
                         <ScrollArea className="h-[400px]">
                             {isLoading ? (
                                 <div className="flex items-center justify-center py-12">
-                                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                    <Spinner className="h-6 w-6 animate-spin text-primary" />
                                 </div>
                             ) : displayedNotifications.length === 0 ? (
                                 <EmptyState

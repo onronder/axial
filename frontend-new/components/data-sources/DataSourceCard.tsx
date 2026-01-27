@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState } from "react";
-import { Loader2, Check, X, ExternalLink, Clock, RefreshCw, AlertCircle, Lock, Sparkles } from "lucide-react";
+import { Check, X, ExternalLink, Clock, RefreshCw, AlertCircle, Lock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -15,6 +16,7 @@ import { DataSourceIcon } from "./DataSourceIcon";
 import { cn } from "@/lib/utils";
 import type { MergedDataSource, PlanType } from "@/types";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
+import { Spinner } from "@/components/ui/spinner";
 
 interface DataSourceCardProps {
   source: MergedDataSource;
@@ -311,7 +313,7 @@ export function DataSourceCard({
                   disabled={isLoading || isSyncing || disabled}
                 >
                   {isLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Spinner className="h-4 w-4 animate-spin" />
                   ) : (
                     <X className="h-4 w-4" />
                   )}
@@ -358,7 +360,7 @@ export function DataSourceCard({
           onClick={handleConnect}
           disabled={isLoading || disabled}
         >
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isLoading && <Spinner className="mr-2 h-4 w-4 animate-spin" />}
           Connect
         </Button>
       )}

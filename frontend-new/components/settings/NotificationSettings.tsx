@@ -1,12 +1,14 @@
+
 "use client";
 
 import { useState } from "react";
-import { Loader2, Bell, Mail, ShieldCheck } from "lucide-react";
+import { Bell, Mail, ShieldCheck } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNotificationSettings, NotificationSetting } from "@/hooks/useNotificationSettings";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 export function NotificationSettings() {
   const { emailSettings, systemSettings, isLoading, isResetting, toggleSetting, resetToDefaults } = useNotificationSettings();
@@ -38,7 +40,7 @@ export function NotificationSettings() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Spinner className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -81,7 +83,7 @@ export function NotificationSettings() {
               }}
             >
               {isResetting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner className="h-4 w-4 animate-spin" />
               ) : confirming ? (
                 "Click again to confirm"
               ) : (

@@ -1,12 +1,14 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/components/providers/SessionProvider";
-import { Loader2, CheckCircle2, XCircle, Users } from "lucide-react";
+import { CheckCircle2, XCircle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 
 type InviteState = "loading" | "success" | "error" | "unauthenticated";
 
@@ -86,7 +88,7 @@ export default function AcceptInvitePage() {
                 <Card className="w-full max-w-md mx-4">
                     <CardContent className="flex flex-col items-center justify-center py-12">
                         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-6">
-                            <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                            <Spinner className="h-8 w-8 text-primary animate-spin" />
                         </div>
                         <h2 className="text-xl font-semibold text-foreground mb-2">
                             {state === "unauthenticated" ? "Redirecting to login..." : "Accepting invitation..."}

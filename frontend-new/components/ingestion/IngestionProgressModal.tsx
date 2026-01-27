@@ -1,3 +1,4 @@
+
 "use client";
 
 /**
@@ -10,7 +11,7 @@
  */
 
 import { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
-import { ChevronDown, ChevronUp, X, FileText, Loader2, CheckCircle2, XCircle, Clock, SkipForward } from "lucide-react";
+import { ChevronDown, ChevronUp, X, FileText, CheckCircle2, XCircle, Clock, SkipForward } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileStatus, getStatusLabel } from "@/hooks/useFileStatus";
 import { useIngestionProgress } from "@/hooks/useIngestionProgress";
@@ -29,6 +30,7 @@ import {
     getProgressLabel,
     getFileStatusLabel
 } from "@/lib/accessibility";
+import { Spinner } from "@/components/ui/spinner";
 
 interface IngestionProgressModalProps {
     jobId: string;
@@ -164,7 +166,7 @@ export function IngestionProgressModal({
                             {allComplete ? (
                                 <CheckCircle2 className="h-5 w-5 text-green-500" />
                             ) : (
-                                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                                <Spinner className="h-5 w-5 animate-spin text-primary" />
                             )}
                         </div>
                         <div className="flex-1">
@@ -372,7 +374,7 @@ const FileProgressCard = memo(function FileProgressCard({ file, jobId }: FilePro
                     ) : isFailed ? (
                         <XCircle className="h-4 w-4 text-red-500" />
                     ) : (
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        <Spinner className="h-4 w-4 animate-spin text-primary" />
                     )}
                 </div>
 

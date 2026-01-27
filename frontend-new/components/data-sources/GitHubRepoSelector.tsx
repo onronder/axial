@@ -1,19 +1,8 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
-import { 
-    GitBranch, 
-    Lock, 
-    Globe, 
-    Star, 
-    GitFork, 
-    Archive, 
-    Loader2, 
-    CheckCircle2, 
-    Search,
-    Building2,
-    User
-} from "lucide-react";
+import { GitBranch, Lock, Globe, Star, GitFork, Archive, CheckCircle2, Search, Building2, User } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -29,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
 
 // =============================================================================
 // Types
@@ -213,7 +203,7 @@ export function GitHubRepoSelector({
                 <div className="flex-1 min-h-0">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-12">
-                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            <Spinner className="h-8 w-8 animate-spin text-primary" />
                             <p className="mt-2 text-sm text-muted-foreground">
                                 Loading repositories...
                             </p>
@@ -319,7 +309,7 @@ export function GitHubRepoSelector({
                     >
                         {saving ? (
                             <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                <Spinner className="mr-2 h-4 w-4 animate-spin" />
                                 Saving...
                             </>
                         ) : (

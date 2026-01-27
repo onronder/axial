@@ -1,6 +1,7 @@
+
 "use client";
 
-import { Check, Loader2, Sparkles } from "lucide-react";
+import { Check, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useUsage } from "@/hooks/useUsage";
@@ -10,6 +11,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
 import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
 import { usePathname } from "next/navigation";
+import { Spinner } from "@/components/ui/spinner";
 
 const FREE_ACCESS_PATHS = new Set([
     "/dashboard/settings",
@@ -48,7 +50,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
     if (isLoading || currentPlan === null) {
         return (
             <div className="flex h-[50vh] items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <Spinner className="h-8 w-8 animate-spin text-primary" />
             </div>
         );
     }
@@ -166,7 +168,7 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
                                     disabled={!!isCheckoutLoading || isCurrentPlan}
                                 >
                                     {isCheckoutLoading === plan.type && (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        <Spinner className="mr-2 h-4 w-4 animate-spin" />
                                     )}
                                     {isCurrentPlan ? 'Current Plan' : plan.button_text}
                                 </Button>

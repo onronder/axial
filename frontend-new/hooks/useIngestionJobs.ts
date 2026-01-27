@@ -208,6 +208,7 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
             }
             flushPendingChanges();
             channel.unsubscribe();
+            supabase.removeChannel(channel);
         };
     }, [user?.id, fetchJobs, scheduleFlush, flushPendingChanges]);
 
@@ -300,6 +301,7 @@ export function useIngestionJobProgress(jobId: string | null) {
 
         return () => {
             channel.unsubscribe();
+            supabase.removeChannel(channel);
         };
     }, [jobId, user?.id]);
 
