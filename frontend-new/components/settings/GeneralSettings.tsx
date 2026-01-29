@@ -37,6 +37,7 @@ export function GeneralSettings() {
   // Local state for form fields
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [errors, setErrors] = useState<{ firstName?: string; lastName?: string }>({});
 
   // Populate form when profile loads
   useEffect(() => {
@@ -46,13 +47,38 @@ export function GeneralSettings() {
     }
   }, [profile]);
 
+  // Form validation
+  const validateForm = (): boolean => {
+    const newErrors: typeof errors = {};
+    
+    if (!firstName.trim()) {
+      newErrors.firstName = 'First name is required';
+    } else if (firstName.trim().length < 2) {
+      newErrors.firstName = 'First name must be at least 2 characters';
+    }
+    
+    if (!lastName.trim()) {
+      newErrors.lastName = 'Last name is required';
+    } else if (lastName.trim().length < 2) {
+      newErrors.lastName = 'Last name must be at least 2 characters';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSaveProfile = async () => {
+    if (!validateForm()) return;
+    
     setIsSaving(true);
-    await updateProfile({
-      first_name: firstName,
-      last_name: lastName,
-    });
-    setIsSaving(false);
+    try {
+      await updateProfile({
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const themeOptions = [
@@ -94,20 +120,38 @@ export function GeneralSettings() {
               <Input
                 id="firstName"
                 value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
+                onChange={(e) => {
+                  setFirstName(e.target.value);
+                  if (errors.firstName) setErrors(prev => ({ ...prev, firstName: undefined }));
+                }}
                 placeholder="John"
-                className="transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className={cn(
+                  "transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  errors.firstName && "border-destructive focus-visible:ring-destructive"
+                )}
               />
+              {errors.firstName && (
+                <p className="text-xs text-destructive">{errors.firstName}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="lastName" className="text-sm font-medium">Last Name</Label>
               <Input
                 id="lastName"
                 value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
+                onChange={(e) => {
+                  setLastName(e.target.value);
+                  if (errors.lastName) setErrors(prev => ({ ...prev, lastName: undefined }));
+                }}
                 placeholder="Doe"
-                className="transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className={cn(
+                  "transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  errors.lastName && "border-destructive focus-visible:ring-destructive"
+                )}
               />
+              {errors.lastName && (
+                <p className="text-xs text-destructive">{errors.lastName}</p>
+              )}
             </div>
           </div>
           <div className="space-y-2">

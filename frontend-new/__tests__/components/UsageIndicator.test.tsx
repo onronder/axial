@@ -80,7 +80,7 @@ describe('UsageIndicator Component', () => {
     });
 
     describe('Enterprise Plan', () => {
-        it('should show "Unlimited resources" for enterprise plan', () => {
+        it('should return null for enterprise plan (unlimited resources shown elsewhere)', () => {
             mockUseUsage.mockReturnValue({
                 isLoading: false,
                 plan: 'enterprise',
@@ -92,10 +92,10 @@ describe('UsageIndicator Component', () => {
                 storagePercent: 0,
             });
 
-            render(<UsageIndicator />);
+            const { container } = render(<UsageIndicator />);
 
-            expect(screen.getByText('Enterprise')).toBeInTheDocument();
-            expect(screen.getByText('Unlimited resources')).toBeInTheDocument();
+            // Enterprise plan returns null (plan badge shown under username instead)
+            expect(container.firstChild).toBeNull();
         });
 
         it('should not show progress bars for enterprise', () => {

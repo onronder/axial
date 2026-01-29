@@ -131,7 +131,8 @@ describe('DashboardSidebar Component', () => {
         it('should have gradient styling', () => {
             render(<DashboardSidebar />);
             const button = screen.getByText('New Chat').closest('button');
-            expect(button?.className).toContain('bg-gradient');
+            // The button uses bg-axio-gradient class for gradient styling
+            expect(button?.className).toContain('bg-axio-gradient');
         });
 
         it('should navigate to new chat on click', async () => {

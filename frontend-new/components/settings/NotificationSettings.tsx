@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Bell, Mail, ShieldCheck } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,16 @@ import { Spinner } from "@/components/ui/spinner";
 export function NotificationSettings() {
   const { emailSettings, systemSettings, isLoading, isResetting, toggleSetting, resetToDefaults } = useNotificationSettings();
   const [confirming, setConfirming] = useState(false);
+  const confirmTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Auto-clear confirmation after 5 seconds
+  useEffect(() => {
+    return () => {
+      if (confirmTimeoutRef.current) {
+        clearTimeout(confirmTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const NotificationItem = ({
     setting,
@@ -74,8 +84,19 @@ export function NotificationSettings() {
               onClick={async () => {
                 if (!confirming) {
                   setConfirming(true);
+                  // Auto-cancel confirmation after 5 seconds
+                  confirmTimeoutRef.current = setTimeout(() => {
+                    setConfirming(false);
+                  }, 5000);
                   return;
                 }
+                
+                // Clear timeout on actual reset
+                if (confirmTimeoutRef.current) {
+                  clearTimeout(confirmTimeoutRef.current);
+                  confirmTimeoutRef.current = null;
+                }
+                
                 const ok = await resetToDefaults();
                 if (ok) {
                   setConfirming(false);
@@ -95,7 +116,13 @@ export function NotificationSettings() {
                 variant="ghost"
                 size="sm"
                 className="text-destructive hover:text-destructive"
-                onClick={() => setConfirming(false)}
+                onClick={() => {
+                  if (confirmTimeoutRef.current) {
+                    clearTimeout(confirmTimeoutRef.current);
+                    confirmTimeoutRef.current = null;
+                  }
+                  setConfirming(false);
+                }}
               >
                 Cancel
               </Button>

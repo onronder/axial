@@ -1,16 +1,23 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { RegisterForm } from '@/components/auth/RegisterForm';
 import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
 
-// Mock hooks
+// =============================================================================
+// Mocks
+// =============================================================================
+
 const mockRegister = vi.fn();
+const mockSignInWithOAuth = vi.fn();
 const mockPush = vi.fn();
 const mockToast = vi.fn();
 
 vi.mock('@/hooks/useAuth', () => ({
     useAuth: () => ({
         register: mockRegister,
+        signInWithOAuth: mockSignInWithOAuth,
     }),
 }));
 
@@ -26,155 +33,238 @@ vi.mock('next/navigation', () => ({
     }),
 }));
 
+// =============================================================================
+// Test Suite
+// =============================================================================
+
 describe('RegisterForm Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockRegister.mockResolvedValue(undefined);
+        mockSignInWithOAuth.mockResolvedValue(undefined);
     });
 
-    it('should render registration fields and consent checkbox', () => {
-        render(<RegisterForm />);
+    // =========================================================================
+    // Rendering Tests
+    // =========================================================================
 
-        expect(screen.getByLabelText(/First Name/i)).toBeInTheDocument();
-        expect(screen.getByLabelText(/Last Name/i)).toBeInTheDocument();
-        expect(screen.getByLabelText(/Email/i)).toBeInTheDocument();
-        expect(screen.getByLabelText(/Password/i)).toBeInTheDocument();
+    describe('Rendering', () => {
+        it('should render registration fields and consent checkbox', () => {
+            render(<RegisterForm />);
 
-        // Consent checkbox might not have a label linked via 'for' in the standard way for library-based checks sometimes, 
-        // but it has text "I agree to the Terms..."
-        expect(screen.getByText(/I agree to the/i)).toBeInTheDocument();
-        expect(screen.getByText(/Terms of Service/i)).toBeInTheDocument();
-        expect(screen.getByText(/Privacy Policy/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Create Account/i })).toBeInTheDocument();
-    });
+            expect(screen.getByPlaceholderText('John')).toBeInTheDocument();
+            expect(screen.getByPlaceholderText('Doe')).toBeInTheDocument();
+            expect(screen.getByPlaceholderText('you@company.com')).toBeInTheDocument();
+            expect(screen.getByPlaceholderText('••••••••')).toBeInTheDocument();
 
-    it('should show validation error if terms are not accepted', async () => {
-        const user = userEvent.setup();
-        render(<RegisterForm />);
-
-        // Fill other fields
-        await user.type(screen.getByLabelText(/First Name/i), 'John');
-        await user.type(screen.getByLabelText(/Last Name/i), 'Doe');
-        await user.type(screen.getByLabelText(/Email/i), 'john@example.com');
-        await user.type(screen.getByLabelText(/Password/i), 'password123');
-
-        // Submit without checking box
-        await user.click(screen.getByRole('button', { name: /Create Account/i }));
-
-        // Check for validation error
-        expect(await screen.findByText("You must accept the Terms and Privacy Policy")).toBeInTheDocument();
-        expect(mockRegister).not.toHaveBeenCalled();
-    });
-
-    it('should submit successfully when all fields valid and terms accepted', async () => {
-        const user = userEvent.setup();
-        render(<RegisterForm />);
-
-        // Fill fields
-        await user.type(screen.getByLabelText(/First Name/i), 'John');
-        await user.type(screen.getByLabelText(/Last Name/i), 'Doe');
-        await user.type(screen.getByLabelText(/Email/i), 'john@example.com');
-        await user.type(screen.getByLabelText(/Password/i), 'password123');
-
-        // Check the box
-        // The checkbox from shadcn/ui (radix) might need specific handling or just click label
-        // Finding the checkbox role might be tricky if hidden input, but clicking the label works usually
-        // The label text contains links, but "I agree to the..." is part of it
-        // Or find by role 'checkbox'
-        const checkbox = screen.getByRole('checkbox');
-        await user.click(checkbox);
-
-        // Submit
-        await user.click(screen.getByRole('button', { name: /Create Account/i }));
-
-        await waitFor(() => {
-            expect(mockRegister).toHaveBeenCalledWith('John', 'Doe', 'john@example.com', 'password123');
+            expect(screen.getByText(/I agree to the/i)).toBeInTheDocument();
+            expect(screen.getByRole('checkbox')).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /Create Account/i })).toBeInTheDocument();
         });
 
-        expect(mockPush).toHaveBeenCalledWith('/dashboard');
-    });
+        it('should render Google OAuth button', () => {
+            render(<RegisterForm />);
 
-    it('should show error message from Error instance on failure', async () => {
-        mockRegister.mockRejectedValue(new Error('Registration blocked'));
+            expect(screen.getByRole('button', { name: /Continue with Google/i })).toBeInTheDocument();
+        });
 
-        const user = userEvent.setup();
-        render(<RegisterForm />);
+        it('should render sign in link', () => {
+            render(<RegisterForm />);
 
-        await user.type(screen.getByLabelText(/First Name/i), 'Jane');
-        await user.type(screen.getByLabelText(/Last Name/i), 'Smith');
-        await user.type(screen.getByLabelText(/Email/i), 'jane@example.com');
-        await user.type(screen.getByLabelText(/Password/i), 'password123');
-
-        const checkbox = screen.getByRole('checkbox');
-        await user.click(checkbox);
-
-        await user.click(screen.getByRole('button', { name: /Create Account/i }));
-
-        await waitFor(() => {
-            expect(mockToast).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    title: 'Registration failed',
-                    description: 'Registration blocked',
-                    variant: 'destructive',
-                })
-            );
+            expect(screen.getByText(/Already have an account/i)).toBeInTheDocument();
+            expect(screen.getByRole('link', { name: /sign in/i })).toBeInTheDocument();
         });
     });
 
-    it('should show fallback error toast when registration fails with non-Error', async () => {
-        mockRegister.mockRejectedValue('oops');
+    // =========================================================================
+    // Form Validation Tests
+    // =========================================================================
 
-        const user = userEvent.setup();
-        render(<RegisterForm />);
+    describe('Form Validation', () => {
+        it('should show validation error if terms are not accepted', async () => {
+            const user = userEvent.setup();
+            render(<RegisterForm />);
 
-        await user.type(screen.getByLabelText(/First Name/i), 'John');
-        await user.type(screen.getByLabelText(/Last Name/i), 'Doe');
-        await user.type(screen.getByLabelText(/Email/i), 'john@example.com');
-        await user.type(screen.getByLabelText(/Password/i), 'password123');
+            // Fill other fields with valid data
+            await user.type(screen.getByPlaceholderText('John'), 'John');
+            await user.type(screen.getByPlaceholderText('Doe'), 'Doe');
+            await user.type(screen.getByPlaceholderText('you@company.com'), 'john@example.com');
+            await user.type(screen.getByPlaceholderText('••••••••'), 'Password123');
 
-        const checkbox = screen.getByRole('checkbox');
-        await user.click(checkbox);
+            // Submit without checking box
+            await user.click(screen.getByRole('button', { name: /Create Account/i }));
 
-        await user.click(screen.getByRole('button', { name: /Create Account/i }));
+            // Check for validation error
+            expect(await screen.findByText("You must accept the Terms and Privacy Policy")).toBeInTheDocument();
+            expect(mockRegister).not.toHaveBeenCalled();
+        });
 
-        await waitFor(() => {
-            expect(mockToast).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    title: 'Registration failed',
-                    description: 'Please try again later.',
-                    variant: 'destructive',
-                })
-            );
+        it('should not submit with password missing uppercase', async () => {
+            const user = userEvent.setup();
+            render(<RegisterForm />);
+
+            await user.type(screen.getByPlaceholderText('John'), 'John');
+            await user.type(screen.getByPlaceholderText('Doe'), 'Doe');
+            await user.type(screen.getByPlaceholderText('you@company.com'), 'john@example.com');
+            await user.type(screen.getByPlaceholderText('••••••••'), 'password123'); // no uppercase
+
+            const checkbox = screen.getByRole('checkbox');
+            await user.click(checkbox);
+
+            await user.click(screen.getByRole('button', { name: /Create Account/i }));
+
+            // Wait a bit
+            await new Promise(resolve => setTimeout(resolve, 100));
+            expect(mockRegister).not.toHaveBeenCalled();
         });
     });
 
-    it('should show loading indicator while submitting', async () => {
-        let resolveRegister: (() => void) | null = null;
-        const pending = new Promise<void>((resolve) => {
-            // wrap the resolver so the optional call below is a plain zero-arg function
-            resolveRegister = () => resolve();
+    // =========================================================================
+    // Registration Flow Tests
+    // =========================================================================
+
+    describe('Registration Flow', () => {
+        it('should submit successfully when all fields valid and terms accepted', async () => {
+            const user = userEvent.setup();
+            render(<RegisterForm />);
+
+            // Fill fields with valid password (has uppercase, lowercase, number, 8+ chars)
+            await user.type(screen.getByPlaceholderText('John'), 'John');
+            await user.type(screen.getByPlaceholderText('Doe'), 'Doe');
+            await user.type(screen.getByPlaceholderText('you@company.com'), 'john@example.com');
+            await user.type(screen.getByPlaceholderText('••••••••'), 'Password123');
+
+            // Check the terms checkbox
+            const checkbox = screen.getByRole('checkbox');
+            await user.click(checkbox);
+
+            // Submit
+            await user.click(screen.getByRole('button', { name: /Create Account/i }));
+
+            await waitFor(() => {
+                expect(mockRegister).toHaveBeenCalledWith('John', 'Doe', 'john@example.com', 'Password123');
+            });
+
+            await waitFor(() => {
+                expect(mockPush).toHaveBeenCalledWith('/dashboard');
+            });
         });
-        mockRegister.mockReturnValue(pending);
 
-        const user = userEvent.setup();
-        render(<RegisterForm />);
+        it('should show error message from Error instance on failure', async () => {
+            mockRegister.mockRejectedValue(new Error('Registration blocked'));
 
-        await user.type(screen.getByLabelText(/First Name/i), 'John');
-        await user.type(screen.getByLabelText(/Last Name/i), 'Doe');
-        await user.type(screen.getByLabelText(/Email/i), 'john@example.com');
-        await user.type(screen.getByLabelText(/Password/i), 'password123');
+            const user = userEvent.setup();
+            render(<RegisterForm />);
 
-        const checkbox = screen.getByRole('checkbox');
-        await user.click(checkbox);
+            await user.type(screen.getByPlaceholderText('John'), 'Jane');
+            await user.type(screen.getByPlaceholderText('Doe'), 'Smith');
+            await user.type(screen.getByPlaceholderText('you@company.com'), 'jane@example.com');
+            await user.type(screen.getByPlaceholderText('••••••••'), 'Password123');
 
-        await user.click(screen.getByRole('button', { name: /Create Account/i }));
+            const checkbox = screen.getByRole('checkbox');
+            await user.click(checkbox);
 
-        expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: /Create Account/i }));
 
-        // Resolver is set inside the pending promise above; assert and invoke directly to satisfy TS
-        expect(resolveRegister).not.toBeNull();
-        resolveRegister!();
-        await waitFor(() => {
-            expect(mockRegister).toHaveBeenCalled();
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Registration failed',
+                        description: 'Registration blocked',
+                        variant: 'destructive',
+                    })
+                );
+            });
+        });
+
+        it('should show fallback error toast when registration fails with non-Error', async () => {
+            mockRegister.mockRejectedValue('oops');
+
+            const user = userEvent.setup();
+            render(<RegisterForm />);
+
+            await user.type(screen.getByPlaceholderText('John'), 'John');
+            await user.type(screen.getByPlaceholderText('Doe'), 'Doe');
+            await user.type(screen.getByPlaceholderText('you@company.com'), 'john@example.com');
+            await user.type(screen.getByPlaceholderText('••••••••'), 'Password123');
+
+            const checkbox = screen.getByRole('checkbox');
+            await user.click(checkbox);
+
+            await user.click(screen.getByRole('button', { name: /Create Account/i }));
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Registration failed',
+                        description: 'Please try again later.',
+                        variant: 'destructive',
+                    })
+                );
+            });
+        });
+    });
+
+    // =========================================================================
+    // Loading State Tests
+    // =========================================================================
+
+    describe('Loading State', () => {
+        it('should show loading indicator while submitting', async () => {
+            mockRegister.mockImplementation(() => new Promise(() => {}));
+
+            const user = userEvent.setup();
+            render(<RegisterForm />);
+
+            await user.type(screen.getByPlaceholderText('John'), 'John');
+            await user.type(screen.getByPlaceholderText('Doe'), 'Doe');
+            await user.type(screen.getByPlaceholderText('you@company.com'), 'john@example.com');
+            await user.type(screen.getByPlaceholderText('••••••••'), 'Password123');
+
+            const checkbox = screen.getByRole('checkbox');
+            await user.click(checkbox);
+
+            fireEvent.click(screen.getByRole('button', { name: /Create Account/i }));
+
+            await waitFor(() => {
+                expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+            });
+        });
+    });
+
+    // =========================================================================
+    // Google OAuth Tests
+    // =========================================================================
+
+    describe('Google OAuth', () => {
+        it('should call signInWithOAuth when Google button is clicked', async () => {
+            const user = userEvent.setup();
+            render(<RegisterForm />);
+
+            await user.click(screen.getByRole('button', { name: /Continue with Google/i }));
+
+            await waitFor(() => {
+                expect(mockSignInWithOAuth).toHaveBeenCalledWith('google');
+            });
+        });
+
+        it('should show error toast if Google OAuth fails', async () => {
+            mockSignInWithOAuth.mockRejectedValue(new Error('Google connection failed'));
+
+            const user = userEvent.setup();
+            render(<RegisterForm />);
+
+            await user.click(screen.getByRole('button', { name: /Continue with Google/i }));
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Google Sign-up Failed',
+                        description: 'Google connection failed',
+                        variant: 'destructive',
+                    })
+                );
+            });
         });
     });
 });

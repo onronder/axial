@@ -306,7 +306,7 @@ describe('BillingSettings Component', () => {
         it('should render Enterprise plan card', async () => {
             await renderBilling();
 
-            expect(screen.getByText('Contact Us')).toBeInTheDocument();
+            expect(screen.getByText('Contact Sales')).toBeInTheDocument();
         });
 
         it('should show "Most Popular" badge on Pro plan', async () => {
@@ -337,22 +337,22 @@ describe('BillingSettings Component', () => {
         it('should show Starter features', async () => {
             await renderBilling();
 
-            expect(screen.getByText('100 queries/month')).toBeInTheDocument();
-            expect(screen.getByText('2 connected sources')).toBeInTheDocument();
+            expect(screen.getByText('50 files, 100 MB storage')).toBeInTheDocument();
+            expect(screen.getByText('5 connected data sources')).toBeInTheDocument();
         });
 
         it('should show Pro features', async () => {
             await renderBilling();
 
-            expect(screen.getByText('Unlimited queries')).toBeInTheDocument();
+            expect(screen.getByText('2,000 files, 10 GB storage')).toBeInTheDocument();
             expect(screen.getByText('Priority support')).toBeInTheDocument();
         });
 
         it('should show Enterprise features', async () => {
             await renderBilling();
 
-            expect(screen.getByText('Everything in Pro')).toBeInTheDocument();
-            expect(screen.getByText('SSO & SAML')).toBeInTheDocument();
+            expect(screen.getByText('Amazon S3 connector')).toBeInTheDocument();
+            expect(screen.getByText('SLA guarantee')).toBeInTheDocument();
         });
     });
 
@@ -560,7 +560,7 @@ describe('BillingSettings Component', () => {
             fireEvent.click(manageButtons[0]);
 
             await waitFor(() => {
-                expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/portal', '_blank');
+                expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/portal', '_blank', 'noopener,noreferrer');
             });
         });
 
@@ -609,7 +609,7 @@ describe('BillingSettings Component', () => {
             const invoiceButton = within(invoiceRow).getByRole('button');
             fireEvent.click(invoiceButton);
 
-            expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/invoices/inv-1', '_blank');
+            expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/invoices/inv-1', '_blank', 'noopener,noreferrer');
         });
 
         it('should render formatted invoice amount and fallback date on invalid date', async () => {

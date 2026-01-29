@@ -190,9 +190,41 @@ export function DLQDashboard() {
 
     useEffect(() => {
         fetchData();
-        // Poll every 30 seconds
-        const interval = setInterval(fetchData, 30000);
-        return () => clearInterval(interval);
+        
+        let interval: NodeJS.Timeout | null = null;
+        
+        const startPolling = () => {
+            if (!interval) {
+                interval = setInterval(fetchData, 30000);
+            }
+        };
+        
+        const stopPolling = () => {
+            if (interval) {
+                clearInterval(interval);
+                interval = null;
+            }
+        };
+        
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                fetchData(); // Immediate refresh when tab becomes visible
+                startPolling();
+            } else {
+                stopPolling();
+            }
+        };
+        
+        // Start polling initially
+        startPolling();
+        
+        // Listen for visibility changes to pause/resume polling
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            stopPolling();
+        };
     }, [fetchData]);
 
     // Retry single task

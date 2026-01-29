@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Check, CreditCard, Sparkles, Users, Zap, Building2, ExternalLink, Receipt, Calendar } from "lucide-react";
+import { Check, CreditCard, Sparkles, Users, Zap, Building2, ExternalLink, Receipt, Calendar, AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -145,6 +145,7 @@ export function BillingSettings() {
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [isPortalLoading, setIsPortalLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [isEnterpriseModalOpen, setIsEnterpriseModalOpen] = useState(false);
@@ -164,10 +165,12 @@ export function BillingSettings() {
   const fetchInvoices = useCallback(async () => {
     try {
       setIsLoadingInvoices(true);
+      setInvoiceError(null);
       const response = await api.get("/billing/invoices");
       setInvoices(response.data || []);
     } catch (error) {
       console.error("[Billing] Failed to fetch invoices:", error);
+      setInvoiceError("Failed to load billing history");
     } finally {
       setIsLoadingInvoices(false);
     }
@@ -472,6 +475,15 @@ export function BillingSettings() {
           {isLoadingInvoices ? (
             <div className="flex items-center justify-center py-8">
               <Spinner className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : invoiceError ? (
+            <div className="text-center py-8">
+              <AlertTriangle className="h-8 w-8 mx-auto text-destructive mb-2" />
+              <p className="text-sm text-destructive mb-4">{invoiceError}</p>
+              <Button variant="outline" size="sm" onClick={fetchInvoices}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
             </div>
           ) : invoices.length === 0 ? (
             <div className="text-center py-8">

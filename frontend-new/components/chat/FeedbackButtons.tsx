@@ -187,8 +187,12 @@ export function FeedbackButtons({
             >
                 {/* Thank you message (briefly shown after feedback) */}
                 {showThankYou && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1 mr-2 animate-fade-in">
-                        <Check className="h-3 w-3 text-green-500" />
+                    <span
+                        className="text-xs text-muted-foreground flex items-center gap-1 mr-2 animate-fade-in motion-reduce:animate-none"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <Check className="h-3 w-3 text-green-500" aria-hidden="true" />
                         Thanks!
                     </span>
                 )}
@@ -198,9 +202,9 @@ export function FeedbackButtons({
                     variant="ghost"
                     size="sm"
                     className={cn(
-                        "h-7 w-7 p-0 rounded-full transition-all",
-                        isPositiveSelected 
-                            ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400" 
+                        "h-7 w-7 p-0 rounded-full transition-all motion-reduce:transition-none",
+                        isPositiveSelected
+                            ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
                             : "text-muted-foreground hover:text-foreground hover:bg-muted",
                         hasRating && !isPositiveSelected && "opacity-40",
                         (disabled || isSubmitting) && "cursor-not-allowed opacity-50"
@@ -208,14 +212,16 @@ export function FeedbackButtons({
                     onClick={handlePositive}
                     disabled={disabled || isSubmitting}
                     title={isPositiveSelected ? "Marked as helpful" : "Mark as helpful"}
+                    aria-label={isPositiveSelected ? "Response marked as helpful" : "Mark response as helpful"}
+                    aria-pressed={isPositiveSelected}
                 >
                     {isSubmitting && isPositiveSelected ? (
-                        <Spinner className="h-3.5 w-3.5 animate-spin" />
+                        <Spinner className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-label="Submitting feedback" />
                     ) : (
                         <ThumbsUp className={cn(
                             "h-3.5 w-3.5",
                             isPositiveSelected && "fill-current"
-                        )} />
+                        )} aria-hidden="true" />
                     )}
                 </Button>
                 
@@ -224,9 +230,9 @@ export function FeedbackButtons({
                     variant="ghost"
                     size="sm"
                     className={cn(
-                        "h-7 w-7 p-0 rounded-full transition-all",
-                        isNegativeSelected 
-                            ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" 
+                        "h-7 w-7 p-0 rounded-full transition-all motion-reduce:transition-none",
+                        isNegativeSelected
+                            ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
                             : "text-muted-foreground hover:text-foreground hover:bg-muted",
                         hasRating && !isNegativeSelected && "opacity-40",
                         (disabled || isSubmitting) && "cursor-not-allowed opacity-50"
@@ -234,14 +240,16 @@ export function FeedbackButtons({
                     onClick={handleNegative}
                     disabled={disabled || isSubmitting}
                     title={isNegativeSelected ? "Marked as not helpful" : "Mark as not helpful"}
+                    aria-label={isNegativeSelected ? "Response marked as not helpful" : "Mark response as not helpful"}
+                    aria-pressed={isNegativeSelected}
                 >
                     {isSubmitting && isNegativeSelected ? (
-                        <Spinner className="h-3.5 w-3.5 animate-spin" />
+                        <Spinner className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-label="Submitting feedback" />
                     ) : (
                         <ThumbsDown className={cn(
                             "h-3.5 w-3.5",
                             isNegativeSelected && "fill-current"
-                        )} />
+                        )} aria-hidden="true" />
                     )}
                 </Button>
             </div>

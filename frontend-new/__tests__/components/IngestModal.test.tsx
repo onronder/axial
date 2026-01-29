@@ -50,6 +50,25 @@ vi.mock('@/hooks/useProfile', () => ({
     ProfileProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+vi.mock('@/hooks/useIngestionProgress', () => ({
+    useIngestionProgress: () => ({
+        registerJob: vi.fn(),
+        unregisterJob: vi.fn(),
+        updateJobProgress: vi.fn(),
+        markJobCompleted: vi.fn(),
+        hasJobCompleted: vi.fn().mockReturnValue(false),
+        currentJobId: null,
+        overallProgress: 0,
+        jobFiles: [],
+        isComplete: false,
+        hasAnyIngestion: false,
+        globalToastMessage: null,
+        setGlobalToastMessage: vi.fn(),
+        clearGlobalToast: vi.fn(),
+    }),
+    IngestionProgressProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 vi.mock('@/hooks/useUsage', () => ({
     useUsage: () => ({
         usage: null,
@@ -565,7 +584,7 @@ describe('IngestModal', () => {
 
             await userEvent.click(screen.getByText('Manage in Notion'))
 
-            expect(openSpy).toHaveBeenCalledWith('https://notion.so/my-integrations', '_blank');
+            expect(openSpy).toHaveBeenCalledWith('https://notion.so/my-integrations', '_blank', 'noopener,noreferrer');
             openSpy.mockRestore();
         });
     })

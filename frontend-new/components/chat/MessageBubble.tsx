@@ -95,14 +95,25 @@ function renderSegments(
       <span
         key={`${segment.key}-${idx}`}
         className={cn(
-          "inline-flex items-center justify-center h-4 min-w-4 px-1 mx-0.5 text-[10px] font-bold rounded cursor-pointer transition-all",
+          "inline-flex items-center justify-center h-4 min-w-4 px-1 mx-0.5 text-[10px] font-bold rounded cursor-pointer",
+          "transition-all duration-150 motion-reduce:transition-none",
           isHighlighted
             ? "bg-primary text-primary-foreground ring-2 ring-primary ring-offset-1"
             : "bg-primary/20 text-primary hover:bg-primary/30"
         )}
+        role="button"
+        tabIndex={0}
         title={`Source ${segment.value}`}
+        aria-label={`Citation ${segment.value}, click to highlight source`}
         onMouseEnter={() => setHighlightedIndex(segment.value)}
         onMouseLeave={() => setHighlightedIndex(null)}
+        onFocus={() => setHighlightedIndex(segment.value)}
+        onBlur={() => setHighlightedIndex(null)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            setHighlightedIndex(isHighlighted ? null : segment.value);
+          }
+        }}
       >
         {segment.value}
       </span>
@@ -199,9 +210,11 @@ export function MessageBubble({
   return (
     <div
       className={cn(
-        "flex items-start gap-3 animate-fade-in",
+        "flex items-start gap-3 animate-fade-in motion-reduce:animate-none",
         isUser && "flex-row-reverse"
       )}
+      role="article"
+      aria-label={`${isUser ? 'Your' : 'AI'} message`}
     >
       <div
         className={cn(
@@ -226,12 +239,19 @@ export function MessageBubble({
               : "bg-muted/50 border border-border text-foreground backdrop-blur-sm shadow-md"
           )}
         >
-          <div className={cn("prose prose-sm max-w-none", isUser ? "prose-invert" : "dark:prose-invert")}>
+          <div
+            className={cn("prose prose-sm max-w-none", isUser ? "prose-invert" : "dark:prose-invert")}
+            aria-live={isStreaming ? "polite" : undefined}
+            aria-busy={isStreaming}
+          >
             {parsedLines.map((line, i) =>
               renderLine(line, i, highlightedCitationIndex, setHighlightedCitationIndex)
             )}
             {isStreaming && (
-              <span className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse rounded-sm" />
+              <span
+                className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse motion-reduce:animate-none rounded-sm"
+                aria-label="AI is typing"
+              />
             )}
           </div>
         </div>

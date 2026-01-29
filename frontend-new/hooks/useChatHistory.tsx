@@ -1,11 +1,34 @@
 'use client';
 
 import { createContext, useContext, useCallback, ReactNode, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useUsage } from "@/hooks/useUsage";
 import { Source, ScopeContext, ScopeCandidate } from '@/types';
+
+// =============================================================================
+// QUERY KEY FACTORY
+// =============================================================================
+
+/**
+ * Query key factory for chat-related queries.
+ * Provides type-safe, hierarchical query keys for React Query caching.
+ *
+ * Usage:
+ * - chatKeys.all: Base key for all chat queries (for mass invalidation)
+ * - chatKeys.lists(): Key for conversation lists
+ * - chatKeys.list(filter): Key for filtered conversation lists
+ * - chatKeys.messages(): Base key for all message queries
+ * - chatKeys.message(id): Key for a specific conversation's messages
+ */
+export const chatKeys = {
+    all: ['chat'] as const,
+    lists: () => [...chatKeys.all, 'list'] as const,
+    list: (filter?: string) => [...chatKeys.lists(), filter] as const,
+    messages: () => [...chatKeys.all, 'messages'] as const,
+    message: (conversationId: string) => [...chatKeys.messages(), conversationId] as const,
+};
 
 export interface Message {
     id: string;
@@ -58,8 +81,8 @@ interface ChatHistoryContextType {
 
 const ChatHistoryContext = createContext<ChatHistoryContextType | null>(null);
 
-// Query key for chat history
-export const CHAT_HISTORY_KEY = ['chatHistory'] as const;
+// Query key for chat history (kept for backward compatibility, uses chatKeys factory)
+export const CHAT_HISTORY_KEY = chatKeys.lists();
 
 /**
  * Fetch conversations from API.
@@ -261,6 +284,98 @@ export const useChatHistory = (): ChatHistoryContextType => {
     }
     return context;
 };
+
+// =============================================================================
+// MESSAGE CACHING HOOKS
+// =============================================================================
+
+/**
+ * Helper hook to check chat access (extracted for reuse)
+ */
+export function useChatAccessCheck() {
+    const { plan } = useUsage();
+    const normalizedPlan = typeof plan === "string" ? plan.toLowerCase() : null;
+    const planReady = normalizedPlan !== null;
+    const hasChatAccess = planReady && normalizedPlan !== "free" && normalizedPlan !== "none";
+    return { hasChatAccess, planReady };
+}
+
+/**
+ * Fetch messages for a specific conversation.
+ * Uses React Query for caching and automatic background refetching.
+ *
+ * @param conversationId - The conversation ID to fetch messages for (null to disable)
+ * @returns Query result with messages, loading state, and error handling
+ *
+ * Cache behavior:
+ * - staleTime: 2 minutes (messages shown as fresh)
+ * - gcTime: 10 minutes (cached messages kept in memory)
+ */
+export function useConversationMessages(conversationId: string | null) {
+    const { hasChatAccess, planReady } = useChatAccessCheck();
+
+    return useQuery({
+        queryKey: chatKeys.message(conversationId || ''),
+        queryFn: async () => {
+            const { data } = await api.get(`/conversations/${conversationId}/messages`);
+            return (data as Message[]) || [];
+        },
+        enabled: !!conversationId && hasChatAccess && planReady,
+        staleTime: 2 * 60 * 1000, // 2 minutes
+        gcTime: 10 * 60 * 1000,   // 10 minutes
+    });
+}
+
+/**
+ * Hook for invalidating message cache.
+ * Call this after sending a new message to ensure fresh data.
+ *
+ * @returns Function to invalidate messages for a specific conversation
+ */
+export function useInvalidateMessages() {
+    const queryClient = useQueryClient();
+    return useCallback((conversationId: string) => {
+        queryClient.invalidateQueries({ queryKey: chatKeys.message(conversationId) });
+    }, [queryClient]);
+}
+
+/**
+ * Hook for optimistically updating message cache.
+ * Used to add new messages to cache before server confirmation.
+ *
+ * @returns Function to add a message to the cache
+ */
+export function useOptimisticMessageUpdate() {
+    const queryClient = useQueryClient();
+
+    return useCallback((conversationId: string, newMessage: Message) => {
+        queryClient.setQueryData<Message[]>(
+            chatKeys.message(conversationId),
+            (old) => [...(old || []), newMessage]
+        );
+    }, [queryClient]);
+}
+
+/**
+ * Prefetch messages for a conversation.
+ * Useful for prefetching when hovering over conversation items.
+ *
+ * @param queryClient - The query client instance
+ * @param conversationId - The conversation ID to prefetch
+ */
+export async function prefetchConversationMessages(
+    queryClient: QueryClient,
+    conversationId: string
+) {
+    await queryClient.prefetchQuery({
+        queryKey: chatKeys.message(conversationId),
+        queryFn: async () => {
+            const { data } = await api.get(`/conversations/${conversationId}/messages`);
+            return (data as Message[]) || [];
+        },
+        staleTime: 2 * 60 * 1000,
+    });
+}
 
 /**
  * Group conversations by date for sidebar display.

@@ -169,6 +169,78 @@ describe('GeneralSettings - Danger Zone', () => {
         });
     });
 
+    describe('Form Validation', () => {
+        it('should show error when first name is empty', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.clear(screen.getByLabelText('First Name'));
+            await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+            expect(screen.getByText(/first name is required/i)).toBeInTheDocument();
+            expect(mockUpdateProfile).not.toHaveBeenCalled();
+        });
+
+        it('should show error when last name is empty', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.clear(screen.getByLabelText('Last Name'));
+            await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+            expect(screen.getByText(/last name is required/i)).toBeInTheDocument();
+            expect(mockUpdateProfile).not.toHaveBeenCalled();
+        });
+
+        it('should show error when first name is too short', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.clear(screen.getByLabelText('First Name'));
+            await userEvent.type(screen.getByLabelText('First Name'), 'J');
+            await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+            expect(screen.getByText(/at least 2 characters/i)).toBeInTheDocument();
+            expect(mockUpdateProfile).not.toHaveBeenCalled();
+        });
+
+        it('should show error when last name is too short', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.clear(screen.getByLabelText('Last Name'));
+            await userEvent.type(screen.getByLabelText('Last Name'), 'D');
+            await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+            expect(screen.getByText(/at least 2 characters/i)).toBeInTheDocument();
+            expect(mockUpdateProfile).not.toHaveBeenCalled();
+        });
+
+        it('should clear error when user starts typing', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.clear(screen.getByLabelText('First Name'));
+            await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+            expect(screen.getByText(/first name is required/i)).toBeInTheDocument();
+
+            await userEvent.type(screen.getByLabelText('First Name'), 'John');
+
+            expect(screen.queryByText(/first name is required/i)).not.toBeInTheDocument();
+        });
+
+        it('should trim whitespace before saving', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.clear(screen.getByLabelText('First Name'));
+            await userEvent.type(screen.getByLabelText('First Name'), '  Jane  ');
+            await userEvent.clear(screen.getByLabelText('Last Name'));
+            await userEvent.type(screen.getByLabelText('Last Name'), '  Smith  ');
+            await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+            expect(mockUpdateProfile).toHaveBeenCalledWith({
+                first_name: 'Jane',
+                last_name: 'Smith',
+            });
+        });
+    });
+
     describe('Theme Selection', () => {
         it('should update theme when selecting Dark mode', async () => {
             const user = userEvent.setup();

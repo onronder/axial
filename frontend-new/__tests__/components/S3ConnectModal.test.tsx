@@ -71,7 +71,9 @@ describe('S3ConnectModal Component', () => {
     it('should not render when closed', () => {
       render(<S3ConnectModal {...defaultProps} open={false} />);
 
-      expect(screen.queryByText('Connect Amazon S3')).not.toBeInTheDocument();
+      // Radix Dialog may keep content mounted but hidden - check for dialog role
+      const dialog = screen.queryByRole('dialog');
+      expect(dialog).not.toBeInTheDocument();
     });
 
     it('should render all form fields', () => {
@@ -79,14 +81,21 @@ describe('S3ConnectModal Component', () => {
 
       expect(screen.getByLabelText(/Access Key ID/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/Secret Access Key/i)).toBeInTheDocument();
-      expect(screen.getByText(/Bucket Name/i)).toBeInTheDocument();
-      expect(screen.getByText(/Folder Prefix/i)).toBeInTheDocument();
+      // Use getAllByText since there may be multiple matching elements (label + placeholder)
+      const bucketNameElements = screen.getAllByText(/Bucket Name/i);
+      expect(bucketNameElements.length).toBeGreaterThan(0);
+      const folderPrefixElements = screen.getAllByText(/Folder Prefix/i);
+      expect(folderPrefixElements.length).toBeGreaterThan(0);
     });
 
     it('should render the region dropdown with default value', () => {
       render(<S3ConnectModal {...defaultProps} />);
 
-      expect(screen.getByText('US East (N. Virginia)')).toBeInTheDocument();
+      // The Select component should have a trigger showing the default region
+      const regionSelect = screen.getByRole('combobox', { name: /region/i });
+      expect(regionSelect).toBeInTheDocument();
+      // Default value is us-east-1 which displays as "US East (N. Virginia)"
+      expect(regionSelect).toHaveTextContent(/US East.*Virginia/i);
     });
 
     it('should render security notice about encryption', () => {
@@ -733,13 +742,12 @@ describe('S3ConnectModal Component', () => {
       await user.type(prefixInput, 'documents/');
 
       // Open region dropdown and select different region
-      const regionTrigger = screen.getByText('US East (N. Virginia)');
-      fireEvent.click(regionTrigger);
+      const regionTrigger = screen.getByRole('combobox', { name: /region/i });
+      await user.click(regionTrigger);
 
-      await waitFor(() => {
-        const euWestOption = screen.getByText('Europe (Ireland)');
-        fireEvent.click(euWestOption);
-      });
+      // Wait for dropdown to open and select Europe (Ireland)
+      const euWestOption = await screen.findByRole('option', { name: /Europe.*Ireland/i });
+      await user.click(euWestOption);
 
       // Submit and verify region is sent
       const connectButton = screen.getByRole('button', { name: /Connect/i });

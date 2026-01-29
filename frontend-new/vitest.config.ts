@@ -13,16 +13,19 @@ export default defineConfig({
         pool: 'forks',
         poolOptions: {
             forks: {
-                singleFork: true,
-                isolate: false,
+                singleFork: false,
+                isolate: true,
             },
         },
-        // Disable file parallelization
-        fileParallelism: false,
+        // Enable file parallelization with limited workers
+        fileParallelism: true,
+        maxWorkers: 3,
         // Increase test timeout
         testTimeout: 30000,
         // Clear mocks between tests
         clearMocks: true,
+        // Restore mocks between tests
+        restoreMocks: true,
         // Disable transforms caching to reduce memory
         cache: false,
         coverage: {

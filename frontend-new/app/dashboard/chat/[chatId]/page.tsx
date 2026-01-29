@@ -21,6 +21,27 @@ import { Spinner } from "@/components/ui/spinner";
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+/** localStorage key for persisting model preference */
+const MODEL_STORAGE_KEY = 'axio-chat-model-preference';
+
+/**
+ * Get persisted model preference from localStorage.
+ * Returns 'fast' as default if not set or invalid.
+ */
+function getPersistedModel(): ModelId {
+    if (typeof window === 'undefined') return 'fast';
+    const saved = localStorage.getItem(MODEL_STORAGE_KEY);
+    return (saved === 'fast' || saved === 'smart') ? saved as ModelId : 'fast';
+}
+
+/**
+ * Save model preference to localStorage.
+ */
+function persistModel(model: ModelId): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(MODEL_STORAGE_KEY, model);
+}
+
 /** Conditional logging - only logs in development */
 const devLog = (...args: Parameters<typeof console.log>) => {
     if (isDev) console.log(...args);
@@ -111,7 +132,8 @@ export default function ChatPage() {
     const [isTyping, setIsTyping] = useState(false);
     const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
     const [showOnboarding, setShowOnboarding] = useState(false);
-    const [selectedModel, setSelectedModel] = useState<ModelId>('fast');
+    // Initialize model from localStorage for persistence across sessions
+    const [selectedModel, setSelectedModel] = useState<ModelId>(() => getPersistedModel());
     
     // RAG thinking status - shows what the system is doing
     const [thinkingStatus, setThinkingStatus] = useState<ThinkingStatus | null>(null);
@@ -328,6 +350,15 @@ export default function ChatPage() {
 
         loadMessages();
     }, [activeConversationId]); // ONLY activeConversationId - not getMessagesById!
+
+    /**
+     * Handle model selection with localStorage persistence.
+     * Persists the choice so it survives page refreshes and new chat sessions.
+     */
+    const handleModelSelect = useCallback((model: ModelId) => {
+        setSelectedModel(model);
+        persistModel(model);
+    }, []);
 
     /**
      * Helper: Update URL after streaming completes (if needed)
@@ -755,7 +786,7 @@ export default function ChatPage() {
                 streamingMessage={streamingMessage}
                 disabled={isDisabled}
                 selectedModel={selectedModel}
-                onModelSelect={setSelectedModel}
+                onModelSelect={handleModelSelect}
                 isResending={isResending}
                 thinkingStatus={thinkingStatus}
                 conversationId={activeConversationId || undefined}

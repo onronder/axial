@@ -82,9 +82,24 @@ export function TeamSettings() {
   const [inviteRole, setInviteRole] = useState<Role>("viewer");
   const [isInviting, setIsInviting] = useState(false);
 
-  // Email validation
-  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const isEmailValid = EMAIL_REGEX.test(inviteEmail.trim());
+  // Email validation - requires at least 2 chars in TLD
+  const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  const [emailError, setEmailError] = useState<string | null>(null);
+  
+  const validateEmail = (email: string): string | null => {
+    if (!email.trim()) return null; // Don't show error for empty
+    if (!EMAIL_REGEX.test(email.trim())) {
+      return 'Please enter a valid email address';
+    }
+    return null;
+  };
+  
+  const handleEmailChange = (value: string) => {
+    setInviteEmail(value);
+    setEmailError(validateEmail(value));
+  };
+  
+  const isEmailValid = inviteEmail.trim() !== '' && !emailError;
 
   // Bulk CSV import state
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
@@ -132,6 +147,12 @@ export function TeamSettings() {
       return false;
     }
     return true;
+  };
+
+  // Helper function to check if a member is the last admin
+  const isLastAdmin = (memberId: string): boolean => {
+    const activeAdmins = members.filter(m => m.role === 'admin' && m.status === 'active');
+    return activeAdmins.length === 1 && activeAdmins[0].id === memberId;
   };
 
   // Handle bulk CSV upload
@@ -407,8 +428,12 @@ export function TeamSettings() {
                   type="email"
                   placeholder="colleague@company.com"
                   value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onChange={(e) => handleEmailChange(e.target.value)}
+                  className={cn(emailError && "border-destructive")}
                 />
+                {emailError && (
+                  <p className="text-xs text-destructive">{emailError}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invite-role">Role</Label>
@@ -626,26 +651,37 @@ export function TeamSettings() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Select
-                        value={member.role}
-                        onValueChange={(value) => {
-                          if (!ensureCanManage("change roles")) return;
-                          updateMemberRole(member.id, value as Role);
-                        }}
-                        disabled={
-                          !canManageMembers ||
-                          (member.role === 'admin' && members.filter(m => m.role === 'admin' && m.status === 'active').length === 1)
-                        }
-                      >
-                        <SelectTrigger className="w-[110px] h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="editor">Editor</SelectItem>
-                          <SelectItem value="viewer">Viewer</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={member.role}
+                          onValueChange={(value) => {
+                            if (!ensureCanManage("change roles")) return;
+                            updateMemberRole(member.id, value as Role);
+                          }}
+                          disabled={!canManageMembers || isLastAdmin(member.id)}
+                        >
+                          <SelectTrigger className="w-[110px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="editor">Editor</SelectItem>
+                            <SelectItem value="viewer">Viewer</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {isLastAdmin(member.id) && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Lock className="h-4 w-4 text-muted-foreground cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Cannot change role of the last admin</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={status.className}>

@@ -14,7 +14,7 @@
  * - docs/ChatFeedback_Implementation_Spec.md (specification)
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { 
     BarChart3, 
@@ -25,6 +25,7 @@ import {
     TrendingDown,
     AlertTriangle,
     MessageSquare,
+    ShieldAlert,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -47,6 +48,8 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
+import { useProfile } from '@/hooks/useProfile';
 
 // =============================================================================
 // Types
@@ -101,9 +104,9 @@ interface SourceMetricsResponse {
 // API Functions
 // =============================================================================
 
-async function fetchFeedback(rating?: string): Promise<FeedbackResponse> {
+async function fetchFeedback(rating?: string, limit: number = 20): Promise<FeedbackResponse> {
     const params = new URLSearchParams();
-    params.set('limit', '20');
+    params.set('limit', String(limit));
     if (rating) params.set('rating', rating);
     
     const response = await api.get(`/analytics/feedback?${params.toString()}`);
@@ -120,18 +123,30 @@ async function fetchSourceMetrics(): Promise<SourceMetricsResponse> {
 // =============================================================================
 
 export default function FeedbackAnalyticsPage() {
+    const { profile, isLoading: profileLoading } = useProfile();
     const [ratingFilter, setRatingFilter] = useState<string>('all');
+    const [feedbackLimit, setFeedbackLimit] = useState(20);
+    
+    // Reset limit when filter changes
+    useEffect(() => {
+        setFeedbackLimit(20);
+    }, [ratingFilter]);
+    
+    // Authorization check - only admins and owners can view analytics
+    const isAuthorized = !profile?.role || profile?.role === 'admin'; // No role means owner
     
     // Fetch feedback data
     const { 
         data: feedbackData, 
         isLoading: feedbackLoading, 
+        isFetching: feedbackFetching,
         error: feedbackError,
         refetch: refetchFeedback,
     } = useQuery({
-        queryKey: ['feedback', ratingFilter],
-        queryFn: () => fetchFeedback(ratingFilter === 'all' ? undefined : ratingFilter),
+        queryKey: ['feedback', ratingFilter, feedbackLimit],
+        queryFn: () => fetchFeedback(ratingFilter === 'all' ? undefined : ratingFilter, feedbackLimit),
         staleTime: 60_000, // 1 minute
+        enabled: isAuthorized && !profileLoading,
     });
     
     // Fetch source metrics
@@ -143,12 +158,41 @@ export default function FeedbackAnalyticsPage() {
         queryKey: ['sourceMetrics'],
         queryFn: fetchSourceMetrics,
         staleTime: 60_000,
+        enabled: isAuthorized && !profileLoading,
     });
     
     const handleRefresh = useCallback(() => {
         refetchFeedback();
         refetchMetrics();
     }, [refetchFeedback, refetchMetrics]);
+    
+    const handleLoadMore = useCallback(() => {
+        setFeedbackLimit(prev => prev + 20);
+    }, []);
+    
+    // Loading state while checking authorization
+    if (profileLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Spinner className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
+    
+    // Authorization check - show access denied for non-admins
+    if (!isAuthorized) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center">
+                    <ShieldAlert className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+                    <p className="text-muted-foreground">
+                        Analytics are only available to team admins and owners.
+                    </p>
+                </div>
+            </div>
+        );
+    }
     
     const summary = feedbackData?.summary;
     
@@ -328,7 +372,13 @@ export default function FeedbackAnalyticsPage() {
                             
                             {feedbackData?.has_more && (
                                 <div className="text-center pt-4">
-                                    <Button variant="outline" size="sm">
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={handleLoadMore}
+                                        disabled={feedbackFetching}
+                                    >
+                                        {feedbackFetching && <Spinner className="h-4 w-4 mr-2 animate-spin" />}
                                         Load More
                                     </Button>
                                 </div>

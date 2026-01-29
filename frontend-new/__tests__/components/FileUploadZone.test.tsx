@@ -52,6 +52,25 @@ vi.mock('@/components/ingestion/IngestionProgressModal', () => ({
   IngestionProgressModal: () => null,
 }));
 
+vi.mock('@/hooks/useIngestionProgress', () => ({
+  useIngestionProgress: () => ({
+    registerJob: vi.fn(),
+    unregisterJob: vi.fn(),
+    updateJobProgress: vi.fn(),
+    markJobCompleted: vi.fn(),
+    hasJobCompleted: vi.fn().mockReturnValue(false),
+    currentJobId: null,
+    overallProgress: 0,
+    jobFiles: [],
+    isComplete: false,
+    hasAnyIngestion: false,
+    globalToastMessage: null,
+    setGlobalToastMessage: vi.fn(),
+    clearGlobalToast: vi.fn(),
+  }),
+  IngestionProgressProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 const mockSource: DataSource = {
   id: 'file-upload',
   name: 'File Upload',

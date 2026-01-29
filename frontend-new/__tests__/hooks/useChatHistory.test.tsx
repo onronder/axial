@@ -87,7 +87,7 @@ describe('useChatHistory', () => {
                 expect(result.current.isLoading).toBe(false);
             });
 
-            expect(mockApiGet).toHaveBeenCalledWith('/conversations');
+            expect(mockApiGet).toHaveBeenCalledWith('/conversations', expect.objectContaining({ signal: expect.any(AbortSignal) }));
             expect(result.current.conversations).toEqual(mockConversations);
         });
 

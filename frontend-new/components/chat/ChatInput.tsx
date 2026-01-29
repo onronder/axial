@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, KeyboardEvent } from "react";
+import { useState, useRef, KeyboardEvent, ChangeEvent } from "react";
 import { Send, Paperclip, Sparkles, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,18 +12,44 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { validModels, ModelId } from "@/lib/types";
 
+/** Supported file types for attachment */
+const ACCEPTED_FILE_TYPES = ".pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls";
+
 interface ChatInputProps {
   onSend: (message: string) => void;
+  /** Callback when files are selected for attachment */
+  onFileSelect?: (files: File[]) => void;
   disabled?: boolean;
   selectedModel: ModelId;
   onModelSelect: (model: ModelId) => void;
 }
 
-export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: ChatInputProps) {
+export function ChatInput({ onSend, onFileSelect, disabled, selectedModel, onModelSelect }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [isFocused, setIsFocused] = useState(false);
-  // Internal state removed: const [selectedModel, setSelectedModel] = useState<ModelId>('fast');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Handle file attachment button click
+   */
+  const handleFileClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  /**
+   * Handle file selection from input
+   */
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+
+    // Emit file selection to parent for handling
+    onFileSelect?.(Array.from(files));
+
+    // Reset input to allow re-selecting the same file
+    e.target.value = '';
+  };
 
   const handleSend = () => {
     if (message.trim() && !disabled) {
@@ -67,12 +93,13 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
                 <ChevronDown className="h-3 w-3 opacity-50" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="w-[200px]">
+            <DropdownMenuContent align="center" className="w-[200px]" aria-label="Select AI model">
               {validModels.map((model) => (
                 <DropdownMenuItem
                   key={model.id}
                   onClick={() => onModelSelect(model.id)}
                   className="flex flex-col items-start gap-0.5 py-2 cursor-pointer"
+                  aria-selected={selectedModel === model.id}
                 >
                   <span className="font-medium text-sm">{model.name}</span>
                   <span className="text-xs text-muted-foreground">{model.description}</span>
@@ -98,12 +125,25 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
             <div className="absolute inset-0 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 via-accent/20 to-primary/10 blur-2xl opacity-60" />
           )}
 
+          {/* Hidden file input */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            multiple
+            accept={ACCEPTED_FILE_TYPES}
+            className="hidden"
+            aria-label="Upload files"
+          />
+
           {/* Attachment button */}
           <Button
             variant="ghost"
             size="icon"
             className="shrink-0 h-9 w-9 text-muted-foreground hover:text-primary hover:bg-accent transition-colors"
             disabled={disabled}
+            onClick={handleFileClick}
+            aria-label="Attach files"
           >
             <Paperclip className="h-5 w-5" />
           </Button>
@@ -129,9 +169,10 @@ export function ChatInput({ onSend, disabled, selectedModel, onModelSelect }: Ch
             disabled={!message.trim() || disabled}
             variant="gradient"
             size="icon"
+            aria-label="Send message"
             className={`
-              shrink-0 h-9 w-9 transition-all duration-300
-              ${message.trim() ? 'scale-100 opacity-100 shadow-glow' : 'scale-95 opacity-70'}
+              shrink-0 h-9 w-9 transition-all duration-300 motion-reduce:transition-none
+              ${message.trim() ? 'scale-100 opacity-100 shadow-glow' : 'scale-95 opacity-70 motion-reduce:scale-100'}
             `}
           >
             <Send className="h-4 w-4" />

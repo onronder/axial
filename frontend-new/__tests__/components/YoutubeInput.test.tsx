@@ -8,6 +8,7 @@
  * - UI rendering
  */
 
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -29,6 +30,25 @@ vi.mock('@/hooks/useUsage', () => ({
 
 vi.mock('@/hooks/useFileStatus', () => ({
     useFileStatus: () => ({ files: [] }),
+}));
+
+vi.mock('@/hooks/useIngestionProgress', () => ({
+    useIngestionProgress: () => ({
+        registerJob: vi.fn(),
+        unregisterJob: vi.fn(),
+        updateJobProgress: vi.fn(),
+        markJobCompleted: vi.fn(),
+        hasJobCompleted: vi.fn().mockReturnValue(false),
+        currentJobId: null,
+        overallProgress: 0,
+        jobFiles: [],
+        isComplete: false,
+        hasAnyIngestion: false,
+        globalToastMessage: null,
+        setGlobalToastMessage: vi.fn(),
+        clearGlobalToast: vi.fn(),
+    }),
+    IngestionProgressProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 vi.mock('@/lib/api', () => ({

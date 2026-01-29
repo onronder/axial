@@ -171,13 +171,92 @@ export async function sendChatRequest(
 }
 
 /**
+ * Options for stream retry behavior.
+ */
+export interface StreamOptions {
+    /** Maximum number of retry attempts (default: 2) */
+    maxRetries?: number;
+    /** Base delay between retries in ms (default: 1000) */
+    retryDelay?: number;
+    /** AbortSignal for cancellation */
+    signal?: AbortSignal;
+}
+
+/**
+ * Error codes that should NOT be retried (user needs to take action).
+ */
+const NON_RETRYABLE_ERRORS = [
+    'PLAN_LIMIT_EXCEEDED',
+    'INTEGRATION_AUTH_FAILED',
+    'CONNECTOR_UNAVAILABLE',
+    'AUTHENTICATION_REQUIRED',
+];
+
+/**
+ * Stream chat response with automatic retry on transient failures.
+ *
+ * Retry behavior:
+ * - Retries on network errors and server errors (5xx)
+ * - Does NOT retry on client errors (4xx) or specific error codes
+ * - Exponential backoff between retries
+ * - Emits 'status' events for retry progress
+ *
+ * @param payload - Chat request payload
+ * @param options - Retry and cancellation options
+ */
+export async function* streamChatResponseWithRetry(
+    payload: ChatPayload,
+    options: StreamOptions = {}
+): AsyncGenerator<StreamEvent, void, unknown> {
+    const { maxRetries = 2, retryDelay = 1000, signal } = options;
+    let attempt = 0;
+
+    while (attempt <= maxRetries) {
+        try {
+            yield* streamChatResponse(payload, signal);
+            return; // Success, exit
+        } catch (error) {
+            attempt++;
+
+            // Don't retry if aborted or max retries reached
+            if (signal?.aborted || attempt > maxRetries) {
+                throw error;
+            }
+
+            // Don't retry certain error types that require user action
+            if (isChatApiError(error)) {
+                const code = (error as ChatApiError).code;
+                if (code && NON_RETRYABLE_ERRORS.includes(code)) {
+                    throw error;
+                }
+                // Don't retry client errors (4xx) except for specific cases
+                if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+                    throw error;
+                }
+            }
+
+            // Wait before retry with exponential backoff
+            const delay = retryDelay * Math.pow(2, attempt - 1);
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            // Emit retry status event
+            yield {
+                type: 'status',
+                step: 'retrying',
+                message: `Connection issue, retrying... (${attempt}/${maxRetries})`,
+            };
+        }
+    }
+}
+
+/**
  * Stream chat response from backend using SSE.
  * Yields tokens as they arrive.
- * 
+ *
  * Supports cancellation via AbortSignal for:
  * - Concurrent stream prevention (cancel previous when new starts)
  * - Component unmount cleanup
- * 
+ *
  * NOTE: HTTP 300 (clarification) is not supported in streaming mode.
  * The backend will not stream if clarification is needed.
  */
