@@ -50,7 +50,7 @@ frontend-new/
 │   ├── hooks/              # Hook tests
 │   ├── components/         # Component tests
 │   └── pages/              # Page tests
-└── middleware.ts           # Edge middleware for auth
+└── proxy.ts                # Next.js 16 proxy for auth
 ```
 
 ## Hooks Architecture
@@ -281,15 +281,18 @@ npm run test:coverage
 npm run test:watch
 ```
 
-## Middleware
+## Proxy (Next.js 16)
 
-The application uses Next.js middleware for:
+The application uses Next.js 16 proxy (formerly middleware) for:
 
 - **Route Protection:** Redirects unauthenticated users from `/dashboard/*`
 - **Auth Redirects:** Redirects authenticated users from `/login`, `/register`
 - **Session Refresh:** Keeps Supabase session tokens fresh
+- **Session Error Handling:** Gracefully handles stale/expired sessions
 
-See `middleware.ts` for implementation.
+See `proxy.ts` for implementation.
+
+> **Note:** Next.js 16 renamed `middleware.ts` to `proxy.ts`. See [migration guide](https://nextjs.org/docs/messages/middleware-to-proxy).
 
 ## Environment Variables
 
