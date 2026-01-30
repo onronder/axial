@@ -103,7 +103,7 @@ class FeedbackService:
             .select("id, created_at")\
             .eq("message_id", message_id)\
             .eq("user_id", user_id)\
-            .maybeSingle()\
+            .maybe_single()\
             .execute()
         
         is_update = bool(existing.data)
@@ -501,7 +501,7 @@ class FeedbackService:
             profile = supabase.table("user_profiles")\
                 .select("user_id")\
                 .eq("user_id", user_id)\
-                .maybeSingle()\
+                .maybe_single()\
                 .execute()
             if profile.data:
                 return f"user-{user_id[:8]}..."
@@ -516,7 +516,7 @@ class FeedbackService:
             team = supabase.table("teams")\
                 .select("name")\
                 .eq("id", organization_id)\
-                .maybeSingle()\
+                .maybe_single()\
                 .execute()
             if team.data:
                 return team.data["name"]

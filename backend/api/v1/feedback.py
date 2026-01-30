@@ -171,7 +171,7 @@ async def require_platform_admin(user_id: str = Depends(get_current_user)) -> st
         profile = supabase.table("user_profiles")\
             .select("is_platform_admin")\
             .eq("user_id", user_id)\
-            .maybeSingle()\
+            .maybe_single()\
             .execute()
         
         if profile.data and profile.data.get("is_platform_admin"):
@@ -218,7 +218,7 @@ async def submit_feedback(
         message = supabase.table("messages")\
             .select("id, conversation_id, role")\
             .eq("id", payload.message_id)\
-            .maybeSingle()\
+            .maybe_single()\
             .execute()
         
         if not message.data:
@@ -240,7 +240,7 @@ async def submit_feedback(
         conversation = supabase.table("conversations")\
             .select("id, organization_id")\
             .eq("id", conversation_id)\
-            .maybeSingle()\
+            .maybe_single()\
             .execute()
         
         if not conversation.data:
@@ -316,7 +316,7 @@ async def get_conversation_feedback(
         conversation = supabase.table("conversations")\
             .select("id")\
             .eq("id", conversation_id)\
-            .maybeSingle()\
+            .maybe_single()\
             .execute()
         
         if not conversation.data:
