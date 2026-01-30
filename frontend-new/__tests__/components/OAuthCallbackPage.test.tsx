@@ -98,7 +98,8 @@ describe("OAuthCallbackPage", () => {
 
         render(<OAuthCallbackPage />);
 
-        expect(await screen.findByText("Access was denied")).toBeInTheDocument();
+        // The error message includes additional context
+        expect(await screen.findByText(/Access was denied/i)).toBeInTheDocument();
         expect(api.post).not.toHaveBeenCalled();
     });
 
@@ -107,7 +108,8 @@ describe("OAuthCallbackPage", () => {
 
         render(<OAuthCallbackPage />);
 
-        expect(await screen.findByText("No authorization code received")).toBeInTheDocument();
+        // The error message includes additional context
+        expect(await screen.findByText(/No authorization code/i)).toBeInTheDocument();
         expect(api.post).not.toHaveBeenCalled();
     });
 
@@ -183,7 +185,8 @@ describe("OAuthCallbackPage", () => {
 
         render(<OAuthCallbackPage />);
 
-        expect(await screen.findByText("Access was denied")).toBeInTheDocument();
+        // The error message includes additional context
+        expect(await screen.findByText(/Access was denied/i)).toBeInTheDocument();
         expect(api.post).not.toHaveBeenCalled();
     });
 });

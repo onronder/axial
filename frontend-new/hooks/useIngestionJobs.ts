@@ -196,7 +196,9 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
             )
             .subscribe((status) => {
                 if (status === "SUBSCRIBED") {
-                    console.log("🔔 Subscribed to ingestion_jobs realtime updates");
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log("🔔 Subscribed to ingestion_jobs realtime updates");
+                    }
                 }
             });
 

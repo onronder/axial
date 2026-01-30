@@ -132,7 +132,9 @@ export function useNotifications() {
         );
         
         if (isIngestionNotification) {
-            console.log("🔔 [Notifications] Skipping toast for ingestion notification (handled by GlobalProgress):", notification.title);
+            if (process.env.NODE_ENV === 'development') {
+                console.log("🔔 [Notifications] Skipping toast for ingestion notification (handled by GlobalProgress):", notification.title);
+            }
             return;
         }
 
@@ -149,7 +151,9 @@ export function useNotifications() {
     const handleRealtimeInsert = useCallback((payload: RealtimePostgresInsertPayload<NotificationPayload>) => {
         const newNotification = parseNotification(payload.new);
 
-        console.log("🔔 [Realtime] New notification:", newNotification.title);
+        if (process.env.NODE_ENV === 'development') {
+            console.log("🔔 [Realtime] New notification:", newNotification.title);
+        }
 
         // Add to list (prepend)
         setNotifications(prev => [newNotification, ...prev]);
@@ -192,12 +196,16 @@ export function useNotifications() {
                     handleRealtimeInsert
                 )
                 .subscribe((status: string) => {
-                    console.log("🔔 [Realtime] Subscription status:", status);
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log("🔔 [Realtime] Subscription status:", status);
+                    }
                     setIsRealtimeConnected(status === 'SUBSCRIBED');
                 });
 
             subscriptionRef.current = channel;
-            console.log("🔔 [Realtime] Subscribed to notifications for user:", userId);
+            if (process.env.NODE_ENV === 'development') {
+                console.log("🔔 [Realtime] Subscribed to notifications for user:", userId);
+            }
 
         } catch (err) {
             console.error("❌ [Realtime] Failed to setup subscription:", err);
@@ -213,7 +221,9 @@ export function useNotifications() {
             }
             subscriptionRef.current = null;
             setIsRealtimeConnected(false);
-            console.log("🔔 [Realtime] Unsubscribed");
+            if (process.env.NODE_ENV === 'development') {
+                console.log("🔔 [Realtime] Unsubscribed");
+            }
         }
     }, []);
 

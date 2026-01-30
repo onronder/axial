@@ -66,12 +66,16 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     const hasFetched = useRef(false);
 
     const fetchProfile = useCallback(async () => {
-        console.log('📋 [useProfile] Fetching profile...');
+        if (process.env.NODE_ENV === 'development') {
+            console.log('📋 [useProfile] Fetching profile...');
+        }
         setIsLoading(true);
         setError(null);
         try {
             const { data } = await api.get('/settings/profile');
-            console.log('📋 [useProfile] ✅ Profile fetched:', data?.first_name, data?.last_name);
+            if (process.env.NODE_ENV === 'development') {
+                console.log('📋 [useProfile] ✅ Profile fetched:', data?.first_name, data?.last_name);
+            }
             setProfile(data);
         } catch (err: unknown) {
             const apiError = err as ApiError;
@@ -91,10 +95,14 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     }, [fetchProfile]);
 
     const updateProfile = useCallback(async (payload: ProfileUpdatePayload): Promise<boolean> => {
-        console.log('📋 [useProfile] Updating with:', payload);
+        if (process.env.NODE_ENV === 'development') {
+            console.log('📋 [useProfile] Updating with:', payload);
+        }
         try {
             const { data } = await api.patch('/settings/profile', payload);
-            console.log('📋 [useProfile] ✅ Updated');
+            if (process.env.NODE_ENV === 'development') {
+                console.log('📋 [useProfile] ✅ Updated');
+            }
             setProfile(data);
             toast({
                 title: 'Profile updated',

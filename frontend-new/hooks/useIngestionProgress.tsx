@@ -77,7 +77,9 @@ export function IngestionProgressProvider({ children }: IngestionProgressProvide
     const registerJob = useCallback((jobId: string) => {
         if (!jobId) return;
         
-        console.log(`📊 [IngestionProgress] Registering job: ${jobId.slice(0, 8)}...`);
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`📊 [IngestionProgress] Registering job: ${jobId.slice(0, 8)}...`);
+        }
         
         setActiveJobIds(prev => {
             if (prev.has(jobId)) return prev;
@@ -97,7 +99,9 @@ export function IngestionProgressProvider({ children }: IngestionProgressProvide
     const unregisterJob = useCallback((jobId: string) => {
         if (!jobId) return;
         
-        console.log(`📊 [IngestionProgress] Unregistering job: ${jobId.slice(0, 8)}...`);
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`📊 [IngestionProgress] Unregistering job: ${jobId.slice(0, 8)}...`);
+        }
         
         setActiveJobIds(prev => {
             if (!prev.has(jobId)) return prev;

@@ -1,5 +1,30 @@
 "use client";
 
+/**
+ * useDataSources Hook
+ * 
+ * Manages data source connections with real API integration.
+ * Fetches available connectors and user's connected integrations,
+ * then merges them into a unified data structure.
+ * 
+ * Features:
+ * - OAuth flow management for multiple providers
+ * - PKCE support for Microsoft OAuth
+ * - File browsing and ingestion
+ * - Connection state management
+ * 
+ * @example
+ * ```tsx
+ * const { dataSources, connect, disconnect } = useDataSources();
+ * 
+ * // Connect a new source
+ * await connect('google_drive');
+ * 
+ * // Disconnect
+ * await disconnect('google_drive');
+ * ```
+ */
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 import {
@@ -21,6 +46,16 @@ import {
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 import type { ConnectorDefinition, UserIntegration, MergedDataSource } from "@/types";
 
+// =============================================================================
+// Constants
+// =============================================================================
+
+const IS_DEV = process.env.NODE_ENV === 'development';
+
+// =============================================================================
+// Types
+// =============================================================================
+
 type IntegrationItem = {
     id?: string | number;
     name?: string;
@@ -31,6 +66,37 @@ type IntegrationItem = {
     parent_id?: string | null;
     web_view_url?: string | null;
 };
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/**
+ * Development-only logging utility.
+ * Prevents sensitive information from appearing in production logs.
+ */
+function devLog(...args: unknown[]): void {
+    if (IS_DEV) {
+        console.log(...args);
+    }
+}
+
+/**
+ * Logs OAuth configuration status without exposing actual values.
+ * Only shows whether credentials are configured, not the actual values.
+ */
+function logOAuthConfig(provider: string, clientId: string | undefined, redirectUri: string | undefined): void {
+    if (IS_DEV) {
+        console.log(`🔐 [${provider}] Config:`, {
+            clientId: clientId ? '✅ configured' : '❌ missing',
+            redirectUri: redirectUri ? '✅ configured' : '❌ missing',
+        });
+    }
+}
+
+// =============================================================================
+// Main Hook
+// =============================================================================
 
 /**
  * Hook for managing data sources with real API integration.
@@ -45,7 +111,13 @@ export const useDataSources = () => {
     const [error, setError] = useState<string | null>(null);
     const hasFetched = useRef(false);
 
-    // Merge connectors with user integrations
+    // =========================================================================
+    // Data Merging
+    // =========================================================================
+
+    /**
+     * Merge connectors with user integrations into a unified structure.
+     */
     const mergeData = useCallback((
         connectors: ConnectorDefinition[],
         integrations: UserIntegration[]
@@ -59,6 +131,7 @@ export const useDataSources = () => {
             const normalizedType = connector.type?.toLowerCase();
             const rawCategory = (connector.category || "").toLowerCase().replace(/\s+/g, "_");
             let normalizedCategory = rawCategory || "other";
+            
             if (normalizedCategory === "cloud_storage" || normalizedCategory === "cloud") {
                 normalizedCategory = "cloud";
             } else if (normalizedCategory === "file" || normalizedCategory === "files") {
@@ -72,9 +145,11 @@ export const useDataSources = () => {
             } else if (normalizedCategory === "apps" || normalizedCategory === "applications") {
                 normalizedCategory = "apps";
             }
+            
             if (normalizedType === "onedrive" || normalizedType === "sharepoint") {
                 normalizedCategory = "cloud";
             }
+            
             const rawName = (connector.name || "").trim();
             const normalizedName = rawName.toLowerCase();
             const typeLabel = formatSourceTypeLabel(normalizeSourceType(connector.type));
@@ -85,8 +160,9 @@ export const useDataSources = () => {
                     : isKeyLikeName
                         ? typeLabel
                         : rawName;
+                        
             return {
-                id: connector.type, // Use type as ID for compatibility
+                id: connector.type,
                 definitionId: connector.id,
                 type: connector.type,
                 name: displayName,
@@ -100,9 +176,15 @@ export const useDataSources = () => {
         });
     }, []);
 
-    // Fetch data from API
+    // =========================================================================
+    // Data Fetching
+    // =========================================================================
+
+    /**
+     * Fetch available connectors and user integrations from API.
+     */
     const fetchData = useCallback(async () => {
-        console.log('📦 [useDataSources] Fetching data...');
+        devLog('📦 [useDataSources] Fetching data...');
         setLoading(true);
         setError(null);
 
@@ -116,7 +198,7 @@ export const useDataSources = () => {
             const connectors: ConnectorDefinition[] = availableRes.data || [];
             const integrations: UserIntegration[] = statusRes.data || [];
 
-            console.log('📦 [useDataSources] ✅ Available:', connectors.length, 'Status:', integrations.length);
+            devLog('📦 [useDataSources] ✅ Available:', connectors.length, 'Status:', integrations.length);
 
             setAvailableConnectors(connectors);
             setUserIntegrations(integrations);
@@ -137,25 +219,31 @@ export const useDataSources = () => {
         fetchData();
     }, [fetchData]);
 
-    // Connect a data source (OAuth redirect)
-    const connect = useCallback(async (type: string) => {
-        console.log('📦 [useDataSources] Connecting:', type);
+    // =========================================================================
+    // OAuth Connection
+    // =========================================================================
 
+    /**
+     * Connect a data source via OAuth redirect.
+     */
+    const connect = useCallback(async (type: string) => {
+        devLog('📦 [useDataSources] Connecting:', type);
+
+        // Google Drive OAuth
         if (type === "google_drive") {
             const clientId = getGoogleClientId();
             const redirectUri = getGoogleRedirectUri();
 
-            console.log('🔐 [useDataSources] Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
-            console.log('🔐 [useDataSources] Redirect URI:', redirectUri);
+            logOAuthConfig('Google', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID not configured');
+                console.error('📦 [useDataSources] ❌ Google client ID not configured');
                 alert('Google OAuth not configured. Please check environment variables.');
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Redirect URI not available');
+                console.error('📦 [useDataSources] ❌ Google redirect URI not configured');
                 alert('OAuth redirect URI is not configured.');
                 return;
             }
@@ -169,28 +257,28 @@ export const useDataSources = () => {
                 access_type: 'offline',
                 prompt: 'consent',
                 include_granted_scopes: 'true',
-                state: 'google' // Used to identify provider in callback
+                state: 'google'
             });
 
-            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-            console.log('🔐 [useDataSources] Redirecting to:', authUrl);
-
-            window.location.href = authUrl;
-        } else if (type === "notion") {
+            window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+            return;
+        }
+        
+        // Notion OAuth
+        if (type === "notion") {
             const clientId = getNotionClientId();
             const redirectUri = getNotionRedirectUri();
 
-            console.log('🔐 [useDataSources] Notion Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
-            console.log('🔐 [useDataSources] Notion Redirect URI:', redirectUri);
+            logOAuthConfig('Notion', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_NOTION_CLIENT_ID not configured');
+                console.error('📦 [useDataSources] ❌ Notion client ID not configured');
                 alert('Notion OAuth not configured. Please check environment variables.');
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Notion Redirect URI not available');
+                console.error('📦 [useDataSources] ❌ Notion redirect URI not configured');
                 alert('OAuth redirect URI is not configured.');
                 return;
             }
@@ -200,30 +288,29 @@ export const useDataSources = () => {
                 redirect_uri: redirectUri,
                 response_type: 'code',
                 owner: 'user',
-                state: 'notion' // Used to identify provider in callback
+                state: 'notion'
             });
 
-            const authUrl = `https://api.notion.com/v1/oauth/authorize?${params.toString()}`;
-            console.log('🔐 [useDataSources] Redirecting to Notion:', authUrl);
-
-            window.location.href = authUrl;
-        } else if (type === "onedrive" || type === "sharepoint") {
+            window.location.href = `https://api.notion.com/v1/oauth/authorize?${params.toString()}`;
+            return;
+        }
+        
+        // Microsoft (OneDrive / SharePoint) OAuth with PKCE
+        if (type === "onedrive" || type === "sharepoint") {
             const clientId = getMicrosoftClientId();
             const redirectUri = getMicrosoftRedirectUri();
             const tenantId = getMicrosoftTenantId();
 
-            console.log('🔐 [useDataSources] Microsoft Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
-            console.log('🔐 [useDataSources] Microsoft Redirect URI:', redirectUri);
-            console.log('🔐 [useDataSources] Microsoft Tenant:', tenantId);
+            logOAuthConfig('Microsoft', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_MICROSOFT_CLIENT_ID not configured');
+                console.error('📦 [useDataSources] ❌ Microsoft client ID not configured');
                 alert('Microsoft OAuth not configured. Please check environment variables.');
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Microsoft Redirect URI not available');
+                console.error('📦 [useDataSources] ❌ Microsoft redirect URI not configured');
                 alert('OAuth redirect URI is not configured.');
                 return;
             }
@@ -237,7 +324,7 @@ export const useDataSources = () => {
                 pkce = await generatePkcePair();
                 sessionStorage.setItem(`microsoft_pkce_${type}`, pkce.codeVerifier);
             } catch (err) {
-                console.error('📦 [useDataSources] ❌ PKCE generation failed:', err);
+                console.error('📦 [useDataSources] ❌ PKCE generation failed');
                 alert('Unable to start Microsoft OAuth. Please refresh and try again.');
                 return;
             }
@@ -254,118 +341,118 @@ export const useDataSources = () => {
                 code_challenge_method: "S256",
             });
 
-            const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params.toString()}`;
-            console.log('🔐 [useDataSources] Redirecting to Microsoft:', authUrl);
-            window.location.href = authUrl;
-        } else if (type === "dropbox") {
+            window.location.href = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params.toString()}`;
+            return;
+        }
+        
+        // Dropbox OAuth
+        if (type === "dropbox") {
             const clientId = getDropboxClientId();
             const redirectUri = getDropboxRedirectUri();
 
-            console.log('🔐 [useDataSources] Dropbox Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
-            console.log('🔐 [useDataSources] Dropbox Redirect URI:', redirectUri);
+            logOAuthConfig('Dropbox', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_DROPBOX_CLIENT_ID not configured');
+                console.error('📦 [useDataSources] ❌ Dropbox client ID not configured');
                 alert('Dropbox OAuth not configured. Please check environment variables.');
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Dropbox Redirect URI not available');
+                console.error('📦 [useDataSources] ❌ Dropbox redirect URI not configured');
                 alert('OAuth redirect URI is not configured.');
                 return;
             }
 
-            // Dropbox OAuth scopes for file access
-            // files.metadata.read - read file/folder metadata
-            // files.content.read - download files
-            // account_info.read - get account details (for Team namespace detection)
             const params = new URLSearchParams({
                 client_id: clientId,
                 redirect_uri: redirectUri,
                 response_type: 'code',
-                token_access_type: 'offline', // Get refresh token
-                state: 'dropbox', // Used to identify provider in callback
+                token_access_type: 'offline',
+                state: 'dropbox',
             });
 
-            const authUrl = `https://www.dropbox.com/oauth2/authorize?${params.toString()}`;
-            console.log('🔐 [useDataSources] Redirecting to Dropbox:', authUrl);
-
-            window.location.href = authUrl;
-        } else if (type === "github") {
+            window.location.href = `https://www.dropbox.com/oauth2/authorize?${params.toString()}`;
+            return;
+        }
+        
+        // GitHub OAuth
+        if (type === "github") {
             const clientId = getGitHubClientId();
             const redirectUri = getGitHubRedirectUri();
 
-            console.log('🔐 [useDataSources] GitHub Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
-            console.log('🔐 [useDataSources] GitHub Redirect URI:', redirectUri);
+            logOAuthConfig('GitHub', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_GITHUB_CLIENT_ID not configured');
+                console.error('📦 [useDataSources] ❌ GitHub client ID not configured');
                 alert('GitHub OAuth not configured. Please check environment variables.');
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ GitHub Redirect URI not available');
+                console.error('📦 [useDataSources] ❌ GitHub redirect URI not configured');
                 alert('OAuth redirect URI is not configured.');
                 return;
             }
 
-            // GitHub OAuth scopes for repository access
-            // repo - Full control of private repositories (includes code read)
-            // read:org - Read org membership (for org repos)
             const params = new URLSearchParams({
                 client_id: clientId,
                 redirect_uri: redirectUri,
                 scope: 'repo read:org',
-                state: 'github', // Used to identify provider in callback
+                state: 'github',
             });
 
-            const authUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
-            console.log('🔐 [useDataSources] Redirecting to GitHub:', authUrl);
-
-            window.location.href = authUrl;
-        } else if (type === "box") {
+            window.location.href = `https://github.com/login/oauth/authorize?${params.toString()}`;
+            return;
+        }
+        
+        // Box OAuth
+        if (type === "box") {
             const clientId = getBoxClientId();
             const redirectUri = getBoxRedirectUri();
 
-            console.log('🔐 [useDataSources] Box Client ID:', clientId ? `${clientId.substring(0, 20)}...` : 'NOT SET');
-            console.log('🔐 [useDataSources] Box Redirect URI:', redirectUri);
+            logOAuthConfig('Box', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ NEXT_PUBLIC_BOX_CLIENT_ID not configured');
+                console.error('📦 [useDataSources] ❌ Box client ID not configured');
                 alert('Box OAuth not configured. Please check environment variables.');
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Box Redirect URI not available');
+                console.error('📦 [useDataSources] ❌ Box redirect URI not configured');
                 alert('OAuth redirect URI is not configured.');
                 return;
             }
 
-            // Box OAuth - root_readonly scope for read-only file access
             const params = new URLSearchParams({
                 client_id: clientId,
                 redirect_uri: redirectUri,
                 response_type: 'code',
-                state: 'box', // Used to identify provider in callback
+                state: 'box',
             });
 
-            const authUrl = `https://account.box.com/api/oauth2/authorize?${params.toString()}`;
-            console.log('🔐 [useDataSources] Redirecting to Box:', authUrl);
-
-            window.location.href = authUrl;
+            window.location.href = `https://account.box.com/api/oauth2/authorize?${params.toString()}`;
+            return;
         }
+
+        // Unknown provider
+        console.warn('📦 [useDataSources] Unknown provider type:', type);
     }, []);
 
-    // Disconnect a data source
+    // =========================================================================
+    // Disconnection
+    // =========================================================================
+
+    /**
+     * Disconnect a data source.
+     */
     const disconnect = useCallback(async (type: string) => {
-        console.log('📦 [useDataSources] Disconnecting:', type);
+        devLog('📦 [useDataSources] Disconnecting:', type);
 
         try {
             await api.delete(`/integrations/${type}`);
-            console.log('📦 [useDataSources] ✅ Disconnected');
+            devLog('📦 [useDataSources] ✅ Disconnected');
 
             // Update local state
             setUserIntegrations(prev => prev.filter(int => int.connector_type !== type));
@@ -381,14 +468,21 @@ export const useDataSources = () => {
         }
     }, []);
 
-    // Get files from a connected source
+    // =========================================================================
+    // File Operations
+    // =========================================================================
+
+    /**
+     * Get files from a connected source.
+     */
     const getFiles = useCallback(async (type: string, parentId?: string) => {
-        console.log('📦 [useDataSources] Getting files:', type, parentId);
+        devLog('📦 [useDataSources] Getting files:', type, parentId ? `parent:${parentId}` : 'root');
 
         try {
             const { data } = await api.get(`/integrations/${type}/items`, {
                 params: parentId ? { parent_id: parentId } : undefined
             });
+            
             const normalized = (data || []).map((item: IntegrationItem) => {
                 const id = String(item?.id ?? "");
                 const name = String(item?.name ?? item?.id ?? "Untitled");
@@ -403,24 +497,26 @@ export const useDataSources = () => {
                     webViewUrl: item?.web_view_url ?? null,
                 };
             });
-            console.log('📦 [useDataSources] ✅ Got', normalized.length, 'files');
+            
+            devLog('📦 [useDataSources] ✅ Got', normalized.length, 'files');
             return normalized;
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Unknown error';
-            console.error('📦 [useDataSources] ❌ Get files failed:', message);
+            console.error('📦 [useDataSources] ❌ Get files failed');
             return [];
         }
     }, []);
 
-    // Ingest files from a source
+    /**
+     * Ingest files from a source.
+     */
     const ingestFiles = useCallback(async (type: string, fileIds: string[]) => {
-        console.log('📦 [useDataSources] Ingesting:', type, fileIds.length, 'files');
+        devLog('📦 [useDataSources] Ingesting:', type, fileIds.length, 'files');
 
         try {
             await api.post(`/integrations/${type}/ingest`, {
                 item_ids: fileIds
             });
-            console.log('📦 [useDataSources] ✅ Ingested');
+            devLog('📦 [useDataSources] ✅ Ingested');
             return true;
         } catch (err) {
             const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
@@ -430,17 +526,24 @@ export const useDataSources = () => {
         }
     }, []);
 
-    // Sync an integration manually
+    // =========================================================================
+    // Sync Operations
+    // =========================================================================
+
+    /**
+     * Sync an integration manually.
+     */
     const syncIntegration = useCallback(async (integrationId: string) => {
-        console.log('📦 [useDataSources] Syncing integration:', integrationId);
+        devLog('📦 [useDataSources] Syncing integration:', integrationId);
+        
         try {
             const res = await api.post(`/integrations/${integrationId}/sync`);
-            console.log('📦 [useDataSources] ✅ Sync started:', res.data);
+            devLog('📦 [useDataSources] ✅ Sync started');
             return { success: true, jobId: res.data.job_id };
         } catch (err) {
             const axiosErr = err as { response?: { status?: number }; message?: string };
-            const message = err instanceof Error ? err.message : 'Unknown error';
-            console.error('📦 [useDataSources] ❌ Sync failed:', message);
+            console.error('📦 [useDataSources] ❌ Sync failed');
+            
             if (axiosErr.response?.status === 429) {
                 throw new Error("Sync already in progress");
             }
@@ -448,27 +551,38 @@ export const useDataSources = () => {
         }
     }, []);
 
-    // Get list of file IDs that have already been ingested from a source
+    /**
+     * Get list of file IDs that have already been ingested from a source.
+     */
     const getIngestedFileIds = useCallback(async (sourceType: string): Promise<Set<string>> => {
-        console.log('📦 [useDataSources] Fetching ingested file IDs for:', sourceType);
+        devLog('📦 [useDataSources] Fetching ingested file IDs for:', sourceType);
+        
         try {
             const res = await api.get(`/integrations/${sourceType}/ingested-files`);
             const ids = res.data?.ingested_ids || [];
-            console.log('📦 [useDataSources] ✅ Found', ids.length, 'ingested files');
+            devLog('📦 [useDataSources] ✅ Found', ids.length, 'ingested files');
             return new Set(ids);
         } catch (err) {
-            console.error('📦 [useDataSources] ❌ Failed to fetch ingested files:', err);
+            console.error('📦 [useDataSources] ❌ Failed to fetch ingested files');
             return new Set();
         }
     }, []);
 
-    // Refresh data
+    // =========================================================================
+    // Utility Functions
+    // =========================================================================
+
+    /**
+     * Refresh data by re-fetching from API.
+     */
     const refresh = useCallback(() => {
         hasFetched.current = false;
         fetchData();
     }, [fetchData]);
 
-    // Legacy compatibility: check if a source is connected by ID or type
+    /**
+     * Check if a source is connected by ID or type.
+     */
     const isConnected = useCallback((idOrType: string) => {
         return dataSources.some(ds =>
             (ds.id === idOrType || ds.type === idOrType) && ds.isConnected
@@ -479,6 +593,10 @@ export const useDataSources = () => {
     const connectedSources = dataSources
         .filter(ds => ds.isConnected)
         .map(ds => ds.id);
+
+    // =========================================================================
+    // Return
+    // =========================================================================
 
     return {
         // New API

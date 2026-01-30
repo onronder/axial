@@ -74,7 +74,9 @@ export function useFailedTaskStatus(jobId: string | null) {
                     filter: `job_id=eq.${jobId}`
                 },
                 (payload: { eventType: string; new?: FailedTask; old?: Partial<FailedTask> }) => {
-                    console.log('🔔 Failed task update:', payload);
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log('🔔 Failed task update:', payload);
+                    }
 
                     if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                         if (payload.new) setFailedTask(payload.new);
@@ -84,7 +86,7 @@ export function useFailedTaskStatus(jobId: string | null) {
                 }
             )
             .subscribe((status: string) => {
-                if (status === 'SUBSCRIBED') {
+                if (status === 'SUBSCRIBED' && process.env.NODE_ENV === 'development') {
                     console.log('✅ Subscribed to failed task updates for job:', jobId);
                 }
             });

@@ -411,7 +411,7 @@ describe('OAuthCallbackPage', () => {
             render(<OAuthCallbackPage />);
             
             await waitFor(() => {
-                expect(screen.getByText(/Missing PKCE verifier/i)).toBeInTheDocument();
+                expect(screen.getByText(/Security verification failed/i)).toBeInTheDocument();
             });
         });
 
@@ -426,7 +426,7 @@ describe('OAuthCallbackPage', () => {
             render(<OAuthCallbackPage />);
             
             await waitFor(() => {
-                expect(screen.getByText(/Missing PKCE verifier/i)).toBeInTheDocument();
+                expect(screen.getByText(/Security verification failed/i)).toBeInTheDocument();
             });
         });
     });

@@ -226,7 +226,9 @@ export function useFileStatus(jobId: string | null): UseFileStatusReturn {
             )
             .subscribe((status) => {
                 if (status === "SUBSCRIBED") {
-                    console.log(`🔔 Subscribed to file status for job ${jobId.slice(0, 8)}...`);
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log(`🔔 Subscribed to file status for job ${jobId.slice(0, 8)}...`);
+                    }
                 }
             });
 

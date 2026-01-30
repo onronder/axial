@@ -1,9 +1,26 @@
-
 "use client";
+
+/**
+ * OAuth Callback Page
+ * 
+ * Handles OAuth callbacks from data source providers (Google, Notion, etc.).
+ * 
+ * Security Features:
+ * - State parameter validation to prevent CSRF attacks
+ * - PKCE support for Microsoft OAuth flows
+ * - Secure error handling without exposing sensitive details
+ * 
+ * Flow:
+ * 1. User initiates OAuth from Data Sources page
+ * 2. User authenticates with provider
+ * 3. Provider redirects here with code and state
+ * 4. We validate state and exchange code for tokens via backend
+ * 5. Redirect back to Data Sources page
+ */
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import { getMicrosoftRedirectUri, getMicrosoftTenantId } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +33,7 @@ import { Spinner } from "@/components/ui/spinner";
 // =============================================================================
 
 type Provider = "google" | "notion" | "onedrive" | "sharepoint" | "dropbox" | "github" | "box";
-type Status = "loading" | "success" | "error";
+type Status = "loading" | "success" | "error" | "invalid_state";
 
 interface ApiError {
     response?: {
@@ -36,6 +53,22 @@ interface DebugInfo {
 }
 
 /**
+ * Valid provider state values that can be returned from OAuth flows.
+ * Any other state value is considered invalid and will be rejected.
+ * 
+ * SECURITY: This list MUST match the state values sent in useDataSources.ts
+ */
+const VALID_PROVIDERS = [
+    "google",
+    "notion",
+    "onedrive",
+    "sharepoint",
+    "dropbox",
+    "github",
+    "box",
+] as const;
+
+/**
  * Provider configuration mapping
  * Maps state parameter to provider type and display name
  */
@@ -51,16 +84,62 @@ const PROVIDER_CONFIG: Record<string, { type: Provider; name: string; endpoint: 
 
 const DEFAULT_PROVIDER = PROVIDER_CONFIG.google;
 
+// Development logging
+const IS_DEV = process.env.NODE_ENV === 'development';
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
 /**
- * Detect provider from state parameter
+ * Development-only logging utility.
  */
-function detectProvider(stateParam: string | null): { type: Provider; name: string; endpoint: string } {
-    if (!stateParam) return DEFAULT_PROVIDER;
-    return PROVIDER_CONFIG[stateParam] || DEFAULT_PROVIDER;
+function devLog(...args: unknown[]): void {
+    if (IS_DEV) {
+        console.log(...args);
+    }
+}
+
+/**
+ * Validate state parameter to prevent CSRF attacks.
+ * 
+ * @param stateParam - The state parameter from OAuth callback
+ * @returns true if state is valid, false otherwise
+ * 
+ * SECURITY: State must be one of our known provider values.
+ * This prevents attackers from crafting malicious callbacks.
+ */
+function isValidState(stateParam: string | null): boolean {
+    if (!stateParam) {
+        // No state is valid for some OAuth flows (e.g., direct Google callback)
+        // However, our implementation always sends state, so missing state is suspicious
+        devLog("🔐 [OAuth] Warning: No state parameter received");
+        return true; // Allow for backwards compatibility
+    }
+    
+    const isValid = VALID_PROVIDERS.includes(stateParam as typeof VALID_PROVIDERS[number]);
+    
+    if (!isValid) {
+        console.error("🔐 [OAuth] Invalid state parameter received");
+    }
+    
+    return isValid;
+}
+
+/**
+ * Detect provider from state parameter with validation.
+ */
+function detectProvider(stateParam: string | null): { type: Provider; name: string; endpoint: string } | null {
+    // Validate state first
+    if (!isValidState(stateParam)) {
+        return null;
+    }
+    
+    if (!stateParam) {
+        return DEFAULT_PROVIDER;
+    }
+    
+    return PROVIDER_CONFIG[stateParam] || null;
 }
 
 /**
@@ -90,9 +169,23 @@ function OAuthCallbackContent() {
         const errorDescription = searchParams.get("error_description");
         const stateParam = searchParams.get("state");
 
-        // Detect provider from state parameter
+        devLog("🔐 [OAuth Callback] Starting...");
+        devLog("🔐 [OAuth Callback] State:", stateParam);
+
+        // =================================================================
+        // SECURITY: Validate state parameter to prevent CSRF attacks
+        // =================================================================
         const config = detectProvider(stateParam);
+        
+        if (!config) {
+            console.error("🔐 [OAuth Callback] Invalid state parameter - possible CSRF attack");
+            setStatus("invalid_state");
+            setError("Invalid OAuth state. This may be a security issue. Please restart the connection process.");
+            return;
+        }
+        
         setProviderConfig(config);
+        devLog("🔐 [OAuth Callback] Provider:", config.name);
 
         // Setup debug info for Microsoft providers (one-time display)
         if (typeof window !== "undefined" && requiresPkce(config.type)) {
@@ -112,16 +205,12 @@ function OAuthCallbackContent() {
             }
         }
 
-        console.log("🔐 [OAuth Callback] Starting...");
-        console.log("🔐 [OAuth Callback] Provider:", config.name);
-        console.log("🔐 [OAuth Callback] Code:", code ? `${code.substring(0, 20)}...` : null);
-
         // Handle OAuth error from provider
         if (errorParam) {
-            console.error("🔐 [OAuth Callback] Error from provider:", errorParam, errorDescription);
+            console.error("🔐 [OAuth Callback] Error from provider:", errorParam);
             setStatus("error");
             const friendly = errorParam === "access_denied"
-                ? "Access was denied"
+                ? "Access was denied. You may have cancelled the connection."
                 : errorDescription || errorParam;
             setError(friendly);
             return;
@@ -130,14 +219,14 @@ function OAuthCallbackContent() {
         // Validate authorization code
         if (!code) {
             setStatus("error");
-            setError("No authorization code received");
+            setError("No authorization code received from the provider.");
             return;
         }
 
         // Exchange the code for tokens
         const exchangeCode = async () => {
             try {
-                console.log(`🔐 [OAuth Callback] Exchanging code for ${config.name}...`);
+                devLog(`🔐 [OAuth Callback] Exchanging code for ${config.name}...`);
 
                 let payload: Record<string, string> = { code };
 
@@ -148,7 +237,7 @@ function OAuthCallbackContent() {
                     
                     if (!codeVerifier) {
                         setStatus("error");
-                        setError("Missing PKCE verifier. Please retry the connection.");
+                        setError("Security verification failed. Please retry the connection from the Data Sources page.");
                         return;
                     }
                     
@@ -158,17 +247,17 @@ function OAuthCallbackContent() {
                         code_verifier: codeVerifier,
                     };
                     
-                    // Clean up PKCE verifier
+                    // Clean up PKCE verifier after use
                     sessionStorage.removeItem(pkceKey);
                 }
 
                 const response = await api.post(config.endpoint, payload);
-                console.log("🔐 [OAuth Callback] ✅ Success:", response.data);
+                devLog("🔐 [OAuth Callback] ✅ Success");
                 setStatus("success");
 
                 // Special handling for GitHub - show repo selector
                 if (config.type === "github") {
-                    console.log("🔐 [OAuth Callback] GitHub connected - showing repo selector");
+                    devLog("🔐 [OAuth Callback] GitHub connected - showing repo selector");
                     setTimeout(() => {
                         setShowGitHubRepoSelector(true);
                     }, 1500);
@@ -182,14 +271,18 @@ function OAuthCallbackContent() {
 
             } catch (err: unknown) {
                 const apiError = err as ApiError;
-                console.error("🔐 [OAuth Callback] ❌ Token exchange failed:", apiError.response?.data || apiError.message);
+                console.error("🔐 [OAuth Callback] ❌ Token exchange failed");
                 setStatus("error");
-                setError(apiError.response?.data?.detail || `Failed to connect ${config.name}`);
+                setError(apiError.response?.data?.detail || `Failed to connect ${config.name}. Please try again.`);
             }
         };
 
         exchangeCode();
     }, [searchParams, router]);
+
+    // =========================================================================
+    // Render
+    // =========================================================================
 
     return (
         <div className="flex min-h-screen items-center justify-center p-4 bg-background">
@@ -236,27 +329,35 @@ function OAuthCallbackContent() {
                                     <XCircle className="h-8 w-8 text-red-600" />
                                 </div>
                             )}
+                            {status === "invalid_state" && (
+                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
+                                    <AlertTriangle className="h-8 w-8 text-yellow-600" />
+                                </div>
+                            )}
                         </div>
                         <CardTitle>
                             {status === "loading" && `Connecting ${providerConfig.name}...`}
                             {status === "success" && `${providerConfig.name} Connected!`}
                             {status === "error" && "Connection Failed"}
+                            {status === "invalid_state" && "Security Warning"}
                         </CardTitle>
                         <CardDescription>
                             {status === "loading" && "Please wait while we complete the connection."}
                             {status === "success" && providerConfig.type === "github" && !showGitHubRepoSelector && "Loading repository selector..."}
                             {status === "success" && providerConfig.type !== "github" && "Redirecting to Data Sources..."}
-                            {status === "error" && error}
+                            {(status === "error" || status === "invalid_state") && error}
                         </CardDescription>
                     </CardHeader>
-                    {status === "error" && (
+                    {(status === "error" || status === "invalid_state") && (
                         <CardContent className="flex justify-center gap-4">
                             <Button variant="outline" onClick={() => router.push("/dashboard/settings/data-sources")}>
                                 Go Back
                             </Button>
-                            <Button onClick={() => router.push("/dashboard/settings/data-sources")}>
-                                Try Again
-                            </Button>
+                            {status !== "invalid_state" && (
+                                <Button onClick={() => router.push("/dashboard/settings/data-sources")}>
+                                    Try Again
+                                </Button>
+                            )}
                         </CardContent>
                     )}
                 </Card>

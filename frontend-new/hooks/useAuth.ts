@@ -120,8 +120,8 @@ export const useAuth = () => {
                         router.push('/login');
                     }
                     
-                    // Log OAuth signin for debugging
-                    if (event === 'SIGNED_IN' && session?.user?.app_metadata?.provider) {
+                    // Log OAuth signin for debugging (development only)
+                    if (process.env.NODE_ENV === 'development' && event === 'SIGNED_IN' && session?.user?.app_metadata?.provider) {
                         console.log(`🔐 [Auth] Signed in via ${session.user.app_metadata.provider}`);
                     }
                 }
