@@ -3,6 +3,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { UserPlus, Upload, MoreHorizontal, Users, Clock, Mail, UserCog, UserX, Send, Search, Filter, ChevronLeft, ChevronRight, Download, Lock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
