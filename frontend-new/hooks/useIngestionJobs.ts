@@ -34,12 +34,26 @@ export interface IngestionJob {
     updated_at: string;
 }
 
+export interface JobFile {
+    id: string;
+    job_id: string;
+    filename: string;
+    status: "pending" | "processing" | "completed" | "failed" | "cancelled";
+    progress: number;
+    error_message?: string;
+    retry_count: number;
+    created_at: string;
+    updated_at: string;
+}
+
 interface UseIngestionJobsReturn {
     jobs: IngestionJob[];
     activeJobs: IngestionJob[];
     isLoading: boolean;
     refresh: () => Promise<void>;
     retryJob: (jobId: string) => Promise<void>;
+    cancelJob: (jobId: string) => Promise<void>;
+    getJobFiles: (jobId: string) => Promise<JobFile[]>;
 }
 
 /**
@@ -244,12 +258,56 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
         }
     }, [fetchJobs, toast]);
 
+    // Cancel an in-progress job
+    const cancelJob = useCallback(async (jobId: string): Promise<void> => {
+        try {
+            await api.post(`/jobs/${jobId}/cancel`);
+
+            toast({
+                title: "Job Cancelled",
+                description: "The ingestion job has been cancelled.",
+            });
+
+            await fetchJobs();
+        } catch (err) {
+            const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
+            const message = axiosErr.response?.data?.detail || axiosErr.message || 'Could not cancel the job.';
+            console.error("Failed to cancel job:", message);
+            toast({
+                title: "Cancel Failed",
+                description: message,
+                variant: "destructive",
+            });
+            throw err;
+        }
+    }, [fetchJobs, toast]);
+
+    // Get files for a specific job
+    const getJobFiles = useCallback(async (jobId: string): Promise<JobFile[]> => {
+        try {
+            const response = await api.get(`/jobs/${jobId}/files`);
+            return response.data as JobFile[];
+        } catch (err) {
+            const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
+            const message = axiosErr.response?.data?.detail || axiosErr.message || 'Could not fetch job files.';
+            console.error("Failed to fetch job files:", message);
+            toast({
+                title: "Error",
+                description: message,
+                variant: "destructive",
+            });
+            return [];
+        }
+    }, [toast]);
+
     return {
         jobs,
         activeJobs,
         isLoading,
         refresh: fetchJobs,
         retryJob,
+        cancelJob,
+        getJobFiles,
     };
 }
 

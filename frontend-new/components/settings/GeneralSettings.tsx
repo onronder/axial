@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Moon, Sun, Monitor, User, Palette, Check, AlertTriangle, Trash2 } from "lucide-react";
+import { Moon, Sun, Monitor, User, Palette, Check, AlertTriangle, Trash2, Shield, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useProfile } from "@/hooks/useProfile";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
@@ -23,6 +30,19 @@ import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
+
+interface AnonymizeResponse {
+  message: string;
+  request_id: string;
+  anonymized_at: string;
+  details: {
+    profile: string;
+    team_members: string;
+    integrations: string;
+    feedback: string;
+    auth: string;
+  };
+}
 
 export function GeneralSettings() {
   const { profile, isLoading, updateProfile } = useProfile();
@@ -33,6 +53,13 @@ export function GeneralSettings() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // GDPR Anonymization state
+  const [anonymizeDialogOpen, setAnonymizeDialogOpen] = useState(false);
+  const [anonymizeConfirmation, setAnonymizeConfirmation] = useState("");
+  const [anonymizeReason, setAnonymizeReason] = useState("user_request");
+  const [isAnonymizing, setIsAnonymizing] = useState(false);
+  const [anonymizeResult, setAnonymizeResult] = useState<AnonymizeResponse | null>(null);
 
   // Local state for form fields
   const [firstName, setFirstName] = useState("");
@@ -252,6 +279,229 @@ export function GeneralSettings() {
         </CardContent>
       </Card>
 
+      {/* Data Privacy & GDPR */}
+      <Card className="overflow-hidden border-amber-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/5">
+        <CardHeader className="border-b border-amber-500/30 bg-amber-500/5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Shield className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle className="text-lg text-amber-700 dark:text-amber-400">Data Privacy (GDPR)</CardTitle>
+              <CardDescription>Manage your personal data under GDPR Article 17</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="space-y-1">
+              <h4 className="font-semibold text-foreground">Anonymize Personal Data</h4>
+              <p className="text-sm text-muted-foreground">
+                Remove personally identifiable information while keeping your account active. 
+                Your documents and AI capabilities remain intact.
+              </p>
+            </div>
+            <Dialog open={anonymizeDialogOpen} onOpenChange={(open) => {
+              setAnonymizeDialogOpen(open);
+              if (!open) {
+                setAnonymizeConfirmation("");
+                setAnonymizeResult(null);
+              }
+            }}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full sm:w-auto gap-2 border-amber-500/50 text-amber-700 hover:bg-amber-500/10 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300">
+                  <UserX className="h-4 w-4" />
+                  Anonymize Data
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                    <Shield className="h-5 w-5" />
+                    GDPR Data Anonymization
+                  </DialogTitle>
+                  <DialogDescription className="text-base">
+                    Exercise your GDPR &quot;Right to Erasure&quot; (Article 17) by anonymizing your personal data.
+                  </DialogDescription>
+                </DialogHeader>
+                
+                {anonymizeResult ? (
+                  // Success state
+                  <div className="space-y-4 py-4">
+                    <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
+                      <div className="flex items-center gap-2 text-green-700 dark:text-green-400 mb-2">
+                        <Check className="h-5 w-5" />
+                        <span className="font-semibold">Anonymization Complete</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{anonymizeResult.message}</p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Request ID: <span className="font-mono">{anonymizeResult.request_id}</span>
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium">Anonymization Results:</h4>
+                      <ul className="text-sm text-muted-foreground space-y-1">
+                        <li className="flex items-center gap-2">
+                          <span className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            anonymizeResult.details.profile === "success" ? "bg-green-500" : "bg-amber-500"
+                          )} />
+                          Profile: {anonymizeResult.details.profile}
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            anonymizeResult.details.team_members === "success" ? "bg-green-500" : "bg-amber-500"
+                          )} />
+                          Team Records: {anonymizeResult.details.team_members}
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            anonymizeResult.details.integrations?.includes("deleted") ? "bg-green-500" : "bg-amber-500"
+                          )} />
+                          Integrations: {anonymizeResult.details.integrations}
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            anonymizeResult.details.auth === "success" ? "bg-green-500" : "bg-amber-500"
+                          )} />
+                          Auth Account: {anonymizeResult.details.auth}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                ) : (
+                  // Request form
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-medium">What will be anonymized:</h4>
+                      <ul className="text-sm text-muted-foreground space-y-2">
+                        <li className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          Your name → &quot;Deleted User&quot;
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          Your email → anonymized identifier
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          Profile picture → removed
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          OAuth connections → deleted
+                        </li>
+                      </ul>
+                    </div>
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-medium">What will be preserved:</h4>
+                      <ul className="text-sm text-muted-foreground space-y-2">
+                        <li className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                          Your documents & AI knowledge
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                          Chat history (anonymized)
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                          Account access
+                        </li>
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="anonymize-reason" className="text-sm font-medium">
+                        Reason for Request
+                      </Label>
+                      <Select value={anonymizeReason} onValueChange={setAnonymizeReason}>
+                        <SelectTrigger id="anonymize-reason">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user_request">Personal preference</SelectItem>
+                          <SelectItem value="privacy_concern">Privacy concern</SelectItem>
+                          <SelectItem value="leaving_organization">Leaving organization</SelectItem>
+                          <SelectItem value="legal_request">Legal/Regulatory request</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                      <Label htmlFor="anonymize-confirm" className="text-sm font-medium">
+                        Type <span className="font-mono font-bold text-amber-600 dark:text-amber-400">ANONYMIZE</span> to confirm
+                      </Label>
+                      <Input
+                        id="anonymize-confirm"
+                        value={anonymizeConfirmation}
+                        onChange={(e) => setAnonymizeConfirmation(e.target.value.toUpperCase())}
+                        placeholder="Type ANONYMIZE here"
+                        className="mt-2"
+                        autoComplete="off"
+                      />
+                    </div>
+                  </div>
+                )}
+                
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setAnonymizeDialogOpen(false);
+                      setAnonymizeConfirmation("");
+                      setAnonymizeResult(null);
+                    }}
+                  >
+                    {anonymizeResult ? "Close" : "Cancel"}
+                  </Button>
+                  {!anonymizeResult && (
+                    <Button
+                      variant="default"
+                      className="bg-amber-600 hover:bg-amber-700 text-white"
+                      disabled={anonymizeConfirmation !== "ANONYMIZE" || isAnonymizing}
+                      onClick={async () => {
+                        setIsAnonymizing(true);
+                        try {
+                          const response = await api.post<AnonymizeResponse>("/settings/profile/me/anonymize", {
+                            reason: anonymizeReason,
+                            confirmation: "ANONYMIZE",
+                          });
+                          setAnonymizeResult(response.data);
+                          toast({
+                            title: "Data Anonymized",
+                            description: "Your personal information has been successfully anonymized.",
+                          });
+                        } catch (error: unknown) {
+                          const message = error instanceof Error ? error.message : "Failed to anonymize data. Please try again.";
+                          toast({
+                            title: "Anonymization failed",
+                            description: message,
+                            variant: "destructive",
+                          });
+                        } finally {
+                          setIsAnonymizing(false);
+                        }
+                      }}
+                    >
+                      {isAnonymizing ? (
+                        <>
+                          <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                          Anonymizing...
+                        </>
+                      ) : (
+                        "Anonymize My Data"
+                      )}
+                    </Button>
+                  )}
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Danger Zone */}
       <Card className="overflow-hidden border-destructive/50 transition-all duration-300">
         <CardHeader className="border-b border-destructive/30 bg-destructive/5">
@@ -271,6 +521,8 @@ export function GeneralSettings() {
               <h4 className="font-semibold text-foreground">Delete Account</h4>
               <p className="text-sm text-muted-foreground">
                 Permanently remove your account and all of your content. This action is not reversible.
+                <br />
+                <span className="text-xs">Consider &quot;Anonymize Data&quot; above if you want to keep your account.</span>
               </p>
             </div>
             <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

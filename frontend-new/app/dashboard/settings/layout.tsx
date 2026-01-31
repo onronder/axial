@@ -2,19 +2,31 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { User, Database, FileText, Bell, CreditCard, Users, Settings, AlertTriangle, BarChart3 } from "lucide-react";
+import { useMemo } from "react";
+import { User, Database, FileText, Bell, CreditCard, Users, Settings, AlertTriangle, BarChart3, ScrollText, Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useUsage } from "@/hooks/useUsage";
+import { useProfile } from "@/hooks/useProfile";
 
-const settingsNav = [
-    { name: "General", path: "/dashboard/settings/general", icon: User },
+interface NavItem {
+    name: string;
+    path: string;
+    icon: React.ElementType;
+    adminOnly?: boolean;
+    freeAllowed?: boolean;  // Items visible even on free plan
+}
+
+const settingsNav: NavItem[] = [
+    { name: "General", path: "/dashboard/settings/general", icon: User, freeAllowed: true },
     { name: "Data Sources", path: "/dashboard/settings/data-sources", icon: Database },
     { name: "Knowledge Base", path: "/dashboard/settings/knowledge-base", icon: FileText },
+    { name: "Jobs", path: "/dashboard/settings/jobs", icon: Briefcase, freeAllowed: true },  // Always visible
     { name: "Team", path: "/dashboard/settings/team", icon: Users },
     { name: "Analytics", path: "/dashboard/settings/analytics", icon: BarChart3, adminOnly: true },
+    { name: "Audit Logs", path: "/dashboard/settings/audit-logs", icon: ScrollText, adminOnly: true },
     { name: "Notifications", path: "/dashboard/settings/notifications", icon: Bell },
-    { name: "Billing", path: "/dashboard/settings/billing", icon: CreditCard },
+    { name: "Billing", path: "/dashboard/settings/billing", icon: CreditCard, freeAllowed: true },
     { name: "Failed Tasks", path: "/dashboard/settings/failed-tasks", icon: AlertTriangle },
 ];
 
@@ -25,13 +37,25 @@ export default function SettingsLayout({
 }) {
     const pathname = usePathname();
     const { plan } = useUsage();
+    const { profile } = useProfile();
+    
     const isFreePlan = plan === "free" || plan === "none";
-    const visibleNav = isFreePlan
-        ? settingsNav.filter((item) =>
-            item.path === "/dashboard/settings/general" ||
-            item.path === "/dashboard/settings/billing"
-        )
-        : settingsNav;
+    const isAdmin = profile?.role === "admin";
+    
+    // Filter navigation based on plan and admin role
+    const visibleNav = useMemo(() => {
+        return settingsNav.filter((item) => {
+            // Admin-only items: only show to admins
+            if (item.adminOnly && !isAdmin) {
+                return false;
+            }
+            // Free plan: only show freeAllowed items
+            if (isFreePlan && !item.freeAllowed) {
+                return false;
+            }
+            return true;
+        });
+    }, [isFreePlan, isAdmin]);
 
     return (
         <div className="relative min-h-full w-full overflow-hidden bg-background">

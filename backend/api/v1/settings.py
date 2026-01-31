@@ -4,6 +4,7 @@ Settings API Router
 Endpoints for user profile and notification settings management.
 """
 
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import List, Optional
@@ -232,27 +233,80 @@ async def delete_account(request: Request, user_id: str = Depends(get_current_us
         raise api_error(ApiErrorCode.INTERNAL_ERROR, e, "delete_account")
 
 
-@router.post("/settings/profile/me/anonymize", status_code=200)
+class AnonymizeRequest(BaseModel):
+    """Request body for GDPR anonymization."""
+    reason: str = "user_request"
+    confirmation: str  # User must type "ANONYMIZE" to confirm
+
+
+class AnonymizeResponse(BaseModel):
+    """Response model for GDPR anonymization."""
+    message: str
+    request_id: str
+    anonymized_at: str
+    details: dict
+
+
+@router.post("/settings/profile/me/anonymize", status_code=200, response_model=AnonymizeResponse)
 @limiter.limit("3/minute")
-async def anonymize_account(request: Request, user_id: str = Depends(get_current_user)):
+async def anonymize_account(
+    request: Request,
+    body: AnonymizeRequest,
+    user_id: str = Depends(get_current_user)
+):
     """
-    Anonymize user data without hard deletion.
+    GDPR-compliant data anonymization.
     
-    GDPR/KVKK compliant alternative to full account deletion.
+    This endpoint anonymizes user data without full deletion, preserving
+    system integrity while removing personally identifiable information.
+    
+    **GDPR Articles Implemented:**
+    - Article 17: Right to Erasure (alternative implementation)
+    - Article 20: Right to Data Portability (data remains but anonymized)
+    
+    **What gets anonymized:**
+    - Profile: Names set to "Deleted User", avatar removed
+    - Team Records: Email anonymized, name set to "Deleted User"
+    - Integrations: OAuth connections deleted (contain tokens)
+    - Feedback: User association removed but feedback preserved
+    - Auth: Email anonymized, metadata cleared
+    
+    **What is preserved:**
+    - Documents and embeddings (for enterprise compliance)
+    - Chat history (anonymized attribution)
+    - Billing records (legal requirement)
+    
+    **Confirmation Required:**
+    User must send `confirmation: "ANONYMIZE"` in the request body.
     """
     from services.cleanup import cleanup_service
+    from datetime import datetime, timezone
+    import uuid
     import logging
 
     logger = logging.getLogger(__name__)
-    logger.info(f"🧹 [AnonymizeAccount] Request received for user: {user_id}")
+    
+    # Require explicit confirmation
+    if body.confirmation != "ANONYMIZE":
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation required. Send 'confirmation': 'ANONYMIZE' to proceed."
+        )
+    
+    logger.info(f"🔒 [GDPR] Anonymization request received for user: {user_id}, reason: {body.reason}")
 
     try:
-        results = await cleanup_service.anonymize_user_data(user_id)
-        return {
-            "message": "Account data anonymized",
-            "details": results,
-        }
+        request_id = str(uuid.uuid4())
+        results = await cleanup_service.anonymize_user_data(user_id, reason=body.reason)
+        
+        return AnonymizeResponse(
+            message="Your data has been anonymized. Your account remains active but personal information has been removed.",
+            request_id=request_id,
+            anonymized_at=datetime.now(timezone.utc).isoformat(),
+            details=results,
+        )
     except Exception as e:
+        logger.error(f"❌ [GDPR] Anonymization failed: {e}")
         raise api_error(ApiErrorCode.INTERNAL_ERROR, e, "anonymize_account")
 
 

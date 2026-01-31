@@ -157,6 +157,31 @@ class MicrosoftExchangeRequest(BaseModel):
     code_verifier: Optional[str] = Field(default=None, max_length=256)
 
 
+class WebCrawlConfigResponse(BaseModel):
+    """Response model for web crawl configuration."""
+    id: str
+    root_url: str
+    crawl_type: str
+    status: str
+    max_depth: int
+    max_pages: int
+    allow_subdomains: bool
+    total_pages_found: int
+    pages_ingested: int
+    pages_failed: int
+    error_message: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
+class WebCrawlConfigListResponse(BaseModel):
+    """Response model for listing web crawl configurations."""
+    items: List[WebCrawlConfigResponse]
+    total: int
+    has_more: bool
+
+
 async def _resolve_org_and_plan(user_id: str) -> tuple[str, str]:
     """
     Determine org_id (team or user) and plan code for quota enforcement.
@@ -1978,6 +2003,188 @@ async def list_provider_items(
             "Failed to list items.",
             {"provider": provider, "reason": str(e)},
         )
+
+
+# =============================================================================
+# Web Crawl Configuration Endpoints
+# =============================================================================
+
+@router.get("/integrations/web/crawl", response_model=WebCrawlConfigListResponse)
+@limiter.limit("60/minute")
+async def list_web_crawl_configs(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+    status: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+):
+    """
+    List user's web crawl configurations.
+    
+    Supports filtering by status:
+    - pending: Queued for crawling
+    - discovering: Finding URLs
+    - processing: Actively crawling
+    - completed: Successfully finished
+    - failed: Encountered errors
+    - cancelled: Manually cancelled
+    
+    Results are ordered by created_at descending (newest first).
+    """
+    from fastapi import Query
+    
+    supabase = get_supabase()
+    
+    try:
+        # Build query
+        query = supabase.table("web_crawl_configs")\
+            .select("*", count="exact")\
+            .eq("user_id", user_id)
+        
+        # Apply status filter if provided
+        if status:
+            valid_statuses = {"pending", "discovering", "processing", "completed", "failed", "cancelled"}
+            if status not in valid_statuses:
+                raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+            query = query.eq("status", status)
+        
+        # Execute with pagination
+        result = query\
+            .order("created_at", desc=True)\
+            .range(offset, offset + limit - 1)\
+            .execute()
+        
+        total = result.count if result.count is not None else 0
+        items = [WebCrawlConfigResponse(
+            id=str(config["id"]),
+            root_url=config["root_url"],
+            crawl_type=config["crawl_type"],
+            status=config["status"],
+            max_depth=config["max_depth"],
+            max_pages=config.get("max_pages", 500),
+            allow_subdomains=config.get("allow_subdomains", False),
+            total_pages_found=config.get("total_pages_found", 0),
+            pages_ingested=config.get("pages_ingested", 0),
+            pages_failed=config.get("pages_failed", 0),
+            error_message=config.get("error_message"),
+            created_at=config.get("created_at"),
+            updated_at=config.get("updated_at"),
+            completed_at=config.get("completed_at"),
+        ) for config in (result.data or [])]
+        
+        return WebCrawlConfigListResponse(
+            items=items,
+            total=total,
+            has_more=(offset + limit) < total
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list web crawl configs: {e}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "list_web_crawl_configs")
+
+
+@router.get("/integrations/web/crawl/active", response_model=Optional[WebCrawlConfigResponse])
+@limiter.limit("120/minute")
+async def get_active_web_crawl(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """
+    Get the user's most recent active web crawl (if any).
+    
+    Active statuses: pending, discovering, processing
+    
+    Returns None (204) if no active crawl exists.
+    Used by frontend to restore crawl state after navigation.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Query for active crawls
+        result = supabase.table("web_crawl_configs")\
+            .select("*")\
+            .eq("user_id", user_id)\
+            .in_("status", ["pending", "discovering", "processing"])\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        if not result.data:
+            return None
+        
+        config = result.data[0]
+        return WebCrawlConfigResponse(
+            id=str(config["id"]),
+            root_url=config["root_url"],
+            crawl_type=config["crawl_type"],
+            status=config["status"],
+            max_depth=config["max_depth"],
+            max_pages=config.get("max_pages", 500),
+            allow_subdomains=config.get("allow_subdomains", False),
+            total_pages_found=config.get("total_pages_found", 0),
+            pages_ingested=config.get("pages_ingested", 0),
+            pages_failed=config.get("pages_failed", 0),
+            error_message=config.get("error_message"),
+            created_at=config.get("created_at"),
+            updated_at=config.get("updated_at"),
+            completed_at=config.get("completed_at"),
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get active web crawl: {e}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_active_web_crawl")
+
+
+@router.get("/integrations/web/crawl/{config_id}", response_model=WebCrawlConfigResponse)
+@limiter.limit("60/minute")
+async def get_web_crawl_config(
+    request: Request,
+    config_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """
+    Get a specific web crawl configuration by ID.
+    
+    Ensures users can only access their own configurations (RLS enforced).
+    """
+    supabase = get_supabase()
+    
+    try:
+        result = supabase.table("web_crawl_configs")\
+            .select("*")\
+            .eq("id", config_id)\
+            .eq("user_id", user_id)\
+            .maybe_single()\
+            .execute()
+        
+        if not result or not result.data:
+            raise HTTPException(status_code=404, detail="Crawl configuration not found")
+        
+        config = result.data
+        return WebCrawlConfigResponse(
+            id=str(config["id"]),
+            root_url=config["root_url"],
+            crawl_type=config["crawl_type"],
+            status=config["status"],
+            max_depth=config["max_depth"],
+            max_pages=config.get("max_pages", 500),
+            allow_subdomains=config.get("allow_subdomains", False),
+            total_pages_found=config.get("total_pages_found", 0),
+            pages_ingested=config.get("pages_ingested", 0),
+            pages_failed=config.get("pages_failed", 0),
+            error_message=config.get("error_message"),
+            created_at=config.get("created_at"),
+            updated_at=config.get("updated_at"),
+            completed_at=config.get("completed_at"),
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get web crawl config: {e}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_web_crawl_config")
 
 
 @router.post("/integrations/web/crawl", status_code=202)

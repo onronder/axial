@@ -133,59 +133,163 @@ class AccountCleanupService:
         logger.info("✅ [AccountCleanup] Org deletion finished for %s", organization_id)
         return results
 
-    async def anonymize_user_data(self, user_id: str) -> dict:
+    async def anonymize_user_data(self, user_id: str, reason: str = "user_request") -> dict:
         """
-        Anonymize user data while preserving system integrity.
+        GDPR-compliant data anonymization.
+        
+        This implements GDPR Article 17 "Right to Erasure" as an alternative to hard deletion.
+        Replaces PII with anonymized placeholders while preserving system integrity.
+        
+        Process:
+        1. Log GDPR request to audit trail
+        2. Anonymize user profile (names, avatar)
+        3. Anonymize team membership records
+        4. Delete OAuth integrations (contain tokens)
+        5. Anonymize feedback records
+        6. Anonymize auth account
+        7. Log completion to audit trail
+        
+        Args:
+            user_id: UUID of the user requesting anonymization
+            reason: Reason for request (user_request, admin_action, legal_request)
+            
+        Returns:
+            dict with anonymization results for each system
         """
-        results = {"user_id": user_id, "profile": "pending", "team_members": "pending", "integrations": "pending"}
-
+        from services.audit import audit_logger
+        
+        timestamp = datetime.now(timezone.utc).isoformat()
+        anonymized_email = f"anonymized+{user_id[:8]}@deleted.local"
+        
+        results = {
+            "user_id": user_id,
+            "request_type": "gdpr_anonymization",
+            "reason": reason,
+            "timestamp": timestamp,
+            "profile": "pending",
+            "team_members": "pending",
+            "integrations": "pending",
+            "feedback": "pending",
+            "auth": "pending",
+            "audit_logged": False,
+        }
+        
+        logger.info(f"🔒 [GDPR] Starting anonymization for user: {user_id}")
+        
+        # Step 1: Log GDPR request to audit trail
+        try:
+            audit_logger.log_sync(
+                action="gdpr.anonymization_requested",
+                resource_type="user",
+                resource_id=user_id,
+                user_id=user_id,
+                details={
+                    "reason": reason,
+                    "timestamp": timestamp,
+                    "request_type": "anonymization",
+                }
+            )
+            results["audit_logged"] = True
+            logger.info(f"📋 [GDPR] Audit log created for anonymization request")
+        except Exception as e:
+            logger.warning(f"⚠️ [GDPR] Failed to create audit log: {e}")
+        
+        # Step 2: Anonymize user profile
         try:
             self.supabase.table("user_profiles").update(
                 {
-                    "first_name": None,
-                    "last_name": None,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "first_name": "Deleted",
+                    "last_name": "User",
+                    "avatar_url": None,
+                    "updated_at": timestamp,
                 }
             ).eq("user_id", user_id).execute()
             results["profile"] = "success"
+            logger.info(f"✅ [GDPR] Profile anonymized")
         except Exception as e:
-            logger.error("❌ [Anonymize] Failed to anonymize profile: %s", e)
-            results["profile"] = f"error: {e}"
+            logger.error(f"❌ [GDPR] Failed to anonymize profile: {e}")
+            results["profile"] = f"error: {str(e)}"
 
+        # Step 3: Anonymize team membership records
         try:
-            anonymized_email = f"anonymized+{user_id}@example.com"
+            # Update records where user is a member
             self.supabase.table("team_members").update(
                 {
                     "email": anonymized_email,
                     "name": "Deleted User",
                 }
             ).eq("member_user_id", user_id).execute()
+            
+            # Update records where user is an owner
             self.supabase.table("team_members").update(
                 {
                     "email": anonymized_email,
                     "name": "Deleted User",
                 }
             ).eq("owner_user_id", user_id).execute()
+            
             results["team_members"] = "success"
+            logger.info(f"✅ [GDPR] Team membership anonymized")
         except Exception as e:
-            logger.warning("⚠️ [Anonymize] Failed to anonymize team members: %s", e)
-            results["team_members"] = f"error: {e}"
+            logger.warning(f"⚠️ [GDPR] Failed to anonymize team members: {e}")
+            results["team_members"] = f"error: {str(e)}"
 
+        # Step 4: Delete OAuth integrations (they contain tokens/PII)
         try:
-            self.supabase.table("user_integrations").delete().eq("user_id", user_id).execute()
-            results["integrations"] = "success"
+            delete_result = self.supabase.table("user_integrations").delete().eq("user_id", user_id).execute()
+            deleted_count = len(delete_result.data) if delete_result.data else 0
+            results["integrations"] = f"deleted:{deleted_count}"
+            logger.info(f"✅ [GDPR] Deleted {deleted_count} integrations")
         except Exception as e:
-            logger.warning("⚠️ [Anonymize] Failed to delete integrations: %s", e)
-            results["integrations"] = f"error: {e}"
+            logger.warning(f"⚠️ [GDPR] Failed to delete integrations: {e}")
+            results["integrations"] = f"error: {str(e)}"
 
+        # Step 5: Anonymize feedback records (keep for analytics, remove PII)
+        try:
+            self.supabase.table("feedback").update(
+                {
+                    "user_id": None,  # Remove user association but keep feedback data
+                }
+            ).eq("user_id", user_id).execute()
+            results["feedback"] = "success"
+            logger.info(f"✅ [GDPR] Feedback records anonymized")
+        except Exception as e:
+            # Feedback table might not exist or user might not have feedback
+            logger.warning(f"⚠️ [GDPR] Feedback anonymization skipped: {e}")
+            results["feedback"] = "skipped"
+
+        # Step 6: Anonymize Supabase Auth account
         try:
             self.supabase.auth.admin.update_user_by_id(
                 user_id,
-                {"email": f"anonymized+{user_id}@example.com", "user_metadata": {}},
+                {
+                    "email": anonymized_email,
+                    "user_metadata": {"anonymized": True, "anonymized_at": timestamp},
+                },
             )
+            results["auth"] = "success"
+            logger.info(f"✅ [GDPR] Auth account anonymized")
         except Exception as e:
-            logger.warning("⚠️ [Anonymize] Failed to anonymize auth user: %s", e)
+            logger.warning(f"⚠️ [GDPR] Failed to anonymize auth user: {e}")
+            results["auth"] = f"error: {str(e)}"
 
+        # Step 7: Log completion to audit trail
+        try:
+            audit_logger.log_sync(
+                action="gdpr.anonymization_completed",
+                resource_type="user",
+                resource_id=user_id,
+                user_id=user_id,
+                details={
+                    "results": results,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            logger.info(f"📋 [GDPR] Anonymization completion logged")
+        except Exception as e:
+            logger.warning(f"⚠️ [GDPR] Failed to log completion: {e}")
+
+        logger.info(f"🔒 [GDPR] Anonymization completed for user: {user_id}")
         return results
     async def delete_single_document(
         self, doc_id: str, user_id: str, organization_id: str = None
