@@ -19,6 +19,22 @@ from api.v1.settings import (
     NotificationSettingResponse
 )
 
+def _make_mock_request(method="GET", path="/api/v1"):
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    from starlette.requests import Request
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
+
+
 
 class TestDefaultNotificationSettings:
     """Tests for DEFAULT_NOTIFICATION_SETTINGS configuration."""
@@ -130,7 +146,7 @@ class TestGetNotificationSettingsEndpoint:
         with patch('api.v1.settings.get_supabase', return_value=mock_supabase):
             from api.v1.settings import get_notification_settings
             
-            result = await get_notification_settings(user_id="user-123")
+            result = await get_notification_settings(request=_make_mock_request(), user_id="user-123")
             
             assert len(result) == 1
             assert result[0]["setting_key"] == "email_on_ingestion_complete"
@@ -155,7 +171,7 @@ class TestGetNotificationSettingsEndpoint:
         with patch('api.v1.settings.get_supabase', return_value=mock_supabase):
             from api.v1.settings import get_notification_settings
             
-            result = await get_notification_settings(user_id="new-user")
+            result = await get_notification_settings(request=_make_mock_request(), user_id="new-user")
             
             # Should have called insert
             mock_supabase.table.return_value.insert.assert_called_once()
@@ -187,7 +203,7 @@ class TestUpdateNotificationSettingsEndpoint:
                 enabled=False
             )
             
-            result = await update_notification_setting(payload=payload, user_id="user-123")
+            result = await update_notification_setting(request=_make_mock_request(method="PATCH"), payload=payload, user_id="user-123")
             
             assert result["enabled"] == False
     
@@ -209,7 +225,7 @@ class TestUpdateNotificationSettingsEndpoint:
             )
             
             with pytest.raises(HTTPException) as exc_info:
-                await update_notification_setting(payload=payload, user_id="user-123")
+                await update_notification_setting(request=_make_mock_request(method="PATCH"), payload=payload, user_id="user-123")
             
             assert exc_info.value.status_code == 404
 
@@ -228,7 +244,7 @@ class TestSettingsSecurityAndIsolation:
         with patch('api.v1.settings.get_supabase', return_value=mock_supabase):
             from api.v1.settings import get_notification_settings
             
-            await get_notification_settings(user_id="user-123")
+            await get_notification_settings(request=_make_mock_request(), user_id="user-123")
             
             # Verify eq was called with user_id
             mock_supabase.table.return_value.select.return_value.eq.assert_called_with("user_id", "user-123")
@@ -245,7 +261,7 @@ class TestSettingsSecurityAndIsolation:
             from api.v1.settings import update_notification_setting
             
             payload = NotificationSettingUpdate(setting_key="test", enabled=True)
-            await update_notification_setting(payload=payload, user_id="user-123")
+            await update_notification_setting(request=_make_mock_request(method="PATCH"), payload=payload, user_id="user-123")
             
             # Should have called eq with user_id
             calls = mock_supabase.table.return_value.update.return_value.eq.call_args_list

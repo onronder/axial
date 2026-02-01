@@ -58,25 +58,32 @@ async def test_check_llm_quota_allows_with_plan_balance():
 
 @pytest.mark.asyncio
 async def test_record_llm_usage_updates_usage_and_balance():
-    teams_table = _make_chain_table(data=[{"llm_token_balance": 50}])
-    org_usage_table = _make_chain_table(data=[{"llm_tokens_used": 10}])
-
-    def table_side_effect(name):
-        return {
-            "teams": teams_table,
-            "org_usage": org_usage_table,
-        }.get(name, _make_chain_table())
-
+    """Test that record_llm_usage calls the increment RPC functions."""
     supabase = MagicMock()
-    supabase.table.side_effect = table_side_effect
+    
+    # Mock the RPC calls (new atomic implementation)
+    increment_rpc_result = MagicMock()
+    increment_rpc_result.execute.return_value = MagicMock(data=[{"new_total": 15, "previous_total": 10}])
+    
+    decrement_rpc_result = MagicMock()
+    decrement_rpc_result.execute.return_value = MagicMock(data=[{"new_balance": 45}])
+    
+    def rpc_side_effect(name, params):
+        if name == "increment_llm_tokens":
+            return increment_rpc_result
+        elif name == "decrement_llm_balance":
+            return decrement_rpc_result
+        return MagicMock()
+    
+    supabase.rpc.side_effect = rpc_side_effect
 
     with patch("services.usage.get_supabase", return_value=supabase):
         await usage_service.record_llm_usage("org-1", 5, plan_code="starter", provider="openai", model="gpt-4o-mini")
 
-    org_usage_table.upsert.assert_called_once()
-    upsert_payload = org_usage_table.upsert.call_args[0][0]
-    assert upsert_payload["llm_tokens_used"] == 15
-
-    teams_table.update.assert_called_once()
-    update_payload = teams_table.update.call_args[0][0]
-    assert update_payload["llm_token_balance"] == 45
+    # Verify both RPC calls were made
+    assert supabase.rpc.call_count == 2
+    
+    # Verify increment_llm_tokens was called with correct params
+    increment_call = [c for c in supabase.rpc.call_args_list if c[0][0] == "increment_llm_tokens"][0]
+    assert increment_call[0][1]["p_tokens"] == 5
+    assert increment_call[0][1]["p_org_id"] == "org-1"

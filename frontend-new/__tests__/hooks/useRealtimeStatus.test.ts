@@ -207,6 +207,32 @@ describe('useRealtimeStatus', () => {
             // After max attempts, should still be in error state
             expect(result.current.status).toBe('error');
         });
+
+        it('should stop reconnecting after max attempts', async () => {
+            const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+            
+            // Always fail
+            mockSubscribe.mockImplementation((callback: (state: string) => void) => {
+                setTimeout(() => callback('CHANNEL_ERROR'), 0);
+            });
+
+            const { result } = renderHook(() => useRealtimeStatus());
+            
+            // Exhaust all retry attempts
+            for (let i = 0; i < 10; i++) {
+                await act(async () => {
+                    vi.advanceTimersByTime(10);
+                });
+                await act(async () => {
+                    vi.advanceTimersByTime(30000);
+                });
+            }
+            
+            // Status should remain in error state after max attempts
+            expect(result.current.status).toBe('error');
+            
+            consoleSpy.mockRestore();
+        });
     });
 
     // =========================================================================
@@ -326,6 +352,142 @@ describe('useRealtimeStatus', () => {
             const { result } = renderHook(() => useRealtimeStatus());
             
             expect(typeof result.current.reconnect).toBe('function');
+        });
+    });
+
+    // =========================================================================
+    // Development Logging Tests
+    // =========================================================================
+    
+    describe('Development Logging', () => {
+        it('should log max reconnection attempts message in development', async () => {
+            const originalEnv = process.env.NODE_ENV;
+            process.env.NODE_ENV = 'development';
+            const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+            
+            // Always fail to reach max attempts
+            mockSubscribe.mockImplementation((callback: (state: string) => void) => {
+                setTimeout(() => callback('CHANNEL_ERROR'), 0);
+            });
+
+            const { result } = renderHook(() => useRealtimeStatus());
+            
+            // Exhaust all retry attempts (5 max)
+            for (let i = 0; i < 6; i++) {
+                await act(async () => {
+                    vi.advanceTimersByTime(10);
+                });
+                await act(async () => {
+                    vi.advanceTimersByTime(30000); // Max backoff
+                });
+            }
+            
+            // Should have logged max attempts message
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('Max reconnection attempts')
+            );
+            
+            consoleSpy.mockRestore();
+            process.env.NODE_ENV = originalEnv;
+        });
+
+        it('should log manual reconnection message in development', async () => {
+            const originalEnv = process.env.NODE_ENV;
+            process.env.NODE_ENV = 'development';
+            const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+            
+            mockSubscribe.mockImplementation((callback: (state: string) => void) => {
+                setTimeout(() => callback('SUBSCRIBED'), 0);
+            });
+
+            const { result } = renderHook(() => useRealtimeStatus());
+            
+            await act(async () => {
+                vi.advanceTimersByTime(10);
+            });
+            
+            // Trigger manual reconnect
+            await act(async () => {
+                result.current.reconnect();
+            });
+            
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('Manual reconnection triggered')
+            );
+            
+            consoleSpy.mockRestore();
+            process.env.NODE_ENV = originalEnv;
+        });
+
+        it('should log retry attempt message in development', async () => {
+            const originalEnv = process.env.NODE_ENV;
+            process.env.NODE_ENV = 'development';
+            const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+            
+            let callCount = 0;
+            mockSubscribe.mockImplementation((callback: (state: string) => void) => {
+                setTimeout(() => {
+                    callCount++;
+                    callback(callCount < 3 ? 'CHANNEL_ERROR' : 'SUBSCRIBED');
+                }, 0);
+            });
+
+            const { result } = renderHook(() => useRealtimeStatus());
+            
+            await act(async () => {
+                vi.advanceTimersByTime(10);
+            });
+            
+            // Should have logged retry message
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('Connection failed. Retrying')
+            );
+            
+            consoleSpy.mockRestore();
+            process.env.NODE_ENV = originalEnv;
+        });
+    });
+
+    // =========================================================================
+    // Reset Attempts Tests
+    // =========================================================================
+    
+    describe('Reset Attempts After Stable Connection', () => {
+        it('should reset reconnect attempts after connection is stable', async () => {
+            let callCount = 0;
+            mockSubscribe.mockImplementation((callback: (state: string) => void) => {
+                setTimeout(() => {
+                    callCount++;
+                    callback(callCount === 1 ? 'CHANNEL_ERROR' : 'SUBSCRIBED');
+                }, 0);
+            });
+
+            const { result } = renderHook(() => useRealtimeStatus());
+            
+            // First attempt fails
+            await act(async () => {
+                vi.advanceTimersByTime(10);
+            });
+            
+            // Wait for backoff and retry
+            await act(async () => {
+                vi.advanceTimersByTime(500);
+            });
+            
+            // Connection succeeds
+            await act(async () => {
+                vi.advanceTimersByTime(10);
+            });
+            
+            expect(result.current.status).toBe('connected');
+            
+            // Wait for reset delay (5 seconds)
+            await act(async () => {
+                vi.advanceTimersByTime(5000);
+            });
+            
+            // Attempts should be reset
+            expect(result.current.reconnectAttempts).toBe(0);
         });
     });
 });

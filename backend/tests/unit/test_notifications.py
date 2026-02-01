@@ -17,6 +17,22 @@ from unittest.mock import Mock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
+
+
+def _make_mock_request(method="GET", path="/api/v1/notifications"):
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
 
 
 class TestListNotifications:
@@ -72,7 +88,7 @@ class TestListNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase_with_notifications):
             from api.v1.notifications import list_notifications
 
-            result = asyncio.run(list_notifications(user_id="user-123"))
+            result = asyncio.run(list_notifications(request=_make_mock_request(), user_id="user-123"))
 
         assert result.total == 2
         mock_supabase_with_notifications.table.return_value.eq.assert_any_call("user_id", "user-123")
@@ -93,7 +109,7 @@ class TestListNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import list_notifications
 
-            asyncio.run(list_notifications(user_id="user-123"))
+            asyncio.run(list_notifications(request=_make_mock_request(), user_id="user-123"))
 
         table.order.assert_called_with("created_at", desc=True)
     
@@ -113,7 +129,7 @@ class TestListNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import list_notifications
 
-            asyncio.run(list_notifications(user_id="user-123", limit=10, offset=5))
+            asyncio.run(list_notifications(request=_make_mock_request(), user_id="user-123", limit=10, offset=5))
 
         table.limit.assert_called_with(10)
         table.offset.assert_called_with(5)
@@ -134,7 +150,7 @@ class TestListNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import list_notifications
 
-            asyncio.run(list_notifications(user_id="user-123", unread_only=True))
+            asyncio.run(list_notifications(request=_make_mock_request(), user_id="user-123", unread_only=True))
 
         table.eq.assert_any_call("is_read", False)
     
@@ -154,7 +170,7 @@ class TestListNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import list_notifications
 
-            result = asyncio.run(list_notifications(user_id="user-123"))
+            result = asyncio.run(list_notifications(request=_make_mock_request(), user_id="user-123"))
 
         assert result.total == 5
     
@@ -174,7 +190,7 @@ class TestListNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import list_notifications
 
-            result = asyncio.run(list_notifications(user_id="user-123"))
+            result = asyncio.run(list_notifications(request=_make_mock_request(), user_id="user-123"))
 
         assert result.unread_count == 3
     
@@ -201,7 +217,7 @@ class TestGetUnreadCount:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import get_unread_count
 
-            result = asyncio.run(get_unread_count(user_id="user-123"))
+            result = asyncio.run(get_unread_count(request=_make_mock_request(), user_id="user-123"))
 
         assert result.count == 4
     
@@ -218,7 +234,7 @@ class TestGetUnreadCount:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import get_unread_count
 
-            result = asyncio.run(get_unread_count(user_id="user-123"))
+            result = asyncio.run(get_unread_count(request=_make_mock_request(), user_id="user-123"))
 
         assert result.count == 0
     
@@ -235,7 +251,7 @@ class TestGetUnreadCount:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import get_unread_count
 
-            result = asyncio.run(get_unread_count(user_id="user-123"))
+            result = asyncio.run(get_unread_count(request=_make_mock_request(), user_id="user-123"))
 
         assert result.count == 0
     
@@ -253,7 +269,7 @@ class TestGetUnreadCount:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import get_unread_count
 
-            asyncio.run(get_unread_count(user_id="user-123"))
+            asyncio.run(get_unread_count(request=_make_mock_request(), user_id="user-123"))
 
         table.select.assert_called_with("id", count="exact")
 
@@ -336,7 +352,7 @@ class TestNotificationErrors:
             from api.v1.notifications import mark_as_read
 
             with pytest.raises(HTTPException):
-                asyncio.run(mark_as_read("notif-1", user_id="user-1"))
+                asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-1"))
 
     @pytest.mark.unit
     def test_delete_notification_404(self):
@@ -351,7 +367,7 @@ class TestNotificationErrors:
             from api.v1.notifications import delete_notification
 
             with pytest.raises(HTTPException):
-                asyncio.run(delete_notification("notif-1", user_id="user-1"))
+                asyncio.run(delete_notification(request=_make_mock_request(method="DELETE"), notification_id="notif-1", user_id="user-1"))
     
     @pytest.mark.unit
     def test_filters_by_user_id(self):
@@ -366,7 +382,7 @@ class TestNotificationErrors:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import get_unread_count
 
-            asyncio.run(get_unread_count(user_id="user-123"))
+            asyncio.run(get_unread_count(request=_make_mock_request(), user_id="user-123"))
 
         table.eq.assert_any_call("user_id", "user-123")
 
@@ -389,7 +405,7 @@ class TestMarkAsRead:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import mark_as_read
 
-            result = asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+            result = asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-123"))
 
         assert result.is_read is True
     
@@ -408,7 +424,7 @@ class TestMarkAsRead:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import mark_as_read
 
-            result = asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+            result = asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-123"))
 
         assert result.id == "notif-1"
     
@@ -426,7 +442,7 @@ class TestMarkAsRead:
             from api.v1.notifications import mark_as_read
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+                asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-123"))
         assert exc.value.status_code == 404
     
     @pytest.mark.unit
@@ -443,7 +459,7 @@ class TestMarkAsRead:
             from api.v1.notifications import mark_as_read
 
             with pytest.raises(HTTPException):
-                asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+                asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-123"))
     
     @pytest.mark.unit
     def test_is_idempotent(self):
@@ -460,7 +476,7 @@ class TestMarkAsRead:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import mark_as_read
 
-            result = asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+            result = asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-123"))
 
         assert result.is_read is True
 
@@ -481,7 +497,7 @@ class TestMarkAllAsRead:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import mark_all_as_read
 
-            result = asyncio.run(mark_all_as_read(user_id="user-123"))
+            result = asyncio.run(mark_all_as_read(request=_make_mock_request(method="PATCH"), user_id="user-123"))
 
         assert result["status"] == "success"
     
@@ -498,7 +514,7 @@ class TestMarkAllAsRead:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import mark_all_as_read
 
-            asyncio.run(mark_all_as_read(user_id="user-123"))
+            asyncio.run(mark_all_as_read(request=_make_mock_request(method="PATCH"), user_id="user-123"))
 
         table.eq.assert_any_call("user_id", "user-123")
     
@@ -521,7 +537,7 @@ class TestMarkAllAsRead:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import mark_all_as_read
 
-            result = asyncio.run(mark_all_as_read(user_id="user-123"))
+            result = asyncio.run(mark_all_as_read(request=_make_mock_request(method="PATCH"), user_id="user-123"))
         assert result["status"] == "success"
 
 
@@ -541,7 +557,7 @@ class TestClearAllNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import clear_all_notifications
 
-            result = asyncio.run(clear_all_notifications(user_id="user-123"))
+            result = asyncio.run(clear_all_notifications(request=_make_mock_request(method="DELETE"), user_id="user-123"))
 
         assert result["status"] == "success"
     
@@ -558,7 +574,7 @@ class TestClearAllNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import clear_all_notifications
 
-            asyncio.run(clear_all_notifications(user_id="user-123"))
+            asyncio.run(clear_all_notifications(request=_make_mock_request(method="DELETE"), user_id="user-123"))
 
         table.eq.assert_any_call("user_id", "user-123")
     
@@ -575,7 +591,7 @@ class TestClearAllNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import clear_all_notifications
 
-            result = asyncio.run(clear_all_notifications(user_id="user-123"))
+            result = asyncio.run(clear_all_notifications(request=_make_mock_request(method="DELETE"), user_id="user-123"))
 
         assert result["status"] == "success"
     
@@ -592,7 +608,7 @@ class TestClearAllNotifications:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import clear_all_notifications
 
-            result = asyncio.run(clear_all_notifications(user_id="user-123"))
+            result = asyncio.run(clear_all_notifications(request=_make_mock_request(method="DELETE"), user_id="user-123"))
         assert result["status"] == "success"
 
 
@@ -612,7 +628,7 @@ class TestDeleteSingleNotification:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import delete_notification
 
-            result = asyncio.run(delete_notification("notif-1", user_id="user-123"))
+            result = asyncio.run(delete_notification(request=_make_mock_request(method="DELETE"), notification_id="notif-1", user_id="user-123"))
         assert result["status"] == "success"
     
     @pytest.mark.unit
@@ -629,7 +645,7 @@ class TestDeleteSingleNotification:
             from api.v1.notifications import delete_notification
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(delete_notification("notif-1", user_id="user-123"))
+                asyncio.run(delete_notification(request=_make_mock_request(method="DELETE"), notification_id="notif-1", user_id="user-123"))
         assert exc.value.status_code == 404
     
     @pytest.mark.unit
@@ -646,7 +662,7 @@ class TestDeleteSingleNotification:
             from api.v1.notifications import delete_notification
 
             with pytest.raises(HTTPException):
-                asyncio.run(delete_notification("notif-1", user_id="user-123"))
+                asyncio.run(delete_notification(request=_make_mock_request(method="DELETE"), notification_id="notif-1", user_id="user-123"))
     
     @pytest.mark.unit
     def test_returns_success_status(self):
@@ -661,7 +677,7 @@ class TestDeleteSingleNotification:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import delete_notification
 
-            result = asyncio.run(delete_notification("notif-1", user_id="user-123"))
+            result = asyncio.run(delete_notification(request=_make_mock_request(method="DELETE"), notification_id="notif-1", user_id="user-123"))
         assert result["status"] == "success"
 
 
@@ -1056,7 +1072,7 @@ class TestNotificationErrorPaths:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import list_notifications
 
-            result = asyncio.run(list_notifications(user_id="user-123"))
+            result = asyncio.run(list_notifications(request=_make_mock_request(), user_id="user-123"))
 
         assert result.notifications[0].metadata is None
 
@@ -1076,7 +1092,7 @@ class TestNotificationErrorPaths:
             from api.v1.notifications import list_notifications
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(list_notifications(user_id="user-123"))
+                asyncio.run(list_notifications(request=_make_mock_request(), user_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -1092,7 +1108,7 @@ class TestNotificationErrorPaths:
             from api.v1.notifications import get_unread_count
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(get_unread_count(user_id="user-123"))
+                asyncio.run(get_unread_count(request=_make_mock_request(), user_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -1108,7 +1124,7 @@ class TestNotificationErrorPaths:
             from api.v1.notifications import mark_as_read
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+                asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-123"))
         assert exc.value.status_code == 404
 
     @pytest.mark.unit
@@ -1125,7 +1141,7 @@ class TestNotificationErrorPaths:
         with patch("api.v1.notifications.get_supabase", return_value=mock_supabase):
             from api.v1.notifications import mark_as_read
 
-            result = asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+            result = asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-123"))
 
         assert result.metadata is None
 
@@ -1142,7 +1158,7 @@ class TestNotificationErrorPaths:
             from api.v1.notifications import mark_as_read
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(mark_as_read("notif-1", user_id="user-123"))
+                asyncio.run(mark_as_read(request=_make_mock_request(method="PATCH"), notification_id="notif-1", user_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -1158,7 +1174,7 @@ class TestNotificationErrorPaths:
             from api.v1.notifications import mark_all_as_read
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(mark_all_as_read(user_id="user-123"))
+                asyncio.run(mark_all_as_read(request=_make_mock_request(method="PATCH"), user_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -1174,7 +1190,7 @@ class TestNotificationErrorPaths:
             from api.v1.notifications import clear_all_notifications
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(clear_all_notifications(user_id="user-123"))
+                asyncio.run(clear_all_notifications(request=_make_mock_request(method="DELETE"), user_id="user-123"))
         assert exc.value.status_code == 500
 
     @pytest.mark.unit
@@ -1190,7 +1206,7 @@ class TestNotificationErrorPaths:
             from api.v1.notifications import delete_notification
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(delete_notification("notif-1", user_id="user-123"))
+                asyncio.run(delete_notification(request=_make_mock_request(method="DELETE"), notification_id="notif-1", user_id="user-123"))
         assert exc.value.status_code == 404
 
     @pytest.mark.unit
@@ -1206,5 +1222,5 @@ class TestNotificationErrorPaths:
             from api.v1.notifications import delete_notification
 
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(delete_notification("notif-1", user_id="user-123"))
+                asyncio.run(delete_notification(request=_make_mock_request(method="DELETE"), notification_id="notif-1", user_id="user-123"))
         assert exc.value.status_code == 500

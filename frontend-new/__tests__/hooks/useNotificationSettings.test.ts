@@ -18,6 +18,7 @@ vi.mock('@/lib/api', () => ({
     api: {
         get: vi.fn(),
         patch: vi.fn(),
+        delete: vi.fn(),
     },
 }));
 
@@ -27,7 +28,11 @@ vi.mock('@/hooks/use-toast', () => ({
     useToast: () => ({ toast: mockToast }),
 }));
 
-const mockApi = api as unknown as { get: ReturnType<typeof vi.fn>; patch: ReturnType<typeof vi.fn> };
+const mockApi = api as unknown as { 
+    get: ReturnType<typeof vi.fn>; 
+    patch: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+};
 
 const mockSettings: NotificationSetting[] = [
     {
@@ -61,6 +66,7 @@ describe('useNotificationSettings', () => {
         vi.clearAllMocks();
         mockApi.get.mockResolvedValue({ data: mockSettings });
         mockApi.patch.mockResolvedValue({ data: mockSettings[0] });
+        mockApi.delete.mockResolvedValue({});
     });
 
     describe('Initial Fetch', () => {
@@ -325,6 +331,148 @@ describe('useNotificationSettings', () => {
                 category: 'email',
                 enabled: expect.any(Boolean),
             });
+        });
+    });
+
+    describe('Reset to Defaults', () => {
+        it('should reset settings to defaults', async () => {
+            const { result } = renderHook(() => useNotificationSettings());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            let success = false;
+            await act(async () => {
+                success = await result.current.resetToDefaults();
+            });
+
+            expect(mockApi.delete).toHaveBeenCalledWith('/settings/notifications');
+            expect(success).toBe(true);
+        });
+
+        it('should show success toast on successful reset', async () => {
+            const { result } = renderHook(() => useNotificationSettings());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            await act(async () => {
+                await result.current.resetToDefaults();
+            });
+
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Notifications reset',
+                    description: 'Preferences restored to defaults.',
+                })
+            );
+        });
+
+        it('should refetch settings after reset', async () => {
+            const { result } = renderHook(() => useNotificationSettings());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            mockApi.get.mockClear();
+
+            await act(async () => {
+                await result.current.resetToDefaults();
+            });
+
+            expect(mockApi.get).toHaveBeenCalledWith('/settings/notifications');
+        });
+
+        it('should set isResetting state during reset', async () => {
+            // Use a delayed promise to check the isResetting state
+            let resolveDelete: () => void = () => {};
+            mockApi.delete.mockReturnValue(new Promise(resolve => {
+                resolveDelete = resolve;
+            }));
+
+            const { result } = renderHook(() => useNotificationSettings());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            expect(result.current.isResetting).toBe(false);
+
+            // Start the reset but don't await it
+            let resetPromise: Promise<boolean>;
+            act(() => {
+                resetPromise = result.current.resetToDefaults();
+            });
+
+            // Check that isResetting is true while in progress
+            expect(result.current.isResetting).toBe(true);
+
+            // Now resolve the delete
+            await act(async () => {
+                resolveDelete();
+                await resetPromise;
+            });
+
+            // Should be false after completion
+            expect(result.current.isResetting).toBe(false);
+        });
+
+        it('should return false on reset error', async () => {
+            mockApi.delete.mockRejectedValue(new Error('Reset failed'));
+
+            const { result } = renderHook(() => useNotificationSettings());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            let success = true;
+            await act(async () => {
+                success = await result.current.resetToDefaults();
+            });
+
+            expect(success).toBe(false);
+        });
+
+        it('should show error toast on reset failure', async () => {
+            mockApi.delete.mockRejectedValue(new Error('Reset failed'));
+
+            const { result } = renderHook(() => useNotificationSettings());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            await act(async () => {
+                await result.current.resetToDefaults();
+            });
+
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Error',
+                    description: 'Failed to reset notification settings.',
+                    variant: 'destructive',
+                })
+            );
+        });
+
+        it('should set isResetting to false even after error', async () => {
+            mockApi.delete.mockRejectedValue(new Error('Reset failed'));
+
+            const { result } = renderHook(() => useNotificationSettings());
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            await act(async () => {
+                await result.current.resetToDefaults();
+            });
+
+            expect(result.current.isResetting).toBe(false);
         });
     });
 });

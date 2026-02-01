@@ -4,6 +4,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException, UploadFile
+from starlette.requests import Request
+
+
+def _make_mock_request(method="GET", path="/api/v1/team"):
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
 
 
 @pytest.mark.asyncio
@@ -14,7 +29,7 @@ async def test_get_current_team_success():
     ):
         from api.v1.team import get_current_team
 
-        result = await get_current_team(user_id="user-1")
+        result = await get_current_team(request=_make_mock_request(), user_id="user-1")
         assert result["id"] == "team-1"
 
 
@@ -24,7 +39,7 @@ async def test_get_current_team_missing():
         from api.v1.team import get_current_team
 
         with pytest.raises(HTTPException) as exc:
-            await get_current_team(user_id="user-1")
+            await get_current_team(request=_make_mock_request(), user_id="user-1")
         assert exc.value.status_code == 404
 
 
@@ -37,7 +52,7 @@ async def test_update_team_invalid_slug():
         from api.v1.team import update_team, TeamUpdate
 
         with pytest.raises(HTTPException) as exc:
-            await update_team(TeamUpdate(slug="Bad Slug"), user_id="user-1")
+            await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(slug="Bad Slug"), user_id="user-1")
         assert exc.value.status_code == 400
 
 
@@ -55,7 +70,7 @@ async def test_update_team_success():
          patch("api.v1.team.team_service.get_user_team", new=AsyncMock(side_effect=[team_initial, team_updated])):
         from api.v1.team import update_team, TeamUpdate
 
-        result = await update_team(TeamUpdate(name="New"), user_id="user-1")
+        result = await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="New"), user_id="user-1")
         assert result["name"] == "New"
 
 
@@ -73,7 +88,7 @@ async def test_update_team_slug_success():
          patch("api.v1.team.team_service.get_user_team", new=AsyncMock(side_effect=[team_initial, team_updated])):
         from api.v1.team import update_team, TeamUpdate
 
-        result = await update_team(TeamUpdate(slug="new-slug"), user_id="user-1")
+        result = await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(slug="new-slug"), user_id="user-1")
         assert result["slug"] == "new-slug"
 
 @pytest.mark.asyncio
@@ -85,7 +100,7 @@ async def test_delete_team_non_owner():
         from api.v1.team import delete_team
 
         with pytest.raises(HTTPException) as exc:
-            await delete_team(purge_data=False, user_id="user-1")
+            await delete_team(request=_make_mock_request(method="DELETE"), purge_data=False, user_id="user-1")
         assert exc.value.status_code == 403
 
 
@@ -104,7 +119,7 @@ async def test_delete_team_success():
          patch("api.v1.team.team_service.invalidate_plan_cache") as invalidate_cache:
         from api.v1.team import delete_team
 
-        result = await delete_team(purge_data=False, user_id="user-1")
+        result = await delete_team(request=_make_mock_request(method="DELETE"), purge_data=False, user_id="user-1")
         assert result["status"] == "success"
         invalidate_cache.assert_called_once_with("user-1")
 
@@ -130,6 +145,7 @@ async def test_list_team_members_filters_and_search():
         from api.v1.team import list_team_members
 
         result = await list_team_members(
+            request=_make_mock_request(),
             user_id="user-1",
             role="viewer",
             status="pending",
@@ -160,7 +176,7 @@ async def test_get_team_stats_counts_members():
          patch("core.quotas.get_plan_limits", return_value=SimpleNamespace(max_team_seats=5)):
         from api.v1.team import get_team_stats
 
-        result = await get_team_stats(user_id="user-1")
+        result = await get_team_stats(request=_make_mock_request(), user_id="user-1")
         assert result.active_members == 1
         assert result.pending_invites == 2
         assert result.total_seats == 5
@@ -175,7 +191,7 @@ async def test_invite_team_member_upgrade_required():
         from api.v1.team import invite_team_member, InviteRequest
 
         with pytest.raises(HTTPException) as exc:
-            await invite_team_member(InviteRequest(email="a@b.com"), user_id="user-1")
+            await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
         assert exc.value.status_code == 403
 
 
@@ -187,7 +203,7 @@ async def test_invite_team_member_success():
     ):
         from api.v1.team import invite_team_member, InviteRequest
 
-        result = await invite_team_member(InviteRequest(email="a@b.com"), user_id="user-1")
+        result = await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
         assert result.success is True
 
 
@@ -198,7 +214,7 @@ async def test_bulk_invite_team_members_bad_csv():
     from api.v1.team import bulk_invite_team_members
 
     with pytest.raises(HTTPException) as exc:
-        await bulk_invite_team_members(file=file, user_id="user-1")
+        await bulk_invite_team_members(request=_make_mock_request(method="POST"), file=file, user_id="user-1")
     assert exc.value.status_code == 400
 
 
@@ -213,7 +229,7 @@ async def test_bulk_invite_team_members_upgrade_required():
         from api.v1.team import bulk_invite_team_members
 
         with pytest.raises(HTTPException) as exc:
-            await bulk_invite_team_members(file=file, user_id="user-1")
+            await bulk_invite_team_members(request=_make_mock_request(method="POST"), file=file, user_id="user-1")
         assert exc.value.status_code == 403
 
 
@@ -226,7 +242,7 @@ async def test_invite_team_member_legacy_conflict():
         from api.v1.team import invite_team_member_legacy, TeamMemberCreate
 
         with pytest.raises(HTTPException) as exc:
-            await invite_team_member_legacy(TeamMemberCreate(email="a@b.com"), user_id="user-1")
+            await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
         assert exc.value.status_code == 409
 
 
@@ -239,7 +255,7 @@ async def test_invite_team_member_legacy_success():
     ):
         from api.v1.team import invite_team_member_legacy, TeamMemberCreate
 
-        result = await invite_team_member_legacy(TeamMemberCreate(email="a@b.com"), user_id="user-1")
+        result = await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
 
     assert result["id"] == "member-1"
 
@@ -250,6 +266,7 @@ async def test_update_team_member_invalid_role():
 
     with pytest.raises(HTTPException) as exc:
         await update_team_member(
+            request=_make_mock_request(method="PATCH"),
             member_id="m-1",
             payload=TeamMemberUpdate(role="invalid"),
             user_id="user-1",
@@ -270,6 +287,7 @@ async def test_update_team_member_success():
         from api.v1.team import update_team_member, TeamMemberUpdate
 
         result = await update_team_member(
+            request=_make_mock_request(method="PATCH"),
             member_id="m-1",
             payload=TeamMemberUpdate(role="editor"),
             user_id="user-1",
@@ -290,6 +308,7 @@ async def test_update_team_member_updates_name():
         from api.v1.team import update_team_member, TeamMemberUpdate
 
         result = await update_team_member(
+            request=_make_mock_request(method="PATCH"),
             member_id="m-1",
             payload=TeamMemberUpdate(name="New Name"),
             user_id="user-1",
@@ -311,6 +330,7 @@ async def test_update_team_member_updates_status():
         from api.v1.team import update_team_member, TeamMemberUpdate
 
         result = await update_team_member(
+            request=_make_mock_request(method="PATCH"),
             member_id="m-1",
             payload=TeamMemberUpdate(status="suspended"),
             user_id="user-1",
@@ -331,7 +351,7 @@ async def test_remove_team_member_not_found():
         from api.v1.team import remove_team_member
 
         with pytest.raises(HTTPException) as exc:
-            await remove_team_member(member_id="m-1", user_id="user-1")
+            await remove_team_member(request=_make_mock_request(method="DELETE"), member_id="m-1", user_id="user-1")
         assert exc.value.status_code == 404
 
 
@@ -344,7 +364,7 @@ async def test_resend_invitation_not_found():
         from api.v1.team import resend_invitation
 
         with pytest.raises(HTTPException) as exc:
-            await resend_invitation(member_id="m-1", user_id="user-1")
+            await resend_invitation(request=_make_mock_request(method="POST"), member_id="m-1", user_id="user-1")
         assert exc.value.status_code == 404
 
 
@@ -356,7 +376,7 @@ async def test_resend_invitation_success():
     ):
         from api.v1.team import resend_invitation
 
-        result = await resend_invitation(member_id="m-1", user_id="user-1")
+        result = await resend_invitation(request=_make_mock_request(method="POST"), member_id="m-1", user_id="user-1")
 
     assert result["status"] == "success"
 
@@ -374,7 +394,7 @@ async def test_accept_invite_invalid_token():
         from api.v1.team import accept_invite, AcceptInviteRequest
 
         with pytest.raises(HTTPException) as exc:
-            await accept_invite(AcceptInviteRequest(token="bad"), user_id="user-1")
+            await accept_invite(request=_make_mock_request(method="POST"), payload=AcceptInviteRequest(token="bad"), user_id="user-1")
         assert exc.value.status_code == 404
 
 
@@ -392,7 +412,7 @@ async def test_accept_invite_success():
          patch("api.v1.team.team_service.invalidate_plan_cache") as invalidate_cache:
         from api.v1.team import accept_invite, AcceptInviteRequest
 
-        result = await accept_invite(AcceptInviteRequest(token="m-1"), user_id="user-1")
+        result = await accept_invite(request=_make_mock_request(method="POST"), payload=AcceptInviteRequest(token="m-1"), user_id="user-1")
         assert result.success is True
         invalidate_cache.assert_called_once_with("user-1")
 
@@ -403,7 +423,7 @@ async def test_update_team_missing_team():
         from api.v1.team import update_team, TeamUpdate
 
         with pytest.raises(HTTPException) as exc:
-            await update_team(TeamUpdate(name="Name"), user_id="user-1")
+            await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="Name"), user_id="user-1")
         assert exc.value.status_code == 404
 
 
@@ -416,7 +436,7 @@ async def test_update_team_non_owner():
         from api.v1.team import update_team, TeamUpdate
 
         with pytest.raises(HTTPException) as exc:
-            await update_team(TeamUpdate(name="Name"), user_id="user-1")
+            await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="Name"), user_id="user-1")
         assert exc.value.status_code == 403
 
 
@@ -429,7 +449,7 @@ async def test_update_team_no_fields():
         from api.v1.team import update_team, TeamUpdate
 
         with pytest.raises(HTTPException) as exc:
-            await update_team(TeamUpdate(), user_id="user-1")
+            await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(), user_id="user-1")
         assert exc.value.status_code == 400
 
 
@@ -448,7 +468,7 @@ async def test_update_team_update_failed():
         from api.v1.team import update_team, TeamUpdate
 
         with pytest.raises(HTTPException) as exc:
-            await update_team(TeamUpdate(name="New"), user_id="user-1")
+            await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="New"), user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -465,7 +485,7 @@ async def test_update_team_handles_exception():
         from api.v1.team import update_team, TeamUpdate
 
         with pytest.raises(HTTPException) as exc:
-            await update_team(TeamUpdate(name="New"), user_id="user-1")
+            await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="New"), user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -475,7 +495,7 @@ async def test_delete_team_missing_team():
         from api.v1.team import delete_team
 
         with pytest.raises(HTTPException) as exc:
-            await delete_team(purge_data=False, user_id="user-1")
+            await delete_team(request=_make_mock_request(method="DELETE"), purge_data=False, user_id="user-1")
         assert exc.value.status_code == 404
 
 
@@ -492,7 +512,7 @@ async def test_delete_team_handles_exception():
         from api.v1.team import delete_team
 
         with pytest.raises(HTTPException) as exc:
-            await delete_team(purge_data=False, user_id="user-1")
+            await delete_team(request=_make_mock_request(method="DELETE"), purge_data=False, user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -505,7 +525,7 @@ async def test_get_effective_plan_inherited():
          ):
         from api.v1.team import get_effective_plan
 
-        result = await get_effective_plan(user_id="user-1")
+        result = await get_effective_plan(request=_make_mock_request(), user_id="user-1")
 
     assert result.inherited is True
     assert result.team_id == "team-1"
@@ -528,7 +548,9 @@ async def test_list_team_members_handles_error():
         from api.v1.team import list_team_members
 
         with pytest.raises(HTTPException) as exc:
-            await list_team_members(user_id="user-1")
+            await list_team_members(
+            request=_make_mock_request(),
+            user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -544,7 +566,7 @@ async def test_get_team_stats_handles_error():
         from api.v1.team import get_team_stats
 
         with pytest.raises(HTTPException) as exc:
-            await get_team_stats(user_id="user-1")
+            await get_team_stats(request=_make_mock_request(), user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -557,7 +579,7 @@ async def test_invite_team_member_already_exists():
         from api.v1.team import invite_team_member, InviteRequest
 
         with pytest.raises(HTTPException) as exc:
-            await invite_team_member(InviteRequest(email="a@b.com"), user_id="user-1")
+            await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
         assert exc.value.status_code == 409
 
 
@@ -570,7 +592,7 @@ async def test_invite_team_member_seat_limit():
         from api.v1.team import invite_team_member, InviteRequest
 
         with pytest.raises(HTTPException) as exc:
-            await invite_team_member(InviteRequest(email="a@b.com"), user_id="user-1")
+            await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
         assert exc.value.status_code == 402
 
 
@@ -583,7 +605,7 @@ async def test_invite_team_member_generic_error():
         from api.v1.team import invite_team_member, InviteRequest
 
         with pytest.raises(HTTPException) as exc:
-            await invite_team_member(InviteRequest(email="a@b.com"), user_id="user-1")
+            await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
         assert exc.value.status_code == 400
 
 
@@ -597,7 +619,7 @@ async def test_bulk_invite_team_members_success():
     ):
         from api.v1.team import bulk_invite_team_members
 
-        result = await bulk_invite_team_members(file=file, user_id="user-1")
+        result = await bulk_invite_team_members(request=_make_mock_request(method="POST"), file=file, user_id="user-1")
 
     assert result.success is True
 
@@ -611,7 +633,7 @@ async def test_invite_team_member_legacy_upgrade_required():
         from api.v1.team import invite_team_member_legacy, TeamMemberCreate
 
         with pytest.raises(HTTPException) as exc:
-            await invite_team_member_legacy(TeamMemberCreate(email="a@b.com"), user_id="user-1")
+            await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
         assert exc.value.status_code == 403
 
 
@@ -624,7 +646,7 @@ async def test_invite_team_member_legacy_generic_error():
         from api.v1.team import invite_team_member_legacy, TeamMemberCreate
 
         with pytest.raises(HTTPException) as exc:
-            await invite_team_member_legacy(TeamMemberCreate(email="a@b.com"), user_id="user-1")
+            await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
         assert exc.value.status_code == 400
 
 
@@ -637,7 +659,7 @@ async def test_invite_team_member_legacy_missing_member():
         from api.v1.team import invite_team_member_legacy, TeamMemberCreate
 
         with pytest.raises(HTTPException) as exc:
-            await invite_team_member_legacy(TeamMemberCreate(email="a@b.com"), user_id="user-1")
+            await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -647,6 +669,7 @@ async def test_update_team_member_invalid_status():
 
     with pytest.raises(HTTPException) as exc:
         await update_team_member(
+            request=_make_mock_request(method="PATCH"),
             member_id="m-1",
             payload=TeamMemberUpdate(status="invalid"),
             user_id="user-1",
@@ -660,6 +683,7 @@ async def test_update_team_member_no_fields():
 
     with pytest.raises(HTTPException) as exc:
         await update_team_member(
+            request=_make_mock_request(method="PATCH"),
             member_id="m-1",
             payload=TeamMemberUpdate(),
             user_id="user-1",
@@ -679,10 +703,11 @@ async def test_update_team_member_not_found():
 
         with pytest.raises(HTTPException) as exc:
             await update_team_member(
-                member_id="m-1",
-                payload=TeamMemberUpdate(role="editor"),
-                user_id="user-1",
-            )
+            request=_make_mock_request(method="PATCH"),
+            member_id="m-1",
+            payload=TeamMemberUpdate(role="editor"),
+            user_id="user-1",
+        )
         assert exc.value.status_code == 404
 
 
@@ -698,10 +723,11 @@ async def test_update_team_member_handles_exception():
 
         with pytest.raises(HTTPException) as exc:
             await update_team_member(
-                member_id="m-1",
-                payload=TeamMemberUpdate(role="editor"),
-                user_id="user-1",
-            )
+            request=_make_mock_request(method="PATCH"),
+            member_id="m-1",
+            payload=TeamMemberUpdate(role="editor"),
+            user_id="user-1",
+        )
         assert exc.value.status_code == 500
 
 
@@ -716,7 +742,7 @@ async def test_remove_team_member_handles_exception():
         from api.v1.team import remove_team_member
 
         with pytest.raises(HTTPException) as exc:
-            await remove_team_member(member_id="m-1", user_id="user-1")
+            await remove_team_member(request=_make_mock_request(method="DELETE"), member_id="m-1", user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -729,7 +755,7 @@ async def test_resend_invitation_unknown_error():
         from api.v1.team import resend_invitation
 
         with pytest.raises(HTTPException) as exc:
-            await resend_invitation(member_id="m-1", user_id="user-1")
+            await resend_invitation(request=_make_mock_request(method="POST"), member_id="m-1", user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -747,7 +773,7 @@ async def test_accept_invite_update_failure():
         from api.v1.team import accept_invite, AcceptInviteRequest
 
         with pytest.raises(HTTPException) as exc:
-            await accept_invite(AcceptInviteRequest(token="m-1"), user_id="user-1")
+            await accept_invite(request=_make_mock_request(method="POST"), payload=AcceptInviteRequest(token="m-1"), user_id="user-1")
         assert exc.value.status_code == 500
 
 
@@ -762,5 +788,5 @@ async def test_accept_invite_handles_exception():
         from api.v1.team import accept_invite, AcceptInviteRequest
 
         with pytest.raises(HTTPException) as exc:
-            await accept_invite(AcceptInviteRequest(token="m-1"), user_id="user-1")
+            await accept_invite(request=_make_mock_request(method="POST"), payload=AcceptInviteRequest(token="m-1"), user_id="user-1")
         assert exc.value.status_code == 500

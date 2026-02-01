@@ -15,6 +15,22 @@ def mock_org_id():
     ):
         yield
 
+def _make_mock_request(method="GET", path="/api/v1"):
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    from starlette.requests import Request
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
+
+
 
 class TestSearchDocuments:
     @pytest.mark.unit
@@ -29,7 +45,8 @@ class TestSearchDocuments:
         with patch("api.v1.search.get_supabase", return_value=supabase), \
              patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
             result = await search_documents(
-                SearchRequest(query="hello", limit=5, threshold=0.2),
+                request=_make_mock_request(), 
+                payload=SearchRequest(query="hello", limit=5, threshold=0.2),
                 user_id="user-1",
             )
 
@@ -46,7 +63,8 @@ class TestSearchDocuments:
              patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
             with pytest.raises(HTTPException) as excinfo:
                 await search_documents(
-                    SearchRequest(query="hello"),
+                    request=_make_mock_request(), 
+                    payload=SearchRequest(query="hello"),
                     user_id="user-1",
                 )
 
@@ -64,7 +82,8 @@ class TestSearchDocuments:
              patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
             with pytest.raises(HTTPException) as excinfo:
                 await search_documents(
-                    SearchRequest(query="hello"),
+                    request=_make_mock_request(), 
+                    payload=SearchRequest(query="hello"),
                     user_id="user-1",
                 )
 

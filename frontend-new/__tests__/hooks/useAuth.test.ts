@@ -114,6 +114,51 @@ describe('useAuth Hook', () => {
 
             expect(mockOnAuthStateChange).toHaveBeenCalled();
         });
+
+        it('should handle getSession error during initialization', async () => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            mockGetSession.mockRejectedValueOnce(new Error('Network error'));
+
+            const { result } = renderHook(() => useAuth());
+
+            await waitFor(() => {
+                expect(result.current.loading).toBe(false);
+            });
+
+            expect(result.current.user).toBeNull();
+            expect(consoleSpy).toHaveBeenCalledWith('Auth init error:', expect.any(Error));
+            consoleSpy.mockRestore();
+        });
+
+        it('should handle SIGNED_OUT event and redirect to login', async () => {
+            // First, get a reference to the callback
+            let authCallback: Function | null = null;
+            mockOnAuthStateChange.mockImplementation((cb) => {
+                authCallback = cb;
+                return {
+                    data: {
+                        subscription: {
+                            unsubscribe: vi.fn(),
+                        },
+                    },
+                };
+            });
+
+            const { result } = renderHook(() => useAuth());
+
+            await waitFor(() => {
+                expect(result.current.loading).toBe(false);
+            });
+
+            // Simulate SIGNED_OUT event
+            await act(async () => {
+                if (authCallback) {
+                    await authCallback('SIGNED_OUT', null);
+                }
+            });
+
+            expect(mockPush).toHaveBeenCalledWith('/login');
+        });
     });
 
     // =========================================================================
@@ -442,6 +487,46 @@ describe('useAuth Hook', () => {
                 })
             );
         });
+
+        it('should throw error on OAuth failure', async () => {
+            mockSignInWithOAuth.mockResolvedValue({
+                error: { message: 'OAuth service unavailable' },
+            });
+
+            const { result } = renderHook(() => useAuth());
+
+            await waitFor(() => {
+                expect(result.current.loading).toBe(false);
+            });
+
+            await expect(
+                act(async () => {
+                    await result.current.signInWithOAuth('google');
+                })
+            ).rejects.toThrow();
+        });
+
+        it('should support other OAuth providers', async () => {
+            mockSignInWithOAuth.mockResolvedValue({ error: null });
+
+            const { result } = renderHook(() => useAuth());
+
+            await waitFor(() => {
+                expect(result.current.loading).toBe(false);
+            });
+
+            // Test with a provider that doesn't have special config
+            await act(async () => {
+                await result.current.signInWithOAuth('github');
+            });
+
+            expect(mockSignInWithOAuth).toHaveBeenCalledWith({
+                provider: 'github',
+                options: expect.objectContaining({
+                    redirectTo: expect.stringContaining('/auth/callback'),
+                }),
+            });
+        });
     });
 
     // =========================================================================
@@ -569,8 +654,101 @@ describe('useAuth Hook', () => {
             expect(mockSignOut).toHaveBeenCalled();
         });
 
-        // Note: Skipping 'should clear user state after logout' test due to test framework 
-        // timeout issues with async state updates. The logout flow is covered by the 
-        // 'should navigate to login' and 'should call signOut' tests above.
+        it('should handle signOut error gracefully', async () => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            mockSignOut.mockResolvedValue({ error: { message: 'Sign out failed' } });
+
+            const { result } = renderHook(() => useAuth());
+
+            await waitFor(() => {
+                expect(result.current.loading).toBe(false);
+            });
+
+            // Should not throw, just log the error
+            await act(async () => {
+                await result.current.logout();
+            });
+
+            expect(consoleSpy).toHaveBeenCalledWith('Logout error:', 'Sign out failed');
+            expect(mockPush).toHaveBeenCalledWith('/login');
+            consoleSpy.mockRestore();
+        });
+
+        it('should handle signOut exception gracefully', async () => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            mockSignOut.mockRejectedValue(new Error('Network error'));
+
+            const { result } = renderHook(() => useAuth());
+
+            await waitFor(() => {
+                expect(result.current.loading).toBe(false);
+            });
+
+            // Should not throw, just log the error
+            await act(async () => {
+                await result.current.logout();
+            });
+
+            expect(consoleSpy).toHaveBeenCalledWith('Logout exception:', expect.any(Error));
+            expect(mockPush).toHaveBeenCalledWith('/login');
+            consoleSpy.mockRestore();
+        });
+    });
+
+    // =========================================================================
+    // Get Session Tests
+    // =========================================================================
+
+    describe('getSession', () => {
+        it('should return session when available', async () => {
+            const mockSession = {
+                access_token: 'token123',
+                user: { id: 'user-123' },
+            };
+
+            const { result } = renderHook(() => useAuth());
+
+            await waitFor(() => {
+                expect(result.current.loading).toBe(false);
+            });
+
+            // Mock for the getSession call (not the initial fetch)
+            mockGetSession.mockResolvedValueOnce({
+                data: { session: mockSession },
+                error: null,
+            });
+
+            let session;
+            await act(async () => {
+                session = await result.current.getSession();
+            });
+
+            expect(session).toEqual(mockSession);
+        });
+
+        it('should return null and log error on getSession failure', async () => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+            const { result } = renderHook(() => useAuth());
+
+            await waitFor(() => {
+                expect(result.current.loading).toBe(false);
+            });
+
+            // Mock error for the getSession call
+            mockGetSession.mockResolvedValueOnce({
+                data: { session: null },
+                error: { message: 'Session retrieval failed' },
+            });
+
+            let session;
+            await act(async () => {
+                session = await result.current.getSession();
+            });
+
+            expect(session).toBeNull();
+            expect(consoleSpy).toHaveBeenCalledWith('Get session error:', 'Session retrieval failed');
+            consoleSpy.mockRestore();
+        });
     });
 });

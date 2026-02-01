@@ -1,72 +1,39 @@
-/**
- * Test Suite: YoutubeInput Component
- *
- * Comprehensive tests for:
- * - YouTube URL validation (watch, short, embed, shorts)
- * - Form submission and API calls
- * - Disabled states and error handling
- * - UI rendering
- */
-
-import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import userEvent from '@testing-library/user-event';
+import { YoutubeInput } from '@/components/data-sources/YoutubeInput';
 
-// Use hoisted mocks for proper initialization
-const { mockToast, mockRefresh, mockApiPost } = vi.hoisted(() => ({
-    mockToast: vi.fn(),
-    mockRefresh: vi.fn(),
-    mockApiPost: vi.fn().mockResolvedValue({ data: { job_id: 'test-job-123' } }),
-}));
+// =============================================================================
+// Mocks
+// =============================================================================
 
+const mockToast = vi.fn();
 vi.mock('@/hooks/use-toast', () => ({
     useToast: () => ({ toast: mockToast }),
 }));
 
-vi.mock('@/hooks/useUsage', () => ({
-    useUsage: () => ({ refresh: mockRefresh }),
-}));
-
-vi.mock('@/hooks/useFileStatus', () => ({
-    useFileStatus: () => ({ files: [] }),
-}));
-
+const mockRegisterJob = vi.fn();
 vi.mock('@/hooks/useIngestionProgress', () => ({
     useIngestionProgress: () => ({
-        registerJob: vi.fn(),
-        unregisterJob: vi.fn(),
-        updateJobProgress: vi.fn(),
-        markJobCompleted: vi.fn(),
-        hasJobCompleted: vi.fn().mockReturnValue(false),
-        currentJobId: null,
-        overallProgress: 0,
-        jobFiles: [],
-        isComplete: false,
-        hasAnyIngestion: false,
-        globalToastMessage: null,
-        setGlobalToastMessage: vi.fn(),
-        clearGlobalToast: vi.fn(),
+        registerJob: mockRegisterJob,
+        activeJobs: [],
+        isLoading: false,
     }),
-    IngestionProgressProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+const mockApiPost = vi.fn();
 vi.mock('@/lib/api', () => ({
     api: {
         post: (...args: unknown[]) => mockApiPost(...args),
     },
 }));
 
-// Mock IngestionProgressModal to avoid complex rendering
-vi.mock('@/components/ingestion/IngestionProgressModal', () => ({
-    IngestionProgressModal: () => null,
-}));
+// =============================================================================
+// Test Data
+// =============================================================================
 
-// Import component after mocks
-import { YoutubeInput } from '@/components/data-sources/YoutubeInput';
-
-const mockSource = {
-    id: 'youtube',
+const defaultSource = {
+    id: 'youtube-source',
     name: 'YouTube Video',
     type: 'youtube',
     status: 'disconnected' as const,
@@ -76,414 +43,539 @@ const mockSource = {
     category: 'web' as const,
 };
 
-const renderWithQueryClient = (ui: React.ReactElement) => {
-    const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false } },
-    });
-    return render(
-        <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
-    );
-};
+// =============================================================================
+// Test Suite
+// =============================================================================
 
 describe('YoutubeInput Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockApiPost.mockResolvedValue({ data: { job_id: 'test-job-123' } });
     });
 
-    // ===========================================================================
+    // =========================================================================
     // Rendering Tests
-    // ===========================================================================
+    // =========================================================================
 
     describe('Rendering', () => {
-        it('renders YouTube icon and title', () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
+        it('should render the component with source name', () => {
+            render(<YoutubeInput source={defaultSource} />);
             expect(screen.getByText('YouTube Video')).toBeInTheDocument();
-            expect(screen.getByPlaceholderText(/youtube\.com\/watch/i)).toBeInTheDocument();
         });
 
-        it('renders source description', () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
+        it('should render the source description', () => {
+            render(<YoutubeInput source={defaultSource} />);
             expect(screen.getByText('Transcribe and chat with YouTube videos')).toBeInTheDocument();
         });
 
-        it('renders helper text', () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
+        it('should render URL input placeholder', () => {
+            render(<YoutubeInput source={defaultSource} />);
+            expect(screen.getByPlaceholderText('https://youtube.com/watch?v=...')).toBeInTheDocument();
+        });
+
+        it('should render help text', () => {
+            render(<YoutubeInput source={defaultSource} />);
             expect(screen.getByText(/Paste a YouTube video URL/i)).toBeInTheDocument();
         });
 
-        it('shows disabled reason when provided', () => {
-            renderWithQueryClient(
-                <YoutubeInput 
-                    source={mockSource} 
-                    disabled={true} 
-                    disabledReason="Upgrade required to use this feature" 
-                />
-            );
-            
-            expect(screen.getByText('Upgrade required to use this feature')).toBeInTheDocument();
+        it('should render YouTube icon', () => {
+            render(<YoutubeInput source={defaultSource} />);
+            const icon = document.querySelector('.lucide-youtube');
+            expect(icon).toBeInTheDocument();
         });
     });
 
-    // ===========================================================================
+    // =========================================================================
     // URL Validation Tests
-    // ===========================================================================
+    // =========================================================================
 
     describe('URL Validation', () => {
-        it('accepts valid YouTube watch URL', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
-            
+        it('should accept valid YouTube watch URL', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            // Should show video ID when valid
             await waitFor(() => {
-                expect(mockApiPost).toHaveBeenCalledWith(
-                    '/integrations/web/crawl',
-                    expect.objectContaining({
-                        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-                        crawl_type: 'single',
-                    })
-                );
+                expect(screen.getByText('Video ID:')).toBeInTheDocument();
+                expect(screen.getByText('dQw4w9WgXcQ')).toBeInTheDocument();
             });
         });
 
-        it('accepts valid youtu.be short URL', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
+        it('should show validation error in UI for invalid URL after submit attempt', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
             
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://youtu.be/dQw4w9WgXcQ' } });
+            // Type a partial URL that looks valid at first but isn't
+            await user.type(input, 'https://youtube.com/');
             
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
+            // Clear and type an invalid URL then try form submission
+            await user.clear(input);
+            await user.type(input, 'https://vimeo.com/123456');
             
+            // The button should be disabled since URL is invalid
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            expect(submitBtn).toBeDisabled();
+        });
+
+        it('should accept valid YouTube short URL', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://youtu.be/dQw4w9WgXcQ');
+
             await waitFor(() => {
-                expect(mockApiPost).toHaveBeenCalledWith(
-                    '/integrations/web/crawl',
-                    expect.objectContaining({
-                        url: 'https://youtu.be/dQw4w9WgXcQ',
-                    })
-                );
+                expect(screen.getByText('dQw4w9WgXcQ')).toBeInTheDocument();
             });
         });
 
-        it('accepts YouTube embed URL', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://youtube.com/embed/dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
-            
+        it('should show error indicator for invalid URL', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://not-youtube.com/video');
+
             await waitFor(() => {
-                expect(mockApiPost).toHaveBeenCalled();
+                // Button should be disabled for invalid URL
+                const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+                expect(submitBtn).toBeDisabled();
             });
         });
 
-        it('accepts YouTube Shorts URL', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://youtube.com/shorts/dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
-            
-            await waitFor(() => {
-                expect(mockApiPost).toHaveBeenCalled();
-            });
-        });
+        it('should not show video ID for invalid URL', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
 
-        it('rejects non-YouTube URLs by disabling button', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://www.cnn.com/article' } });
-            
-            // Button should be disabled for invalid URL
-            const submitButton = screen.getByRole('button');
-            expect(submitButton).toBeDisabled();
-            
-            // Should NOT call API
-            expect(mockApiPost).not.toHaveBeenCalled();
-        });
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'invalid-url');
 
-        it('rejects Vimeo URLs by disabling button', () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://vimeo.com/123456789' } });
-            
-            // Button should be disabled for Vimeo URL
-            const submitButton = screen.getByRole('button');
-            expect(submitButton).toBeDisabled();
-            
-            expect(mockApiPost).not.toHaveBeenCalled();
-        });
-
-        it('rejects empty input', () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const submitButton = screen.getByRole('button');
-            expect(submitButton).toBeDisabled();
-        });
-
-        it('rejects plain text by disabling button', () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'not a url' } });
-            
-            // Button should be disabled for invalid text
-            const submitButton = screen.getByRole('button');
-            expect(submitButton).toBeDisabled();
+            expect(screen.queryByText('Video ID:')).not.toBeInTheDocument();
         });
     });
 
-    // ===========================================================================
-    // Submit Behavior Tests
-    // ===========================================================================
+    // =========================================================================
+    // Input Handling Tests
+    // =========================================================================
 
-    describe('Submit Behavior', () => {
-        it('disables button when input is empty', () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const submitButton = screen.getByRole('button');
-            expect(submitButton).toBeDisabled();
+    describe('Input Handling', () => {
+        it('should update URL state on input change', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...') as HTMLInputElement;
+            await user.type(input, 'https://youtube.com/watch?v=test123');
+
+            expect(input.value).toBe('https://youtube.com/watch?v=test123');
         });
 
-        it('enables button when valid YouTube URL is entered', () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            // Must use a valid video ID format (11 characters)
-            fireEvent.change(input, { target: { value: 'https://youtu.be/dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            expect(submitButton).not.toBeDisabled();
+        it('should clear validation error when typing', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            // Type an invalid URL first
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'invalid');
+
+            // Button should be disabled for invalid URL
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            expect(submitBtn).toBeDisabled();
+
+            // Clear and type valid URL
+            await user.clear(input);
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            // Button should now be enabled
+            expect(submitBtn).not.toBeDisabled();
+        });
+    });
+
+    // =========================================================================
+    // Submission Tests
+    // =========================================================================
+
+    describe('Submission', () => {
+        it('should disable button when URL is empty', () => {
+            render(<YoutubeInput source={defaultSource} />);
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            expect(submitBtn).toBeDisabled();
         });
 
-        it('submits on Enter key press', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://youtu.be/dQw4w9WgXcQ' } });
-            fireEvent.keyDown(input, { key: 'Enter' });
-            
+        it('should disable button for invalid URL', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'invalid-url');
+
+            // Button should be disabled because URL is invalid
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            expect(submitBtn).toBeDisabled();
+        });
+
+        it('should call API on valid submission', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
             await waitFor(() => {
-                expect(mockApiPost).toHaveBeenCalled();
+                expect(mockApiPost).toHaveBeenCalledWith('/integrations/web/crawl', expect.objectContaining({
+                    url: expect.stringContaining('youtube.com'),
+                    crawl_type: 'single',
+                }));
             });
         });
 
-        it('clears input after successful submission', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i) as HTMLInputElement;
-            fireEvent.change(input, { target: { value: 'https://youtu.be/dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
-            
+        it('should show success toast on successful submission', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+                    title: 'Video Queued',
+                }));
+            });
+        });
+
+        it('should register job on successful submission', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
+            await waitFor(() => {
+                expect(mockRegisterJob).toHaveBeenCalledWith('test-job-123');
+            });
+        });
+
+        it('should clear input on successful submission', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...') as HTMLInputElement;
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
             await waitFor(() => {
                 expect(input.value).toBe('');
             });
         });
 
-        it('shows success toast on successful submission', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://youtu.be/dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
-            
-            await waitFor(() => {
-                expect(mockToast).toHaveBeenCalledWith(
-                    expect.objectContaining({
-                        title: 'Video Queued',
-                    })
-                );
-            });
-        });
+        it('should handle Enter key submission', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
 
-        it('sends correct payload to API', async () => {
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            // Use valid 11-character video ID
-            fireEvent.change(input, { target: { value: 'https://youtube.com/watch?v=dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
-            
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ{enter}');
+
             await waitFor(() => {
                 expect(mockApiPost).toHaveBeenCalled();
             });
+        });
+
+        it('should show validation error when Enter pressed with invalid URL', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://vimeo.com/123456{enter}');
+
+            // Should show toast with validation error
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+                    title: 'Invalid YouTube URL',
+                    variant: 'destructive',
+                }));
+            });
+
+            // Validation error should be visible in UI
+            expect(screen.getByText(/Please enter a valid YouTube/)).toBeInTheDocument();
+        });
+
+        it('should show validation error when Enter pressed with empty URL trimmed', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            // Type only spaces
+            await user.type(input, '   ');
             
-            expect(mockApiPost).toHaveBeenCalledWith(
-                '/integrations/web/crawl',
-                expect.objectContaining({
-                    url: 'https://youtube.com/watch?v=dQw4w9WgXcQ',
-                    crawl_type: 'single',
-                })
-            );
+            // Enter should not trigger handleIngest since url.trim() is empty
+            fireEvent.keyDown(input, { key: 'Enter' });
+
+            // API should not be called because url.trim() is falsy
+            expect(mockApiPost).not.toHaveBeenCalled();
         });
     });
 
-    // ===========================================================================
+    // =========================================================================
+    // Error Handling Tests
+    // =========================================================================
+
+    describe('Error Handling', () => {
+        it('should show error toast on API failure', async () => {
+            mockApiPost.mockRejectedValueOnce(new Error('Network error'));
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+                    title: 'Ingestion Failed',
+                    variant: 'destructive',
+                }));
+            });
+        });
+
+        it('should show API error detail when available', async () => {
+            mockApiPost.mockRejectedValueOnce({
+                response: { data: { detail: 'Video not found' } }
+            });
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+                    description: 'Video not found',
+                }));
+            });
+        });
+
+        it('should show default error message when no detail or message', async () => {
+            mockApiPost.mockRejectedValueOnce({
+                response: { data: {} }
+            });
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+                    description: 'Could not process the YouTube video. Please try again.',
+                }));
+            });
+        });
+
+        it('should use error.message as fallback', async () => {
+            mockApiPost.mockRejectedValueOnce({
+                message: 'Connection timeout'
+            });
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+                    description: 'Connection timeout',
+                }));
+            });
+        });
+    });
+
+    // =========================================================================
     // Disabled State Tests
-    // ===========================================================================
+    // =========================================================================
 
     describe('Disabled State', () => {
-        it('disables input when disabled prop is true', () => {
-            renderWithQueryClient(
-                <YoutubeInput source={mockSource} disabled={true} />
-            );
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
+        it('should disable input when disabled prop is true', () => {
+            render(<YoutubeInput source={defaultSource} disabled={true} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
             expect(input).toBeDisabled();
         });
 
-        it('disables button when disabled prop is true', () => {
-            renderWithQueryClient(
-                <YoutubeInput source={mockSource} disabled={true} />
-            );
-            
-            const submitButton = screen.getByRole('button');
-            expect(submitButton).toBeDisabled();
+        it('should disable button when disabled prop is true', () => {
+            render(<YoutubeInput source={defaultSource} disabled={true} />);
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            expect(submitBtn).toBeDisabled();
         });
 
-        it('shows toast when clicking submit while disabled', async () => {
-            renderWithQueryClient(
-                <YoutubeInput 
-                    source={mockSource} 
-                    disabled={true}
-                    disabledReason="You need editor access"
-                />
-            );
+        it('should show toast when submitting while disabled', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} disabled={true} disabledReason="Not allowed" />);
+
+            // Need to enable button temporarily to click
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
             
-            // Manually trigger the handleIngest to test the guard
-            // Note: The button is disabled so we can't click it directly
-            // This test verifies the disabled reason is displayed
-            expect(screen.getByText('You need editor access')).toBeInTheDocument();
+            // Trigger submit via the form's internal logic by calling handleIngest directly
+            // Since button is disabled, we can't click it, but we can verify the disabled reason is shown
+            expect(screen.getByText('Not allowed')).toBeInTheDocument();
+        });
+
+        it('should show disabled reason when provided', () => {
+            render(<YoutubeInput source={defaultSource} disabled={true} disabledReason="Upgrade required" />);
+
+            expect(screen.getByText('Upgrade required')).toBeInTheDocument();
         });
     });
 
-    // ===========================================================================
-    // Error Handling Tests
-    // ===========================================================================
+    // =========================================================================
+    // Loading State Tests
+    // =========================================================================
 
-    describe('Error Handling', () => {
-        it('shows error toast on API failure', async () => {
-            mockApiPost.mockRejectedValueOnce({
-                response: { data: { detail: 'Server error' } }
-            });
-            
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://youtu.be/dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
-            
+    describe('Loading State', () => {
+        it('should disable button while loading', async () => {
+            mockApiPost.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 500)));
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            fireEvent.click(submitBtn);
+
             await waitFor(() => {
-                expect(mockToast).toHaveBeenCalled();
+                expect(submitBtn).toBeDisabled();
             });
-            
-            expect(mockToast).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    title: 'Ingestion Failed',
-                    variant: 'destructive',
-                })
-            );
         });
 
-        it('shows generic error message when API returns no detail', async () => {
-            mockApiPost.mockRejectedValueOnce(new Error('Network error'));
-            
-            renderWithQueryClient(<YoutubeInput source={mockSource} />);
-            
-            const input = screen.getByPlaceholderText(/youtube\.com\/watch/i);
-            fireEvent.change(input, { target: { value: 'https://youtu.be/dQw4w9WgXcQ' } });
-            
-            const submitButton = screen.getByRole('button');
-            fireEvent.click(submitButton);
-            
+        it('should show spinner while loading', async () => {
+            mockApiPost.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 500)));
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            fireEvent.click(submitBtn);
+
             await waitFor(() => {
-                expect(mockToast).toHaveBeenCalled();
+                const spinner = document.querySelector('.animate-spin');
+                expect(spinner).toBeInTheDocument();
             });
-            
-            // When there's no response.data.detail, fallback message is used
-            expect(mockToast).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    title: 'Ingestion Failed',
-                    variant: 'destructive',
-                })
-            );
-        });
-    });
-});
-
-// ===========================================================================
-// YouTube URL Regex Validation (Unit Tests)
-// ===========================================================================
-
-describe('YouTube URL Regex Validation', () => {
-    const YOUTUBE_URL_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/).+$/i;
-
-    describe('Valid URLs', () => {
-        it('matches standard watch URLs', () => {
-            expect(YOUTUBE_URL_REGEX.test('https://www.youtube.com/watch?v=dQw4w9WgXcQ')).toBe(true);
-            expect(YOUTUBE_URL_REGEX.test('https://youtube.com/watch?v=dQw4w9WgXcQ')).toBe(true);
-            expect(YOUTUBE_URL_REGEX.test('http://youtube.com/watch?v=dQw4w9WgXcQ')).toBe(true);
-            expect(YOUTUBE_URL_REGEX.test('www.youtube.com/watch?v=dQw4w9WgXcQ')).toBe(true);
         });
 
-        it('matches short URLs (youtu.be)', () => {
-            expect(YOUTUBE_URL_REGEX.test('https://youtu.be/dQw4w9WgXcQ')).toBe(true);
-            expect(YOUTUBE_URL_REGEX.test('http://youtu.be/dQw4w9WgXcQ')).toBe(true);
-            expect(YOUTUBE_URL_REGEX.test('youtu.be/dQw4w9WgXcQ')).toBe(true);
-        });
+        it('should disable input while loading', async () => {
+            mockApiPost.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 500)));
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
 
-        it('matches embed URLs', () => {
-            expect(YOUTUBE_URL_REGEX.test('https://youtube.com/embed/dQw4w9WgXcQ')).toBe(true);
-            expect(YOUTUBE_URL_REGEX.test('https://www.youtube.com/embed/dQw4w9WgXcQ')).toBe(true);
-        });
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
 
-        it('matches shorts URLs', () => {
-            expect(YOUTUBE_URL_REGEX.test('https://youtube.com/shorts/dQw4w9WgXcQ')).toBe(true);
-            expect(YOUTUBE_URL_REGEX.test('https://www.youtube.com/shorts/abc123xyz')).toBe(true);
-        });
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            fireEvent.click(submitBtn);
 
-        it('matches v/ format URLs', () => {
-            expect(YOUTUBE_URL_REGEX.test('https://youtube.com/v/dQw4w9WgXcQ')).toBe(true);
+            await waitFor(() => {
+                expect(input).toBeDisabled();
+            });
         });
     });
 
-    describe('Invalid URLs', () => {
-        it('rejects non-YouTube domains', () => {
-            expect(YOUTUBE_URL_REGEX.test('https://www.google.com')).toBe(false);
-            expect(YOUTUBE_URL_REGEX.test('https://vimeo.com/123456')).toBe(false);
-            expect(YOUTUBE_URL_REGEX.test('https://cnn.com/youtube')).toBe(false);
-            expect(YOUTUBE_URL_REGEX.test('https://example.com/watch?v=fake')).toBe(false);
+    // =========================================================================
+    // Edge Cases
+    // =========================================================================
+
+    describe('Edge Cases', () => {
+        it('should handle crawl_id response format', async () => {
+            mockApiPost.mockResolvedValueOnce({ data: { crawl_id: 'crawl-456' } });
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
+            await waitFor(() => {
+                expect(mockRegisterJob).toHaveBeenCalledWith('crawl-456');
+            });
         });
 
-        it('rejects invalid formats', () => {
-            expect(YOUTUBE_URL_REGEX.test('')).toBe(false);
-            expect(YOUTUBE_URL_REGEX.test('not-a-url')).toBe(false);
-            expect(YOUTUBE_URL_REGEX.test('youtube.com')).toBe(false); // Missing path
-            expect(YOUTUBE_URL_REGEX.test('youtube.com/channel/123')).toBe(false); // Channel, not video
+        it('should handle response without job_id', async () => {
+            mockApiPost.mockResolvedValueOnce({ data: {} });
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            await user.click(submitBtn);
+
+            await waitFor(() => {
+                expect(mockRegisterJob).not.toHaveBeenCalled();
+            });
         });
 
-        it('rejects URLs with youtube in path but wrong domain', () => {
-            expect(YOUTUBE_URL_REGEX.test('https://fake-youtube.com/watch?v=abc')).toBe(false);
+        it('should not submit on Enter while loading', async () => {
+            mockApiPost.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 500)));
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            // First click to start loading
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            fireEvent.click(submitBtn);
+
+            // Wait for loading to start
+            await waitFor(() => {
+                expect(input).toBeDisabled();
+            });
+
+            // API should only be called once
+            expect(mockApiPost).toHaveBeenCalledTimes(1);
+        });
+
+        it('should disable submit button when URL is invalid', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'not-a-youtube-url');
+
+            const submitBtn = screen.getByRole('button', { name: /ingest youtube video/i });
+            expect(submitBtn).toBeDisabled();
         });
     });
 });

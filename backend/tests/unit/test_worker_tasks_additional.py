@@ -96,6 +96,7 @@ def test_unified_ingest_task_dispatches_group_for_docs(monkeypatch):
     task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
 
     class DummyConnector:
+        def _is_youtube_url(self, url): return False
         def __init__(self, docs):
             self.docs = docs
 
@@ -186,6 +187,7 @@ def test_unified_ingest_task_handles_invalid_content(monkeypatch):
     task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
 
     class DummyConnector:
+        def _is_youtube_url(self, url): return False
         def fetch_documents_sync(self, item_ids, credentials, user_id=None):
             yield SimpleNamespace(
                 filename="bad.bin",
@@ -396,6 +398,7 @@ def test_crawl_discovery_task_sitemap_dispatches(monkeypatch):
     supabase.table.return_value = docs_table
 
     class DummyConnector:
+        def _is_youtube_url(self, url): return False
         USER_AGENT = "test-agent"
 
         def normalize_url(self, url):
@@ -445,6 +448,7 @@ def test_crawl_discovery_task_no_pages(monkeypatch):
     supabase.table.return_value = _make_chain_table(execute_data=[])
 
     class DummyConnector:
+        def _is_youtube_url(self, url): return False
         USER_AGENT = "test-agent"
 
         def normalize_url(self, url):
@@ -484,6 +488,7 @@ def test_crawl_discovery_task_recursive_dedup(monkeypatch):
     supabase.table.return_value = docs_table
 
     class DummyConnector:
+        def _is_youtube_url(self, url): return False
         USER_AGENT = "test-agent"
 
         def normalize_url(self, url):

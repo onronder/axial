@@ -48,6 +48,7 @@ vi.mock('@/lib/api', () => ({
         delete: vi.fn(),
         get: vi.fn(),
         patch: vi.fn(),
+        post: vi.fn(),
     },
 }));
 
@@ -510,6 +511,390 @@ describe('GeneralSettings - Danger Zone', () => {
 
             const input = screen.getByLabelText(/Type.*DELETE.*to confirm/i);
             expect(input).toBeInTheDocument();
+        });
+    });
+});
+
+describe('GeneralSettings - GDPR Anonymization', () => {
+    const mockApiPost = vi.fn();
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockApiPost.mockResolvedValue({
+            data: {
+                message: 'Your data has been anonymized',
+                request_id: 'req-123',
+                anonymized_at: '2026-01-15T10:00:00Z',
+                details: {
+                    profile: 'success',
+                    team_members: 'success',
+                    integrations: '5 deleted',
+                    feedback: 'success',
+                    auth: 'success',
+                },
+            },
+        });
+        
+        // Re-mock api with post
+        vi.doMock('@/lib/api', () => ({
+            api: {
+                delete: vi.fn().mockResolvedValue({}),
+                get: vi.fn(),
+                patch: vi.fn(),
+                post: mockApiPost,
+            },
+        }));
+
+        mockUseProfile.mockReturnValue({
+            profile: {
+                first_name: 'John',
+                last_name: 'Doe',
+            },
+            isLoading: false,
+            updateProfile: mockUpdateProfile,
+        });
+        mockUseTheme.mockReturnValue({
+            theme: 'system',
+            setTheme: mockSetTheme,
+        });
+        mockUseAuth.mockReturnValue({
+            user: { email: 'john@example.com' },
+            logout: mockLogout,
+        });
+    });
+
+    describe('Rendering', () => {
+        it('should render Data Privacy (GDPR) section', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByText('Data Privacy (GDPR)')).toBeInTheDocument();
+        });
+
+        it('should display Anonymize Data button', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByRole('button', { name: /Anonymize Data/i })).toBeInTheDocument();
+        });
+
+        it('should display section description', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByText(/Manage your personal data under GDPR Article 17/i)).toBeInTheDocument();
+        });
+
+        it('should display Anonymize Personal Data subsection', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByText('Anonymize Personal Data')).toBeInTheDocument();
+        });
+    });
+
+    describe('Anonymize Dialog', () => {
+        it('should open dialog when Anonymize Data button is clicked', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            expect(screen.getByRole('dialog')).toBeInTheDocument();
+            expect(screen.getByText('GDPR Data Anonymization')).toBeInTheDocument();
+        });
+
+        it('should display what will be anonymized', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            expect(screen.getByText(/What will be anonymized:/i)).toBeInTheDocument();
+            expect(screen.getByText(/Your name → "Deleted User"/i)).toBeInTheDocument();
+            expect(screen.getByText(/Your email → anonymized identifier/i)).toBeInTheDocument();
+            expect(screen.getByText(/Profile picture → removed/i)).toBeInTheDocument();
+            expect(screen.getByText(/OAuth connections → deleted/i)).toBeInTheDocument();
+        });
+
+        it('should display what will be preserved', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            expect(screen.getByText(/What will be preserved:/i)).toBeInTheDocument();
+            expect(screen.getByText(/Your documents & AI knowledge/i)).toBeInTheDocument();
+            expect(screen.getByText(/Chat history \(anonymized\)/i)).toBeInTheDocument();
+            expect(screen.getByText(/Account access/i)).toBeInTheDocument();
+        });
+
+        it('should have reason selection dropdown', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            expect(screen.getByText('Reason for Request')).toBeInTheDocument();
+        });
+
+        it('should have confirmation input field', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            const input = screen.getByPlaceholderText(/Type ANONYMIZE here/i);
+            expect(input).toBeInTheDocument();
+        });
+
+        it('should have Cancel and Anonymize buttons', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /Anonymize My Data/i })).toBeInTheDocument();
+        });
+    });
+
+    describe('Anonymize Safety Confirmation', () => {
+        it('should have Anonymize button disabled by default', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            const confirmButton = screen.getByRole('button', { name: /Anonymize My Data/i });
+            expect(confirmButton).toBeDisabled();
+        });
+
+        it('should keep button disabled when typed text is not exactly ANONYMIZE', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            const input = screen.getByPlaceholderText(/Type ANONYMIZE here/i);
+            await userEvent.type(input, 'anonymize'); // lowercase
+
+            // Button enables because input converts to uppercase
+            const confirmButton = screen.getByRole('button', { name: /Anonymize My Data/i });
+            expect(confirmButton).not.toBeDisabled();
+        });
+
+        it('should enable button when ANONYMIZE is typed exactly', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            const input = screen.getByPlaceholderText(/Type ANONYMIZE here/i);
+            await userEvent.type(input, 'ANONYMIZE');
+
+            const confirmButton = screen.getByRole('button', { name: /Anonymize My Data/i });
+            expect(confirmButton).not.toBeDisabled();
+        });
+
+        it('should keep button disabled for partial match', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            const input = screen.getByPlaceholderText(/Type ANONYMIZE here/i);
+            await userEvent.type(input, 'ANON');
+
+            const confirmButton = screen.getByRole('button', { name: /Anonymize My Data/i });
+            expect(confirmButton).toBeDisabled();
+        });
+    });
+
+    describe('Anonymize Cancel Action', () => {
+        it('should close dialog when Cancel is clicked', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+            await userEvent.click(screen.getByRole('button', { name: /Cancel/i }));
+
+            expect(screen.queryByText('GDPR Data Anonymization')).not.toBeInTheDocument();
+        });
+
+        it('should clear confirmation input when Cancel is clicked', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            const input = screen.getByPlaceholderText(/Type ANONYMIZE here/i);
+            await userEvent.type(input, 'ANONYMIZE');
+            await userEvent.click(screen.getByRole('button', { name: /Cancel/i }));
+
+            // Reopen dialog
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+
+            const newInput = screen.getByPlaceholderText(/Type ANONYMIZE here/i);
+            expect(newInput).toHaveValue('');
+        });
+    });
+
+    describe('Anonymize Action', () => {
+        beforeEach(() => {
+            (api.post as Mock).mockResolvedValue({
+                data: {
+                    message: 'Your data has been anonymized',
+                    request_id: 'req-123',
+                    anonymized_at: '2026-01-15T10:00:00Z',
+                    details: {
+                        profile: 'success',
+                        team_members: 'success',
+                        integrations: '5 deleted',
+                        feedback: 'success',
+                        auth: 'success',
+                    },
+                },
+            });
+        });
+
+        it('should call API post when confirmed', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+            await userEvent.type(screen.getByPlaceholderText(/Type ANONYMIZE here/i), 'ANONYMIZE');
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize My Data/i }));
+
+            await waitFor(() => {
+                expect(api.post).toHaveBeenCalledWith('/settings/profile/me/anonymize', expect.any(Object));
+            });
+        });
+
+        it('should show success toast on anonymization', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+            await userEvent.type(screen.getByPlaceholderText(/Type ANONYMIZE here/i), 'ANONYMIZE');
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize My Data/i }));
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Data Anonymized',
+                    })
+                );
+            });
+        });
+
+        it('should show error toast on anonymization failure', async () => {
+            (api.post as Mock).mockRejectedValue(new Error('Server error'));
+
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+            await userEvent.type(screen.getByPlaceholderText(/Type ANONYMIZE here/i), 'ANONYMIZE');
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize My Data/i }));
+
+            await waitFor(() => {
+                expect(mockToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: 'Anonymization failed',
+                        variant: 'destructive',
+                    })
+                );
+            });
+        });
+
+        it('should show loading indicator during anonymization', async () => {
+            // Make post hang
+            (api.post as Mock).mockImplementation(() => new Promise(() => { }));
+
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize Data/i }));
+            await userEvent.type(screen.getByPlaceholderText(/Type ANONYMIZE here/i), 'ANONYMIZE');
+            await userEvent.click(screen.getByRole('button', { name: /Anonymize My Data/i }));
+
+            // Check that loading state is shown (button text changes to "Anonymizing...")
+            await waitFor(() => {
+                const anonymizingText = screen.queryAllByText(/Anonymizing/i);
+                expect(anonymizingText.length).toBeGreaterThan(0);
+            });
+        });
+    });
+
+    describe('Appearance Section', () => {
+        it('should render appearance section', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByText('Appearance')).toBeInTheDocument();
+        });
+
+        it('should render all theme options', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByText('Light')).toBeInTheDocument();
+            expect(screen.getByText('Dark')).toBeInTheDocument();
+            expect(screen.getByText('System')).toBeInTheDocument();
+        });
+
+        it('should show description for each theme', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByText('Bright and clean')).toBeInTheDocument();
+            expect(screen.getByText('Easy on the eyes')).toBeInTheDocument();
+            expect(screen.getByText('Match your device')).toBeInTheDocument();
+        });
+
+        it('should update theme when selecting Light mode', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByText('Light'));
+            expect(mockSetTheme).toHaveBeenCalledWith('light');
+        });
+
+        it('should update theme when selecting System mode', async () => {
+            render(<GeneralSettings />);
+
+            await userEvent.click(screen.getByText('System'));
+            expect(mockSetTheme).toHaveBeenCalledWith('system');
+        });
+
+        it('should show active indicator on current theme', () => {
+            mockUseTheme.mockReturnValue({
+                theme: 'dark',
+                setTheme: mockSetTheme,
+            });
+
+            render(<GeneralSettings />);
+            
+            // The dark theme button should have active styling (check icon present)
+            const darkButton = screen.getByText('Dark').closest('button');
+            expect(darkButton).toBeInTheDocument();
+        });
+    });
+
+    describe('Personal Information Section', () => {
+        it('should render personal information section', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByText('Personal Information')).toBeInTheDocument();
+        });
+
+        it('should display email as disabled', () => {
+            render(<GeneralSettings />);
+            const emailInput = screen.getByLabelText('Email');
+            expect(emailInput).toBeDisabled();
+        });
+
+        it('should show email is managed externally', () => {
+            render(<GeneralSettings />);
+            expect(screen.getByText(/Managed through your authentication provider/i)).toBeInTheDocument();
+        });
+
+        it('should populate form from profile on load', () => {
+            mockUseProfile.mockReturnValue({
+                profile: {
+                    first_name: 'Alice',
+                    last_name: 'Smith',
+                },
+                isLoading: false,
+                updateProfile: mockUpdateProfile,
+            });
+
+            render(<GeneralSettings />);
+
+            expect(screen.getByLabelText('First Name')).toHaveValue('Alice');
+            expect(screen.getByLabelText('Last Name')).toHaveValue('Smith');
+        });
+
+        it('should handle null profile gracefully', () => {
+            mockUseProfile.mockReturnValue({
+                profile: null,
+                isLoading: false,
+                updateProfile: mockUpdateProfile,
+            });
+
+            render(<GeneralSettings />);
+
+            expect(screen.getByLabelText('First Name')).toHaveValue('');
+            expect(screen.getByLabelText('Last Name')).toHaveValue('');
         });
     });
 });

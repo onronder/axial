@@ -495,8 +495,8 @@ class TestGetUserTeam:
             data=[{"team_id": TEAM_UUID, "role": "editor", "joined_at": "2024-01-01T00:00:00Z"}]
         )
         
-        # Mock team details query
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+        # Mock team details query - now using maybe_single() instead of single()
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
             data={
                 "id": TEAM_UUID,
                 "name": "Acme Corp",
@@ -525,7 +525,8 @@ class TestGetUserTeam:
             data=[{"team_id": TEAM_UUID, "role": "admin", "joined_at": "2024-01-01T00:00:00Z"}]
         )
         
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+        # Mock team details query - now using maybe_single() instead of single()
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
             data={
                 "id": TEAM_UUID,
                 "name": "My Team",

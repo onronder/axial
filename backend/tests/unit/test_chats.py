@@ -16,7 +16,23 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import api.v1.chat  # Ensure module is loaded for patching
 import asyncio
 from fastapi import HTTPException
+from starlette.requests import Request
 from services.guardrails import GuardrailResult
+
+
+def _make_mock_request(method="GET", path="/api/v1/chat"):
+    """Helper to create mock requests for chat endpoints."""
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
 
 
 def make_guardrail_result(
@@ -89,7 +105,11 @@ class TestChatList:
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
             from api.v1.chat import list_conversations
 
-            result = asyncio.run(list_conversations(user_id="user-1", organization_id="org-1"))
+            result = asyncio.run(list_conversations(
+                request=_make_mock_request(),
+                user_id="user-1",
+                organization_id="org-1"
+            ))
 
         assert result[0]["id"] == "chat-1"
         table.eq.assert_any_call("organization_id", "org-1")
@@ -108,7 +128,11 @@ class TestChatList:
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
             from api.v1.chat import list_conversations
 
-            asyncio.run(list_conversations(user_id="user-1"))
+            asyncio.run(list_conversations(
+                request=_make_mock_request(),
+                user_id="user-1",
+                organization_id="org-1"
+            ))
 
         table.order.assert_called_with("updated_at", desc=True)
     
@@ -126,7 +150,11 @@ class TestChatList:
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
             from api.v1.chat import list_conversations
 
-            result = asyncio.run(list_conversations(user_id="user-1"))
+            result = asyncio.run(list_conversations(
+                request=_make_mock_request(),
+                user_id="user-1",
+                organization_id="org-1"
+            ))
 
         assert result == []
 
@@ -148,7 +176,12 @@ class TestChatCreate:
             
             # Act
             payload = ConversationCreate(title="Test Chat")
-            result = await create_conversation(payload, user_id="test-user")
+            result = await create_conversation(
+                request=_make_mock_request(method="POST"),
+                payload=payload,
+                user_id="test-user",
+                organization_id="org-1"
+            )
             
             # Assert
             assert result["id"] == "new-chat-id"
@@ -576,7 +609,12 @@ class TestConversationEndpoints:
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
             from api.v1.chat import get_conversation, HTTPException
             with pytest.raises(HTTPException) as exc:
-                await get_conversation("conv-1", user_id="user-1")
+                await get_conversation(
+                    request=_make_mock_request(),
+                    conversation_id="conv-1",
+                    user_id="user-1",
+                    organization_id="org-1"
+                )
             assert exc.value.status_code == 404
 
     async def test_update_conversation_returns_404(self):
@@ -586,24 +624,34 @@ class TestConversationEndpoints:
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
             from api.v1.chat import update_conversation, ConversationUpdate, HTTPException
             with pytest.raises(HTTPException) as exc:
-                await update_conversation("conv-1", ConversationUpdate(title="New"), user_id="user-1")
+                await update_conversation(
+                    request=_make_mock_request(method="PATCH"),
+                    conversation_id="conv-1",
+                    payload=ConversationUpdate(title="New"),
+                    user_id="user-1",
+                    organization_id="org-1"
+                )
             assert exc.value.status_code == 404
 
     async def test_delete_conversation_logs_audit(self):
-        from fastapi import Request, BackgroundTasks
+        from fastapi import BackgroundTasks
 
         mock_supabase = MagicMock()
         mock_supabase.table().select().eq().eq().single().execute.return_value = Mock(data={"title": "Chat"})
         mock_supabase.table().delete().eq().eq().execute.return_value = Mock(data=[{"id": "conv-1"}])
 
-        request = MagicMock(spec=Request)
-        request.client.host = "127.0.0.1"
         background_tasks = BackgroundTasks()
 
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.log_chat_delete") as mock_audit:
             from api.v1.chat import delete_conversation
-            response = await delete_conversation("conv-1", request, background_tasks, user_id="user-1")
+            response = await delete_conversation(
+                conversation_id="conv-1",
+                request=_make_mock_request(method="DELETE"),
+                background_tasks=background_tasks,
+                user_id="user-1",
+                organization_id="org-1"
+            )
 
         assert response["deleted_id"] == "conv-1"
         mock_audit.assert_called_once()
@@ -615,7 +663,12 @@ class TestConversationEndpoints:
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
             from api.v1.chat import get_messages, HTTPException
             with pytest.raises(HTTPException) as exc:
-                await get_messages("conv-1", user_id="user-1")
+                await get_messages(
+                    request=_make_mock_request(),
+                    conversation_id="conv-1",
+                    user_id="user-1",
+                    organization_id="org-1"
+                )
             assert exc.value.status_code == 404
 
 
@@ -797,7 +850,12 @@ async def test_get_conversation_success():
     supabase.table.return_value = table
 
     with patch("api.v1.chat.get_supabase", return_value=supabase):
-        result = await get_conversation("conv-1", user_id="user-1")
+        result = await get_conversation(
+            request=_make_mock_request(),
+            conversation_id="conv-1",
+            user_id="user-1",
+            organization_id="org-1"
+        )
 
     assert result["id"] == "conv-1"
 
@@ -816,7 +874,12 @@ async def test_get_conversation_handles_error():
 
     with patch("api.v1.chat.get_supabase", return_value=supabase):
         with pytest.raises(HTTPException) as exc:
-            await get_conversation("conv-1", user_id="user-1")
+            await get_conversation(
+                request=_make_mock_request(),
+                conversation_id="conv-1",
+                user_id="user-1",
+                organization_id="org-1"
+            )
 
     assert exc.value.status_code == 500
 
@@ -833,7 +896,13 @@ async def test_update_conversation_success():
     supabase.table.return_value = table
 
     with patch("api.v1.chat.get_supabase", return_value=supabase):
-        result = await update_conversation("conv-1", ConversationUpdate(title="New"), user_id="user-1")
+        result = await update_conversation(
+            request=_make_mock_request(method="PATCH"),
+            conversation_id="conv-1",
+            payload=ConversationUpdate(title="New"),
+            user_id="user-1",
+            organization_id="org-1"
+        )
 
     assert result["title"] == "New"
 
@@ -851,7 +920,13 @@ async def test_update_conversation_handles_error():
 
     with patch("api.v1.chat.get_supabase", return_value=supabase):
         with pytest.raises(HTTPException) as exc:
-            await update_conversation("conv-1", ConversationUpdate(title="New"), user_id="user-1")
+            await update_conversation(
+                request=_make_mock_request(method="PATCH"),
+                conversation_id="conv-1",
+                payload=ConversationUpdate(title="New"),
+                user_id="user-1",
+                organization_id="org-1"
+            )
 
     assert exc.value.status_code == 500
 
@@ -874,7 +949,13 @@ async def test_delete_conversation_handles_error():
     with patch("api.v1.chat.get_supabase", return_value=supabase), \
          patch("api.v1.chat.log_chat_delete"):
         with pytest.raises(HTTPException) as exc:
-            await delete_conversation("conv-1", MagicMock(), MagicMock(), user_id="user-1")
+            await delete_conversation(
+                conversation_id="conv-1",
+                request=_make_mock_request(method="DELETE"),
+                background_tasks=MagicMock(),
+                user_id="user-1",
+                organization_id="org-1"
+            )
 
     assert exc.value.status_code == 500
 
@@ -898,7 +979,12 @@ async def test_get_messages_success():
     supabase.table.side_effect = lambda name: conv_table if name == "conversations" else msg_table
 
     with patch("api.v1.chat.get_supabase", return_value=supabase):
-        result = await get_messages("conv-1", user_id="user-1")
+        result = await get_messages(
+            request=_make_mock_request(),
+            conversation_id="conv-1",
+            user_id="user-1",
+            organization_id="org-1"
+        )
 
     assert result == [{"id": "m1"}]
 
@@ -923,7 +1009,12 @@ async def test_get_messages_handles_error():
 
     with patch("api.v1.chat.get_supabase", return_value=supabase):
         with pytest.raises(HTTPException) as exc:
-            await get_messages("conv-1", user_id="user-1")
+            await get_messages(
+                request=_make_mock_request(),
+                conversation_id="conv-1",
+                user_id="user-1",
+                organization_id="org-1"
+            )
 
     assert exc.value.status_code == 500
 

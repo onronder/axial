@@ -446,3 +446,446 @@ describe('useChatHistory outside provider', () => {
         }).toThrow('useChatHistory must be used within a ChatHistoryProvider');
     });
 });
+
+// =============================================================================
+// MESSAGE CACHING HOOKS TESTS
+// =============================================================================
+
+import { 
+    useChatAccessCheck, 
+    useConversationMessages, 
+    useInvalidateMessages, 
+    useOptimisticMessageUpdate,
+    prefetchConversationMessages,
+    chatKeys 
+} from '@/hooks/useChatHistory';
+
+describe('useChatAccessCheck', () => {
+    it('should return hasChatAccess true for pro plan', () => {
+        const { result } = renderHook(() => useChatAccessCheck());
+        expect(result.current.hasChatAccess).toBe(true);
+        expect(result.current.planReady).toBe(true);
+    });
+});
+
+describe('useConversationMessages', () => {
+    it('should fetch messages when conversationId is provided', async () => {
+        const messages = [
+            { id: 'm1', role: 'user', content: 'Hello', created_at: '2024-01-01' },
+        ];
+        mockApiGet.mockResolvedValue({ data: messages });
+
+        const queryClient = createTestQueryClient();
+        const messagesWrapper = ({ children }: { children: ReactNode }) => (
+            <QueryClientProvider client={queryClient}>
+                {children}
+            </QueryClientProvider>
+        );
+
+        const { result } = renderHook(() => useConversationMessages('conv-123'), { wrapper: messagesWrapper });
+
+        await waitFor(() => {
+            expect(result.current.isLoading).toBe(false);
+        });
+
+        expect(result.current.data).toEqual(messages);
+    });
+
+    it('should not fetch when conversationId is null', async () => {
+        mockApiGet.mockClear();
+
+        const queryClient = createTestQueryClient();
+        const messagesWrapper = ({ children }: { children: ReactNode }) => (
+            <QueryClientProvider client={queryClient}>
+                {children}
+            </QueryClientProvider>
+        );
+
+        const { result } = renderHook(() => useConversationMessages(null), { wrapper: messagesWrapper });
+
+        // Should not trigger API call
+        expect(result.current.isLoading).toBe(false);
+        expect(result.current.data).toBeUndefined();
+    });
+
+    it('should return empty array when API returns null', async () => {
+        mockApiGet.mockResolvedValue({ data: null });
+
+        const queryClient = createTestQueryClient();
+        const messagesWrapper = ({ children }: { children: ReactNode }) => (
+            <QueryClientProvider client={queryClient}>
+                {children}
+            </QueryClientProvider>
+        );
+
+        const { result } = renderHook(() => useConversationMessages('conv-123'), { wrapper: messagesWrapper });
+
+        await waitFor(() => {
+            expect(result.current.isLoading).toBe(false);
+        });
+
+        expect(result.current.data).toEqual([]);
+    });
+});
+
+describe('useInvalidateMessages', () => {
+    it('should invalidate messages query for a conversation', async () => {
+        const queryClient = createTestQueryClient();
+        const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+        const messagesWrapper = ({ children }: { children: ReactNode }) => (
+            <QueryClientProvider client={queryClient}>
+                {children}
+            </QueryClientProvider>
+        );
+
+        const { result } = renderHook(() => useInvalidateMessages(), { wrapper: messagesWrapper });
+
+        await act(async () => {
+            result.current('conv-456');
+        });
+
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: chatKeys.message('conv-456') });
+    });
+});
+
+describe('useOptimisticMessageUpdate', () => {
+    it('should add message to cache optimistically', async () => {
+        const queryClient = createTestQueryClient();
+        const setQueryDataSpy = vi.spyOn(queryClient, 'setQueryData');
+
+        const messagesWrapper = ({ children }: { children: ReactNode }) => (
+            <QueryClientProvider client={queryClient}>
+                {children}
+            </QueryClientProvider>
+        );
+
+        const { result } = renderHook(() => useOptimisticMessageUpdate(), { wrapper: messagesWrapper });
+
+        const newMessage = { 
+            id: 'new-msg', 
+            role: 'user' as const, 
+            content: 'Test message', 
+            created_at: '2024-01-01' 
+        };
+
+        await act(async () => {
+            result.current('conv-789', newMessage);
+        });
+
+        expect(setQueryDataSpy).toHaveBeenCalledWith(
+            chatKeys.message('conv-789'),
+            expect.any(Function)
+        );
+    });
+
+    it('should handle empty cache when adding message', async () => {
+        const queryClient = createTestQueryClient();
+
+        const messagesWrapper = ({ children }: { children: ReactNode }) => (
+            <QueryClientProvider client={queryClient}>
+                {children}
+            </QueryClientProvider>
+        );
+
+        const { result } = renderHook(() => useOptimisticMessageUpdate(), { wrapper: messagesWrapper });
+
+        const newMessage = { 
+            id: 'new-msg', 
+            role: 'assistant' as const, 
+            content: 'Response', 
+            created_at: '2024-01-01' 
+        };
+
+        await act(async () => {
+            result.current('conv-empty', newMessage);
+        });
+
+        // Get the updated cache
+        const cached = queryClient.getQueryData(chatKeys.message('conv-empty'));
+        expect(cached).toEqual([newMessage]);
+    });
+});
+
+describe('prefetchConversationMessages', () => {
+    it('should prefetch messages for a conversation', async () => {
+        const messages = [
+            { id: 'm1', role: 'user', content: 'Prefetched', created_at: '2024-01-01' },
+        ];
+        mockApiGet.mockResolvedValue({ data: messages });
+
+        const queryClient = createTestQueryClient();
+
+        await prefetchConversationMessages(queryClient, 'conv-prefetch');
+
+        const cached = queryClient.getQueryData(chatKeys.message('conv-prefetch'));
+        expect(cached).toEqual(messages);
+    });
+
+    it('should return empty array when API returns null during prefetch', async () => {
+        mockApiGet.mockResolvedValue({ data: null });
+
+        const queryClient = createTestQueryClient();
+
+        await prefetchConversationMessages(queryClient, 'conv-null');
+
+        const cached = queryClient.getQueryData(chatKeys.message('conv-null'));
+        expect(cached).toEqual([]);
+    });
+});
+
+describe('chatKeys factory', () => {
+    it('should generate correct query keys', () => {
+        expect(chatKeys.all).toEqual(['chat']);
+        expect(chatKeys.lists()).toEqual(['chat', 'list']);
+        expect(chatKeys.list('filter')).toEqual(['chat', 'list', 'filter']);
+        expect(chatKeys.messages()).toEqual(['chat', 'messages']);
+        expect(chatKeys.message('id-123')).toEqual(['chat', 'messages', 'id-123']);
+    });
+});
+
+// =============================================================================
+// PLAN-BASED ACCESS CONTROL TESTS  
+// =============================================================================
+
+describe('useChatAccessCheck hook', () => {
+    it('should return correct values for pro plan', () => {
+        const { result } = renderHook(() => useChatAccessCheck());
+        expect(result.current.hasChatAccess).toBe(true);
+        expect(result.current.planReady).toBe(true);
+    });
+});
+
+// =============================================================================
+// FREE PLAN ACCESS DENIAL TESTS
+// =============================================================================
+
+describe('Access denial for free plan', () => {
+    // Create a separate mock for useUsage that returns free plan
+    const createFreePlanWrapper = () => {
+        // We need to test with free plan mock
+        const queryClient = createTestQueryClient();
+        return ({ children }: { children: ReactNode }) => (
+            <QueryClientProvider client={queryClient}>
+                <ChatHistoryProvider>{children}</ChatHistoryProvider>
+            </QueryClientProvider>
+        );
+    };
+
+    it('should show toast when createNewChat is called without chat access', async () => {
+        // Mock useUsage to return free plan for this test
+        vi.doMock('@/hooks/useUsage', () => ({
+            useUsage: () => ({ plan: 'free' }),
+        }));
+        
+        // Re-import to get new mock
+        vi.resetModules();
+        
+        const { ChatHistoryProvider: FreeChatHistoryProvider, useChatHistory: useFreeChatHistory } = await import('@/hooks/useChatHistory');
+        const { QueryClientProvider } = await import('@tanstack/react-query');
+        
+        const freePlanWrapper = ({ children }: { children: ReactNode }) => {
+            const queryClient = createTestQueryClient();
+            return (
+                <QueryClientProvider client={queryClient}>
+                    <FreeChatHistoryProvider>{children}</FreeChatHistoryProvider>
+                </QueryClientProvider>
+            );
+        };
+
+        const { result } = renderHook(() => useFreeChatHistory(), { wrapper: freePlanWrapper });
+
+        await act(async () => {
+            try {
+                await result.current.createNewChat();
+            } catch (e) {
+                // Expected to throw
+            }
+        });
+
+        expect(mockToast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title: 'Subscription required',
+            })
+        );
+        
+        // Reset mock
+        vi.doMock('@/hooks/useUsage', () => ({
+            useUsage: () => ({ plan: 'pro' }),
+        }));
+    });
+});
+
+// =============================================================================
+// Additional Edge Case Tests
+// =============================================================================
+
+describe('Chat History Edge Cases', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockApiGet.mockResolvedValue({ data: [] });
+    });
+
+    it('should handle getMessagesById returning empty on API failure', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        
+        mockApiGet.mockImplementation((url: string) => {
+            if (url.includes('messages')) {
+                return Promise.reject(new Error('Failed to fetch messages'));
+            }
+            return Promise.resolve({ data: [] });
+        });
+
+        const { result } = renderHook(() => useChatHistory(), { wrapper });
+
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        let messages;
+        await act(async () => {
+            messages = await result.current.getMessagesById('conv-error');
+        });
+
+        expect(messages).toEqual([]);
+        expect(errorSpy).toHaveBeenCalledWith('Failed to get messages:', expect.any(Error));
+        
+        errorSpy.mockRestore();
+    });
+
+    it('should use fallback error message in delete mutation', async () => {
+        const existingConversations = [
+            { id: '1', title: 'Chat 1', created_at: '2024-01-01', updated_at: '2024-01-01' },
+        ];
+        mockApiGet.mockResolvedValue({ data: existingConversations });
+        mockApiDelete.mockRejectedValue({}); // Error without message
+
+        const { result } = renderHook(() => useChatHistory(), { wrapper });
+
+        await waitFor(() => expect(result.current.conversations.length).toBe(1));
+
+        await act(async () => {
+            try {
+                await result.current.deleteChat('1');
+            } catch {
+                // Expected rejection
+            }
+        });
+
+        await waitFor(() => expect(mockToast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                description: 'Failed to delete chat.',
+            })
+        ));
+    });
+
+    it('should use fallback error message in create mutation', async () => {
+        mockApiPost.mockRejectedValue({}); // Error without details
+
+        const { result } = renderHook(() => useChatHistory(), { wrapper });
+
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        await act(async () => {
+            try {
+                await result.current.createNewChat();
+            } catch {
+                // Expected rejection
+            }
+        });
+
+        expect(mockToast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                description: 'Failed to create new chat.',
+            })
+        );
+    });
+
+    it('should use fallback error message in rename mutation', async () => {
+        mockApiPatch.mockRejectedValue({}); // Error without details
+
+        const { result } = renderHook(() => useChatHistory(), { wrapper });
+
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        await act(async () => {
+            try {
+                await result.current.renameChat('1', 'New Title');
+            } catch {
+                // Expected rejection
+            }
+        });
+
+        expect(mockToast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                description: 'Failed to rename chat.',
+            })
+        );
+    });
+});
+
+// =============================================================================
+// groupConversationsByDate Additional Tests
+// =============================================================================
+
+describe('groupConversationsByDate edge cases', () => {
+    it('should correctly categorize conversations in Yesterday bucket', () => {
+        const now = new Date();
+        // Create a date that's exactly 36 hours ago (should be yesterday or last week depending on time)
+        const almostYesterday = new Date(now.getTime() - 36 * 60 * 60 * 1000);
+
+        const conversations: ChatConversation[] = [
+            { id: '1', title: 'Yesterday Chat', created_at: almostYesterday.toISOString(), updated_at: almostYesterday.toISOString() },
+        ];
+
+        const groups = groupConversationsByDate(conversations);
+
+        // Should be in Yesterday or Previous 7 Days depending on current time
+        expect(groups.length).toBeGreaterThan(0);
+        expect(groups.some(g => g.label === 'Yesterday' || g.label === 'Previous 7 Days')).toBe(true);
+    });
+
+    it('should correctly categorize conversations in Previous 7 Days bucket', () => {
+        const now = new Date();
+        const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+
+        const conversations: ChatConversation[] = [
+            { id: '1', title: 'Recent Chat', created_at: fiveDaysAgo.toISOString(), updated_at: fiveDaysAgo.toISOString() },
+        ];
+
+        const groups = groupConversationsByDate(conversations);
+
+        expect(groups.some(g => g.label === 'Previous 7 Days')).toBe(true);
+    });
+
+    it('should correctly categorize conversations in Older bucket', () => {
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        const conversations: ChatConversation[] = [
+            { id: '1', title: 'Old Chat', created_at: thirtyDaysAgo.toISOString(), updated_at: thirtyDaysAgo.toISOString() },
+        ];
+
+        const groups = groupConversationsByDate(conversations);
+
+        expect(groups.some(g => g.label === 'Older')).toBe(true);
+    });
+
+    it('should handle conversations spanning all time periods', () => {
+        const now = new Date();
+        const today = now.toISOString();
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+        const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+        const conversations: ChatConversation[] = [
+            { id: '1', title: 'Today', created_at: today, updated_at: today },
+            { id: '2', title: 'Yesterday', created_at: yesterday, updated_at: yesterday },
+            { id: '3', title: 'Last Week', created_at: fiveDaysAgo, updated_at: fiveDaysAgo },
+            { id: '4', title: 'Old', created_at: thirtyDaysAgo, updated_at: thirtyDaysAgo },
+        ];
+
+        const groups = groupConversationsByDate(conversations);
+
+        // Should have at least 3-4 groups
+        expect(groups.length).toBeGreaterThanOrEqual(3);
+    });
+});

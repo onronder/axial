@@ -311,7 +311,7 @@ def with_google_retry(max_attempts: int = 3):
         @retry(
             stop=stop_after_attempt(max_attempts),
             wait=wait_random_exponential(multiplier=2, min=2, max=30),
-            retry=should_retry,
+            retry=retry_if_exception(should_retry),
             before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )

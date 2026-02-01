@@ -5,6 +5,22 @@ from fastapi import HTTPException
 
 from api.v1 import admin
 
+def _make_mock_request(method="GET", path="/api/v1"):
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    from starlette.requests import Request
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
+
+
 
 class TestAdminAuditLogs:
     @pytest.mark.unit
@@ -38,6 +54,7 @@ class TestAdminAuditLogs:
         with patch("api.v1.admin.get_supabase", return_value=supabase), \
              patch("api.v1.admin.team_service.get_user_team", new=AsyncMock(return_value={"user_role": "owner"})):
             result = await admin.get_audit_logs(
+                request=_make_mock_request(),
                 user_id="user-1",
                 limit=10,
                 offset=0,
@@ -58,7 +75,7 @@ class TestAdminAuditLogs:
         with patch("api.v1.admin.get_supabase", return_value=supabase), \
              patch("api.v1.admin.team_service.get_user_team", new=AsyncMock(return_value={"user_role": "viewer"})):
             with pytest.raises(HTTPException) as excinfo:
-                await admin.get_audit_logs(user_id="user-1")
+                await admin.get_audit_logs(request=_make_mock_request(), user_id="user-1")
 
         assert excinfo.value.status_code == 403
 
@@ -77,7 +94,7 @@ class TestAdminAuditLogs:
         with patch("api.v1.admin.get_supabase", return_value=supabase), \
              patch("api.v1.admin.team_service.get_user_team", new=AsyncMock(return_value={"user_role": "owner"})):
             with pytest.raises(HTTPException) as excinfo:
-                await admin.get_audit_logs(user_id="user-1")
+                await admin.get_audit_logs(request=_make_mock_request(), user_id="user-1")
 
         assert excinfo.value.status_code == 500
 
@@ -86,5 +103,5 @@ class TestAdminAuditActions:
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_get_audit_log_actions(self):
-        result = await admin.get_audit_log_actions(user_id="user-1")
+        result = await admin.get_audit_log_actions(request=_make_mock_request(), user_id="user-1")
         assert "document.delete" in result["actions"]

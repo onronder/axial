@@ -129,9 +129,8 @@ const sftpSource: MergedDataSource = {
   integrationId: null,
 };
 
-// Note: These tests are skipped due to vitest mock hoisting limitations
-// The mock factory functions are evaluated at module load time before test variables are set
-// The component functionality is covered by integration tests and manual testing
+// Tests are skipped due to complex mock hoisting requirements with Vitest
+// The component is tested via integration/e2e tests
 describe.skip('DataSourcesGrid Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();

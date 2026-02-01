@@ -3,6 +3,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
+
+
+def _make_mock_request(method="GET", path="/api/v1/billing"):
+    """Create a mock request for rate-limited endpoints."""
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
 
 
 @pytest.mark.asyncio
@@ -23,7 +39,7 @@ async def test_create_portal_session_success():
 
         from api.v1.billing import create_portal_session
 
-        result = await create_portal_session(current_user_id="user-1")
+        result = await create_portal_session(request=_make_mock_request(method="POST"), current_user_id="user-1")
         assert result.url == "https://portal.example.com"
 
 
@@ -37,7 +53,7 @@ async def test_create_portal_session_requires_customer():
         from api.v1.billing import create_portal_session
 
         with pytest.raises(HTTPException) as exc:
-            await create_portal_session(current_user_id="user-1")
+            await create_portal_session(request=_make_mock_request(method="POST"), current_user_id="user-1")
         assert exc.value.status_code == 400
 
 
@@ -68,7 +84,7 @@ async def test_get_current_subscription_success():
 
         from api.v1.billing import get_current_subscription
 
-        result = await get_current_subscription(current_user_id="user-1")
+        result = await get_current_subscription(request=_make_mock_request(), current_user_id="user-1")
         assert result.id == "sub-1"
         assert result.plan_name == "Pro"
 
@@ -99,7 +115,7 @@ async def test_cancel_subscription_success_updates_db():
 
         from api.v1.billing import cancel_subscription
 
-        result = await cancel_subscription(current_user_id="user-1")
+        result = await cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
         assert result["status"] == "cancelled"
 
 
@@ -124,7 +140,7 @@ async def test_get_billing_history_sorted():
 
         from api.v1.billing import get_billing_history
 
-        result = await get_billing_history(current_user_id="user-1")
+        result = await get_billing_history(request=_make_mock_request(), current_user_id="user-1")
         assert result[0].id == "2"
 
 
@@ -144,7 +160,7 @@ async def test_download_invoice_returns_url():
 
         from api.v1.billing import download_invoice
 
-        result = await download_invoice(order_id="order-1", current_user_id="user-1")
+        result = await download_invoice(request=_make_mock_request(), order_id="order-1", current_user_id="user-1")
         assert result["url"] == "https://invoice.example.com"
 
 
@@ -164,7 +180,7 @@ async def test_fix_customer_id_already_present():
 
         from api.v1.billing import fix_customer_id
 
-        result = await fix_customer_id(current_user_id="user-1")
+        result = await fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
         assert result["status"] == "ok"
 
 
@@ -174,7 +190,8 @@ async def test_submit_enterprise_inquiry_success():
         from api.v1.billing import submit_enterprise_inquiry, EnterpriseInquiryRequest
 
         result = await submit_enterprise_inquiry(
-            EnterpriseInquiryRequest(
+            request=_make_mock_request(method="POST"),
+            data=EnterpriseInquiryRequest(
                 name="Test",
                 email="test@example.com",
                 company="Acme",

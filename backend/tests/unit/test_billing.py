@@ -1,7 +1,25 @@
 import pytest
 from unittest.mock import patch, Mock, AsyncMock, MagicMock
+from starlette.requests import Request
 from api.v1.billing import list_plans
 from core.config import settings
+
+
+@pytest.fixture
+def mock_request():
+    """Create a mock request for rate-limited endpoints."""
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/billing/plans",
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
+
 
 @pytest.fixture
 def mock_settings():
@@ -11,8 +29,9 @@ def mock_settings():
         mock.POLAR_PRODUCT_ID_PRO_MONTHLY = "pro_id"
         yield mock
 
+
 @pytest.mark.asyncio
-async def test_list_plans_success(mock_settings):
+async def test_list_plans_success(mock_request, mock_settings):
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
@@ -54,7 +73,7 @@ async def test_list_plans_success(mock_settings):
     mock_client.get.return_value = mock_response
 
     with patch("httpx.AsyncClient", return_value=mock_client):
-        plans = await list_plans()
+        plans = await list_plans(request=mock_request)
 
     assert len(plans) == 3
     assert plans[0].type == "starter"
@@ -63,21 +82,23 @@ async def test_list_plans_success(mock_settings):
     assert plans[0].price_amount == 1000
     assert plans[1].price_amount == 2000
 
-@pytest.mark.asyncio
-async def test_list_plans_no_token():
-    with patch("api.v1.billing.settings") as mock_settings:
-        mock_settings.POLAR_ACCESS_TOKEN = None
-        plans = await list_plans()
-        assert plans == []
 
 @pytest.mark.asyncio
-async def test_list_plans_api_error(mock_settings):
+async def test_list_plans_no_token(mock_request):
+    with patch("api.v1.billing.settings") as mock_settings:
+        mock_settings.POLAR_ACCESS_TOKEN = None
+        plans = await list_plans(request=mock_request)
+        assert plans == []
+
+
+@pytest.mark.asyncio
+async def test_list_plans_api_error(mock_request, mock_settings):
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
     mock_client.get.side_effect = Exception("API Error")
 
     with patch("httpx.AsyncClient", return_value=mock_client):
-        plans = await list_plans()
+        plans = await list_plans(request=mock_request)
         assert plans == []
 
 
@@ -192,8 +213,23 @@ class TestCancelSubscriptionEndpoint:
 class TestCreateCheckoutEndpoint:
     """Tests for POST /api/v1/billing/checkout."""
     
+    @pytest.fixture
+    def checkout_request(self):
+        """Create a mock request for checkout endpoint."""
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/billing/checkout",
+            "query_string": b"",
+            "headers": [],
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 12345),
+            "app": None,
+        }
+        return Request(scope=scope)
+    
     @pytest.mark.asyncio
-    async def test_checkout_creates_polar_session(self):
+    async def test_checkout_creates_polar_session(self, checkout_request):
         """Should create checkout session with Polar."""
         from types import SimpleNamespace
         from api.v1.billing import create_checkout_session, CheckoutRequest
@@ -216,7 +252,8 @@ class TestCreateCheckoutEndpoint:
             mock_settings.APP_URL = "https://app.example.com"
 
             result = await create_checkout_session(
-                CheckoutRequest(plan="starter"),
+                request=checkout_request,
+                data=CheckoutRequest(plan="starter"),
                 current_user_id="user-1",
             )
 

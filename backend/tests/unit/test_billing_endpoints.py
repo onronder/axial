@@ -3,8 +3,24 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from api.v1 import billing
+
+
+def _make_mock_request(method="GET", path="/api/v1/billing"):
+    """Create a mock request for rate-limited endpoints."""
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
 
 
 def _make_async_client(get_responses=None, post_responses=None, patch_responses=None):
@@ -94,7 +110,7 @@ class TestListPlans:
     @pytest.mark.asyncio
     async def test_list_plans_returns_empty_without_token(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "", create=True):
-            result = await billing.list_plans()
+            result = await billing.list_plans(request=_make_mock_request())
 
         assert result == []
 
@@ -124,7 +140,7 @@ class TestListPlans:
              patch.object(billing.settings, "POLAR_PRODUCT_ID_PRO_MONTHLY", "prod-pro", create=True), \
              patch.object(billing.settings, "POLAR_PRODUCT_ID_ENTERPRISE", None, create=True), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.list_plans()
+            result = await billing.list_plans(request=_make_mock_request())
 
         assert [plan.type for plan in result] == ["starter", "pro", "enterprise"]
 
@@ -137,7 +153,8 @@ class TestCheckout:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))):
             with pytest.raises(HTTPException):
                 await billing.create_checkout_session(
-                    billing.CheckoutRequest(plan="bad"),
+                    request=_make_mock_request(method="POST"),
+                    data=billing.CheckoutRequest(plan="bad"),
                     current_user_id="user-1",
                 )
 
@@ -154,7 +171,8 @@ class TestCheckout:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             result = await billing.create_checkout_session(
-                billing.CheckoutRequest(plan="starter"),
+                request=_make_mock_request(method="POST"),
+                data=billing.CheckoutRequest(plan="starter"),
                 current_user_id="user-1",
             )
 
@@ -168,7 +186,7 @@ class TestPortal:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value=None)):
             with pytest.raises(HTTPException):
-                await billing.create_portal_session(current_user_id="user-1")
+                await billing.create_portal_session(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -180,7 +198,7 @@ class TestPortal:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.create_portal_session(current_user_id="user-1")
+            result = await billing.create_portal_session(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
         assert result.url == "https://portal"
 
@@ -191,7 +209,7 @@ class TestSubscription:
     async def test_get_current_subscription_none(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value=None)):
-            result = await billing.get_current_subscription(current_user_id="user-1")
+            result = await billing.get_current_subscription(request=_make_mock_request(), current_user_id="user-1")
 
         assert result is None
 
@@ -216,7 +234,7 @@ class TestSubscription:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_current_subscription(current_user_id="user-1")
+            result = await billing.get_current_subscription(request=_make_mock_request(), current_user_id="user-1")
 
         assert result.id == "sub-1"
 
@@ -238,7 +256,7 @@ class TestCancelSubscription:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
              patch("api.v1.billing.get_supabase", return_value=supabase), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.cancel_subscription(current_user_id="user-1")
+            result = await billing.cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
         assert result["status"] == "cancelled"
 
@@ -259,7 +277,7 @@ class TestBillingHistory:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_billing_history(current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
 
         assert result[0].id == "order-2"
 
@@ -274,7 +292,7 @@ class TestInvoices:
 
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.download_invoice(order_id="order-1", current_user_id="user-1")
+            result = await billing.download_invoice(request=_make_mock_request(), order_id="order-1", current_user_id="user-1")
 
         assert result["url"] == "https://invoice"
 
@@ -287,7 +305,7 @@ class TestInvoices:
 
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.download_invoice(order_id="order-1", current_user_id="user-1")
+            result = await billing.download_invoice(request=_make_mock_request(), order_id="order-1", current_user_id="user-1")
 
         assert result["status"] == "generating"
 
@@ -310,7 +328,7 @@ class TestFixCustomerId:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
              patch("api.v1.billing.get_supabase", return_value=supabase), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.fix_customer_id(current_user_id="user-1")
+            result = await billing.fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
         assert result["status"] == "ok"
 
@@ -372,7 +390,7 @@ class TestBillingErrorPaths:
 
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.list_plans()
+            result = await billing.list_plans(request=_make_mock_request())
 
         assert result == []
 
@@ -391,7 +409,7 @@ class TestBillingErrorPaths:
              patch.object(billing.settings, "POLAR_PRODUCT_ID_PRO_MONTHLY", "prod-pro", create=True), \
              patch.object(billing.settings, "POLAR_PRODUCT_ID_ENTERPRISE", None, create=True), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.list_plans()
+            result = await billing.list_plans(request=_make_mock_request())
 
         assert [plan.type for plan in result] == ["enterprise"]
 
@@ -401,7 +419,8 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", None, create=True):
             with pytest.raises(HTTPException):
                 await billing.create_checkout_session(
-                    billing.CheckoutRequest(plan="starter"),
+                    request=_make_mock_request(method="POST"),
+                    data=billing.CheckoutRequest(plan="starter"),
                     current_user_id="user-1",
                 )
 
@@ -413,7 +432,8 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=None)):
             with pytest.raises(HTTPException):
                 await billing.create_checkout_session(
-                    billing.CheckoutRequest(plan="starter"),
+                    request=_make_mock_request(method="POST"),
+                    data=billing.CheckoutRequest(plan="starter"),
                     current_user_id="user-1",
                 )
 
@@ -430,7 +450,8 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
                 await billing.create_checkout_session(
-                    billing.CheckoutRequest(plan="starter"),
+                    request=_make_mock_request(method="POST"),
+                    data=billing.CheckoutRequest(plan="starter"),
                     current_user_id="user-1",
                 )
 
@@ -439,7 +460,7 @@ class TestBillingErrorPaths:
     async def test_portal_requires_token(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", None, create=True):
             with pytest.raises(HTTPException):
-                await billing.create_portal_session(current_user_id="user-1")
+                await billing.create_portal_session(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -451,7 +472,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
-                await billing.create_portal_session(current_user_id="user-1")
+                await billing.create_portal_session(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -463,13 +484,13 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
-                await billing.create_portal_session(current_user_id="user-1")
+                await billing.create_portal_session(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_get_current_subscription_no_token(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", None, create=True):
-            result = await billing.get_current_subscription(current_user_id="user-1")
+            result = await billing.get_current_subscription(request=_make_mock_request(), current_user_id="user-1")
 
         assert result is None
 
@@ -482,7 +503,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_current_subscription(current_user_id="user-1")
+            result = await billing.get_current_subscription(request=_make_mock_request(), current_user_id="user-1")
 
         assert result is None
 
@@ -496,7 +517,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_current_subscription(current_user_id="user-1")
+            result = await billing.get_current_subscription(request=_make_mock_request(), current_user_id="user-1")
 
         assert result is None
 
@@ -505,7 +526,7 @@ class TestBillingErrorPaths:
     async def test_get_current_subscription_handles_exception(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(side_effect=RuntimeError("boom"))):
-            result = await billing.get_current_subscription(current_user_id="user-1")
+            result = await billing.get_current_subscription(request=_make_mock_request(), current_user_id="user-1")
 
         assert result is None
 
@@ -514,7 +535,7 @@ class TestBillingErrorPaths:
     async def test_cancel_subscription_no_token(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", None, create=True):
             with pytest.raises(HTTPException):
-                await billing.cancel_subscription(current_user_id="user-1")
+                await billing.cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -522,7 +543,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value=None)):
             with pytest.raises(HTTPException):
-                await billing.cancel_subscription(current_user_id="user-1")
+                await billing.cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -534,7 +555,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
-                await billing.cancel_subscription(current_user_id="user-1")
+                await billing.cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -547,7 +568,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
-                await billing.cancel_subscription(current_user_id="user-1")
+                await billing.cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -560,7 +581,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
-                await billing.cancel_subscription(current_user_id="user-1")
+                await billing.cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -574,7 +595,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
-                await billing.cancel_subscription(current_user_id="user-1")
+                await billing.cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -586,13 +607,13 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
-                await billing.cancel_subscription(current_user_id="user-1")
+                await billing.cancel_subscription(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_billing_history_no_token(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", None, create=True):
-            result = await billing.get_billing_history(current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
 
         assert result == []
 
@@ -601,7 +622,7 @@ class TestBillingErrorPaths:
     async def test_billing_history_no_customer(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value=None)):
-            result = await billing.get_billing_history(current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
 
         assert result == []
 
@@ -614,7 +635,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_billing_history(current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
 
         assert result == []
 
@@ -627,7 +648,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_billing_history(current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
 
         assert result == []
 
@@ -636,7 +657,7 @@ class TestBillingErrorPaths:
     async def test_download_invoice_no_token(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", None, create=True):
             with pytest.raises(HTTPException):
-                await billing.download_invoice(order_id="order-1", current_user_id="user-1")
+                await billing.download_invoice(request=_make_mock_request(), order_id="order-1", current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -648,7 +669,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException) as exc:
-                await billing.download_invoice(order_id="order-1", current_user_id="user-1")
+                await billing.download_invoice(request=_make_mock_request(), order_id="order-1", current_user_id="user-1")
 
         assert exc.value.status_code == 404
 
@@ -661,14 +682,14 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             with pytest.raises(HTTPException):
-                await billing.download_invoice(order_id="order-1", current_user_id="user-1")
+                await billing.download_invoice(request=_make_mock_request(), order_id="order-1", current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_fix_customer_id_no_token(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", None, create=True):
             with pytest.raises(HTTPException):
-                await billing.fix_customer_id(current_user_id="user-1")
+                await billing.fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -676,7 +697,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=None)):
             with pytest.raises(HTTPException):
-                await billing.fix_customer_id(current_user_id="user-1")
+                await billing.fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -690,7 +711,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
              patch("api.v1.billing.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
-                await billing.fix_customer_id(current_user_id="user-1")
+                await billing.fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -704,7 +725,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
              patch("api.v1.billing.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
-                await billing.fix_customer_id(current_user_id="user-1")
+                await billing.fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -722,7 +743,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
              patch("api.v1.billing.get_supabase", return_value=supabase), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.fix_customer_id(current_user_id="user-1")
+            result = await billing.fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
         assert result["status"] == "error"
         assert "No customer" in result["message"]
@@ -742,7 +763,7 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
              patch("api.v1.billing.get_supabase", return_value=supabase), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.fix_customer_id(current_user_id="user-1")
+            result = await billing.fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
         assert result["status"] == "error"
         assert "Polar API error" in result["message"]
@@ -757,14 +778,15 @@ class TestBillingErrorPaths:
              patch("api.v1.billing.team_service.get_user_team_member", new=AsyncMock(return_value=SimpleNamespace(team_id="team-1"))), \
              patch("api.v1.billing.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
-                await billing.fix_customer_id(current_user_id="user-1")
+                await billing.fix_customer_id(request=_make_mock_request(method="POST"), current_user_id="user-1")
 
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_enterprise_inquiry_failure_path(self):
         with patch("services.email.email_service.send_enterprise_inquiry", return_value=False):
             result = await billing.submit_enterprise_inquiry(
-                billing.EnterpriseInquiryRequest(
+                request=_make_mock_request(method="POST"),
+                data=billing.EnterpriseInquiryRequest(
                     name="Test",
                     email="test@example.com",
                     company="Acme",
@@ -780,7 +802,8 @@ class TestBillingErrorPaths:
     async def test_enterprise_inquiry_exception(self):
         with patch("services.email.email_service.send_enterprise_inquiry", side_effect=RuntimeError("boom")):
             result = await billing.submit_enterprise_inquiry(
-                billing.EnterpriseInquiryRequest(
+                request=_make_mock_request(method="POST"),
+                data=billing.EnterpriseInquiryRequest(
                     name="Test",
                     email="test@example.com",
                     company="Acme",

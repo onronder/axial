@@ -122,14 +122,24 @@ def test_create_file_status_returns_id():
 
 
 def test_update_file_status_caps_progress():
+    """Test that progress is capped at 100."""
     supabase = MagicMock()
-    table = MagicMock()
-    table.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[{}])
-    supabase.table.return_value = table
+    
+    # Mock RPC to return True (update successful) but also verify the capped progress is passed
+    rpc_mock = MagicMock()
+    rpc_mock.execute.return_value = MagicMock(data=True)
+    supabase.rpc.return_value = rpc_mock
 
     tasks.update_file_status(supabase, "status-1", progress=150)
-    update_data = table.update.call_args[0][0]
-    assert update_data["progress"] == 100
+    
+    # Verify RPC was called
+    supabase.rpc.assert_called_once()
+    
+    # Verify the progress was capped to 100 when passed to RPC
+    call_args = supabase.rpc.call_args
+    assert call_args[0][0] == "update_file_status_if_changed"
+    params = call_args[0][1]
+    assert params["p_progress"] == 100  # Capped from 150 to 100
 
 
 def test_check_job_cancelled_true():

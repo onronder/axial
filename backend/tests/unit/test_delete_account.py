@@ -13,6 +13,22 @@ import os
 # Add backend to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+def _make_mock_request(method="GET", path="/api/v1"):
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    from starlette.requests import Request
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
+
+
 
 class TestDeleteAccountEndpoint:
     """Tests for DELETE /settings/profile/me endpoint."""
@@ -31,7 +47,7 @@ class TestDeleteAccountEndpoint:
             
             from api.v1.settings import delete_account
             
-            result = await delete_account(user_id="user-123")
+            result = await delete_account(request=_make_mock_request(method="DELETE"), user_id="user-123")
             
             mock_cleanup.execute_account_deletion.assert_called_once_with("user-123")
             assert result["message"] == "Account and all data permanently deleted"
@@ -50,7 +66,7 @@ class TestDeleteAccountEndpoint:
             
             from api.v1.settings import delete_account
             
-            result = await delete_account(user_id="user-123")
+            result = await delete_account(request=_make_mock_request(method="DELETE"), user_id="user-123")
             
             assert "details" in result
             assert result["details"]["vector_store"]["deleted"] == 10
@@ -67,10 +83,12 @@ class TestDeleteAccountEndpoint:
             from api.v1.settings import delete_account
             
             with pytest.raises(HTTPException) as exc_info:
-                await delete_account(user_id="user-123")
+                await delete_account(request=_make_mock_request(method="DELETE"), user_id="user-123")
             
             assert exc_info.value.status_code == 500
-            assert "Failed to delete account" in exc_info.value.detail
+            # Error format changed to structured dict
+            detail = exc_info.value.detail
+            assert detail.get("error") == "INTERNAL_ERROR" or "Failed to delete account" in str(detail)
     
     @pytest.mark.asyncio
     async def test_delete_account_requires_authentication(self):
@@ -108,7 +126,7 @@ class TestDeleteAccountLogging:
                 
                 from api.v1.settings import delete_account
                 
-                await delete_account(user_id="user-123")
+                await delete_account(request=_make_mock_request(method="DELETE"), user_id="user-123")
                 
                 # Logger should have been called for info logging
                 # (exact assertions depend on implementation)
@@ -131,7 +149,7 @@ class TestDeleteAccountEdgeCases:
             
             from api.v1.settings import delete_account
             
-            result = await delete_account(user_id="new-user")
+            result = await delete_account(request=_make_mock_request(method="DELETE"), user_id="new-user")
             
             assert result["message"] == "Account and all data permanently deleted"
             assert result["details"]["vector_store"]["deleted"] == 0
@@ -150,7 +168,7 @@ class TestDeleteAccountEdgeCases:
             
             from api.v1.settings import delete_account
             
-            result = await delete_account(user_id="550e8400-e29b-41d4-a716-446655440000")
+            result = await delete_account(request=_make_mock_request(method="DELETE"), user_id="550e8400-e29b-41d4-a716-446655440000")
             
             assert result["message"] == "Account and all data permanently deleted"
 
@@ -184,7 +202,7 @@ class TestDeleteAccountSecurityChecks:
             from api.v1.settings import delete_account
             
             # The user_id comes from the auth dependency
-            await delete_account(user_id="user-abc")
+            await delete_account(request=_make_mock_request(method="DELETE"), user_id="user-abc")
             
             # Verify the cleanup was called with the exact user_id
             call_args = mock_cleanup.execute_account_deletion.call_args[0]

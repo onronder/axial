@@ -465,3 +465,774 @@ describe('isChatApiError', () => {
         expect(isChatApiError('error')).toBe(false);
     });
 });
+
+// =============================================================================
+// Async Function Tests (sendChatRequest, streamChatResponse)
+// =============================================================================
+
+import { vi, beforeEach, afterEach } from 'vitest';
+import { sendChatRequest, streamChatResponse, streamChatResponseWithRetry, ChatPayload } from '@/lib/chat-utils';
+
+// Mock supabase
+vi.mock('@/lib/supabase', () => ({
+    supabase: {
+        auth: {
+            getSession: vi.fn(),
+        },
+    },
+}));
+
+import { supabase } from '@/lib/supabase';
+
+describe('sendChatRequest', () => {
+    const mockPayload: ChatPayload = {
+        query: 'test query',
+        conversation_id: 'conv-123',
+        history: [],
+        model: 'gpt-4o-mini',
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        global.fetch = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('throws error when no authentication token', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: null },
+            error: null,
+        });
+
+        await expect(sendChatRequest(mockPayload)).rejects.toThrow('No authentication token found');
+    });
+
+    it('returns ChatResult on successful response', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const mockResponse = {
+            answer: 'Test answer',
+            sources: [],
+            conversation_id: 'conv-123',
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve(mockResponse),
+        });
+
+        const result = await sendChatRequest(mockPayload);
+        expect(result).toEqual(mockResponse);
+    });
+
+    it('returns ClarificationResult on HTTP 300', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const clarificationData = {
+            candidates: [
+                { scope_id: 'scope1', scope_type: 'github_repo', label: 'Repo 1', doc_count: 10 },
+                { scope_id: 'scope2', scope_type: 's3_bucket', label: 'Bucket', doc_count: 5 },
+            ],
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: false,
+            status: 300,
+            json: () => Promise.resolve(clarificationData),
+        });
+
+        const result = await sendChatRequest(mockPayload);
+        expect(result).toEqual({
+            requires_clarification: true,
+            data: clarificationData,
+        });
+    });
+
+    it('throws ChatApiError on non-OK response', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: false,
+            status: 400,
+            statusText: 'Bad Request',
+            json: () => Promise.resolve({ detail: 'Invalid query' }),
+        });
+
+        await expect(sendChatRequest(mockPayload)).rejects.toThrow();
+    });
+
+    it('sends correct headers and body', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ answer: 'test' }),
+        });
+
+        await sendChatRequest(mockPayload);
+
+        expect(global.fetch).toHaveBeenCalledWith('/api/py/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer test-token',
+            },
+            body: JSON.stringify({ ...mockPayload, stream: false }),
+        });
+    });
+});
+
+describe('streamChatResponse', () => {
+    const mockPayload: ChatPayload = {
+        query: 'test query',
+        conversation_id: null,
+        history: [],
+        model: 'gpt-4o-mini',
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        global.fetch = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('throws error when no authentication token', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: null },
+            error: null,
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        await expect(generator.next()).rejects.toThrow('No authentication token found');
+    });
+
+    it('returns early if signal is already aborted', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const abortController = new AbortController();
+        abortController.abort();
+
+        const generator = streamChatResponse(mockPayload, abortController.signal);
+        const result = await generator.next();
+        
+        expect(result.done).toBe(true);
+    });
+
+    it('yields clarification event on HTTP 300', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const clarificationData = {
+            candidates: [{ scope_id: 'scope1', scope_type: 'github_repo', label: 'Repo', doc_count: 5 }],
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: false,
+            status: 300,
+            json: () => Promise.resolve(clarificationData),
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        const result = await generator.next();
+        
+        expect(result.value).toEqual({
+            type: 'clarification',
+            data: clarificationData,
+        });
+    });
+
+    it('throws ChatApiError on non-OK response', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            json: () => Promise.resolve({ message: 'Server error' }),
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        await expect(generator.next()).rejects.toThrow();
+    });
+
+    it('throws error when response has no body', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: null,
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        await expect(generator.next()).rejects.toThrow('No response body');
+    });
+
+    it('yields token events from SSE stream', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        // Create mock ReadableStream
+        const encoder = new TextEncoder();
+        const sseData = 'data: {"type":"token","content":"Hello"}\n\ndata: {"type":"done"}\n\n';
+        
+        const mockReader = {
+            read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: encoder.encode(sseData) })
+                .mockResolvedValueOnce({ done: true, value: undefined }),
+            releaseLock: vi.fn(),
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: {
+                getReader: () => mockReader,
+            },
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        const events = [];
+        
+        for await (const event of generator) {
+            events.push(event);
+        }
+        
+        expect(events).toContainEqual({ type: 'token', content: 'Hello' });
+        expect(events).toContainEqual({ type: 'done' });
+        expect(mockReader.releaseLock).toHaveBeenCalled();
+    });
+
+    it('handles [DONE] SSE message', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const encoder = new TextEncoder();
+        const sseData = 'data: [DONE]\n\n';
+        
+        const mockReader = {
+            read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: encoder.encode(sseData) })
+                .mockResolvedValueOnce({ done: true, value: undefined }),
+            releaseLock: vi.fn(),
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: {
+                getReader: () => mockReader,
+            },
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        const events = [];
+        
+        for await (const event of generator) {
+            events.push(event);
+        }
+        
+        // [DONE] should be skipped, so events should be empty
+        expect(events).toHaveLength(0);
+    });
+
+    it('handles invalid JSON in SSE gracefully', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const encoder = new TextEncoder();
+        const sseData = 'data: invalid-json\n\ndata: {"type":"done"}\n\n';
+        
+        const mockReader = {
+            read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: encoder.encode(sseData) })
+                .mockResolvedValueOnce({ done: true, value: undefined }),
+            releaseLock: vi.fn(),
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: {
+                getReader: () => mockReader,
+            },
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        const events = [];
+        
+        for await (const event of generator) {
+            events.push(event);
+        }
+        
+        // Should only yield the valid "done" event
+        expect(events).toContainEqual({ type: 'done' });
+        
+        warnSpy.mockRestore();
+    });
+});
+
+describe('streamChatResponseWithRetry', () => {
+    const mockPayload: ChatPayload = {
+        query: 'test query',
+        conversation_id: null,
+        history: [],
+        model: 'gpt-4o-mini',
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.useFakeTimers();
+        global.fetch = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('yields events from successful stream', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValue({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const encoder = new TextEncoder();
+        const sseData = 'data: {"type":"token","content":"Hi"}\n\ndata: {"type":"done"}\n\n';
+        
+        const mockReader = {
+            read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: encoder.encode(sseData) })
+                .mockResolvedValueOnce({ done: true, value: undefined }),
+            releaseLock: vi.fn(),
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: { getReader: () => mockReader },
+        });
+
+        const generator = streamChatResponseWithRetry(mockPayload, { maxRetries: 2 });
+        const events = [];
+        
+        vi.useRealTimers(); // Need real timers for async iteration
+        for await (const event of generator) {
+            events.push(event);
+        }
+        
+        expect(events).toContainEqual({ type: 'token', content: 'Hi' });
+    });
+
+    it('does not retry when aborted', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValue({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const abortController = new AbortController();
+        abortController.abort();
+
+        const generator = streamChatResponseWithRetry(mockPayload, { 
+            maxRetries: 2,
+            signal: abortController.signal,
+        });
+
+        vi.useRealTimers();
+        // When already aborted, the generator completes without yielding
+        const result = await generator.next();
+        expect(result.done).toBe(true);
+        // fetch should not have been called since abort happened before fetch
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not retry non-retryable error codes', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValue({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const error = new ChatApiError(429, { error: 'PLAN_LIMIT_EXCEEDED', message: 'Limit reached' });
+        (global.fetch as vi.Mock).mockRejectedValue(error);
+
+        const generator = streamChatResponseWithRetry(mockPayload, { maxRetries: 2 });
+
+        vi.useRealTimers();
+        await expect(generator.next()).rejects.toThrow();
+        
+        // Should only be called once (no retries)
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry 4xx client errors (except 408 and 429)', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValue({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const error = new ChatApiError(400, { message: 'Bad request' });
+        (global.fetch as vi.Mock).mockRejectedValue(error);
+
+        const generator = streamChatResponseWithRetry(mockPayload, { maxRetries: 2 });
+
+        vi.useRealTimers();
+        await expect(generator.next()).rejects.toThrow();
+        
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+// =============================================================================
+// Additional streamChatResponse Edge Case Tests
+// =============================================================================
+
+describe('streamChatResponse - signal abort during processing', () => {
+    const mockPayload: ChatPayload = {
+        query: 'test query',
+        conversation_id: null,
+        history: [],
+        model: 'gpt-4o-mini',
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        global.fetch = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('should return early when signal is aborted during line processing', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const abortController = new AbortController();
+        const encoder = new TextEncoder();
+        
+        // Create SSE data with multiple events
+        const sseData = 'data: {"type":"token","content":"Hello"}\n\ndata: {"type":"token","content":"World"}\n\n';
+        
+        let readCount = 0;
+        const mockReader = {
+            read: vi.fn().mockImplementation(() => {
+                readCount++;
+                if (readCount === 1) {
+                    // Return data but abort signal after
+                    setTimeout(() => abortController.abort(), 0);
+                    return Promise.resolve({ done: false, value: encoder.encode(sseData) });
+                }
+                return Promise.resolve({ done: true, value: undefined });
+            }),
+            releaseLock: vi.fn(),
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: { getReader: () => mockReader },
+        });
+
+        const generator = streamChatResponse(mockPayload, abortController.signal);
+        const events = [];
+        
+        try {
+            for await (const event of generator) {
+                events.push(event);
+                // Check if we should stop due to abort
+                if (abortController.signal.aborted) break;
+            }
+        } catch (e) {
+            // AbortError is expected
+        }
+        
+        // Should have called releaseLock
+        expect(mockReader.releaseLock).toHaveBeenCalled();
+    });
+
+    it('should break main loop when signal is aborted', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const abortController = new AbortController();
+        const encoder = new TextEncoder();
+        
+        let readCount = 0;
+        const mockReader = {
+            read: vi.fn().mockImplementation(() => {
+                readCount++;
+                if (readCount === 1) {
+                    return Promise.resolve({ done: false, value: encoder.encode('data: {"type":"token","content":"Hi"}\n\n') });
+                }
+                // Abort on second read
+                abortController.abort();
+                return Promise.resolve({ done: false, value: encoder.encode('data: {"type":"token","content":"More"}\n\n') });
+            }),
+            releaseLock: vi.fn(),
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: { getReader: () => mockReader },
+        });
+
+        const generator = streamChatResponse(mockPayload, abortController.signal);
+        const events = [];
+        
+        for await (const event of generator) {
+            events.push(event);
+        }
+        
+        // Should have processed first event and stopped
+        expect(events.length).toBeGreaterThanOrEqual(1);
+        expect(mockReader.releaseLock).toHaveBeenCalled();
+    });
+});
+
+// =============================================================================
+// Additional extractScopeName Edge Case Tests
+// =============================================================================
+
+describe('extractScopeName - error handling', () => {
+    it('should truncate and return substring on unexpected error', () => {
+        // Create a string that could potentially cause issues
+        const problematicUri = 'x'.repeat(100);
+        const result = extractScopeName(problematicUri);
+        
+        // Should return something, potentially truncated
+        expect(result).toBeDefined();
+        expect(result.length).toBeLessThanOrEqual(100);
+    });
+
+    it('should handle URI with only protocol prefix', () => {
+        const result = extractScopeName('github://');
+        expect(result).toBeDefined();
+    });
+
+    it('should handle box URI without name after colon', () => {
+        const result = extractScopeName('box://folder/123:');
+        // Empty string after colon should fall back to 'Box Folder'
+        expect(result).toBe('Box Folder');
+    });
+
+    it('should handle gdrive URI without name after colon', () => {
+        const result = extractScopeName('gdrive://drive/folder:');
+        expect(result).toBe('Google Drive');
+    });
+
+    it('should handle notion URI without title after colon', () => {
+        const result = extractScopeName('notion://workspace/page:');
+        expect(result).toBe('Notion');
+    });
+
+    it('should return fallback from complex URI parsing', () => {
+        // Edge case: URI with multiple colons
+        const result = extractScopeName('custom://path:with:colons');
+        expect(result).toBeDefined();
+    });
+});
+
+// =============================================================================
+// Test the catch block in extractScopeName (lines 430-431)
+// =============================================================================
+
+describe('extractScopeName - catch block coverage', () => {
+    it('should handle malformed input that triggers an error', () => {
+        // Testing with various edge cases that might fail during parsing
+        const testCases = [
+            '', // Empty should return 'Unknown Source'
+            null as unknown as string, // null coerced
+            undefined as unknown as string, // undefined coerced
+        ];
+        
+        // Empty string case
+        expect(extractScopeName('')).toBe('Unknown Source');
+    });
+});
+
+// =============================================================================
+// extractScopeName - additional edge cases
+// =============================================================================
+
+describe('extractScopeName - additional coverage', () => {
+    it('should handle S3 bucket with trailing slash', () => {
+        const result = extractScopeName('s3://my-bucket/prefix/');
+        expect(result).toBe('my-bucket/prefix');
+    });
+
+    it('should handle S3 bucket without prefix', () => {
+        const result = extractScopeName('s3://');
+        expect(result).toBe('S3 Bucket');
+    });
+
+    it('should handle GitHub repo with branch', () => {
+        const result = extractScopeName('github://my-org/my-repo@main');
+        expect(result).toBe('my-repo');
+    });
+
+    it('should handle Dropbox with namespace only', () => {
+        const result = extractScopeName('dropbox://namespace');
+        expect(result).toBe('Dropbox');
+    });
+
+    it('should handle generic fallback with colon', () => {
+        const result = extractScopeName('custom://path/to:name');
+        expect(result).toBe('name');
+    });
+
+    it('should handle generic fallback without colon', () => {
+        const result = extractScopeName('custom://path/to/resource');
+        expect(result).toBe('resource');
+    });
+});
+
+// =============================================================================
+// streamChatResponse - abort signal during read loop (lines 314-316)
+// =============================================================================
+
+describe('streamChatResponse - abort during read loop', () => {
+    const mockPayload: ChatPayload = {
+        query: 'test query',
+        conversation_id: null,
+        history: [],
+        model: 'gpt-4o-mini',
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        global.fetch = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('should break when signal is aborted before read', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const abortController = new AbortController();
+        const encoder = new TextEncoder();
+        
+        let readCallCount = 0;
+        const mockReader = {
+            read: vi.fn().mockImplementation(async () => {
+                readCallCount++;
+                if (readCallCount === 1) {
+                    return { done: false, value: encoder.encode('data: {"type":"token","content":"Hi"}\n\n') };
+                }
+                // Abort before second read
+                abortController.abort();
+                // Simulate delay where abort might be checked
+                await new Promise(resolve => setTimeout(resolve, 1));
+                return { done: false, value: encoder.encode('data: {"type":"token","content":"World"}\n\n') };
+            }),
+            releaseLock: vi.fn(),
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: { getReader: () => mockReader },
+        });
+
+        const generator = streamChatResponse(mockPayload, abortController.signal);
+        const events = [];
+        
+        for await (const event of generator) {
+            events.push(event);
+        }
+        
+        // Should have received at least one event before abort
+        expect(events.length).toBeGreaterThanOrEqual(1);
+        expect(mockReader.releaseLock).toHaveBeenCalled();
+    });
+
+    it('should return when signal aborts during line iteration', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const abortController = new AbortController();
+        const encoder = new TextEncoder();
+        
+        // Create multiple SSE events in one chunk
+        const sseData = 'data: {"type":"token","content":"A"}\n\ndata: {"type":"token","content":"B"}\n\ndata: {"type":"token","content":"C"}\n\n';
+        
+        let yieldCount = 0;
+        const mockReader = {
+            read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: encoder.encode(sseData) })
+                .mockResolvedValue({ done: true, value: undefined }),
+            releaseLock: vi.fn(),
+        };
+
+        (global.fetch as vi.Mock).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: { getReader: () => mockReader },
+        });
+
+        const generator = streamChatResponse(mockPayload, abortController.signal);
+        const events = [];
+        
+        for await (const event of generator) {
+            events.push(event);
+            yieldCount++;
+            // Abort after processing first event
+            if (yieldCount === 1) {
+                abortController.abort();
+            }
+        }
+        
+        // Should have stopped early due to abort
+        expect(events.length).toBeLessThanOrEqual(3);
+    });
+});

@@ -324,6 +324,146 @@ describe('useQuotaStatus', () => {
             expect(mockUnsubscribe).toHaveBeenCalled();
             expect(mockRemoveChannel).toHaveBeenCalled();
         });
+
+        it('should detect quota exceeded from failed job updates', async () => {
+            // Capture the callback passed to .on()
+            let capturedCallback: ((payload: unknown) => void) | null = null;
+            
+            const channelInstance = {
+                on: vi.fn((event, config, callback) => {
+                    capturedCallback = callback;
+                    return {
+                        subscribe: vi.fn().mockReturnValue(channelInstance),
+                    };
+                }),
+                unsubscribe: vi.fn(),
+            };
+            mockChannel.mockReturnValue(channelInstance);
+
+            const { result } = renderHook(() => useQuotaStatus(), {
+                wrapper: createWrapper(),
+            });
+
+            // Simulate a failed job with quota error
+            act(() => {
+                if (capturedCallback) {
+                    capturedCallback({
+                        new: {
+                            status: 'failed',
+                            provider: 'google_drive',
+                            error_message: 'File limit exceeded. Please upgrade your plan.',
+                        },
+                    });
+                }
+            });
+
+            await waitFor(() => {
+                expect(result.current.isProviderQuotaExceeded('google_drive')).toBe(true);
+            });
+        });
+
+        it('should detect quota warning from completed job with limit message', async () => {
+            let capturedCallback: ((payload: unknown) => void) | null = null;
+            
+            const channelInstance = {
+                on: vi.fn((event, config, callback) => {
+                    capturedCallback = callback;
+                    return {
+                        subscribe: vi.fn().mockReturnValue(channelInstance),
+                    };
+                }),
+                unsubscribe: vi.fn(),
+            };
+            mockChannel.mockReturnValue(channelInstance);
+
+            const { result } = renderHook(() => useQuotaStatus(), {
+                wrapper: createWrapper(),
+            });
+
+            // Simulate a completed job with quota warning
+            act(() => {
+                if (capturedCallback) {
+                    capturedCallback({
+                        new: {
+                            status: 'completed',
+                            provider: 'dropbox',
+                            message: 'Completed with storage limit warning',
+                        },
+                    });
+                }
+            });
+
+            await waitFor(() => {
+                expect(result.current.isProviderQuotaExceeded('dropbox')).toBe(true);
+            });
+        });
+
+        it('should not mark quota exceeded for non-quota errors', async () => {
+            let capturedCallback: ((payload: unknown) => void) | null = null;
+            
+            const channelInstance = {
+                on: vi.fn((event, config, callback) => {
+                    capturedCallback = callback;
+                    return {
+                        subscribe: vi.fn().mockReturnValue(channelInstance),
+                    };
+                }),
+                unsubscribe: vi.fn(),
+            };
+            mockChannel.mockReturnValue(channelInstance);
+
+            const { result } = renderHook(() => useQuotaStatus(), {
+                wrapper: createWrapper(),
+            });
+
+            // Simulate a failed job with non-quota error
+            act(() => {
+                if (capturedCallback) {
+                    capturedCallback({
+                        new: {
+                            status: 'failed',
+                            provider: 'google_drive',
+                            error_message: 'Network timeout',
+                        },
+                    });
+                }
+            });
+
+            expect(result.current.isProviderQuotaExceeded('google_drive')).toBe(false);
+        });
+
+        it('should not mark quota exceeded when no error message', async () => {
+            let capturedCallback: ((payload: unknown) => void) | null = null;
+            
+            const channelInstance = {
+                on: vi.fn((event, config, callback) => {
+                    capturedCallback = callback;
+                    return {
+                        subscribe: vi.fn().mockReturnValue(channelInstance),
+                    };
+                }),
+                unsubscribe: vi.fn(),
+            };
+            mockChannel.mockReturnValue(channelInstance);
+
+            const { result } = renderHook(() => useQuotaStatus(), {
+                wrapper: createWrapper(),
+            });
+
+            // Simulate a failed job with no error message
+            act(() => {
+                if (capturedCallback) {
+                    capturedCallback({
+                        new: {
+                            status: 'failed',
+                            provider: 'google_drive',
+                        },
+                    });
+                }
+            });
+
+            expect(result.current.isProviderQuotaExceeded('google_drive')).toBe(false);
+        });
     });
 
     describe('Return Values', () => {

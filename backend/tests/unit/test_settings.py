@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from api.v1.settings import (
     DEFAULT_NOTIFICATION_SETTINGS,
@@ -20,6 +21,21 @@ from api.v1.settings import (
     update_notification_setting,
     update_profile,
 )
+
+
+def _make_mock_request(method="GET", path="/api/v1/settings"):
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
 
 
 def _build_profile_supabase(
@@ -101,7 +117,7 @@ class TestProfileCreation:
             user_metadata={"first_name": "John", "last_name": "Doe"},
         )
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await get_profile(user_id="user-1")
+            profile = await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert profile["first_name"] == "John"
         assert profile["last_name"] == "Doe"
@@ -116,7 +132,7 @@ class TestProfileCreation:
             user_metadata={"first_name": "Jane", "last_name": "Smith"},
         )
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await get_profile(user_id="user-1")
+            profile = await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert profile["last_name"] == "Smith"
         insert_payload = profiles_table.insert.call_args[0][0]
@@ -132,7 +148,7 @@ class TestProfileCreation:
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
-                await get_profile(user_id="user-1")
+                await get_profile(request=_make_mock_request(), user_id="user-1")
 
     @pytest.mark.asyncio
     async def test_profile_creation_falls_back_to_full_name_parsing(self):
@@ -142,7 +158,7 @@ class TestProfileCreation:
             user_metadata={"full_name": "Jane Smith"},
         )
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await get_profile(user_id="user-1")
+            profile = await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert profile["first_name"] == "Jane"
         assert profile["last_name"] == "Smith"
@@ -159,7 +175,7 @@ class TestProfileCreation:
         supabase.auth.admin.get_user_by_id.side_effect = Exception("User not found")
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await get_profile(user_id="user-1")
+            profile = await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert profile["first_name"] is None
         assert profile["last_name"] is None
@@ -174,7 +190,7 @@ class TestProfileGet:
             profile_rows=[{"user_id": "user-1", "first_name": "Existing", "last_name": "User"}],
         )
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await get_profile(user_id="user-1")
+            profile = await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert profile["first_name"] == "Existing"
         assert profiles_table.insert.call_count == 0
@@ -187,7 +203,7 @@ class TestProfileGet:
             user_metadata={"first_name": "New", "last_name": "User"},
         )
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await get_profile(user_id="user-1")
+            profile = await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert profile["first_name"] == "New"
         assert profiles_table.insert.call_count == 1
@@ -221,7 +237,7 @@ class TestProfileGet:
         supabase.table.side_effect = table_side_effect
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await get_profile(user_id="user-1")
+            profile = await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert profile["first_name"] == "Retry"
 
@@ -231,7 +247,7 @@ class TestProfileGet:
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await get_profile(user_id="user-1")
+                await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert exc.value.status_code == 500
 
@@ -243,7 +259,7 @@ class TestProfileGet:
         )
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await get_profile(user_id="user-1")
+            profile = await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert profile["has_team"] is True
         assert profile["role"] == "admin"
@@ -255,7 +271,7 @@ class TestProfileGet:
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await get_profile(user_id="user-1")
+                await get_profile(request=_make_mock_request(), user_id="user-1")
 
         assert exc.value.status_code == 500
 
@@ -296,7 +312,7 @@ class TestProfileUpdate:
             insert_rows=[{"user_id": "user-1", "theme": "dark"}],
         )
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await update_profile(ProfileUpdate(theme="dark"), user_id="user-1")
+            profile = await update_profile(request=_make_mock_request(method="PATCH"), payload=ProfileUpdate(theme="dark"), user_id="user-1")
 
         assert profile["theme"] == "dark"
 
@@ -308,7 +324,7 @@ class TestProfileUpdate:
         )
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            profile = await update_profile(ProfileUpdate(first_name="A", last_name="B"), user_id="user-1")
+            profile = await update_profile(request=_make_mock_request(method="PATCH"), payload=ProfileUpdate(first_name="A", last_name="B"), user_id="user-1")
 
         assert profile["first_name"] == "A"
         assert profile["last_name"] == "B"
@@ -321,7 +337,7 @@ class TestProfileUpdate:
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await update_profile(ProfileUpdate(first_name="A"), user_id="user-1")
+                await update_profile(request=_make_mock_request(method="PATCH"), payload=ProfileUpdate(first_name="A"), user_id="user-1")
 
         assert exc.value.status_code == 500
 
@@ -335,7 +351,7 @@ class TestProfileUpdate:
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await update_profile(ProfileUpdate(first_name="A"), user_id="user-1")
+                await update_profile(request=_make_mock_request(method="PATCH"), payload=ProfileUpdate(first_name="A"), user_id="user-1")
 
         assert exc.value.status_code == 500
 
@@ -344,7 +360,7 @@ class TestProfileUpdate:
         supabase = MagicMock()
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await update_profile(ProfileUpdate(theme="blue"), user_id="user-1")
+                await update_profile(request=_make_mock_request(method="PATCH"), payload=ProfileUpdate(theme="blue"), user_id="user-1")
         assert "Invalid theme value" in str(exc.value)
 
 
@@ -356,7 +372,7 @@ class TestNotificationSettings:
             insert_rows=[{"setting_key": s["setting_key"]} for s in DEFAULT_NOTIFICATION_SETTINGS],
         )
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            settings = await get_notification_settings(user_id="user-1")
+            settings = await get_notification_settings(request=_make_mock_request(), user_id="user-1")
 
         assert len(settings) == len(DEFAULT_NOTIFICATION_SETTINGS)
         table.insert.assert_called()
@@ -373,7 +389,8 @@ class TestNotificationSettings:
         supabase.table.return_value = table
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             result = await update_notification_setting(
-                NotificationSettingUpdate(setting_key="email_on_ingestion_complete", enabled=False),
+                request=_make_mock_request(method="PATCH"),
+                payload=NotificationSettingUpdate(setting_key="email_on_ingestion_complete", enabled=False),
                 user_id="user-1",
             )
         assert result["enabled"] is False
@@ -389,7 +406,7 @@ class TestNotificationSettings:
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
-                await get_notification_settings(user_id="user-1")
+                await get_notification_settings(request=_make_mock_request(), user_id="user-1")
 
     @pytest.mark.asyncio
     async def test_update_notification_setting_handles_error(self):
@@ -403,7 +420,8 @@ class TestNotificationSettings:
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
                 await update_notification_setting(
-                    NotificationSettingUpdate(setting_key="email_on_ingestion_complete", enabled=True),
+                    request=_make_mock_request(method="PATCH"),
+                    payload=NotificationSettingUpdate(setting_key="email_on_ingestion_complete", enabled=True),
                     user_id="user-1",
                 )
 
@@ -418,7 +436,7 @@ class TestResetNotificationSettings:
         table.execute.return_value = MagicMock(data=[{"id": "s1"}, {"id": "s2"}])
         supabase.table.return_value = table
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            result = await reset_notification_settings(user_id="user-1")
+            result = await reset_notification_settings(request=_make_mock_request(method="DELETE"), user_id="user-1")
         assert result["deleted_count"] == 2
 
     @pytest.mark.asyncio
@@ -432,7 +450,7 @@ class TestResetNotificationSettings:
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
-                await reset_notification_settings(user_id="user-1")
+                await reset_notification_settings(request=_make_mock_request(method="DELETE"), user_id="user-1")
 
     @pytest.mark.unit
     def test_reset_returns_deleted_count(self):
@@ -457,7 +475,7 @@ class TestResetNotificationSettings:
             insert_rows=[{"setting_key": s["setting_key"]} for s in DEFAULT_NOTIFICATION_SETTINGS],
         )
         with patch("api.v1.settings.get_supabase", return_value=supabase):
-            settings = await get_notification_settings(user_id="user-1")
+            settings = await get_notification_settings(request=_make_mock_request(), user_id="user-1")
         assert len(settings) == len(DEFAULT_NOTIFICATION_SETTINGS)
         table.insert.assert_called()
 

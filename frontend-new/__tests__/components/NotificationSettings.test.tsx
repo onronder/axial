@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { NotificationSettings } from '@/components/settings/NotificationSettings';
 
@@ -295,18 +295,27 @@ describe('NotificationSettings Component', () => {
             expect(spinner).toBeInTheDocument();
         });
 
-        it.skip('should auto-cancel confirmation after timeout', async () => {
-            // Skipped: React state updates with fake timers are complex to test reliably
+        it('should auto-cancel confirmation after timeout', async () => {
             vi.useFakeTimers();
-            render(<NotificationSettings />);
+            
+            const { rerender } = render(<NotificationSettings />);
             
             const resetButton = screen.getByRole('button', { name: /reset to defaults/i });
-            fireEvent.click(resetButton);
+            
+            // Click to start confirmation
+            await act(async () => {
+                fireEvent.click(resetButton);
+            });
             
             expect(screen.getByText(/click again to confirm/i)).toBeInTheDocument();
             
-            // Advance time by 5 seconds
-            vi.advanceTimersByTime(5000);
+            // Advance time by 5 seconds (the timeout duration)
+            await act(async () => {
+                vi.advanceTimersByTime(5000);
+            });
+            
+            // Re-render to pick up state changes
+            rerender(<NotificationSettings />);
             
             // Should auto-cancel and show "Reset to defaults" again
             expect(screen.getByText(/reset to defaults/i)).toBeInTheDocument();

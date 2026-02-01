@@ -248,6 +248,27 @@ describe('useTeamMembers', () => {
                 expect.objectContaining({ variant: 'destructive' })
             );
         });
+
+        it('should return false when member not found', async () => {
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.updateMemberRole('nonexistent-id', 'admin');
+            });
+
+            expect(success!).toBe(false);
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Error',
+                    description: 'Member not found.',
+                    variant: 'destructive',
+                })
+            );
+            expect(mockApiPatch).not.toHaveBeenCalled();
+        });
     });
 
     describe('updateMemberStatus', () => {
@@ -351,6 +372,43 @@ describe('useTeamMembers', () => {
             });
 
             expect(success!).toBe(false);
+        });
+
+        it('should return false when member not found', async () => {
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+            let success: boolean;
+            await act(async () => {
+                success = await result.current.removeMember('nonexistent-id');
+            });
+
+            expect(success!).toBe(false);
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Error',
+                    description: 'Member not found.',
+                    variant: 'destructive',
+                })
+            );
+            expect(mockApiDelete).not.toHaveBeenCalled();
+        });
+
+        it('should update stats correctly for pending member removal', async () => {
+            mockApiDelete.mockResolvedValue({});
+
+            const { result } = renderHook(() => useTeamMembers());
+
+            await waitFor(() => expect(result.current.members.length).toBe(2));
+
+            // Remove pending member (id: '2')
+            await act(async () => {
+                await result.current.removeMember('2');
+            });
+
+            // Stats should be updated
+            expect(result.current.stats.pending_invites).toBe(mockStats.pending_invites - 1);
         });
     });
 

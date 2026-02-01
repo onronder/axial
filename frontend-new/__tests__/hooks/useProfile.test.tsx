@@ -211,3 +211,160 @@ describe('useProfile outside provider', () => {
         await result.current.refresh();
     });
 });
+
+// =============================================================================
+// Development Logging Tests
+// =============================================================================
+
+describe('useProfile development logging', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockApiGet.mockResolvedValue({ data: mockProfile });
+    });
+
+    it('should log fetching message in development', async () => {
+        const originalEnv = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'development';
+        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
+
+        renderHook(() => useProfile(), { wrapper });
+
+        await waitFor(() => {
+            expect(consoleSpy).toHaveBeenCalledWith(
+                expect.stringContaining('[useProfile] Fetching profile')
+            );
+        });
+
+        consoleSpy.mockRestore();
+        process.env.NODE_ENV = originalEnv;
+    });
+
+    it('should log profile fetched success in development', async () => {
+        const originalEnv = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'development';
+        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
+
+        const { result } = renderHook(() => useProfile(), { wrapper });
+
+        await waitFor(() => {
+            expect(result.current.isLoading).toBe(false);
+        });
+
+        expect(consoleSpy).toHaveBeenCalledWith(
+            expect.stringContaining('[useProfile] ✅ Profile fetched'),
+            mockProfile.first_name,
+            mockProfile.last_name
+        );
+
+        consoleSpy.mockRestore();
+        process.env.NODE_ENV = originalEnv;
+    });
+
+    it('should log updating message in development', async () => {
+        const originalEnv = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'development';
+        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
+
+        const updatedProfile = { ...mockProfile, first_name: 'Jane' };
+        mockApiPatch.mockResolvedValue({ data: updatedProfile });
+
+        const { result } = renderHook(() => useProfile(), { wrapper });
+
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        await act(async () => {
+            await result.current.updateProfile({ first_name: 'Jane' });
+        });
+
+        expect(consoleSpy).toHaveBeenCalledWith(
+            expect.stringContaining('[useProfile] Updating with'),
+            { first_name: 'Jane' }
+        );
+
+        consoleSpy.mockRestore();
+        process.env.NODE_ENV = originalEnv;
+    });
+
+    it('should log update success in development', async () => {
+        const originalEnv = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'development';
+        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
+
+        const updatedProfile = { ...mockProfile, first_name: 'Jane' };
+        mockApiPatch.mockResolvedValue({ data: updatedProfile });
+
+        const { result } = renderHook(() => useProfile(), { wrapper });
+
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        consoleSpy.mockClear();
+
+        await act(async () => {
+            await result.current.updateProfile({ first_name: 'Jane' });
+        });
+
+        expect(consoleSpy).toHaveBeenCalledWith(
+            expect.stringContaining('[useProfile] ✅ Updated')
+        );
+
+        consoleSpy.mockRestore();
+        process.env.NODE_ENV = originalEnv;
+    });
+});
+
+// =============================================================================
+// Error Logging Tests
+// =============================================================================
+
+describe('useProfile error logging', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('should log fetch error with status and message', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+
+        mockApiGet.mockRejectedValue({
+            response: { status: 500 },
+            message: 'Internal server error',
+        });
+
+        const { result } = renderHook(() => useProfile(), { wrapper });
+
+        await waitFor(() => {
+            expect(result.current.isLoading).toBe(false);
+        });
+
+        expect(errorSpy).toHaveBeenCalledWith(
+            expect.stringContaining('[useProfile] ❌ Failed'),
+            500,
+            'Internal server error'
+        );
+
+        errorSpy.mockRestore();
+    });
+
+    it('should log update error with message', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+
+        mockApiGet.mockResolvedValue({ data: mockProfile });
+        mockApiPatch.mockRejectedValue({
+            message: 'Update failed',
+        });
+
+        const { result } = renderHook(() => useProfile(), { wrapper });
+
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        await act(async () => {
+            await result.current.updateProfile({ first_name: 'Jane' });
+        });
+
+        expect(errorSpy).toHaveBeenCalledWith(
+            expect.stringContaining('[useProfile] ❌ Update failed'),
+            'Update failed'
+        );
+
+        errorSpy.mockRestore();
+    });
+});

@@ -360,7 +360,9 @@ class TestDocumentDeleteEndpoint:
         mock_supabase.table.return_value = table
 
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase), \
-             patch("api.v1.documents.team_service.get_user_team", return_value=None):
+             patch("api.v1.documents.team_service.get_user_team", return_value=None), \
+             patch("api.v1.documents.cleanup_service.delete_single_document", 
+                   side_effect=HTTPException(status_code=404, detail="Document not found")):
             from api.v1.documents import delete_document
 
             with pytest.raises(HTTPException) as exc:

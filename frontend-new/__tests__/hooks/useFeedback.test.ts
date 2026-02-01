@@ -559,4 +559,244 @@ describe('useFeedback', () => {
             expect(mockApiGet).not.toHaveBeenCalled();
         });
     });
+
+    // =========================================================================
+    // Error Message Extraction Tests
+    // =========================================================================
+    
+    describe('Error Message Extraction', () => {
+        it('should extract nested message from detail object', async () => {
+            mockApiPost.mockRejectedValue({
+                response: {
+                    data: {
+                        detail: { message: 'Nested error message' },
+                    },
+                },
+            });
+
+            const { result } = renderHook(() => useFeedback());
+
+            await act(async () => {
+                await result.current.submitFeedback({
+                    messageId: 'msg-123',
+                    rating: 'positive',
+                    queryText: 'Test',
+                    answerPreview: 'Test',
+                    sources: [],
+                });
+            });
+
+            expect(result.current.error).toBe('Nested error message');
+        });
+
+        it('should use error.message when detail is not available', async () => {
+            mockApiPost.mockRejectedValue({
+                message: 'Direct error message',
+            });
+
+            const { result } = renderHook(() => useFeedback());
+
+            await act(async () => {
+                await result.current.submitFeedback({
+                    messageId: 'msg-123',
+                    rating: 'positive',
+                    queryText: 'Test',
+                    answerPreview: 'Test',
+                    sources: [],
+                });
+            });
+
+            expect(result.current.error).toBe('Direct error message');
+        });
+
+        it('should use default message when no error details available', async () => {
+            mockApiPost.mockRejectedValue({});
+
+            const { result } = renderHook(() => useFeedback());
+
+            await act(async () => {
+                await result.current.submitFeedback({
+                    messageId: 'msg-123',
+                    rating: 'positive',
+                    queryText: 'Test',
+                    answerPreview: 'Test',
+                    sources: [],
+                });
+            });
+
+            expect(result.current.error).toBe('Something went wrong. Please try again.');
+        });
+    });
+
+    // =========================================================================
+    // Refresh Feedback Error Handling Tests
+    // =========================================================================
+    
+    describe('Refresh Feedback Error', () => {
+        it('should silently handle refresh feedback failure', async () => {
+            const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+            
+            mockApiGet.mockRejectedValue(new Error('Network error'));
+
+            const { result } = renderHook(() => useFeedback('conv-123'));
+
+            await waitFor(() => {
+                // Should have attempted to fetch
+                expect(mockApiGet).toHaveBeenCalled();
+            });
+
+            // Should have logged debug message
+            expect(debugSpy).toHaveBeenCalledWith(
+                '[useFeedback] Failed to fetch feedback state:',
+                expect.any(Error)
+            );
+
+            // State should remain empty (no crash)
+            expect(result.current.feedbackState).toEqual({});
+
+            debugSpy.mockRestore();
+        });
+
+        it('should handle empty feedback response', async () => {
+            mockApiGet.mockResolvedValue({
+                data: { feedback: null },
+            });
+
+            const { result } = renderHook(() => useFeedback('conv-123'));
+
+            await waitFor(() => {
+                expect(mockApiGet).toHaveBeenCalled();
+            });
+
+            // Should default to empty object
+            expect(result.current.feedbackState).toEqual({});
+        });
+    });
+
+    // =========================================================================
+    // Debug Logging Tests
+    // =========================================================================
+    
+    describe('Debug Logging', () => {
+        it('should log successful feedback submission', async () => {
+            const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+            
+            mockApiPost.mockResolvedValue({
+                data: {
+                    id: 'feedback-123',
+                    message_id: 'msg-123',
+                    rating: 'positive',
+                    is_update: false,
+                },
+            });
+
+            const { result } = renderHook(() => useFeedback());
+
+            await act(async () => {
+                await result.current.submitFeedback({
+                    messageId: 'msg-123',
+                    rating: 'positive',
+                    queryText: 'Test',
+                    answerPreview: 'Test',
+                    sources: [],
+                });
+            });
+
+            expect(debugSpy).toHaveBeenCalledWith(
+                expect.stringContaining('[useFeedback] Submitted positive feedback'),
+                '(new)'
+            );
+
+            debugSpy.mockRestore();
+        });
+
+        it('should log updated feedback submission', async () => {
+            const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+            
+            mockApiPost.mockResolvedValue({
+                data: {
+                    id: 'feedback-123',
+                    message_id: 'msg-123',
+                    rating: 'negative',
+                    is_update: true,
+                },
+            });
+
+            const { result } = renderHook(() => useFeedback());
+
+            await act(async () => {
+                await result.current.submitFeedback({
+                    messageId: 'msg-123',
+                    rating: 'negative',
+                    queryText: 'Test',
+                    answerPreview: 'Test',
+                    sources: [],
+                });
+            });
+
+            expect(debugSpy).toHaveBeenCalledWith(
+                expect.stringContaining('[useFeedback] Submitted negative feedback'),
+                '(updated)'
+            );
+
+            debugSpy.mockRestore();
+        });
+    });
+
+    // =========================================================================
+    // Source Snapshot Edge Cases
+    // =========================================================================
+    
+    describe('Source Snapshot Edge Cases', () => {
+        it('should handle sources with all fields', async () => {
+            const { result } = renderHook(() => useFeedback());
+
+            const fullSource = {
+                index: 0,
+                type: 'document',
+                label: 'Document Title',
+                url: 'http://example.com/doc',
+                page: 5,
+                section: 'Introduction',
+            };
+
+            await act(async () => {
+                await result.current.submitFeedback({
+                    messageId: 'msg-123',
+                    rating: 'positive',
+                    queryText: 'Test',
+                    answerPreview: 'Test',
+                    sources: [fullSource],
+                });
+            });
+
+            expect(mockApiPost).toHaveBeenCalledWith('/chat/feedback', expect.objectContaining({
+                sources: [fullSource],
+            }));
+        });
+
+        it('should handle sources with minimal fields', async () => {
+            const { result } = renderHook(() => useFeedback());
+
+            const minimalSource = {
+                label: 'Minimal',
+            };
+
+            await act(async () => {
+                await result.current.submitFeedback({
+                    messageId: 'msg-123',
+                    rating: 'positive',
+                    queryText: 'Test',
+                    answerPreview: 'Test',
+                    sources: [minimalSource],
+                });
+            });
+
+            expect(mockApiPost).toHaveBeenCalledWith('/chat/feedback', expect.objectContaining({
+                sources: expect.arrayContaining([
+                    expect.objectContaining({ label: 'Minimal' }),
+                ]),
+            }));
+        });
+    });
 });

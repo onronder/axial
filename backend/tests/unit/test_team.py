@@ -14,6 +14,22 @@ import asyncio
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
+from starlette.requests import Request
+
+
+def _make_mock_request(method="GET", path="/api/v1/team"):
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
 
 
 # =============================================================================
@@ -307,7 +323,7 @@ class TestRemoveMemberEndpoint:
         mock_supabase.table.return_value = table
 
         with patch("api.v1.team.get_supabase", return_value=mock_supabase):
-            result = asyncio.run(remove_team_member("member-123", user_id="owner-1"))
+            result = asyncio.run(remove_team_member(request=_make_mock_request(method="DELETE"), member_id="member-123", user_id="owner-1"))
 
         assert result == {"status": "success", "id": "member-123"}
     

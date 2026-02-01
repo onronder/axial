@@ -14,8 +14,24 @@ from unittest.mock import patch, Mock, AsyncMock
 from uuid import uuid4, UUID
 
 from pydantic import BaseModel
+from starlette.requests import Request
 from core.quotas import QUOTA_LIMITS, PlanLimits, format_bytes
 from api.v1.usage import _format_bytes
+
+
+def _make_mock_request(method="GET", path="/api/v1/usage"):
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
 
 
 # Test UUID - must be valid UUID format for endpoint tests
@@ -126,7 +142,7 @@ class TestUsageEndpointWithMocks:
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_usage_with_limits_free
             
-            result = await get_usage(user_id=TEST_USER_UUID)
+            result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
             
             assert isinstance(result, UsageResponse)
             assert result.plan == "free"
@@ -152,7 +168,7 @@ class TestUsageEndpointWithMocks:
             mock_usage.limits = QUOTA_LIMITS["starter"]
             mock_get.return_value = mock_usage
             
-            result = await get_usage(user_id=TEST_USER_UUID)
+            result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
             
             # 4/50 files = 8%
             assert result.files.percent == 8.0
@@ -177,7 +193,7 @@ class TestUsageEndpointWithMocks:
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_over_limit
             
-            result = await get_usage(user_id=TEST_USER_UUID)
+            result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
             
             # Should be capped at 100
             assert result.files.percent == 100.0
@@ -192,7 +208,7 @@ class TestUsageEndpointWithMocks:
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_usage_with_limits_free
             
-            result = await get_usage(user_id=TEST_USER_UUID)
+            result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
             
             assert result.features.web_crawl is False
             assert result.features.team is False
@@ -207,7 +223,7 @@ class TestUsageEndpointWithMocks:
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_usage_with_limits_pro
             
-            result = await get_usage(user_id=TEST_USER_UUID)
+            result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
             
             assert result.plan == "pro"
             assert result.features.web_crawl is True
@@ -225,10 +241,12 @@ class TestUsageEndpointWithMocks:
             mock_get.side_effect = Exception("Database connection failed")
             
             with pytest.raises(HTTPException) as exc_info:
-                await get_usage(user_id=TEST_USER_UUID)
+                await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
             
             assert exc_info.value.status_code == 500
-            assert "Failed to fetch usage" in exc_info.value.detail
+            # Error format changed to structured dict
+            detail = exc_info.value.detail
+            assert detail.get("error") == "DATABASE_ERROR" or "Failed to fetch usage" in str(detail)
 
 
 class TestPlansEndpoint:
@@ -240,7 +258,7 @@ class TestPlansEndpoint:
         """GET /plans should return all available plans."""
         from api.v1.usage import get_plans
         
-        result = await get_plans()
+        result = await get_plans(request=_make_mock_request())
         
         assert "plans" in result.model_dump()
         plans = result.plans
@@ -257,7 +275,7 @@ class TestPlansEndpoint:
         """Each plan should include its limits."""
         from api.v1.usage import get_plans
         
-        result = await get_plans()
+        result = await get_plans(request=_make_mock_request())
         
         free_plan = result.plans["free"]
         assert "max_files" in free_plan
@@ -269,7 +287,7 @@ class TestPlansEndpoint:
         """Plans should include human-readable storage limits."""
         from api.v1.usage import get_plans
         
-        result = await get_plans()
+        result = await get_plans(request=_make_mock_request())
         
         # Check that max_storage is formatted (e.g., "50 MB", not just bytes)
         free_plan = result.plans["free"]

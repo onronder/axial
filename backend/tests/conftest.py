@@ -5,6 +5,7 @@ Provides shared fixtures for all tests including:
 - Mock Supabase client
 - Test user authentication
 - API test client
+- Rate limiter bypass for testing
 """
 
 import os
@@ -37,10 +38,65 @@ for key, value in _TEST_ENV_VARS.items():
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock, AsyncMock, patch
 from fastapi.testclient import TestClient
 import asyncio
 from uuid import uuid4
+
+
+# =============================================================================
+# Rate Limiter Bypass - MUST be applied before importing rate-limited modules
+# =============================================================================
+
+def _noop_decorator(*args, **kwargs):
+    """No-op decorator that passes through the function unchanged."""
+    def decorator(func):
+        return func
+    # Handle both @limiter.limit("10/minute") and direct usage
+    if len(args) == 1 and callable(args[0]):
+        return args[0]
+    return decorator
+
+
+class _NoopLimiter:
+    """Mock limiter that does nothing - for testing rate-limited endpoints."""
+    def limit(self, *args, **kwargs):
+        return _noop_decorator
+    
+    def shared_limit(self, *args, **kwargs):
+        return _noop_decorator
+    
+    def exempt(self, func):
+        return func
+
+
+# Patch the rate limiter before any other imports use it
+_mock_limiter = _NoopLimiter()
+_mock_rate_limit_module = type(sys)('core.rate_limit')
+_mock_rate_limit_module.limiter = _mock_limiter
+_mock_rate_limit_module.RATE_LIMITS = {}
+
+# Add the real functions that tests might import
+def get_user_id_or_ip(request):
+    """Mock implementation for testing."""
+    user = getattr(getattr(request, 'state', None), 'user', None)
+    if user and hasattr(user, 'id'):
+        return f"user:{user.id}"
+    return "127.0.0.1"
+
+def rate_limit_exceeded_handler(request, exc):
+    """Mock handler for rate limit exceeded."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=429,
+        content={"error": "rate_limit_exceeded", "detail": "Too many requests."},
+        headers={"Retry-After": "60"}
+    )
+
+_mock_rate_limit_module.get_user_id_or_ip = get_user_id_or_ip
+_mock_rate_limit_module.rate_limit_exceeded_handler = rate_limit_exceeded_handler
+
+sys.modules['core.rate_limit'] = _mock_rate_limit_module
 
 
 # =============================================================================
@@ -173,3 +229,52 @@ def benchmark():
         return fn()
 
     return _run
+
+
+# =============================================================================
+# Request/Response Fixtures
+# =============================================================================
+
+@pytest.fixture
+def mock_request():
+    """Create a mock Starlette Request for testing endpoints with rate limiters."""
+    from starlette.requests import Request
+    from starlette.testclient import TestClient
+    
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 12345),
+        "app": None,
+    }
+    return Request(scope=scope)
+
+
+@pytest.fixture
+def mock_request_factory():
+    """Factory fixture to create mock requests with different paths/methods."""
+    from starlette.requests import Request
+    
+    def _create_request(
+        method: str = "GET",
+        path: str = "/",
+        headers: list = None,
+        query_string: bytes = b""
+    ):
+        scope = {
+            "type": "http",
+            "method": method,
+            "path": path,
+            "query_string": query_string,
+            "headers": headers or [],
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 12345),
+            "app": None,
+        }
+        return Request(scope=scope)
+    
+    return _create_request
