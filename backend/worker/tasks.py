@@ -390,21 +390,85 @@ def _resolve_org_scope(supabase, user_id: str) -> Dict[str, Optional[str]]:
     return {"team_id": team_id, "user_id": user_id}
 
 
-def _is_duplicate_document(supabase, content_hash: str, org_scope: Dict[str, Optional[str]], user_id: str) -> bool:
+def _is_duplicate_document(
+    supabase,
+    content_hash: str,
+    org_scope: Dict[str, Optional[str]],
+    user_id: str,
+    source_id: str | None = None,
+) -> bool:
     """
-    Check for existing document with same hash within org scope.
+    Check for existing document within org scope using source_id OR content_hash.
+    
+    Deduplication Strategy (Ghost Data Prevention):
+    1. PRIMARY: Check by source_id (unique identifier from source system)
+       - For web pages: URL is the source_id
+       - For files: file path or remote file ID is the source_id
+       - This prevents "Ghost Data" where renamed/modified files create duplicates
+    
+    2. FALLBACK: Check by content_hash only if source_id is not available
+       - Legacy behavior for backwards compatibility
+    
+    Returns:
+        True if document exists (should skip re-ingestion)
+        False if document is new (should proceed with ingestion)
     """
-    if not content_hash:
-        return False
+    organization_id = org_scope.get("team_id") or user_id
+    
     try:
+        # =====================================================================
+        # PRIMARY: Source ID based deduplication (prevents Ghost Data)
+        # =====================================================================
+        if source_id:
+            query = (
+                supabase.table("documents")
+                .select("id, content_hash")
+                .eq("organization_id", organization_id)
+                .eq("source_id", source_id)
+                .limit(1)
+            )
+            res = query.execute()
+            
+            if res.data:
+                existing_doc = res.data[0]
+                existing_hash = existing_doc.get("content_hash")
+                
+                # Same source, same content = true duplicate (skip)
+                if existing_hash == content_hash:
+                    # Touch updated_at to mark as "seen"
+                    try:
+                        supabase.table("documents").update(
+                            {"updated_at": datetime.now(timezone.utc).isoformat()}
+                        ).eq("id", existing_doc["id"]).execute()
+                    except Exception:
+                        pass
+                    logger.debug(f"[Dedup] Exact duplicate found for source_id={source_id[:50]}...")
+                    return True
+                
+                # Same source, different content = content changed
+                # Return False so ingest_document_batched can UPDATE the existing document
+                logger.info(
+                    f"[Dedup] Content changed for source_id={source_id[:50]}... "
+                    f"(old_hash={existing_hash[:8] if existing_hash else 'none'}..., "
+                    f"new_hash={content_hash[:8] if content_hash else 'none'}...)"
+                )
+                return False
+            
+            # No existing document with this source_id = new document
+            return False
+        
+        # =====================================================================
+        # FALLBACK: Content hash only (legacy behavior)
+        # =====================================================================
+        if not content_hash:
+            return False
+        
         query = supabase.table("documents").select("id").eq("content_hash", content_hash)
-        if org_scope.get("team_id"):
-            query = query.eq("team_id", org_scope["team_id"])
-        else:
-            query = query.eq("user_id", user_id)
+        query = query.eq("organization_id", organization_id)
         res = query.limit(1).execute()
+        
         if res.data:
-            # touch updated_at
+            # Touch updated_at
             try:
                 supabase.table("documents").update(
                     {"updated_at": datetime.now(timezone.utc).isoformat()}
@@ -412,8 +476,10 @@ def _is_duplicate_document(supabase, content_hash: str, org_scope: Dict[str, Opt
             except Exception:
                 pass
             return True
+            
     except Exception as exc:
         logger.warning(f"⚠️ [Dedup] Duplicate check failed: {exc}")
+    
     return False
 
 
@@ -3573,7 +3639,10 @@ def process_page_task(
         except Exception:
             page_plan_code = "free"
         page_max_scopes = int(get_plan_limits(page_plan_code).max_scopes or 0)
-        if _is_duplicate_document(supabase, content_hash, org_scope, user_id):
+        
+        # Ghost Data Prevention: Use source_url as source_id for web pages
+        # This ensures renamed/modified URLs are properly deduplicated
+        if _is_duplicate_document(supabase, content_hash, org_scope, user_id, source_id=source_url):
             # Treat as skipped/duplicate; do not parse/embed
             update_file_status(
                 supabase,
