@@ -530,16 +530,16 @@ export function JobsDashboard() {
               </p>
             </div>
           ) : (
-            <div className="rounded-lg border">
-              <Table>
+            <div className="rounded-lg border overflow-hidden">
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow className="bg-muted/30">
-                    <TableHead className="w-[50px]" />
-                    <TableHead className="w-[180px]">Source</TableHead>
-                    <TableHead className="w-[120px]">Status</TableHead>
-                    <TableHead className="w-[200px]">Progress</TableHead>
-                    <TableHead className="w-[150px]">Started</TableHead>
-                    <TableHead className="w-[150px]">Actions</TableHead>
+                    <TableHead className="w-12" />
+                    <TableHead className="w-[20%]">Source</TableHead>
+                    <TableHead className="w-[15%]">Status</TableHead>
+                    <TableHead className="w-[25%]">Progress</TableHead>
+                    <TableHead className="w-[15%]">Started</TableHead>
+                    <TableHead className="w-[15%]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
