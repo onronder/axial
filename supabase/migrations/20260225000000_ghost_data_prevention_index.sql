@@ -20,7 +20,8 @@
 
 -- Create composite index for source_id based deduplication
 -- Includes content_hash as a covering index to avoid table lookup
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_org_source_id_dedup
+-- Note: Cannot use CONCURRENTLY in Supabase migration pipeline
+CREATE INDEX IF NOT EXISTS idx_documents_org_source_id_dedup
 ON documents (organization_id, source_id)
 INCLUDE (content_hash)
 WHERE source_id IS NOT NULL;
@@ -31,7 +32,8 @@ COMMENT ON INDEX idx_documents_org_source_id_dedup IS
 
 -- Also create an index for the fallback content_hash based deduplication
 -- This is used when source_id is not available (legacy behavior)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_org_content_hash_dedup
+-- Note: Cannot use CONCURRENTLY in Supabase migration pipeline
+CREATE INDEX IF NOT EXISTS idx_documents_org_content_hash_dedup
 ON documents (organization_id, content_hash)
 WHERE content_hash IS NOT NULL;
 
