@@ -14,8 +14,8 @@
  * - Pagination
  */
 
-import { useState, useEffect, useCallback } from "react";
-import { format, parseISO, formatDistanceToNow } from "date-fns";
+import { useState } from "react";
+import { parseISO, formatDistanceToNow } from "date-fns";
 import {
   Briefcase,
   RefreshCw,
@@ -30,6 +30,10 @@ import {
   Ban,
   FileText,
   Filter,
+  Upload,
+  Brain,
+  Database,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,17 +63,29 @@ import { Spinner } from "@/components/ui/spinner";
 import { useIngestionJobs, IngestionJob, JobFile } from "@/hooks/useIngestionJobs";
 import { cn } from "@/lib/utils";
 
-type JobStatus = IngestionJob["status"];
+/**
+ * Status configuration for visual display of job/file states.
+ * 
+ * File statuses can include intermediate processing stages:
+ * - pending: Queued for processing
+ * - uploading: File is being uploaded
+ * - processing: Generic processing state
+ * - embedding: Generating embeddings for the content
+ * - indexing: Indexing into vector store
+ * - completed: Successfully processed
+ * - failed: Processing failed
+ * - cancelled: Cancelled by user
+ */
+interface StatusConfig {
+  icon: React.ElementType;
+  color: string;
+  bgColor: string;
+  label: string;
+  isAnimated?: boolean; // Whether icon should animate (spin)
+}
 
-const statusConfig: Record<
-  JobStatus,
-  {
-    icon: React.ElementType;
-    color: string;
-    bgColor: string;
-    label: string;
-  }
-> = {
+const statusConfig: Record<string, StatusConfig> = {
+  // Base statuses (shared between jobs and files)
   pending: {
     icon: Clock,
     color: "text-amber-600 dark:text-amber-400",
@@ -81,6 +97,7 @@ const statusConfig: Record<
     color: "text-blue-600 dark:text-blue-400",
     bgColor: "bg-blue-500/10",
     label: "Processing",
+    isAnimated: true,
   },
   completed: {
     icon: CheckCircle,
@@ -100,7 +117,48 @@ const statusConfig: Record<
     bgColor: "bg-gray-500/10",
     label: "Cancelled",
   },
+  // File-specific intermediate statuses
+  uploading: {
+    icon: Upload,
+    color: "text-cyan-600 dark:text-cyan-400",
+    bgColor: "bg-cyan-500/10",
+    label: "Uploading",
+    isAnimated: true,
+  },
+  embedding: {
+    icon: Brain,
+    color: "text-purple-600 dark:text-purple-400",
+    bgColor: "bg-purple-500/10",
+    label: "Embedding",
+    isAnimated: true,
+  },
+  indexing: {
+    icon: Database,
+    color: "text-indigo-600 dark:text-indigo-400",
+    bgColor: "bg-indigo-500/10",
+    label: "Indexing",
+    isAnimated: true,
+  },
 };
+
+/**
+ * Default configuration for unknown statuses.
+ * Ensures the UI never crashes on unexpected status values from the API.
+ */
+const defaultStatusConfig: StatusConfig = {
+  icon: HelpCircle,
+  color: "text-gray-500 dark:text-gray-400",
+  bgColor: "bg-gray-500/10",
+  label: "Unknown",
+};
+
+/**
+ * Safely retrieves status configuration with fallback for unknown statuses.
+ * This prevents runtime errors when the API returns unexpected status values.
+ */
+function getStatusConfig(status: string): StatusConfig {
+  return statusConfig[status] ?? defaultStatusConfig;
+}
 
 const providerLabels: Record<string, string> = {
   google_drive: "Google Drive",
@@ -129,7 +187,7 @@ function JobRow({ job, onCancel, onRetry, getJobFiles }: JobRowProps) {
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [isActing, setIsActing] = useState(false);
 
-  const config = statusConfig[job.status];
+  const config = getStatusConfig(job.status);
   const StatusIcon = config.icon;
   const isActive = job.status === "pending" || job.status === "processing";
   const isFailed = job.status === "failed";
@@ -198,7 +256,7 @@ function JobRow({ job, onCancel, onRetry, getJobFiles }: JobRowProps) {
             <StatusIcon
               className={cn(
                 "h-3 w-3",
-                job.status === "processing" && "animate-spin"
+                config.isAnimated && "animate-spin"
               )}
             />
             {config.label}
@@ -283,8 +341,9 @@ function JobRow({ job, onCancel, onRetry, getJobFiles }: JobRowProps) {
                   </h4>
                   <div className="max-h-48 overflow-y-auto space-y-1.5">
                     {files.map((file) => {
-                      const fileConfig = statusConfig[file.status];
+                      const fileConfig = getStatusConfig(file.status);
                       const FileStatusIcon = fileConfig.icon;
+                      const isInProgress = fileConfig.isAnimated;
                       return (
                         <div
                           key={file.id}
@@ -295,13 +354,13 @@ function JobRow({ job, onCancel, onRetry, getJobFiles }: JobRowProps) {
                               className={cn(
                                 "h-4 w-4 shrink-0",
                                 fileConfig.color,
-                                file.status === "processing" && "animate-spin"
+                                isInProgress && "animate-spin"
                               )}
                             />
                             <span className="truncate">{file.filename}</span>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            {file.status === "processing" && (
+                            {isInProgress && (
                               <Progress
                                 value={file.progress}
                                 className="h-1.5 w-16"

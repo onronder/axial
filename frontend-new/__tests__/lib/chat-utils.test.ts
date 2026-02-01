@@ -522,7 +522,7 @@ describe('sendChatRequest', () => {
             conversation_id: 'conv-123',
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             json: () => Promise.resolve(mockResponse),
@@ -545,7 +545,7 @@ describe('sendChatRequest', () => {
             ],
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: false,
             status: 300,
             json: () => Promise.resolve(clarificationData),
@@ -564,7 +564,7 @@ describe('sendChatRequest', () => {
             error: null,
         });
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: false,
             status: 400,
             statusText: 'Bad Request',
@@ -580,7 +580,7 @@ describe('sendChatRequest', () => {
             error: null,
         });
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             json: () => Promise.resolve({ answer: 'test' }),
@@ -651,7 +651,7 @@ describe('streamChatResponse', () => {
             candidates: [{ scope_id: 'scope1', scope_type: 'github_repo', label: 'Repo', doc_count: 5 }],
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: false,
             status: 300,
             json: () => Promise.resolve(clarificationData),
@@ -672,7 +672,7 @@ describe('streamChatResponse', () => {
             error: null,
         });
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: false,
             status: 500,
             statusText: 'Internal Server Error',
@@ -689,7 +689,7 @@ describe('streamChatResponse', () => {
             error: null,
         });
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: null,
@@ -716,7 +716,7 @@ describe('streamChatResponse', () => {
             releaseLock: vi.fn(),
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: {
@@ -752,7 +752,7 @@ describe('streamChatResponse', () => {
             releaseLock: vi.fn(),
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: {
@@ -789,7 +789,7 @@ describe('streamChatResponse', () => {
             releaseLock: vi.fn(),
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: {
@@ -846,7 +846,7 @@ describe('streamChatResponseWithRetry', () => {
             releaseLock: vi.fn(),
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: { getReader: () => mockReader },
@@ -892,7 +892,7 @@ describe('streamChatResponseWithRetry', () => {
         });
 
         const error = new ChatApiError(429, { error: 'PLAN_LIMIT_EXCEEDED', message: 'Limit reached' });
-        (global.fetch as vi.Mock).mockRejectedValue(error);
+        vi.mocked(global.fetch).mockRejectedValue(error);
 
         const generator = streamChatResponseWithRetry(mockPayload, { maxRetries: 2 });
 
@@ -910,7 +910,7 @@ describe('streamChatResponseWithRetry', () => {
         });
 
         const error = new ChatApiError(400, { message: 'Bad request' });
-        (global.fetch as vi.Mock).mockRejectedValue(error);
+        vi.mocked(global.fetch).mockRejectedValue(error);
 
         const generator = streamChatResponseWithRetry(mockPayload, { maxRetries: 2 });
 
@@ -968,7 +968,7 @@ describe('streamChatResponse - signal abort during processing', () => {
             releaseLock: vi.fn(),
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: { getReader: () => mockReader },
@@ -1014,7 +1014,7 @@ describe('streamChatResponse - signal abort during processing', () => {
             releaseLock: vi.fn(),
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: { getReader: () => mockReader },
@@ -1139,7 +1139,7 @@ describe('streamChatResponse - abort during read loop', () => {
         query: 'test query',
         conversation_id: null,
         history: [],
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o-mini' as const,
     };
 
     beforeEach(() => {
@@ -1176,7 +1176,7 @@ describe('streamChatResponse - abort during read loop', () => {
             releaseLock: vi.fn(),
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: { getReader: () => mockReader },
@@ -1214,7 +1214,7 @@ describe('streamChatResponse - abort during read loop', () => {
             releaseLock: vi.fn(),
         };
 
-        (global.fetch as vi.Mock).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             status: 200,
             body: { getReader: () => mockReader },

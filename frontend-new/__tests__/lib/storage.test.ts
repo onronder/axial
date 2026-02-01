@@ -9,7 +9,7 @@ import { safeLocalStorage, safeSessionStorage } from '@/lib/storage';
 const createStorageMock = () => {
   let store: Record<string, string> = {};
   return {
-    getItem: vi.fn((key: string) => store[key] ?? null),
+    getItem: vi.fn((key: string): string | null => store[key] ?? null),
     setItem: vi.fn((key: string, value: string) => {
       store[key] = value;
     }),
@@ -22,7 +22,7 @@ const createStorageMock = () => {
     get length() {
       return Object.keys(store).length;
     },
-    key: vi.fn((index: number) => Object.keys(store)[index] ?? null),
+    key: vi.fn((index: number): string | null => Object.keys(store)[index] ?? null),
   };
 };
 

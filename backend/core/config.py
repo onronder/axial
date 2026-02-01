@@ -78,6 +78,28 @@ class Settings(BaseSettings):
     CELERY_TASK_TIME_LIMIT: int = 1200
     
     # =========================================================================
+    # Celery Worker Memory Management (Enterprise 8-Core/32GB)
+    # =========================================================================
+    # Self-healing workers with prefork pool for CPU-bound file processing.
+    #
+    # Memory Budget (32GB Node):
+    #   Total RAM:       32 GB
+    #   System Reserve:  -4 GB (OS, Redis, API, buffers)
+    #   Worker Pool:     28 GB
+    #   Concurrency:     8 workers (1 per CPU core)
+    #   Per Worker:      28GB ÷ 8 = 3.5 GB
+    #   Safety Margin:   -0.5 GB
+    #   Final Limit:     3.0 GB (3,000,000 KB)
+    #
+    # Peak Usage: 8 × 3GB = 24GB << 28GB available ✅
+    #
+    # CRITICAL: Requires --pool=prefork (gevent does NOT support memory limits)
+    
+    CELERY_WORKER_MAX_MEMORY_PER_CHILD: int = 3000000  # 3GB in KB
+    CELERY_WORKER_MAX_TASKS_PER_CHILD: int = 1000      # High for enterprise RAM
+    CELERY_WORKER_CONCURRENCY: int = 8                 # Match CPU cores
+    
+    # =========================================================================
     # AI & Multi-Model Configuration
     # =========================================================================
     

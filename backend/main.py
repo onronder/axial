@@ -5,6 +5,9 @@ Production-grade FastAPI application with hardened CORS configuration
 for Supabase + Railway + Vercel deployment.
 """
 
+# Suppress third-party deprecation warnings (MUST be first import)
+import core.suppress_warnings  # noqa: F401
+
 import os
 import logging
 from contextlib import asynccontextmanager

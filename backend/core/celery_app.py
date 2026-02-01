@@ -5,6 +5,9 @@ Production-grade async task queue for heavy file processing.
 Uses Redis as broker and result backend.
 """
 
+# Suppress third-party deprecation warnings (MUST be first import)
+import core.suppress_warnings  # noqa: F401
+
 import os
 import sys
 from celery import Celery
@@ -109,6 +112,23 @@ celery_app.conf.update(
     # Time limits (soft raises SoftTimeLimitExceeded, hard kills task)
     task_soft_time_limit=settings.CELERY_TASK_SOFT_TIME_LIMIT,
     task_time_limit=settings.CELERY_TASK_TIME_LIMIT,
+
+    # ============================================================
+    # WORKER MEMORY MANAGEMENT (Enterprise OOM Protection)
+    # ============================================================
+    # Self-healing workers via automatic process recycling.
+    # CRITICAL: Only works with --pool=prefork (NOT gevent)
+    #
+    # Memory Math (32GB Enterprise Node):
+    #   Available: 28GB, Workers: 8, Limit: 3GB each
+    #   Peak: 8 × 3GB = 24GB << 28GB available ✅
+    
+    # Kill & respawn worker when memory exceeds threshold (KB)
+    # Releases ALL memory back to OS via clean process exit
+    worker_max_memory_per_child=settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD,
+    
+    # Kill & respawn worker after N tasks (catches slow memory leaks)
+    worker_max_tasks_per_child=settings.CELERY_WORKER_MAX_TASKS_PER_CHILD,
 
     # ============================================================
     # Queue Topology (Stage Isolation)
