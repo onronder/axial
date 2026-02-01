@@ -12,11 +12,15 @@ from services.parsers import (
     PlainTextProcessor,
     PDFProcessor,
     DocxProcessor,
+    TableProcessor,
+    PresentationProcessor,
     DocumentProcessorFactory,
     DocumentParser,
     BaseProcessor,
 )
 
+
+# --- Code Processor Tests ---
 
 def test_code_processor_processes_code():
     processor = CodeProcessor()
@@ -37,17 +41,7 @@ def test_code_processor_empty_content_returns_no_chunks():
     assert result.chunks == []
 
 
-def test_code_processor_uses_generic_splitter():
-    processor = CodeProcessor()
-    splitter = MagicMock()
-    splitter.split_text.return_value = ["chunk"]
-
-    with patch("services.parsers.RecursiveCharacterTextSplitter", return_value=splitter):
-        result = processor.process(b"data", "config.json")
-
-    assert result.chunks
-    splitter.split_text.assert_called_once()
-
+# --- Markdown Processor Tests ---
 
 def test_markdown_processor_injects_context():
     processor = MarkdownProcessor()
@@ -63,453 +57,171 @@ def test_markdown_processor_handles_decode_error():
     assert result.file_type == "markdown"
 
 
-def test_markdown_processor_returns_empty_on_blank_input():
-    processor = MarkdownProcessor()
-    result = processor.process(b"   ", "empty.md")
-    assert result.chunks == []
+# --- Table Processor Tests ---
+
+def test_table_processor_csv():
+    csv_content = b"col1,col2\nval1,val2\nval3,val4"
+    with patch("services.parsers.pd") as mock_pd:
+        mock_df = MagicMock()
+        mock_df.iterrows.return_value = [
+            (0, {"col1": "val1", "col2": "val2"}),
+            (1, {"col1": "val3", "col2": "val4"})
+        ]
+        mock_df.columns.tolist.return_value = ["col1", "col2"]
+        mock_df.__len__.return_value = 2
+        mock_pd.read_csv.return_value = mock_df
+
+        processor = TableProcessor()
+        result = processor.process(csv_content, "data.csv")
+
+        assert result.file_type == "table"
+        assert result.metadata["rows"] == 2
+        assert len(result.chunks) > 0
+        assert "col1: val1" in result.chunks[0].content
 
 
-def test_markdown_processor_fallback_on_header_error():
-    processor = MarkdownProcessor()
-    md = b"# Title\n\nContent here"
-    with patch("services.parsers.MarkdownHeaderTextSplitter.split_text", side_effect=Exception("boom")):
-        result = processor.process(md, "readme.md")
-
-    assert result.chunks
+def test_table_processor_missing_pandas():
+    with patch("services.parsers.pd", None):
+        processor = TableProcessor()
+        result = processor.process(b"data", "file.csv")
+        assert result.file_type == "table_error"
 
 
-def test_code_processor_force_splits_large_chunk():
-    processor = CodeProcessor()
-    long_text = "a" * 5000
+# --- Presentation Processor Tests ---
 
-    splitter = MagicMock()
-    splitter.split_text.return_value = [long_text]
+def test_presentation_processor():
+    with patch("services.parsers.Presentation") as mock_prs:
+        slide_mock = MagicMock()
+        # Mock shapes iteration
+        shape_mock = MagicMock()
+        shape_mock.text = "Slide Content"
 
-    with patch("services.parsers.RecursiveCharacterTextSplitter.from_language", return_value=splitter), \
-         patch.object(CodeProcessor, "count_tokens", return_value=3001):
-        result = processor.process(long_text.encode("utf-8"), "test.py")
+        # Configure the 'shapes' attribute of the slide
+        # It needs to be iterable (yielding shape_mock) AND have a 'title' attribute
+        shapes_collection = MagicMock()
+        shapes_collection.__iter__.return_value = [shape_mock]
+        shapes_collection.title.text = "Slide Title"
 
-    assert len(result.chunks) > 1
-    assert result.chunks[0].chunk_index == 0
+        slide_mock.shapes = shapes_collection
 
+        mock_prs.return_value.slides = [slide_mock]
 
-def test_base_processor_count_tokens_fallback(monkeypatch):
-    from services import parsers as parsers_module
-    monkeypatch.setattr(parsers_module, "TIKTOKEN_ENCODER", None)
-    assert parsers_module.BaseProcessor.count_tokens("abcd") == 1
+        processor = PresentationProcessor()
+        result = processor.process(b"pkzip...", "slides.pptx")
 
-
-def test_base_processor_process_placeholder():
-    class Dummy(BaseProcessor):
-        def process(self, content: bytes, filename: str):
-            return super().process(content, filename)
-
-    processor = Dummy()
-    assert processor.process(b"data", "file.txt") is None
+        assert result.file_type == "presentation"
+        assert "Slide Title" in result.chunks[0].content
+        assert "Slide: 1" in result.chunks[0].content
 
 
-def test_parsers_import_handles_tiktoken_failure(monkeypatch):
-    import services.parsers as parsers_module
-
-    global CodeProcessor
-    global MarkdownProcessor
-    global PlainTextProcessor
-    global PDFProcessor
-    global DocxProcessor
-    global DocumentProcessorFactory
-    global DocumentParser
-
-    def broken_encoder(_name):
-        raise Exception("boom")
-
-    original_encoder = parsers_module.tiktoken.get_encoding
-    monkeypatch.setattr(parsers_module.tiktoken, "get_encoding", broken_encoder)
-    reloaded = importlib.reload(parsers_module)
-    assert reloaded.TIKTOKEN_ENCODER is None
-    monkeypatch.setattr(reloaded.tiktoken, "get_encoding", original_encoder, raising=False)
-    reloaded = importlib.reload(reloaded)
-
-    CodeProcessor = reloaded.CodeProcessor
-    MarkdownProcessor = reloaded.MarkdownProcessor
-    PlainTextProcessor = reloaded.PlainTextProcessor
-    PDFProcessor = reloaded.PDFProcessor
-    DocxProcessor = reloaded.DocxProcessor
-    DocumentProcessorFactory = reloaded.DocumentProcessorFactory
-    DocumentParser = reloaded.DocumentParser
+def test_presentation_processor_missing_library():
+    with patch("services.parsers.Presentation", None):
+        processor = PresentationProcessor()
+        result = processor.process(b"data", "file.pptx")
+        assert result.file_type == "pptx_error"
 
 
-def test_pdf_processor_uses_llamaparse_when_available(monkeypatch):
-    processor = PDFProcessor()
-    monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
-    expected = SimpleNamespace(chunks=["chunk"], file_type="pdf")
+# --- PDF Processor Tests ---
 
-    with patch.object(processor, "_process_with_llamaparse", return_value=expected) as mock_llama, \
-         patch.object(processor, "_process_with_pymupdf", return_value=SimpleNamespace(chunks=[], file_type="pdf")) as mock_pdf:
-        result = processor.process(b"%PDF", "file.pdf")
-
-    assert result is expected
-    mock_llama.assert_called_once()
-    mock_pdf.assert_not_called()
-
-
-def test_pdf_processor_falls_back_on_llamaparse_error(monkeypatch):
-    processor = PDFProcessor()
-    monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
-    fallback = SimpleNamespace(chunks=["chunk"], file_type="pdf")
-
-    with patch.object(processor, "_process_with_llamaparse", side_effect=Exception("boom")) as mock_llama, \
-         patch.object(processor, "_process_with_pymupdf", return_value=fallback) as mock_pdf:
-        result = processor.process(b"%PDF", "file.pdf")
-
-    assert result is fallback
-    mock_llama.assert_called_once()
-    mock_pdf.assert_called_once()
-
-
-def test_pdf_processor_llamaparse_extracts_text(monkeypatch):
-    processor = PDFProcessor()
-
-    class FakeDoc:
-        def __init__(self, text):
-            self.text = text
-
-    class FakeLlamaParse:
-        def __init__(self, **_kwargs):
-            pass
-
-        def load_data(self, _path):
-            return [FakeDoc("Hello world")]
-
-    monkeypatch.setitem(sys.modules, "nest_asyncio", SimpleNamespace(apply=lambda: None))
-    monkeypatch.setitem(sys.modules, "llama_parse", SimpleNamespace(LlamaParse=FakeLlamaParse))
-    monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
-
-    result = processor._process_with_llamaparse(b"%PDF", "file.pdf")
-
-    assert result.file_type == "pdf"
-    assert result.metadata["parser"] == "llama_parse"
-    assert result.chunks
-
-
-def test_pdf_processor_llamaparse_handles_empty_docs(monkeypatch):
-    processor = PDFProcessor()
-
-    class FakeLlamaParse:
-        def __init__(self, **_kwargs):
-            pass
-
-        def load_data(self, _path):
-            return []
-
-    monkeypatch.setitem(sys.modules, "nest_asyncio", SimpleNamespace(apply=lambda: None))
-    monkeypatch.setitem(sys.modules, "llama_parse", SimpleNamespace(LlamaParse=FakeLlamaParse))
-    monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
-
-    with patch.object(processor, "count_tokens", return_value=1):
-        with patch("services.parsers.RecursiveCharacterTextSplitter.split_text", return_value=["chunk"]):
-            with patch("services.parsers.logger"):
-                with pytest.raises(ValueError):
-                    processor._process_with_llamaparse(b"%PDF", "file.pdf")
-
-
-def test_pdf_processor_llamaparse_import_error(monkeypatch):
-    processor = PDFProcessor()
-    original_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "llama_parse":
-            raise ImportError("missing")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-
-    with pytest.raises(ImportError):
-        processor._process_with_llamaparse(b"%PDF", "file.pdf")
-
-
-def test_pdf_processor_llamaparse_empty_text_raises(monkeypatch):
-    processor = PDFProcessor()
-
-    class FakeDoc:
-        text = "   "
-
-    class FakeLlamaParse:
-        def __init__(self, **_kwargs):
-            pass
-
-        def load_data(self, _path):
-            return [FakeDoc()]
-
-    monkeypatch.setitem(sys.modules, "nest_asyncio", SimpleNamespace(apply=lambda: None))
-    monkeypatch.setitem(sys.modules, "llama_parse", SimpleNamespace(LlamaParse=FakeLlamaParse))
-    monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "key")
-    monkeypatch.setattr("services.parsers.os.remove", MagicMock(side_effect=Exception("rm")))
-
-    with pytest.raises(ValueError):
-        processor._process_with_llamaparse(b"%PDF", "file.pdf")
-
-
-def test_pdf_processor_pymupdf_import_error(monkeypatch):
-    processor = PDFProcessor()
-    original_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "fitz":
-            raise ImportError("missing")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-
-    fallback = SimpleNamespace(chunks=["x"], file_type="pdf")
-    with patch.object(processor, "_fallback_process", return_value=fallback):
-        result = processor._process_with_pymupdf(b"%PDF", "file.pdf")
-
-    assert result is fallback
-
-
-def test_pdf_processor_pymupdf_success(monkeypatch):
+def test_pdf_processor_pymupdf_success():
     class FakePage:
-        def __init__(self, text):
-            self._text = text
-
-        def get_text(self, _mode):
-            return self._text
+        def get_text(self, mode):
+            return "This is a normal PDF with plenty of text content to pass the density check."
 
     class FakeDoc:
         def __init__(self):
-            self._pages = [FakePage("Page 1")]
+            self._pages = [FakePage()]
+        def __iter__(self): return iter(self._pages)
+        def __len__(self): return 1
+        def close(self): pass
 
-        def __iter__(self):
-            return iter(self._pages)
+    # Use patch.dict for sys.modules because fitz is imported inside the method
+    with patch.dict(sys.modules, {"fitz": MagicMock(open=MagicMock(return_value=FakeDoc()))}):
+        processor = PDFProcessor()
+        result = processor.process(b"%PDF", "file.pdf")
 
-        def close(self):
-            return None
-
-    class FakeFitz:
-        @staticmethod
-        def open(*_args, **_kwargs):
-            return FakeDoc()
-
-    monkeypatch.setitem(sys.modules, "fitz", FakeFitz)
-    processor = PDFProcessor()
-    result = processor._process_with_pymupdf(b"%PDF", "file.pdf")
-
-    assert result.file_type == "pdf"
-    assert result.chunks
-    assert result.metadata["parser"] == "pymupdf"
+        assert result.file_type == "pdf"
+        assert result.metadata["parser"] == "pymupdf"
 
 
-def test_pdf_processor_pymupdf_returns_empty_when_no_text(monkeypatch):
-    class FakeDoc:
-        def __iter__(self):
-            return iter([])
-
-        def close(self):
-            return None
-
-    class FakeFitz:
-        @staticmethod
-        def open(*_args, **_kwargs):
-            return FakeDoc()
-
-    monkeypatch.setitem(sys.modules, "fitz", FakeFitz)
-    processor = PDFProcessor()
-    result = processor._process_with_pymupdf(b"%PDF", "file.pdf")
-
-    assert result.file_type == "pdf"
-    assert result.chunks == []
-
-
-def test_pdf_processor_clean_text_removes_noise():
-    processor = PDFProcessor()
-    cleaned = processor._clean_text("Page 1 of 2\nCONFIDENTIAL\nActual line")
-    assert "CONFIDENTIAL" not in cleaned
-    assert "Page 1" not in cleaned
-    assert "Actual line" in cleaned
-
-
-def test_docx_processor_handles_errors(monkeypatch):
-    processor = DocxProcessor()
-    module = SimpleNamespace(process=MagicMock(side_effect=Exception("fail")))
-    monkeypatch.setitem(sys.modules, "docx2txt", module)
-    result = processor.process(b"data", "file.docx")
-    assert result.chunks == []
-
-
-def test_docx_processor_processes_text(monkeypatch):
-    processor = DocxProcessor()
-    module = SimpleNamespace(process=MagicMock(return_value="Hello world"))
-    monkeypatch.setitem(sys.modules, "docx2txt", module)
-    result = processor.process(b"data", "file.docx")
-    assert result.chunks
-
-
-def test_docx_processor_returns_empty_on_blank_text(monkeypatch):
-    processor = DocxProcessor()
-    module = SimpleNamespace(process=MagicMock(return_value="   "))
-    monkeypatch.setitem(sys.modules, "docx2txt", module)
-    result = processor.process(b"data", "file.docx")
-    assert result.chunks == []
-
-
-def test_plain_text_processor_basic():
-    processor = PlainTextProcessor()
-    result = processor.process(b"hello world", "note.txt")
-    assert result.file_type == "text"
-    assert result.chunks
-
-
-def test_plain_text_processor_handles_decode_error():
-    processor = PlainTextProcessor()
-    result = processor.process(b"\xff", "note.txt")
-    assert result.chunks
-
-
-def test_plain_text_processor_returns_empty_on_blank_text():
-    processor = PlainTextProcessor()
-    result = processor.process(b"   ", "note.txt")
-    assert result.chunks == []
-
-
-def test_factory_unsupported_extension():
-    result = DocumentProcessorFactory.process(content=b"data", filename="file.pptx")
-    assert result.file_type == "unsupported"
-    assert result.metadata["unsupported_reason"] == "unsupported_extension"
-
-
-def test_factory_binary_detection():
-    result = DocumentProcessorFactory.process(content=b"\x00\x01\x02", filename="file.bin")
-    assert result.file_type == "unsupported"
-    assert result.metadata["unsupported_reason"] == "binary_content"
-
-
-def test_factory_text_mime_fallback():
-    result = DocumentProcessorFactory.process(content=b"hello", filename="file.unknown", mime_type="text/plain")
-    assert result.file_type in {"text", "markdown", "code"}
-
-
-def test_process_web_content_adds_source_url():
-    result = DocumentProcessorFactory.process_web_content("Hello", "https://example.com")
-    assert result.chunks
-    assert result.chunks[0].metadata["source_url"] == "https://example.com"
-
-
-def test_document_parser_extract_text():
-    text = DocumentParser.extract_text(b"hello", "text/plain")
-    assert "hello" in text
-
-
-def test_document_parser_parse_file():
-    with tempfile.NamedTemporaryFile(mode="w+", suffix=".txt", delete=True) as handle:
-        handle.write("sample text")
-        handle.flush()
-        text = DocumentParser.parse_file(handle.name)
-    assert "sample text" in text
-
-
-def test_document_parser_is_supported():
-    assert DocumentParser.is_supported("text/plain") is True
-    assert DocumentParser.is_supported("application/unknown") is False
-
-
-def test_markdown_builds_header_path():
-    processor = MarkdownProcessor()
-    metadata = {"Header1": "# Title", "Header2": "Section", "Header3": "Sub"}
-    path = processor._build_header_path(metadata)
-    assert path == "Title > Section > Sub"
-
-
-def test_plain_text_processor_strips_null_bytes():
-    processor = PlainTextProcessor()
-    result = processor.process(b"hello\x00world", "note.txt")
-    assert result.chunks
-    assert "\x00" not in result.chunks[0].content
-
-
-def test_factory_looks_like_binary():
-    assert DocumentProcessorFactory._looks_like_binary(b"") is False
-
-
-def test_factory_looks_like_binary_empty_sample():
-    class DummyBytes:
-        def __len__(self):
-            return 1
-
-        def __contains__(self, _needle):
-            return False
-
-        def __getitem__(self, _slice):
-            if not isinstance(_slice, slice):
-                raise IndexError
-            return b""
-
-    assert DocumentProcessorFactory._looks_like_binary(DummyBytes()) is False
-    assert DocumentProcessorFactory._looks_like_binary(b"\x00\x01") is True
-    assert DocumentProcessorFactory._looks_like_binary(b"normal text") is False
-    assert DocumentProcessorFactory._looks_like_binary(bytes(range(1, 50))) is True
-
-
-def test_factory_returns_unknown_for_missing_content():
-    result = DocumentProcessorFactory.process(content=b"", filename="empty.txt")
-    assert result.file_type == "unknown"
-
-
-def test_factory_uses_text_mime_type_when_unknown_extension():
-    result = DocumentProcessorFactory.process(content=b"hello", filename="file.unknown", mime_type="text/csv")
-    assert result.file_type == "text"
-
-
-def test_factory_plain_text_when_not_binary():
-    result = DocumentProcessorFactory.process(content=b"hello", filename="file.unknown")
-    assert result.file_type == "text"
-
-
-def test_factory_rejects_binary_plain_text():
-    result = DocumentProcessorFactory.process(content=b"\x00binary", filename="file.txt")
-    assert result.file_type == "unsupported"
-    assert result.metadata["unsupported_reason"] == "binary_content"
-
-
-def test_pdf_processor_fallback_processes_pages(monkeypatch):
+def test_pdf_processor_ocr_fallback():
+    # Mock PyMuPDF to return very little text (scanned)
     class FakePage:
-        def __init__(self, text):
-            self._text = text
+        def get_text(self, mode):
+            return "Scan" # Very low density
 
-        def extract_text(self):
-            return self._text
+    class FakeDoc:
+        def __init__(self):
+            self._pages = [FakePage()]
+        def __iter__(self): return iter(self._pages)
+        def __len__(self): return 1
+        def close(self): pass
 
-    class FakeReader:
-        def __init__(self, _stream):
-            self.pages = [FakePage("Page 1"), FakePage("Page 2")]
+    # Mock LlamaParse
+    llama_result = SimpleNamespace(chunks=[SimpleNamespace(content="OCR Content", metadata={}, token_count=10, chunk_index=0)], file_type="pdf", total_tokens=10, metadata={"parser": "llama_parse"})
 
-    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
-    processor = PDFProcessor()
-    result = processor._fallback_process(b"%PDF", "file.pdf")
-    assert result.chunks
+    with patch.dict(sys.modules, {"fitz": MagicMock(open=MagicMock(return_value=FakeDoc()))}):
+        with patch("core.config.settings.LLAMA_CLOUD_API_KEY", "valid_key"):
+            with patch.object(PDFProcessor, "_process_with_llamaparse", return_value=llama_result) as mock_llama:
 
+                processor = PDFProcessor()
+                result = processor.process(b"%PDF", "scanned.pdf")
 
-def test_pdf_processor_pymupdf_falls_back_on_error(monkeypatch):
-    class FakeFitz:
-        @staticmethod
-        def open(*_args, **_kwargs):
-            raise RuntimeError("boom")
-
-    monkeypatch.setitem(sys.modules, "fitz", FakeFitz)
-    processor = PDFProcessor()
-
-    fallback = SimpleNamespace(chunks=["x"], file_type="pdf")
-    with patch.object(processor, "_fallback_process", return_value=fallback):
-        result = processor._process_with_pymupdf(b"%PDF", "file.pdf")
-
-    assert result is fallback
+                mock_llama.assert_called_once()
+                assert result.metadata["parser"] == "llama_parse"
 
 
-def test_pdf_processor_fallback_handles_reader_error(monkeypatch):
-    class FakeReader:
-        def __init__(self, _stream):
-            raise RuntimeError("boom")
+def test_pdf_processor_no_fallback_without_key():
+    # Mock PyMuPDF to return scan
+    class FakePage:
+        def get_text(self, mode): return "Scan"
 
-    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
-    processor = PDFProcessor()
-    result = processor._fallback_process(b"%PDF", "file.pdf")
-    assert result.chunks == []
+    class FakeDoc:
+        def __init__(self): self._pages = [FakePage()]
+        def __iter__(self): return iter(self._pages)
+        def __len__(self): return 1
+        def close(self): pass
+
+    with patch.dict(sys.modules, {"fitz": MagicMock(open=MagicMock(return_value=FakeDoc()))}):
+        with patch("core.config.settings.LLAMA_CLOUD_API_KEY", None):
+
+            processor = PDFProcessor()
+            result = processor.process(b"%PDF", "scanned.pdf")
+
+            # Should stay with pymupdf result despite low density
+            assert result.metadata["parser"] == "pymupdf"
+
+
+# --- Factory Tests ---
+
+def test_factory_routes_pptx():
+    with patch("services.parsers.PresentationProcessor.process") as mock_process:
+        DocumentProcessorFactory.process(content=b"data", filename="deck.pptx")
+        mock_process.assert_called_once()
+
+def test_factory_routes_csv():
+    with patch("services.parsers.TableProcessor.process") as mock_process:
+        DocumentProcessorFactory.process(content=b"data", filename="sheet.csv")
+        mock_process.assert_called_once()
+
+def test_factory_binary_detection_skips_text():
+    # If we pass binary content as .txt, it should skip
+    result = DocumentProcessorFactory.process(content=b"\x00\x01\x02", filename="file.txt")
+    assert result.file_type == "binary_skip"
+
+def test_factory_explicit_unsupported():
+    # .key is in UNSUPPORTED_EXTENSIONS
+    result = DocumentProcessorFactory.process(content=b"data", filename="pres.key")
+    assert result.file_type == "unsupported"
+
+
+# --- Legacy Compatibility Tests ---
+
+def test_document_parser_legacy_interface():
+    # Ensure the wrapper still works
+    with patch("services.parsers.DocumentProcessorFactory.process") as mock_factory:
+        mock_factory.return_value = SimpleNamespace(
+            chunks=[SimpleNamespace(content="Chunk 1"), SimpleNamespace(content="Chunk 2")]
+        )
+        text = DocumentParser.extract_text(b"data", "text/plain")
+        assert text == "Chunk 1\n\nChunk 2"

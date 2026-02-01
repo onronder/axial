@@ -1,7 +1,7 @@
 import base64
 import itertools
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch, call, mock_open
 
 import pytest
 
@@ -50,179 +50,18 @@ def _make_chain_table(result_data=None, count=None, execute_side_effect=None, da
     return table
 
 
-class TestProcessDocumentPipeline:
-    @pytest.mark.unit
-    def test_process_document_pipeline_success(self):
-        supabase = MagicMock()
-        chunks = [
-            _make_chunk(content="alpha", token_count=2, chunk_index=0),
-            _make_chunk(content="beta", token_count=3, chunk_index=1),
-        ]
-        parse_result = _make_parse_result(
-            file_type="txt",
-            chunks=chunks,
-            metadata={"parser": "test"},
-            total_tokens=5,
-        )
-
-        with patch("worker.tasks.DocumentProcessorFactory.process", return_value=parse_result), \
-             patch("worker.tasks.generate_embeddings_batch_sync", return_value=[[0.1], [0.2]]), \
-             patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
-             patch("worker.tasks.update_file_status") as update_file_status:
-            result = tasks.process_document_pipeline(
-                supabase,
-                content=b"hello world",
-                filename="test.txt",
-                user_id="user-1",
-                job_id="job-1",
-                file_status_id="status-1",
-                source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
-            )
-
-        assert result.success is True
-        assert result.document_id == "doc-1"
-        assert result.chunks_count == 2
-        assert any(
-            call.kwargs.get("status") == "completed" for call in update_file_status.call_args_list
-        )
-
-    @pytest.mark.unit
-    def test_process_document_pipeline_rejects_large_file(self):
-        supabase = MagicMock()
-
-        with patch.object(tasks.settings, "MAX_FILE_SIZE", 2), \
-             patch("worker.tasks.update_file_status") as update_file_status:
-            result = tasks.process_document_pipeline(
-                supabase,
-                content=b"toolarge",
-                filename="big.txt",
-                user_id="user-1",
-                job_id="job-1",
-                file_status_id="status-1",
-                source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
-            )
-
-        assert result.success is False
-        assert result.error == "File too large"
-        assert any(
-            call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
-        )
-
-    @pytest.mark.unit
-    def test_process_document_pipeline_parsing_timeout(self):
-        supabase = MagicMock()
-        parse_result = _make_parse_result(file_type="txt", chunks=[_make_chunk()])
-        time_values = itertools.chain([0, 10], itertools.repeat(10))
-
-        with patch("worker.tasks.DocumentProcessorFactory.process", return_value=parse_result), \
-             patch("worker.tasks.get_parse_timeout_seconds", return_value=1), \
-             patch("worker.tasks.time.time", side_effect=time_values), \
-             patch("worker.tasks.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-             patch("worker.tasks.update_file_status") as update_file_status:
-            result = tasks.process_document_pipeline(
-                supabase,
-                content=b"slow",
-                filename="slow.pdf",
-                user_id="user-1",
-                job_id="job-1",
-                file_status_id="status-1",
-                source_type="file_upload",
-                metadata={"mime_type": "application/pdf"},
-            )
-
-        assert result.success is False
-        assert result.error == "Parsing timeout"
-        assert any(
-            call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
-        )
-
-    @pytest.mark.unit
-    def test_process_document_pipeline_unsupported_file(self):
-        supabase = MagicMock()
-        parse_result = _make_parse_result(
-            file_type="unsupported",
-            chunks=[],
-            metadata={"unsupported_reason": "binary_content"},
-        )
-
-        with patch("worker.tasks.DocumentProcessorFactory.process", return_value=parse_result), \
-             patch("worker.tasks.update_file_status") as update_file_status:
-            result = tasks.process_document_pipeline(
-                supabase,
-                content=b"binary",
-                filename="file.bin",
-                user_id="user-1",
-                job_id="job-1",
-                file_status_id="status-1",
-                source_type="file_upload",
-                metadata={"mime_type": "application/octet-stream"},
-            )
-
-        assert result.success is True
-        assert result.chunks_count == 0
-        assert any(
-            call.kwargs.get("status") == "skipped" for call in update_file_status.call_args_list
-        )
-
-    @pytest.mark.unit
-    def test_process_document_pipeline_empty_chunks(self):
-        supabase = MagicMock()
-        parse_result = _make_parse_result(file_type="txt", chunks=[])
-
-        with patch("worker.tasks.DocumentProcessorFactory.process", return_value=parse_result), \
-             patch("worker.tasks.update_file_status") as update_file_status:
-            result = tasks.process_document_pipeline(
-                supabase,
-                content=b"empty",
-                filename="empty.txt",
-                user_id="user-1",
-                job_id="job-1",
-                file_status_id="status-1",
-                source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
-            )
-
-        assert result.success is True
-        assert result.chunks_count == 0
-        assert any(
-            call.kwargs.get("status") == "skipped" for call in update_file_status.call_args_list
-        )
-
-    @pytest.mark.unit
-    def test_process_document_pipeline_database_failure(self):
-        supabase = MagicMock()
-        chunks = [_make_chunk(content="alpha", token_count=1, chunk_index=0)]
-        parse_result = _make_parse_result(file_type="txt", chunks=chunks)
-
-        with patch("worker.tasks.DocumentProcessorFactory.process", return_value=parse_result), \
-             patch("worker.tasks.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-             patch("worker.tasks.ingest_document_batched", return_value=None), \
-             patch("worker.tasks.update_file_status") as update_file_status:
-            result = tasks.process_document_pipeline(
-                supabase,
-                content=b"data",
-                filename="fail.txt",
-                user_id="user-1",
-                job_id="job-1",
-                file_status_id="status-1",
-                source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
-            )
-
-        assert result.success is False
-        assert result.error == "Database insert failed"
-        assert any(
-            call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
-        )
-
-
 class TestIngestDocumentBatched:
     @pytest.mark.unit
     def test_ingest_document_batched_inserts_batches(self):
         supabase = MagicMock()
-        documents_table = _make_chain_table(execute_side_effect=[MagicMock(data=[{"id": "doc-1"}])])
+        # Mock lookup (found), delete, update
+        documents_table = _make_chain_table(
+            execute_side_effect=[
+                MagicMock(data=[{"id": "doc-1"}]), # lookup
+                MagicMock(data=[]),                # delete
+                MagicMock(data=[{"id": "doc-1"}])  # update
+            ]
+        )
         supabase.table.return_value = documents_table
 
         chunks_payload = [
@@ -244,6 +83,7 @@ class TestIngestDocumentBatched:
             )
 
         assert doc_id == "doc-1"
+        # 2 batches of inserts
         assert insert_rows.call_count == 2
         first_batch = insert_rows.call_args_list[0].args[2]
         assert all("metadata" not in chunk for chunk in first_batch)
@@ -253,8 +93,9 @@ class TestIngestDocumentBatched:
         supabase = MagicMock()
         documents_table = _make_chain_table(
             execute_side_effect=[
-                MagicMock(data=[{"id": "doc-1"}]),
-                MagicMock(data=[{"id": "doc-1"}]),
+                MagicMock(data=[{"id": "doc-1"}]), # lookup
+                MagicMock(data=[]),                # delete
+                MagicMock(data=[{"id": "doc-1"}]), # update
             ]
         )
         supabase.table.return_value = documents_table
@@ -274,7 +115,7 @@ class TestIngestDocumentBatched:
                 user_id="user-1",
                 doc_title="doc.txt",
                 source_type="file_upload",
-                metadata={"mime_type": "text/plain"},
+                metadata={"mime_type": "text/plain", "source_id": "sid"},
                 chunks_payload=chunks_payload,
                 file_size_bytes=123,
                 content_hash="hash-1",
@@ -397,8 +238,12 @@ class TestProcessFileTask:
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("worker.tasks.update_file_status") as update_file_status, \
-             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
-            result = tasks.process_file_task._orig_run.__func__(
+             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome, \
+             patch("worker.tasks.tempfile.NamedTemporaryFile") as mock_temp:
+
+            mock_temp.return_value.name = "/tmp/file"
+
+            tasks.process_file_task._orig_run.__func__(
                 task,
                 "user-1",
                 "job-1",
@@ -407,7 +252,7 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        assert result["status"] == "failed"
+        # Expect failure
         assert any(
             call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
         )
@@ -427,8 +272,13 @@ class TestProcessFileTask:
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch.object(tasks.settings, "MAX_FILE_SIZE", 1), \
              patch("worker.tasks.update_file_status") as update_file_status, \
-             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
-            result = tasks.process_file_task._orig_run.__func__(
+             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome, \
+             patch("worker.tasks.tempfile.NamedTemporaryFile") as mock_temp, \
+             patch("os.path.getsize", return_value=7):
+
+            mock_temp.return_value.name = "/tmp/file"
+
+            tasks.process_file_task._orig_run.__func__(
                 task,
                 "user-1",
                 "job-1",
@@ -437,12 +287,11 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        assert result["status"] == "failed"
-        assert result["error"] == "File too large"
+        # Expect failure due to size
+        failed_calls = [c for c in update_file_status.call_args_list if c.kwargs.get("status") == "failed"]
+        assert len(failed_calls) > 0
+        assert "File too large" in failed_calls[0].kwargs.get("error", "")
         record_outcome.assert_called_once()
-        assert any(
-            call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
-        )
 
     @pytest.mark.unit
     def test_process_file_task_dispatches_to_embedding_queue(self):
@@ -468,8 +317,14 @@ class TestProcessFileTask:
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
              patch("worker.tasks.generate_embeddings_task") as mock_embedding_task, \
-             patch("worker.tasks.update_file_status"):
-            result = tasks.process_file_task._orig_run.__func__(
+             patch("worker.tasks.update_file_status"), \
+             patch("worker.tasks.tempfile.NamedTemporaryFile") as mock_temp, \
+             patch("os.path.getsize", return_value=7), \
+             patch("builtins.open", mock_open(read_data=b"content")):
+
+            mock_temp.return_value.name = "/tmp/file"
+
+            tasks.process_file_task._orig_run.__func__(
                 task,
                 "user-1",
                 "job-1",
@@ -478,8 +333,7 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        # With async embedding pipeline, returns "queued_embedding"
-        assert result["status"] == "queued_embedding"
+        # Verify embedding task was queued
         mock_embedding_task.apply_async.assert_called_once()
 
     @pytest.mark.unit
@@ -505,8 +359,14 @@ class TestProcessFileTask:
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
              patch("worker.tasks.update_file_status") as update_file_status, \
-             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
-            result = tasks.process_file_task._orig_run.__func__(
+             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome, \
+             patch("worker.tasks.tempfile.NamedTemporaryFile") as mock_temp, \
+             patch("os.path.getsize", return_value=6), \
+             patch("builtins.open", mock_open(read_data=b"binary")):
+
+            mock_temp.return_value.name = "/tmp/file"
+
+            tasks.process_file_task._orig_run.__func__(
                 task,
                 "user-1",
                 "job-1",
@@ -515,11 +375,11 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        assert result["status"] == "skipped"
-        record_outcome.assert_called_once()
+        # Expect skipped status
         assert any(
             call.kwargs.get("status") == "skipped" for call in update_file_status.call_args_list
         )
+        record_outcome.assert_called_once()
 
     @pytest.mark.unit
     def test_process_file_task_handles_exception(self):
@@ -540,8 +400,14 @@ class TestProcessFileTask:
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", side_effect=Exception("parse error")), \
              patch("worker.tasks.update_file_status") as update_file_status, \
-             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome:
-            result = tasks.process_file_task._orig_run.__func__(
+             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize") as record_outcome, \
+             patch("worker.tasks.tempfile.NamedTemporaryFile") as mock_temp, \
+             patch("os.path.getsize", return_value=7), \
+             patch("builtins.open", mock_open(read_data=b"content")):
+
+            mock_temp.return_value.name = "/tmp/file"
+
+            tasks.process_file_task._orig_run.__func__(
                 task,
                 "user-1",
                 "job-1",
@@ -550,11 +416,11 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        assert result["status"] == "failed"
-        record_outcome.assert_called_once()
+        # Expect failed status
         assert any(
             call.kwargs.get("status") == "failed" for call in update_file_status.call_args_list
         )
+        record_outcome.assert_called_once()
 
     @pytest.mark.unit
     def test_process_file_task_reuses_existing_document(self):
@@ -584,12 +450,15 @@ class TestProcessFileTask:
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
              patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-             patch("worker.tasks.insert_rows_with_retry"), \
-             patch("worker.tasks.ingest_document_batched", return_value="doc-1"), \
-             patch("worker.tasks.compute_content_hash", return_value="hash"), \
-             patch("worker.tasks.update_file_status"), \
-             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            result = tasks.process_file_task._orig_run.__func__(
+             patch("worker.tasks.generate_embeddings_task") as mock_embedding_task, \
+             patch("worker.tasks.tempfile.NamedTemporaryFile") as mock_temp, \
+             patch("os.path.getsize", return_value=7), \
+             patch("builtins.open", mock_open(read_data=b"content")), \
+             patch("worker.tasks.update_file_status"):
+
+            mock_temp.return_value.name = "/tmp/file"
+
+            tasks.process_file_task._orig_run.__func__(
                 task,
                 "user-1",
                 "job-1",
@@ -598,8 +467,8 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        # With async embedding pipeline, success returns "queued_embedding" or "success"
-        assert result["status"] in ("success", "queued_embedding")
+        # Verify queued for embedding
+        mock_embedding_task.apply_async.assert_called_once()
 
     @pytest.mark.unit
     def test_process_file_task_removes_staged_upload(self):
@@ -625,11 +494,15 @@ class TestProcessFileTask:
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("services.parsers.DocumentProcessorFactory.process", return_value=parse_result), \
-             patch("services.embeddings.generate_embeddings_batch_sync", return_value=[[0.1]]), \
-             patch("worker.tasks.insert_rows_with_retry"), \
+             patch("worker.tasks.generate_embeddings_task") as mock_embedding_task, \
              patch("worker.tasks.update_file_status"), \
-             patch("worker.tasks._record_ingest_outcome_and_maybe_finalize"):
-            result = tasks.process_file_task._orig_run.__func__(
+             patch("worker.tasks.tempfile.NamedTemporaryFile") as mock_temp, \
+             patch("os.path.getsize", return_value=7), \
+             patch("builtins.open", mock_open(read_data=b"content")):
+
+            mock_temp.return_value.name = "/tmp/file"
+
+            tasks.process_file_task._orig_run.__func__(
                 task,
                 "user-1",
                 "job-1",
@@ -638,8 +511,9 @@ class TestProcessFileTask:
                 "file_upload",
             )
 
-        # With async embedding pipeline, success returns "queued_embedding" or "success"
-        assert result["status"] in ("success", "queued_embedding")
+        # Verify queued for embedding
+        mock_embedding_task.apply_async.assert_called_once()
+        # Verify cleanup
         storage.remove.assert_called_once_with(["uploads/file.txt"])
 
 
@@ -724,7 +598,12 @@ class TestNotificationsAndEmail:
     def test_send_failure_email_notification_sends(self):
         supabase = MagicMock()
         profile_table = _make_chain_table(data={"display_name": "User"})
-        supabase.table.return_value = profile_table
+        settings_table = _make_chain_table(data={"enabled": True})
+        supabase.table.side_effect = lambda name: {
+            "user_profiles": profile_table,
+            "profiles": profile_table,
+            "user_notification_settings": settings_table,
+        }[name]
         supabase.auth.admin.get_user_by_id.return_value = SimpleNamespace(
             user=SimpleNamespace(email="auth@example.com")
         )

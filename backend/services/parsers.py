@@ -2,7 +2,8 @@
 Enterprise-Grade Document Processor Factory
 
 Context-Aware RAG chunking with format-specific strategies.
-Supports: Code files, Markdown, PDF/DOCX with metadata enrichment.
+Supports: Code files, Markdown, PDF/DOCX/PPTX, CSV/Excel with metadata enrichment.
+Implements "Router Pattern" for intelligent parsing selection.
 
 Author: Axio Hub Team
 """
@@ -16,8 +17,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 
-# LangChain imports (text_splitter moved to langchain package in newer versions)
-# LangChain imports (text_splitter moved to langchain_text_splitters)
+# LangChain imports
 from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
     Language,
@@ -27,10 +27,21 @@ from langchain_text_splitters import (
 # Token counting
 import tiktoken
 
+# Third-party parsers
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+try:
+    from pptx import Presentation
+except ImportError:
+    Presentation = None
+
 logger = logging.getLogger(__name__)
 LLAMAPARSE_LOCK = threading.Lock()
 
-# Initialize tiktoken encoder (OpenAI's cl100k_base)
+# Initialize tiktoken encoder
 try:
     TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
 except Exception:
@@ -68,8 +79,11 @@ class BaseProcessor(ABC):
     """Abstract base class for document processors."""
     
     @abstractmethod
-    def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process document content and return chunks with metadata."""
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
+        """
+        Process document content and return chunks with metadata.
+        Prioritize file_path for memory efficiency if available.
+        """
         pass
     
     @staticmethod
@@ -79,76 +93,209 @@ class BaseProcessor(ABC):
             return len(TIKTOKEN_ENCODER.encode(text))
         return len(text) // 4  # Fallback approximation
 
+    def _load_content(self, content: Optional[bytes], file_path: Optional[str]) -> bytes:
+        """Helper to ensure content is loaded as bytes."""
+        if content is not None:
+            return content
+        if file_path:
+            with open(file_path, "rb") as f:
+                return f.read()
+        raise ValueError("No content or file_path provided")
+
+
+# =============================================================================
+# TABLE PROCESSOR (CSV/Excel)
+# =============================================================================
+
+class TableProcessor(BaseProcessor):
+    """
+    Processor for structured tabular data (CSV, Excel).
+    Efficiently processes large files using Pandas on disk.
+    """
+    
+    MAX_ROWS = 5000
+
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
+        if not pd:
+            logger.error("[TableProcessor] Pandas not installed")
+            return ProcessedDocument(chunks=[], file_type="table_error")
+
+        ext = os.path.splitext(filename)[1].lower()
+
+        try:
+            # Determine source (file path preferred for memory efficiency)
+            source = file_path if file_path else io.BytesIO(content)
+
+            if ext == ".csv":
+                df = pd.read_csv(source, nrows=self.MAX_ROWS)
+            elif ext in [".xlsx", ".xls"]:
+                df = pd.read_excel(source, nrows=self.MAX_ROWS)
+            else:
+                return ProcessedDocument(chunks=[], file_type="unsupported_table")
+
+            # Drop empty rows/cols
+            df.dropna(how='all', inplace=True)
+            df.fillna("", inplace=True)
+
+            # Convert to text representation
+            text_rows = []
+            columns = df.columns.tolist()
+
+            for idx, row in df.iterrows():
+                row_parts = []
+                for col in columns:
+                    val = str(row[col]).strip()
+                    if val:
+                        row_parts.append(f"{col}: {val}")
+                if row_parts:
+                    text_rows.append(f"Row {idx+1}: " + " | ".join(row_parts))
+
+            full_text = "\n".join(text_rows)
+
+            # Chunking
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1500,
+                chunk_overlap=150,
+                separators=["\n"]
+            )
+            raw_chunks = splitter.split_text(full_text)
+
+            chunks = []
+            total_tokens = 0
+
+            for i, chunk_text in enumerate(raw_chunks):
+                contextualized = f"[File: {filename}] [Type: {ext.lstrip('.')}]\n{chunk_text}"
+                token_count = self.count_tokens(contextualized)
+                total_tokens += token_count
+
+                chunks.append(ProcessedChunk(
+                    content=contextualized,
+                    metadata={
+                        "file_type": "table",
+                        "format": ext,
+                        "filename": filename,
+                        "rows": len(df)
+                    },
+                    token_count=token_count,
+                    chunk_index=i
+                ))
+
+            logger.info(f"[TableProcessor] {filename}: {len(chunks)} chunks from {len(df)} rows")
+            return ProcessedDocument(
+                chunks=chunks,
+                file_type="table",
+                total_tokens=total_tokens,
+                metadata={"rows": len(df), "columns": len(columns)}
+            )
+
+        except Exception as e:
+            logger.error(f"[TableProcessor] Failed to process {filename}: {e}")
+            return ProcessedDocument(chunks=[], file_type="table_error")
+
+
+# =============================================================================
+# PRESENTATION PROCESSOR (PPTX)
+# =============================================================================
+
+class PresentationProcessor(BaseProcessor):
+    """Processor for PowerPoint presentations."""
+
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
+        if not Presentation:
+            logger.error("[PresentationProcessor] python-pptx not installed")
+            return ProcessedDocument(chunks=[], file_type="pptx_error")
+
+        try:
+            source = file_path if file_path else io.BytesIO(content)
+            prs = Presentation(source)
+            chunks = []
+            total_tokens = 0
+
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+
+            for i, slide in enumerate(prs.slides):
+                slide_num = i + 1
+                slide_text = []
+
+                if slide.shapes.title and slide.shapes.title.text:
+                    slide_text.append(f"Title: {slide.shapes.title.text}")
+
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text:
+                        if shape == slide.shapes.title:
+                            continue
+                        slide_text.append(shape.text)
+
+                full_slide_text = "\n".join(slide_text)
+                if not full_slide_text.strip():
+                    continue
+
+                slide_chunks = splitter.split_text(full_slide_text)
+
+                for chunk_text in slide_chunks:
+                    contextualized = f"[File: {filename}] [Slide: {slide_num}]\n{chunk_text}"
+                    token_count = self.count_tokens(contextualized)
+                    total_tokens += token_count
+
+                    chunks.append(ProcessedChunk(
+                        content=contextualized,
+                        metadata={
+                            "file_type": "presentation",
+                            "filename": filename,
+                            "slide_number": slide_num
+                        },
+                        token_count=token_count,
+                        chunk_index=len(chunks)
+                    ))
+
+            logger.info(f"[PresentationProcessor] {filename}: {len(chunks)} chunks from {len(prs.slides)} slides")
+            return ProcessedDocument(
+                chunks=chunks,
+                file_type="presentation",
+                total_tokens=total_tokens,
+                metadata={"total_slides": len(prs.slides)}
+            )
+
+        except Exception as e:
+            logger.error(f"[PresentationProcessor] Failed: {e}")
+            return ProcessedDocument(chunks=[], file_type="pptx_error")
+
 
 # =============================================================================
 # CODE PROCESSOR
 # =============================================================================
 
 class CodeProcessor(BaseProcessor):
-    """
-    Processor for source code files.
-    
-    Uses RecursiveCharacterTextSplitter.from_language() to preserve
-    function and class boundaries. Hard limit of 2000 tokens per chunk.
-    """
-    
-    # Map file extensions to LangChain Language enum
+    """Processor for source code files."""
+
     LANGUAGE_MAP = {
-        ".py": Language.PYTHON,
-        ".js": Language.JS,
-        ".jsx": Language.JS,
-        ".ts": Language.TS,
-        ".tsx": Language.TS,
-        ".java": Language.JAVA,
-        ".go": Language.GO,
-        ".cpp": Language.CPP,
-        ".c": Language.CPP,
-        ".cs": Language.CSHARP,
-        ".rb": Language.RUBY,
-        ".php": Language.PHP,
-        ".rs": Language.RUST,
-        ".scala": Language.SCALA,
-        ".swift": Language.SWIFT,
+        ".py": Language.PYTHON, ".js": Language.JS, ".jsx": Language.JS,
+        ".ts": Language.TS, ".tsx": Language.TS, ".java": Language.JAVA,
+        ".go": Language.GO, ".cpp": Language.CPP, ".c": Language.CPP,
+        ".cs": Language.CSHARP, ".rb": Language.RUBY, ".php": Language.PHP,
+        ".rs": Language.RUST, ".scala": Language.SCALA, ".swift": Language.SWIFT,
         ".kt": Language.KOTLIN,
     }
     
-    # These don't have special language support, use generic
-    GENERIC_CODE_EXTENSIONS = {".json", ".yaml", ".yml", ".toml", ".xml", ".html", ".css", ".sql"}
-    
-    def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process code file with language-aware splitting."""
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
         ext = os.path.splitext(filename)[1].lower()
+        content_bytes = self._load_content(content, file_path)
         
-        # Decode content
         try:
-            text = content.decode("utf-8")
+            text = content_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            text = content.decode("utf-8", errors="replace")
+            text = content_bytes.decode("utf-8", errors="replace")
         
         if not text.strip():
             return ProcessedDocument(chunks=[], file_type="code")
         
-        # Get language-specific splitter or generic
         language = self.LANGUAGE_MAP.get(ext)
-        
         if language:
-            splitter = RecursiveCharacterTextSplitter.from_language(
-                language=language,
-                chunk_size=1500,  # ~400 tokens target
-                chunk_overlap=100,
-            )
+            splitter = RecursiveCharacterTextSplitter.from_language(language=language, chunk_size=1500, chunk_overlap=100)
         else:
-            # Generic code splitter for JSON, YAML, etc.
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1500,
-                chunk_overlap=100,
-                separators=["\n\n", "\n", " ", ""]
-            )
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=100, separators=["\n\n", "\n", " ", ""])
         
-        # Split text
         raw_chunks = splitter.split_text(text)
-        
-        # Build ProcessedChunks with metadata
         chunks = []
         total_tokens = 0
         lang_name = language.value if language else ext.lstrip(".")
@@ -156,49 +303,17 @@ class CodeProcessor(BaseProcessor):
         for i, chunk_text in enumerate(raw_chunks):
             token_count = self.count_tokens(chunk_text)
             total_tokens += token_count
-            
-            # Hard limit: if chunk exceeds 2000 tokens, force-split
-            if token_count > 2000:
-                sub_chunks = self._force_split(chunk_text, 1500)
-                for j, sub_text in enumerate(sub_chunks):
-                    sub_tokens = self.count_tokens(sub_text)
-                    chunks.append(ProcessedChunk(
-                        content=sub_text,
-                        metadata={
-                            "file_type": "code",
-                            "language": lang_name,
-                            "filename": filename,
-                        },
-                        token_count=sub_tokens,
-                        chunk_index=len(chunks)
-                    ))
-            else:
-                chunks.append(ProcessedChunk(
-                    content=chunk_text,
-                    metadata={
-                        "file_type": "code",
-                        "language": lang_name,
-                        "filename": filename,
-                    },
-                    token_count=token_count,
-                    chunk_index=i
-                ))
+            chunks.append(ProcessedChunk(
+                content=chunk_text,
+                metadata={"file_type": "code", "language": lang_name, "filename": filename},
+                token_count=token_count,
+                chunk_index=i
+            ))
         
-        # Re-index after potential sub-splits
-        for i, chunk in enumerate(chunks):
-            chunk.chunk_index = i
-        
-        logger.info(f"[CodeProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
+        logger.info(f"[CodeProcessor] {filename}: {len(chunks)} chunks")
         return ProcessedDocument(
-            chunks=chunks,
-            file_type="code",
-            total_tokens=total_tokens,
-            metadata={"language": lang_name}
+            chunks=chunks, file_type="code", total_tokens=total_tokens, metadata={"language": lang_name}
         )
-    
-    def _force_split(self, text: str, max_chars: int) -> List[str]:
-        """Force-split oversized text by character count."""
-        return [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
 
 
 # =============================================================================
@@ -206,122 +321,62 @@ class CodeProcessor(BaseProcessor):
 # =============================================================================
 
 class MarkdownProcessor(BaseProcessor):
-    """
-    Processor for Markdown files and web content.
+    """Processor for Markdown files."""
     
-    Strategy:
-    1. Split by headers (#, ##, ###) first
-    2. For each section, apply recursive character splitting
-    3. Inject header path as context prefix
-    """
+    HEADERS_TO_SPLIT_ON = [("#", "Header1"), ("##", "Header2"), ("###", "Header3")]
     
-    HEADERS_TO_SPLIT_ON = [
-        ("#", "Header1"),
-        ("##", "Header2"),
-        ("###", "Header3"),
-        ("####", "Header4"),
-    ]
-    
-    def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process markdown with header-aware splitting."""
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
+        content_bytes = self._load_content(content, file_path)
         try:
-            text = content.decode("utf-8")
+            text = content_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            text = content.decode("utf-8", errors="replace")
+            text = content_bytes.decode("utf-8", errors="replace")
         
-        if not text.strip():
-            return ProcessedDocument(chunks=[], file_type="markdown")
-        
-        # Step 1: Split by headers
-        header_splitter = MarkdownHeaderTextSplitter(
-            headers_to_split_on=self.HEADERS_TO_SPLIT_ON,
-            strip_headers=False
-        )
-        
+        header_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=self.HEADERS_TO_SPLIT_ON, strip_headers=False)
         try:
             header_docs = header_splitter.split_text(text)
-        except Exception as e:
-            logger.warning(f"[MarkdownProcessor] Header splitting failed: {e}, using fallback")
+        except Exception:
             header_docs = None
         
         chunks = []
         total_tokens = 0
         
         if header_docs:
-            # Process each header section
-            content_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=150,
-                separators=["\n\n", "\n", ". ", " ", ""]
-            )
-            
+            content_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
             for doc in header_docs:
-                # Build header path from metadata
                 header_path = self._build_header_path(doc.metadata)
-                section_text = doc.page_content
-                
-                # Split section content
-                section_chunks = content_splitter.split_text(section_text)
-                
+                section_chunks = content_splitter.split_text(doc.page_content)
                 for chunk_text in section_chunks:
-                    # Context injection: prepend header path
-                    if header_path:
-                        contextualized = f"[Context: {header_path}]\n{chunk_text}"
-                    else:
-                        contextualized = chunk_text
-                    
+                    contextualized = f"[Context: {header_path}]\n{chunk_text}" if header_path else chunk_text
                     token_count = self.count_tokens(contextualized)
                     total_tokens += token_count
-                    
                     chunks.append(ProcessedChunk(
                         content=contextualized,
-                        metadata={
-                            "file_type": "markdown",
-                            "header_path": header_path,
-                            "filename": filename,
-                        },
+                        metadata={"file_type": "markdown", "header_path": header_path, "filename": filename},
                         token_count=token_count,
                         chunk_index=len(chunks)
                     ))
         else:
-            # Fallback: simple recursive split
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=150
-            )
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
             raw_chunks = splitter.split_text(text)
-            
             for i, chunk_text in enumerate(raw_chunks):
                 token_count = self.count_tokens(chunk_text)
                 total_tokens += token_count
-                
                 chunks.append(ProcessedChunk(
                     content=chunk_text,
-                    metadata={
-                        "file_type": "markdown",
-                        "header_path": "",
-                        "filename": filename,
-                    },
+                    metadata={"file_type": "markdown", "filename": filename},
                     token_count=token_count,
                     chunk_index=i
                 ))
         
-        logger.info(f"[MarkdownProcessor] {filename}: {len(chunks)} chunks, {total_tokens} tokens")
-        return ProcessedDocument(
-            chunks=chunks,
-            file_type="markdown",
-            total_tokens=total_tokens
-        )
-    
+        logger.info(f"[MarkdownProcessor] {filename}: {len(chunks)} chunks")
+        return ProcessedDocument(chunks=chunks, file_type="markdown", total_tokens=total_tokens)
+
     def _build_header_path(self, metadata: Dict[str, Any]) -> str:
-        """Build header path string from metadata."""
         parts = []
-        for key in ["Header1", "Header2", "Header3", "Header4"]:
+        for key in ["Header1", "Header2", "Header3"]:
             if key in metadata and metadata[key]:
-                # Clean header text (remove # symbols)
-                header = metadata[key].strip().lstrip("#").strip()
-                if header:
-                    parts.append(header)
+                parts.append(metadata[key].strip().lstrip("#").strip())
         return " > ".join(parts)
 
 
@@ -331,251 +386,151 @@ class MarkdownProcessor(BaseProcessor):
 
 class PDFProcessor(BaseProcessor):
     """
-    Processor for PDF documents.
-    
-    Supports two parsing modes:
-    1. LlamaParse (Advanced): OCR-enabled, table extraction, premium parsing
-       - Activated when LLAMA_CLOUD_API_KEY is set
-    2. PyMuPDF (Standard): Fast, accurate text extraction
-       - Used as fallback or when no API key
+    Processor for PDF documents with OCR Fallback and file-path support.
     """
     
-    # Regex patterns for common headers/footers to remove
-    NOISE_PATTERNS = [
-        r"Page\s+\d+\s+(of|/)\s+\d+",  # Page 1 of 10
-        r"^\d+\s*$",  # Lone page numbers
-        r"CONFIDENTIAL",
-        r"^\s*©.*$",  # Copyright notices
-    ]
+    NOISE_PATTERNS = [r"Page\s+\d+\s+(of|/)\s+\d+", r"^\d+\s*$", r"CONFIDENTIAL", r"^\s*©.*$"]
     
-    def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process PDF with LlamaParse (if available) or PyMuPDF fallback."""
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
         from core.config import settings
         
-        # Try LlamaParse first if API key is configured
-        if settings.LLAMA_CLOUD_API_KEY:
+        # 1. Try Local (PyMuPDF supports file path directly)
+        local_result = self._process_with_pymupdf(content, filename, file_path)
+
+        # 2. Check Text Density
+        text_density = local_result.metadata.get("text_density", 0)
+        is_scanned = text_density < 50
+
+        if is_scanned and settings.LLAMA_CLOUD_API_KEY:
+            logger.info(f"[PDFProcessor] Low text density ({text_density:.1f}). Fallback to LlamaParse.")
             try:
-                result = self._process_with_llamaparse(content, filename)
-                if result and result.chunks:
-                    return result
+                cloud_result = self._process_with_llamaparse(content, filename, file_path)
+                if cloud_result and cloud_result.chunks:
+                    return cloud_result
             except Exception as e:
-                logger.warning(f"[PDFProcessor] LlamaParse failed, falling back to PyMuPDF: {e}")
+                logger.warning(f"[PDFProcessor] LlamaParse fallback failed: {e}. Keeping local result.")
         
-        # Fallback to PyMuPDF
-        return self._process_with_pymupdf(content, filename)
+        return local_result
     
-    def _process_with_llamaparse(self, content: bytes, filename: str) -> ProcessedDocument:
-        """
-        Process PDF using LlamaParse for advanced OCR and table extraction.
-        
-        LlamaParse provides:
-        - OCR for scanned documents
-        - Table detection and extraction
-        - Better handling of complex layouts
-        """
+    def _process_with_llamaparse(self, content: Optional[bytes], filename: str, file_path: Optional[str]) -> ProcessedDocument:
         import tempfile
-        import os
-        
-        # Import LlamaParse with nest_asyncio for async compatibility
         try:
             import nest_asyncio
             nest_asyncio.apply()
             from llama_parse import LlamaParse
         except ImportError:
-            raise ImportError("llama-parse package not installed")
+            raise ImportError("llama-parse not installed")
         
         from core.config import settings
         
-        logger.info(f"[PDFProcessor] Using LlamaParse for {filename}")
+        # Ensure we have a file path for LlamaParse
+        temp_path = None
+        target_path = file_path
         
-        # Write content to temp file (LlamaParse needs file path)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
-            tf.write(content)
-            tf_path = tf.name
+        if not target_path:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
+                tf.write(content)
+                target_path = tf.name
+                temp_path = target_path
         
         try:
-            # Initialize LlamaParse with OCR settings
-            # NOTE: Serialize LlamaParse calls to avoid anyio/gevent conflicts.
             with LLAMAPARSE_LOCK:
                 parser = LlamaParse(
                     api_key=settings.LLAMA_CLOUD_API_KEY,
-                    result_type="markdown",  # Get structured markdown output
+                    result_type="markdown",
                     verbose=False,
                     language="en",
                 )
-                
-                # Parse the document (synchronous call)
-                documents = parser.load_data(tf_path)
+                documents = parser.load_data(target_path)
             
-            if not documents:
-                raise ValueError("LlamaParse returned no documents")
-            
-            # Combine all document text
             full_text = "\n\n".join([doc.text for doc in documents])
-            
             if not full_text.strip():
-                raise ValueError("LlamaParse returned empty text")
-            
-            logger.info(f"[PDFProcessor] LlamaParse extracted {len(full_text)} chars from {filename}")
-            
+                raise ValueError("Empty result from LlamaParse")
+
         finally:
-            # Always cleanup temp file
-            try:
-                os.remove(tf_path)
-            except:
-                pass
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
         
-        # Chunk the extracted text (use MarkdownProcessor for markdown output)
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         raw_chunks = splitter.split_text(full_text)
-        
         chunks = []
         total_tokens = 0
         for i, chunk_text in enumerate(raw_chunks):
-            contextualized = f"[File: {filename}]\n{chunk_text}"
+            contextualized = f"[File: {filename}] [Parser: LlamaParse]\n{chunk_text}"
             token_count = self.count_tokens(contextualized)
             total_tokens += token_count
-            
             chunks.append(ProcessedChunk(
                 content=contextualized,
-                metadata={
-                    "file_type": "pdf",
-                    "parser": "llama_parse",
-                    "filename": filename,
-                },
+                metadata={"file_type": "pdf", "parser": "llama_parse", "filename": filename},
                 token_count=token_count,
                 chunk_index=i
             ))
-        
+
         logger.info(f"[PDFProcessor] LlamaParse: {filename}: {len(chunks)} chunks")
         return ProcessedDocument(
-            chunks=chunks,
-            file_type="pdf",
-            total_tokens=total_tokens,
-            metadata={"parser": "llama_parse"}
+            chunks=chunks, file_type="pdf", total_tokens=total_tokens, metadata={"parser": "llama_parse"}
         )
     
-    def _process_with_pymupdf(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process PDF with PyMuPDF (standard mode)."""
+    def _process_with_pymupdf(self, content: Optional[bytes], filename: str, file_path: Optional[str]) -> ProcessedDocument:
         try:
-            import fitz  # PyMuPDF
+            import fitz
         except ImportError:
-            logger.error("[PDFProcessor] PyMuPDF not installed, using fallback")
-            return self._fallback_process(content, filename)
+            return ProcessedDocument(chunks=[], file_type="pdf_error")
         
-        # Extract text from PDF
         pages_text = []
+        total_chars = 0
+        doc = None
         try:
-            doc = fitz.open(stream=content, filetype="pdf")
+            if file_path:
+                doc = fitz.open(file_path)
+            elif content:
+                doc = fitz.open(stream=content, filetype="pdf")
+            else:
+                return ProcessedDocument(chunks=[], file_type="pdf_error")
+
+            num_pages = len(doc)
             for page_num, page in enumerate(doc, start=1):
                 text = page.get_text("text")
-                if text.strip():
-                    # Clean the text
-                    cleaned = self._clean_text(text)
-                    if cleaned.strip():
-                        pages_text.append((page_num, cleaned))
+                total_chars += len(text)
+                cleaned = self._clean_text(text)
+                if cleaned.strip():
+                    pages_text.append((page_num, cleaned))
             doc.close()
         except Exception as e:
-            logger.error(f"[PDFProcessor] PyMuPDF extraction failed: {e}")
-            return self._fallback_process(content, filename)
+            logger.error(f"[PDFProcessor] PyMuPDF failed: {e}")
+            return ProcessedDocument(chunks=[], file_type="pdf_error")
         
-        if not pages_text:
-            return ProcessedDocument(chunks=[], file_type="pdf")
-        
-        # Chunk with sliding window
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
-        
+        text_density = total_chars / max(1, num_pages)
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         chunks = []
         total_tokens = 0
         
         for page_num, page_text in pages_text:
             page_chunks = splitter.split_text(page_text)
-            
             for chunk_text in page_chunks:
-                # Context injection: prepend file and page info
                 contextualized = f"[File: {filename}] [Page: {page_num}]\n{chunk_text}"
-                
                 token_count = self.count_tokens(contextualized)
                 total_tokens += token_count
-                
                 chunks.append(ProcessedChunk(
                     content=contextualized,
-                    metadata={
-                        "file_type": "pdf",
-                        "parser": "pymupdf",
-                        "page_number": page_num,
-                        "filename": filename,
-                    },
+                    metadata={"file_type": "pdf", "parser": "pymupdf", "page_number": page_num, "filename": filename},
                     token_count=token_count,
                     chunk_index=len(chunks)
                 ))
         
-        logger.info(f"[PDFProcessor] PyMuPDF: {filename}: {len(chunks)} chunks from {len(pages_text)} pages")
+        logger.info(f"[PDFProcessor] PyMuPDF: {filename}, Density={text_density:.1f}")
         return ProcessedDocument(
-            chunks=chunks,
-            file_type="pdf",
-            total_tokens=total_tokens,
-            metadata={"total_pages": len(pages_text), "parser": "pymupdf"}
+            chunks=chunks, file_type="pdf", total_tokens=total_tokens,
+            metadata={"parser": "pymupdf", "text_density": text_density}
         )
-    
+
     def _clean_text(self, text: str) -> str:
-        """Remove common headers, footers, and noise patterns."""
         lines = text.split("\n")
         cleaned_lines = []
-        
         for line in lines:
-            skip = False
-            for pattern in self.NOISE_PATTERNS:
-                if re.search(pattern, line, re.IGNORECASE):
-                    skip = True
-                    break
-            if not skip:
+            if not any(re.search(p, line, re.IGNORECASE) for p in self.NOISE_PATTERNS):
                 cleaned_lines.append(line)
-        
         return "\n".join(cleaned_lines)
-    
-    def _fallback_process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Fallback using pypdf if PyMuPDF is not available."""
-        try:
-            from pypdf import PdfReader
-            reader = PdfReader(io.BytesIO(content))
-            full_text = ""
-            for page in reader.pages:
-                text = page.extract_text() or ""
-                full_text += text + "\n\n"
-        except Exception as e:
-            logger.error(f"[PDFProcessor] pypdf fallback failed: {e}")
-            return ProcessedDocument(chunks=[], file_type="pdf")
-        
-        # Simple chunking
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
-        )
-        raw_chunks = splitter.split_text(full_text)
-        
-        chunks = []
-        total_tokens = 0
-        for i, chunk_text in enumerate(raw_chunks):
-            contextualized = f"[File: {filename}]\n{chunk_text}"
-            token_count = self.count_tokens(contextualized)
-            total_tokens += token_count
-            chunks.append(ProcessedChunk(
-                content=contextualized,
-                metadata={"file_type": "pdf", "filename": filename},
-                token_count=token_count,
-                chunk_index=i
-            ))
-        
-        return ProcessedDocument(chunks=chunks, file_type="pdf", total_tokens=total_tokens)
 
 
 # =============================================================================
@@ -583,30 +538,22 @@ class PDFProcessor(BaseProcessor):
 # =============================================================================
 
 class DocxProcessor(BaseProcessor):
-    """Processor for Word documents."""
-    
-    def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process DOCX with paragraph chunking."""
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
         try:
             import docx2txt
-            text = docx2txt.process(io.BytesIO(content))
-        except Exception as e:
-            logger.error(f"[DocxProcessor] Extraction failed: {e}")
-            return ProcessedDocument(chunks=[], file_type="docx")
+            source = file_path if file_path else io.BytesIO(content)
+            text = docx2txt.process(source)
+        except Exception:
+            return ProcessedDocument(chunks=[], file_type="docx_error")
         
-        if not text or not text.strip():
+        if not text.strip():
             return ProcessedDocument(chunks=[], file_type="docx")
-        
-        # Chunk with context
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
+
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         raw_chunks = splitter.split_text(text)
-        
         chunks = []
         total_tokens = 0
+
         for i, chunk_text in enumerate(raw_chunks):
             contextualized = f"[File: {filename}]\n{chunk_text}"
             token_count = self.count_tokens(contextualized)
@@ -617,7 +564,7 @@ class DocxProcessor(BaseProcessor):
                 token_count=token_count,
                 chunk_index=i
             ))
-        
+
         logger.info(f"[DocxProcessor] {filename}: {len(chunks)} chunks")
         return ProcessedDocument(chunks=chunks, file_type="docx", total_tokens=total_tokens)
 
@@ -627,30 +574,19 @@ class DocxProcessor(BaseProcessor):
 # =============================================================================
 
 class PlainTextProcessor(BaseProcessor):
-    """Processor for plain text files."""
-    
-    def process(self, content: bytes, filename: str) -> ProcessedDocument:
-        """Process plain text with simple chunking."""
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
+        content_bytes = self._load_content(content, file_path)
         try:
-            text = content.decode("utf-8")
+            text = content_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            text = content.decode("utf-8", errors="replace")
-        
-        # Remove null bytes that cannot be stored in Postgres text
+            text = content_bytes.decode("utf-8", errors="replace")
         text = text.replace("\x00", "")
         
-        if not text.strip():
-            return ProcessedDocument(chunks=[], file_type="text")
-        
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=150,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         raw_chunks = splitter.split_text(text)
-        
         chunks = []
         total_tokens = 0
+
         for i, chunk_text in enumerate(raw_chunks):
             token_count = self.count_tokens(chunk_text)
             total_tokens += token_count
@@ -660,70 +596,106 @@ class PlainTextProcessor(BaseProcessor):
                 token_count=token_count,
                 chunk_index=i
             ))
-        
-        logger.info(f"[PlainTextProcessor] {filename}: {len(chunks)} chunks")
         return ProcessedDocument(chunks=chunks, file_type="text", total_tokens=total_tokens)
 
 
 # =============================================================================
-# DOCUMENT PROCESSOR FACTORY
+# LLAMAPARSE PROCESSOR (Fallback)
+# =============================================================================
+
+class LlamaParseProcessor(BaseProcessor):
+    """Processor for complex or legacy files (DOC, XLS, MSG)."""
+    
+    def process(self, content: Optional[bytes], filename: str, file_path: Optional[str] = None) -> ProcessedDocument:
+        from core.config import settings
+        if not settings.LLAMA_CLOUD_API_KEY:
+            return ProcessedDocument(chunks=[], file_type="missing_api_key")
+
+        import tempfile
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+            from llama_parse import LlamaParse
+        except ImportError:
+            return ProcessedDocument(chunks=[], file_type="library_missing")
+
+        temp_path = None
+        target_path = file_path
+
+        if not target_path:
+            ext = os.path.splitext(filename)[1].lower()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tf:
+                tf.write(content)
+                target_path = tf.name
+                temp_path = target_path
+
+        try:
+            with LLAMAPARSE_LOCK:
+                parser = LlamaParse(
+                    api_key=settings.LLAMA_CLOUD_API_KEY,
+                    result_type="markdown",
+                    verbose=False,
+                    language="en",
+                )
+                documents = parser.load_data(target_path)
+
+            full_text = "\n\n".join([doc.text for doc in documents])
+
+        except Exception as e:
+            logger.error(f"[LlamaParseProcessor] Failed {filename}: {e}")
+            return ProcessedDocument(chunks=[], file_type="parse_error")
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        raw_chunks = splitter.split_text(full_text)
+        chunks = []
+        total_tokens = 0
+        for i, chunk_text in enumerate(raw_chunks):
+            contextualized = f"[File: {filename}]\n{chunk_text}"
+            token_count = self.count_tokens(contextualized)
+            total_tokens += token_count
+            chunks.append(ProcessedChunk(
+                content=contextualized,
+                metadata={"file_type": "legacy_office", "parser": "llama_parse", "filename": filename},
+                token_count=token_count,
+                chunk_index=i
+            ))
+
+        logger.info(f"[LlamaParseProcessor] {filename}: {len(chunks)} chunks")
+        return ProcessedDocument(chunks=chunks, file_type="legacy_office", total_tokens=total_tokens)
+
+
+# =============================================================================
+# FACTORY
 # =============================================================================
 
 class DocumentProcessorFactory:
-    """
-    Factory class that selects the appropriate processor based on file type.
+    """Factory to select the best processor."""
     
-    Usage:
-        result = DocumentProcessorFactory.process(file_path, filename)
-        chunks = result.chunks  # List[ProcessedChunk]
-    """
-    
-    # Extension to processor mapping
     PROCESSOR_MAP = {
-        # Code files
-        ".py": CodeProcessor,
-        ".js": CodeProcessor,
-        ".jsx": CodeProcessor,
-        ".ts": CodeProcessor,
-        ".tsx": CodeProcessor,
-        ".java": CodeProcessor,
-        ".go": CodeProcessor,
-        ".cpp": CodeProcessor,
-        ".c": CodeProcessor,
-        ".cs": CodeProcessor,
-        ".rb": CodeProcessor,
-        ".php": CodeProcessor,
-        ".rs": CodeProcessor,
-        ".scala": CodeProcessor,
-        ".swift": CodeProcessor,
-        ".kt": CodeProcessor,
-        ".json": CodeProcessor,
-        ".yaml": CodeProcessor,
-        ".yml": CodeProcessor,
-        ".toml": CodeProcessor,
-        ".xml": CodeProcessor,
-        ".html": CodeProcessor,
-        ".css": CodeProcessor,
-        ".sql": CodeProcessor,
-        
-        # Markdown
+        # Group A (Local/Fast)
+        ".py": CodeProcessor, ".js": CodeProcessor, ".ts": CodeProcessor, ".java": CodeProcessor,
+        ".json": CodeProcessor, ".xml": CodeProcessor, ".html": CodeProcessor, ".yaml": CodeProcessor,
         ".md": MarkdownProcessor,
-        ".markdown": MarkdownProcessor,
-        
-        # PDF
-        ".pdf": PDFProcessor,
-        
-        # Word documents
         ".docx": DocxProcessor,
-        ".doc": DocxProcessor,
-        
-        # Plain text
         ".txt": PlainTextProcessor,
-        ".csv": PlainTextProcessor,
-        ".log": PlainTextProcessor,
+        
+        # Group A (Structured)
+        ".csv": TableProcessor,
+        ".xlsx": TableProcessor,
+        ".pptx": PresentationProcessor,
+        
+        # Group B (Complex/Paid)
+        ".doc": LlamaParseProcessor,
+        ".xls": LlamaParseProcessor,
+        ".msg": LlamaParseProcessor,
+        
+        # Hybrid
+        ".pdf": PDFProcessor,
     }
     
-    # MIME type fallback mapping
     MIME_MAP = {
         "application/pdf": PDFProcessor,
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocxProcessor,
@@ -734,70 +706,20 @@ class DocumentProcessorFactory:
         "application/json": CodeProcessor,
     }
 
-    # Explicitly unsupported (binary) extensions to avoid unsafe parsing
     UNSUPPORTED_EXTENSIONS = {
-        ".pptx",
-        ".xlsx",
         ".numbers",
         ".key",
+        ".pages",
     }
-
-    TEXT_MIME_TYPES = {
-        "text/plain",
-        "text/markdown",
-        "text/csv",
-        "text/html",
-        "application/json",
-        "application/xml",
-        "application/xhtml+xml",
-        "application/x-yaml",
-    }
-
-    @staticmethod
-    def _looks_like_binary(content: bytes) -> bool:
-        if not content:
-            return False
-        if b"\x00" in content:
-            return True
-        sample = content[:2048]
-        if not sample:
-            return False
-        non_text = 0
-        for byte in sample:
-            if byte < 9 or (14 <= byte < 32) or byte == 127:
-                non_text += 1
-        return (non_text / len(sample)) > 0.30
     
     @classmethod
-    def process(
-        cls,
-        file_path: str = None,
-        filename: str = None,
-        content: bytes = None,
-        mime_type: str = None
-    ) -> ProcessedDocument:
-        """
-        Process a document using the appropriate processor.
+    def process(cls, file_path: str = None, filename: str = None, content: bytes = None, mime_type: str = None):
+        # NOTE: We DO NOT read content here to avoid memory spikes.
+        # Processors are responsible for reading if they need bytes, preferring file_path.
         
-        Args:
-            file_path: Path to file on disk (optional if content provided)
-            filename: Original filename for extension detection
-            content: Raw file bytes (optional if file_path provided)
-            mime_type: MIME type for fallback detection
-        
-        Returns:
-            ProcessedDocument with chunks and metadata
-        """
-        # Load content if file_path provided
-        if file_path and not content:
-            with open(file_path, "rb") as f:
-                content = f.read()
-        
-        if not content:
-            logger.error("[Factory] No content to process")
+        if not file_path and not content:
             return ProcessedDocument(chunks=[], file_type="unknown")
-        
-        # Determine processor
+
         filename = filename or (os.path.basename(file_path) if file_path else "unknown")
         ext = os.path.splitext(filename)[1].lower()
         
@@ -805,76 +727,58 @@ class DocumentProcessorFactory:
         
         if not processor_class and mime_type:
             processor_class = cls.MIME_MAP.get(mime_type)
-        
+
         if not processor_class:
             if ext in cls.UNSUPPORTED_EXTENSIONS:
-                logger.warning(f"[Factory] Unsupported file type {ext}, skipping parse")
-                return ProcessedDocument(
-                    chunks=[],
-                    file_type="unsupported",
-                    metadata={"unsupported_reason": "unsupported_extension"}
-                )
-            if mime_type and (mime_type.startswith("text/") or mime_type in cls.TEXT_MIME_TYPES):
-                processor_class = PlainTextProcessor
-            elif not cls._looks_like_binary(content):
-                processor_class = PlainTextProcessor
-            else:
-                logger.warning(f"[Factory] Binary content detected for {ext}, skipping parse")
-                return ProcessedDocument(
-                    chunks=[],
-                    file_type="unsupported",
-                    metadata={"unsupported_reason": "binary_content"}
-                )
+                logger.warning(f"[Factory] Unsupported file type {ext}")
+                return ProcessedDocument(chunks=[], file_type="unsupported", metadata={"unsupported_reason": "unsupported_extension"})
 
-        if processor_class is PlainTextProcessor and cls._looks_like_binary(content):
-            logger.warning(f"[Factory] Binary content detected for {ext}, skipping plain text parse")
-            return ProcessedDocument(
-                chunks=[],
-                file_type="unsupported",
-                metadata={"unsupported_reason": "binary_content"}
-            )
+            # Check binary (needs content read if no file_path, but be careful)
+            is_binary = False
+            if content:
+                is_binary = cls._looks_like_binary(content)
+            elif file_path:
+                # Read small chunk to check binary
+                with open(file_path, "rb") as f:
+                    head = f.read(1024)
+                is_binary = cls._looks_like_binary(head)
+
+            if is_binary:
+                return ProcessedDocument(chunks=[], file_type="binary_skip")
+
+            processor_class = PlainTextProcessor
         
-        # Process
+        # Double check binary for PlainText
+        if processor_class == PlainTextProcessor:
+             # Same check as above
+             is_binary = False
+             if content:
+                 is_binary = cls._looks_like_binary(content)
+             elif file_path:
+                 with open(file_path, "rb") as f:
+                     head = f.read(1024)
+                 is_binary = cls._looks_like_binary(head)
+
+             if is_binary:
+                 return ProcessedDocument(chunks=[], file_type="binary_skip")
+
         processor = processor_class()
-        result = processor.process(content, filename)
-        
-        logger.info(f"[Factory] Processed {filename}: {len(result.chunks)} chunks, type={result.file_type}")
-        return result
-    
+        return processor.process(content, filename, file_path)
+
+    @staticmethod
+    def _looks_like_binary(content: bytes) -> bool:
+        if not content: return False
+        if b"\x00" in content: return True
+        return False
+
     @classmethod
     def process_web_content(cls, html_content: str, url: str) -> ProcessedDocument:
-        """
-        Special method for processing web content (already converted to text/markdown).
-        
-        Args:
-            html_content: Text content extracted from web page
-            url: Source URL for metadata
-        
-        Returns:
-            ProcessedDocument with chunks
-        """
         processor = MarkdownProcessor()
-        content_bytes = html_content.encode("utf-8")
-        result = processor.process(content_bytes, url)
-        
-        # Add source URL to all chunk metadata
-        for chunk in result.chunks:
-            chunk.metadata["source_url"] = url
-        
-        return result
+        return processor.process(html_content.encode("utf-8"), url)
 
-
-# =============================================================================
-# LEGACY COMPATIBILITY - DocumentParser
-# =============================================================================
 
 class DocumentParser:
-    """
-    Legacy compatibility class.
-    
-    Maps to the old extract_text interface for backwards compatibility.
-    New code should use DocumentProcessorFactory directly.
-    """
+    """Legacy compatibility class."""
     
     SUPPORTED_FORMATS = {
         'application/pdf': 'pdf',
@@ -888,25 +792,14 @@ class DocumentParser:
     
     @staticmethod
     def extract_text(file_content: bytes, mime_type: str) -> str:
-        """Extract text from file bytes (legacy method)."""
-        result = DocumentProcessorFactory.process(
-            content=file_content,
-            filename="document",
-            mime_type=mime_type
-        )
-        # Combine all chunks into single text
+        result = DocumentProcessorFactory.process(content=file_content, filename="document", mime_type=mime_type)
         return "\n\n".join(chunk.content for chunk in result.chunks)
     
     @staticmethod
     def parse_file(file_path: str, filename: str = None) -> str:
-        """Parse file and return combined text (legacy method)."""
-        result = DocumentProcessorFactory.process(
-            file_path=file_path,
-            filename=filename or os.path.basename(file_path)
-        )
+        result = DocumentProcessorFactory.process(file_path=file_path, filename=filename or os.path.basename(file_path))
         return "\n\n".join(chunk.content for chunk in result.chunks)
     
     @staticmethod
     def is_supported(mime_type: str) -> bool:
-        """Check if MIME type is supported."""
         return mime_type.lower().strip() in DocumentParser.SUPPORTED_FORMATS
