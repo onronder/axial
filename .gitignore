@@ -31,3 +31,57 @@ frontend-new/.env.local
 
 # Node
 node_modules/
+
+# =============================================================================
+# SECURITY: Prevent accidental secret/credential leaks
+# =============================================================================
+
+# HTTP Archive files (may contain auth tokens, API keys)
+*.har
+
+# Debug files that may contain sensitive data
+debug_*.py
+debug_*.log
+
+# Playwright test artifacts (may contain session tokens)
+test-results/
+.playwright-artifacts*/
+playwright-report/
+
+# JWT/Auth tokens
+*.jwt
+*.token
+
+# Private keys
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Environment files with secrets
+.env.*
+!.env.example
+!.env.template
+
+# Temporary files that may contain sensitive data
+*.tmp
+*.temp
+tmpfile_*
+
+# Log files (may contain sensitive data)
+*.log
+logs/
+
+# Backup files
+*.backup
+*.bak
+*.orig
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# Credential files
+credentials.json
+service-account*.json
+*-credentials.json

@@ -35,6 +35,21 @@ COPY docker/start-with-clamav.sh /start-with-clamav.sh
 RUN chmod +x /start-with-clamav.sh
 
 # =============================================================================
+# SECURITY FIX: Create non-root user for running the application
+# =============================================================================
+# Running as root inside containers is a security risk - if the app is
+# compromised, the attacker gains root access to the container and potentially
+# the host system via container escapes.
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Change ownership of app directory to non-root user
+RUN chown -R appuser:appuser /app
+
+# ClamAV directories need special permissions (clamav user owns these)
+# The startup script runs clamav processes before dropping to appuser
+RUN chown -R appuser:appuser /var/run/clamav || true
+
+# =============================================================================
 # GHOST PROTOCOL: Production Default with ClamAV
 # =============================================================================
 # In production, ClamAV is REQUIRED for Zero-Retention compliance.
@@ -43,4 +58,7 @@ RUN chmod +x /start-with-clamav.sh
 # For lightweight development without ClamAV:
 #   docker run --entrypoint uvicorn ... main:app --host 0.0.0.0 --port 8000
 # Or set env var SKIP_CLAMAV=true in the startup script
+
+# Note: We use root to start ClamAV services, then the app runs as appuser
+# The startup script handles the privilege drop after ClamAV initialization
 CMD ["/start-with-clamav.sh"]

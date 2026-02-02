@@ -161,19 +161,8 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
         logger.warning(f"Could not resolve effective plan for {user_id}: {e}")
 
     # Calculate usage from documents table (accurate, not cached)
-    # Using raw SQL via RPC for aggregate functions
-    usage_query = f"""
-        SELECT 
-            COALESCE(COUNT(*), 0) as file_count,
-            COALESCE(SUM(file_size_bytes), 0) as total_bytes
-        FROM documents
-        WHERE user_id = '{str(user_id)}'
-          AND source_type != 'identity'
-          AND source_type != 'scope_identity'
-    """
-    
-    # Alternative: Use PostgREST count and iterate (less efficient but works)
-    # For MVP, we'll query the documents directly
+    # SECURITY FIX: Removed raw SQL query with string interpolation (SQL injection risk)
+    # Using Supabase ORM which handles parameterization safely
     docs_result = (
         supabase.table("documents")
         .select("id, file_size_bytes")

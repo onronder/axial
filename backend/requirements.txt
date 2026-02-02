@@ -1,8 +1,10 @@
 # --- CORE FRAMEWORK ---
-fastapi==0.109.2
-uvicorn==0.27.1
-sqlalchemy==2.0.27
-alembic==1.13.1
+# SECURITY FIX: Upgraded for starlette>=0.47.2 compatibility (CVE-2024-47874)
+fastapi>=0.115.0
+uvicorn>=0.30.0
+# UPDATED: Python 3.13 compatibility
+sqlalchemy>=2.0.30
+alembic>=1.13.1
 pydantic==2.12.5
 pydantic-settings==2.1.0
 
@@ -10,44 +12,51 @@ pydantic-settings==2.1.0
 # Pin httpx to avoid conflicts with supabase, postgrest, storage3, supafunc
 httpx[http2]>=0.26,<0.28
 supabase>=2.11.0,<3.0.0
-psycopg2-binary==2.9.9
+# UPDATED: psycopg3 for Python 3.13 compatibility
+psycopg[binary]>=3.1.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
+# SECURITY FIX: CVE-2024-53981 DoS vulnerability
+python-multipart>=0.0.18
 redis==5.0.1
 sqlmodel==0.0.16
 
 # --- AI & LANGCHAIN ECOSYSTEM ---
-# Pin older versions that work together without conflicts
+# SECURITY FIX: Multiple critical CVEs (SQL injection, SSRF, XXE, RCE)
+# Upgraded to 0.3.x+ for langchain-core>=0.3.81 compatibility
 openai>=1.12.0,<2.0.0
-langchain>=0.2.0,<0.3.0
-langchain-core>=0.2.0,<0.3.0
-langchain-openai>=0.1.0,<0.2.0
-langchain-community>=0.2.0,<0.3.0
-langchain-groq>=0.1.0,<0.2.0
+langchain>=0.3.0
+langchain-core>=0.3.81
+langchain-openai>=0.3.0
+langchain-community>=0.3.27
+langchain-groq>=0.3.0
 groq
 tiktoken>=0.5.2
 
 # Pin these to avoid langchain conflicts
-tenacity>=8.1.0,<9.0.0
-numpy>=1.24.0,<2.0.0
-packaging>=23.2,<25
+tenacity>=8.5.0
+numpy>=1.24.0
+packaging>=23.2
 
 # --- UTILITIES ---
 celery==5.3.6
-requests==2.31.0
+# SECURITY FIX: CVE-2024-35195, CVE-2024-47081 credential leaks
+requests>=2.32.4
 resend==0.7.0
 sentry-sdk[fastapi]>=2.35.0
 async-lru==2.0.4
 python-docx==1.1.0
-pypdf>=3.17.0
-PyMuPDF>=1.23.0
+# SECURITY FIX: Multiple CVEs (DoS, infinite loops, memory exhaustion)
+pypdf>=6.6.2
+# SECURITY FIX: AIKIDO-2025-10959 path traversal
+PyMuPDF>=1.26.7
 beautifulsoup4==4.12.3
 extract-msg>=0.45.0,<1.0.0
 openpyxl>=3.1.0,<4.0.0
 pandas>=2.0.0,<3.0.0
 python-pptx>=0.6.21,<1.0.0
-unstructured==0.11.0
+# SECURITY FIX: XXE and resource exposure vulnerabilities
+unstructured>=0.16.20
 pdfminer.six==20231228
 docx2txt==0.8
 markdown==3.5.2
@@ -74,7 +83,8 @@ botocore>=1.34.0,<2.0.0
 # --- OCR FALLBACK FOR SCANNED PDFs & IMAGES ---
 pytesseract>=0.3.10
 pdf2image>=1.16.0
-Pillow>=10.0.0
+# SECURITY FIX: CVE-2023-4863 (RCE via libwebp), CVE-2023-50447, CVE-2024-28219
+Pillow>=10.3.0
 
 # --- SERVER MONITORING ---
 psutil>=5.9.0
@@ -84,3 +94,6 @@ prometheus-client==0.20.0
 llama-parse>=0.5.0
 langchain-text-splitters>=0.2.0,<0.3.0
 nest_asyncio
+
+# --- SECURITY FIX: Starlette DoS via multipart forms ---
+starlette>=0.47.2

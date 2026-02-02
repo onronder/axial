@@ -58,10 +58,44 @@ export function getAllArticles(): HelpArticleMeta[] {
 }
 
 /**
+ * Sanitize slug to prevent path traversal attacks.
+ * Only allows alphanumeric characters, hyphens, and underscores.
+ * SECURITY FIX: Prevents directory traversal (e.g., "../../../etc/passwd")
+ */
+function sanitizeSlug(slug: string): string | null {
+    // Only allow alphanumeric, hyphens, and underscores
+    const sanitized = slug.replace(/[^a-zA-Z0-9_-]/g, '');
+    
+    // Reject if sanitization changed the slug (suspicious input)
+    if (!sanitized || sanitized !== slug) {
+        return null;
+    }
+    
+    return sanitized;
+}
+
+/**
  * Get a single article by slug with full content.
+ * SECURITY: Includes path traversal protection via slug sanitization.
  */
 export function getArticleBySlug(slug: string): HelpArticle | null {
-    const fullPath = path.join(helpDirectory, `${slug}.md`);
+    // SECURITY FIX: Sanitize slug to prevent path traversal
+    const sanitizedSlug = sanitizeSlug(slug);
+    if (!sanitizedSlug) {
+        return null;
+    }
+
+    const fullPath = path.join(helpDirectory, `${sanitizedSlug}.md`);
+    
+    // SECURITY FIX: Verify resolved path stays within allowed directory
+    // Note: path.resolve and path.sep may be undefined in test environments
+    if (typeof path.resolve === 'function' && path.sep) {
+        const resolvedPath = path.resolve(fullPath);
+        const resolvedHelpDir = path.resolve(helpDirectory);
+        if (resolvedPath && resolvedHelpDir && !resolvedPath.startsWith(resolvedHelpDir + path.sep)) {
+            return null;
+        }
+    }
 
     if (!fs.existsSync(fullPath)) {
         return null;
@@ -71,8 +105,8 @@ export function getArticleBySlug(slug: string): HelpArticle | null {
     const { data, content } = matter(fileContents);
 
     return {
-        slug,
-        title: data.title || slug,
+        slug: sanitizedSlug,
+        title: data.title || sanitizedSlug,
         category: data.category || 'General',
         order: data.order || 999,
         content,
