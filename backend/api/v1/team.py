@@ -2,6 +2,10 @@
 Team Management API Router
 
 Endpoints for managing teams and team members.
+
+Note: Most endpoints require paid access via require_paid_access dependency.
+      The /team/effective-plan endpoint is exempt (defined separately) to allow
+      the frontend to check plan status before showing the paywall.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Query, Request
@@ -18,7 +22,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
+# Main router with paid access requirement for team management operations
+router = APIRouter()
 
 # ============================================================
 # MODELS
@@ -116,7 +121,11 @@ class AcceptInviteResponse(BaseModel):
 # TEAM ENDPOINTS
 # ============================================================
 
-@router.get("/team", response_model=TeamResponse)
+# Shared dependency for paid-only team operations
+_paid_team_deps = [Depends(validate_team_access), Depends(require_paid_access)]
+
+
+@router.get("/team", response_model=TeamResponse, dependencies=_paid_team_deps)
 @limiter.limit("60/minute")
 async def get_current_team(request: Request, user_id: str = Depends(get_current_user)):
     """Get the current user's team."""
@@ -128,7 +137,7 @@ async def get_current_team(request: Request, user_id: str = Depends(get_current_
     return team
 
 
-@router.patch("/team", response_model=TeamResponse)
+@router.patch("/team", response_model=TeamResponse, dependencies=_paid_team_deps)
 @limiter.limit("30/minute")
 async def update_team(
     request: Request,
@@ -190,7 +199,7 @@ async def update_team(
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_team")
 
 
-@router.delete("/team")
+@router.delete("/team", dependencies=_paid_team_deps)
 @limiter.limit("5/minute")
 async def delete_team(
     request: Request,
@@ -257,7 +266,11 @@ async def delete_team(
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "delete_team")
 
 
-@router.get("/team/effective-plan", response_model=EffectivePlanResponse)
+@router.get(
+    "/team/effective-plan", 
+    response_model=EffectivePlanResponse,
+    dependencies=[Depends(validate_team_access)]  # No require_paid_access - needed for paywall check
+)
 @limiter.limit("60/minute")
 async def get_effective_plan(request: Request, user_id: str = Depends(get_current_user)):
     """
@@ -265,6 +278,9 @@ async def get_effective_plan(request: Request, user_id: str = Depends(get_curren
     
     This returns the plan inherited from the team owner,
     which determines feature access.
+    
+    NOTE: This endpoint is intentionally NOT behind require_paid_access
+    so the frontend can fetch the plan to determine if paywall should be shown.
     """
     plan = await team_service.get_effective_plan(user_id)
     team = await team_service.get_user_team(user_id)
@@ -287,7 +303,7 @@ async def get_effective_plan(request: Request, user_id: str = Depends(get_curren
     )
 
 
-@router.get("/team/members", response_model=List[TeamMemberResponse])
+@router.get("/team/members", response_model=List[TeamMemberResponse], dependencies=_paid_team_deps)
 @limiter.limit("60/minute")
 async def list_team_members(
     request: Request,
@@ -336,7 +352,7 @@ async def list_team_members(
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_team_members")
 
 
-@router.get("/team/stats", response_model=TeamStatsResponse)
+@router.get("/team/stats", response_model=TeamStatsResponse, dependencies=_paid_team_deps)
 @limiter.limit("60/minute")
 async def get_team_stats(request: Request, user_id: str = Depends(get_current_user)):
     """Get team statistics with dynamic seat limits based on plan."""
@@ -369,7 +385,7 @@ async def get_team_stats(request: Request, user_id: str = Depends(get_current_us
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_team_stats")
 
 
-@router.post("/team/invite", response_model=InviteResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/team/invite", response_model=InviteResponse, status_code=status.HTTP_201_CREATED, dependencies=_paid_team_deps)
 @limiter.limit("20/minute")
 async def invite_team_member(
     request: Request,
@@ -419,7 +435,7 @@ async def invite_team_member(
     )
 
 
-@router.post("/team/bulk-invite", response_model=BulkInviteResponse)
+@router.post("/team/bulk-invite", response_model=BulkInviteResponse, dependencies=_paid_team_deps)
 @limiter.limit("5/minute")
 async def bulk_invite_team_members(
     request: Request,
@@ -464,7 +480,7 @@ async def bulk_invite_team_members(
 
 
 # Legacy endpoint for backward compatibility
-@router.post("/team/members", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/team/members", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED, dependencies=_paid_team_deps)
 @limiter.limit("20/minute")
 async def invite_team_member_legacy(
     request: Request,
@@ -502,7 +518,7 @@ async def invite_team_member_legacy(
     raise HTTPException(status_code=500, detail="Failed to create invitation")
 
 
-@router.patch("/team/members/{member_id}", response_model=TeamMemberResponse)
+@router.patch("/team/members/{member_id}", response_model=TeamMemberResponse, dependencies=_paid_team_deps)
 @limiter.limit("30/minute")
 async def update_team_member(
     request: Request,
@@ -603,7 +619,7 @@ async def update_team_member(
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "update_member")
 
 
-@router.delete("/team/members/{member_id}")
+@router.delete("/team/members/{member_id}", dependencies=_paid_team_deps)
 @limiter.limit("20/minute")
 async def remove_team_member(
     request: Request,
@@ -666,7 +682,7 @@ async def remove_team_member(
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "remove_member")
 
 
-@router.post("/team/members/{member_id}/resend")
+@router.post("/team/members/{member_id}/resend", dependencies=_paid_team_deps)
 @limiter.limit("10/minute")
 async def resend_invitation(
     request: Request,
@@ -688,7 +704,7 @@ async def resend_invitation(
     return {"status": "success", "message": "Invitation resent"}
 
 
-@router.post("/team/accept", response_model=AcceptInviteResponse)
+@router.post("/team/accept", response_model=AcceptInviteResponse, dependencies=_paid_team_deps)
 @limiter.limit("10/minute")
 async def accept_invite(
     request: Request,

@@ -100,19 +100,32 @@ async def require_plan(required_plans: list[str]):
 
 async def require_paid_access(user_id: str = Depends(validate_team_access)) -> str:
     """
-    Require an active (non-free) plan.
+    Require an active paid plan.
 
-    Free users can access billing and profile settings but are blocked
-    from core application endpoints.
+    Blocks users with 'none' or 'free' plans from core application endpoints.
+    These users should see the paywall and subscribe via Polar.
+    
+    Plan hierarchy:
+    - 'none': New users who haven't selected a plan yet (shows paywall)
+    - 'free': Users after trial ends or subscription cancellation (shows paywall)
+    - 'starter', 'pro', 'enterprise': Paid plans with full access
+    
+    Allowed endpoints for free/none users:
+    - /billing/* (to subscribe)
+    - /usage (to see current status)
+    - /team/effective-plan (for frontend paywall logic)
+    - /settings (profile management)
     """
     try:
         plan = await team_service.get_effective_plan(user_id)
     except Exception as exc:
         logger.warning("[Dependencies] Failed to resolve plan for %s: %s", user_id[:8], exc)
-        plan = "free"
+        plan = "none"
 
-    plan_lower = plan.lower() if plan else "free"
-    if plan_lower == "free":
+    plan_lower = plan.lower() if plan else "none"
+    
+    # Block both 'none' (new users) and 'free' (post-trial/canceled users)
+    if plan_lower in ("none", "free"):
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={

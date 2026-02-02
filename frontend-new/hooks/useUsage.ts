@@ -3,12 +3,18 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { getUsageStats, getEffectivePlan } from '@/lib/api';
 import type { UserUsage, EffectivePlan, PlanType } from '@/types';
+import { AxiosError } from 'axios';
 
 /**
  * Usage Context - Singleton pattern for usage data
  * 
  * This prevents duplicate API calls when multiple components use useUsage().
  * Data is fetched once and shared across all consumers.
+ * 
+ * Plan Flow:
+ * - 'none': New user who hasn't selected a plan (shows paywall)
+ * - 'free': User after trial/cancellation (shows paywall)
+ * - 'starter', 'pro', 'enterprise': Paid plans with full access
  */
 
 interface UsageContextValue {
@@ -40,6 +46,20 @@ interface UsageProviderProps {
     children: ReactNode;
 }
 
+/**
+ * Extract plan from 402 error response
+ * Backend returns: { error: "SUBSCRIPTION_REQUIRED", current_plan: "none"|"free", message: "..." }
+ */
+function extractPlanFrom402Error(error: unknown): PlanType | null {
+    if (error instanceof AxiosError && error.response?.status === 402) {
+        const detail = error.response.data?.detail;
+        if (detail?.current_plan) {
+            return detail.current_plan as PlanType;
+        }
+    }
+    return null;
+}
+
 export function UsageProvider({ children }: UsageProviderProps) {
     const [usage, setUsage] = useState<UserUsage | null>(null);
     const [effectivePlan, setEffectivePlan] = useState<EffectivePlan | null>(null);
@@ -63,17 +83,36 @@ export function UsageProvider({ children }: UsageProviderProps) {
         setError(null);
 
         try {
-            const [usageData, planData] = await Promise.all([
-                getUsageStats(),
-                getEffectivePlan().catch(() => null)
-            ]);
-
-            if (usageData) setUsage(usageData);
+            // Fetch effective plan first - this endpoint is NOT behind paywall
+            // so it will always return the plan even for free/none users
+            const planData = await getEffectivePlan();
             if (planData) setEffectivePlan(planData);
+            
+            // Try to fetch usage - this may fail with 402 for free/none users
+            try {
+                const usageData = await getUsageStats();
+                if (usageData) setUsage(usageData);
+            } catch (usageError: unknown) {
+                // 402 is expected for free/none users - don't treat as error
+                // The plan data we already have is sufficient for PaywallGuard
+                if (usageError instanceof AxiosError && usageError.response?.status === 402) {
+                    console.log('[useUsage] Usage endpoint returned 402 (expected for free/none plan)');
+                } else {
+                    throw usageError;
+                }
+            }
+            
             lastFetchTime.current = Date.now();
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Failed to fetch usage';
-            setError(message);
+            // If even effective-plan fails, extract plan from 402 error if available
+            const planFromError = extractPlanFrom402Error(err);
+            if (planFromError) {
+                // Set a minimal effective plan so PaywallGuard can show the paywall
+                setEffectivePlan({ plan: planFromError, inherited: false });
+            } else {
+                const message = err instanceof Error ? err.message : 'Failed to fetch usage';
+                setError(message);
+            }
         } finally {
             setIsLoading(false);
             fetchInProgress.current = false;

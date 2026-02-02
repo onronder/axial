@@ -52,7 +52,10 @@ class TeamService:
     """
 
     # Known valid plan codes - keep in sync with PRICING_PLANS.md
-    VALID_PLANS = frozenset({"free", "starter", "pro", "enterprise"})
+    # 'none' = new user who hasn't selected a plan yet (shows paywall)
+    # 'free' = user after trial ends or cancels subscription (shows paywall)
+    # 'starter', 'pro', 'enterprise' = paid plans with full access
+    VALID_PLANS = frozenset({"none", "free", "starter", "pro", "enterprise"})
 
     @staticmethod
     def _normalize_plan(plan: Optional[str]) -> str:
