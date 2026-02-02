@@ -42,7 +42,8 @@ packaging>=23.2
 celery==5.3.6
 # SECURITY FIX: CVE-2024-35195, CVE-2024-47081 credential leaks
 requests>=2.32.4
-resend==0.7.0
+# UPDATED: Upgraded for requests>=2.32.4 compatibility
+resend>=2.0.0
 sentry-sdk[fastapi]>=2.35.0
 async-lru==2.0.4
 python-docx==1.1.0
