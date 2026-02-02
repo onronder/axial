@@ -108,7 +108,7 @@ export function UsageProvider({ children }: UsageProviderProps) {
             const planFromError = extractPlanFrom402Error(err);
             if (planFromError) {
                 // Set a minimal effective plan so PaywallGuard can show the paywall
-                setEffectivePlan({ plan: planFromError, inherited: false });
+                setEffectivePlan({ plan: planFromError, inherited: false, team_id: null, team_name: null });
             } else {
                 const message = err instanceof Error ? err.message : 'Failed to fetch usage';
                 setError(message);
