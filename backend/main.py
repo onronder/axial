@@ -20,6 +20,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from core.db import check_connection, get_supabase
 from core.config import settings
+from core.shutdown import register_cleanup_handlers
 
 # Configure logging
 logging.basicConfig(
@@ -87,7 +88,11 @@ from api.v1.documents import router as documents_router
 async def lifespan(app: FastAPI):
     """Application lifecycle management."""
     logger.info("🚀 Starting Axio Hub API...")
-    
+
+    # GAP 2 FIX: Register cleanup handlers for graceful shutdown
+    # This must be called early to set up SIGTERM/SIGINT handlers
+    register_cleanup_handlers()
+
     # Startup: verify database connection
     try:
         await check_connection()
@@ -95,9 +100,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"❌ Database connection failed: {e}")
         # In production, you might want to raise here
-    
+
     yield
-    
+
     # Shutdown: cleanup
     logger.info("👋 Shutting down Axio Hub API...")
 

@@ -2,11 +2,15 @@
 Database Connection Management
 
 Provides Supabase client with connection pooling and optimization.
+
+THREAD SAFETY: Uses threading.Lock for safe singleton initialization
+across concurrent requests (fix for shutdown cleanup).
 """
 
 import logging
 import asyncio
 import os
+import threading
 from supabase import create_client, Client, ClientOptions
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -14,8 +18,9 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ✅ Singleton pattern for connection pooling
+# Thread-safe singleton pattern for connection pooling
 _supabase_client: Client | None = None
+_supabase_lock = threading.Lock()
 SessionLocal = None
 IngestionSessionLocal = None
 
@@ -100,46 +105,58 @@ def _build_client_options() -> ClientOptions:
 def get_supabase() -> Client:
     """
     Get Supabase client with connection pooling.
-    
+
     PERFORMANCE OPTIMIZATION:
     - Singleton pattern ensures we reuse the same client instance
     - Connection pooling configured for production load
     - Pre-ping enabled to verify connection health
-    
+
+    THREAD SAFETY: Uses double-checked locking pattern to prevent
+    race conditions during concurrent initialization.
+
     Returns:
         Supabase client instance
     """
     global _supabase_client
-    
-    if _supabase_client is None:
-        logger.info("🔌 Initializing Supabase client with connection pool")
-        
-        try:
-            _supabase_client = create_client(
-                supabase_url=settings.SUPABASE_URL,
-                supabase_key=settings.SUPABASE_SECRET_KEY,
-                options=_build_client_options()
-            )
-            
-            logger.info("✅ Supabase client initialized successfully")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Supabase client: {e}")
-            raise
-    
+
+    # Fast path: already initialized
+    if _supabase_client is not None:
+        return _supabase_client
+
+    # Slow path: acquire lock and initialize
+    with _supabase_lock:
+        # Double-check after acquiring lock
+        if _supabase_client is None:
+            logger.info("🔌 Initializing Supabase client with connection pool")
+
+            try:
+                _supabase_client = create_client(
+                    supabase_url=settings.SUPABASE_URL,
+                    supabase_key=settings.SUPABASE_SECRET_KEY,
+                    options=_build_client_options()
+                )
+
+                logger.info("✅ Supabase client initialized successfully")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Supabase client: {e}")
+                raise
+
     return _supabase_client
 
 def close_supabase():
     """
     Close Supabase client on shutdown.
-    
+
     Call this during application shutdown to clean up resources.
+    Thread-safe via lock.
     """
     global _supabase_client
-    if _supabase_client:
-        # Cleanup if needed (Supabase client doesn't have explicit close)
-        _supabase_client = None
-        logger.info("🔌 Supabase client closed")
+    with _supabase_lock:
+        if _supabase_client:
+            # Cleanup if needed (Supabase client doesn't have explicit close)
+            _supabase_client = None
+            logger.info("🔌 Supabase client closed")
 
 async def check_connection() -> bool:
     """

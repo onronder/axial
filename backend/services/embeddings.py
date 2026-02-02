@@ -2,11 +2,16 @@
 Embedding Service
 
 Provides centralized embedding generation using OpenAI's text-embedding-3-small model.
+
+THREAD SAFETY FIX (Issue #14): The global _embeddings_model was initialized without
+a lock, causing potential double-initialization under concurrent startup.
+Now uses threading.Lock for thread-safe lazy initialization.
 """
 
 import logging
 import random
 import time
+import threading
 from typing import List, Optional, Sequence
 from langchain_openai import OpenAIEmbeddings
 from core.config import settings
@@ -90,27 +95,48 @@ class _TpmRegulator:
 
 _TPM_REGULATOR = _TpmRegulator()
 
-# Singleton embeddings model instance
+# Thread-safe singleton embeddings model instance (Issue #14)
 _embeddings_model: Optional[OpenAIEmbeddings] = None
+_embeddings_lock = threading.Lock()
 
 
 def get_embeddings_model() -> OpenAIEmbeddings:
     """
     Get or create the singleton OpenAI embeddings model.
     Uses text-embedding-3-small for cost efficiency.
+
+    THREAD SAFETY FIX (Issue #14): Uses double-checked locking pattern
+    to prevent race condition during concurrent initialization.
     """
     global _embeddings_model
-    
-    if _embeddings_model is None:
-        _embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=settings.OPENAI_API_KEY,
-            request_timeout=60,
-            max_retries=2
-        )
-        logger.info("📊 [Embeddings] Initialized OpenAI embeddings model (text-embedding-3-small)")
-    
+
+    # Fast path: already initialized
+    if _embeddings_model is not None:
+        return _embeddings_model
+
+    # Slow path: acquire lock and initialize
+    with _embeddings_lock:
+        # Double-check after acquiring lock
+        if _embeddings_model is None:
+            _embeddings_model = OpenAIEmbeddings(
+                model="text-embedding-3-small",
+                api_key=settings.OPENAI_API_KEY,
+                request_timeout=60,
+                max_retries=2
+            )
+            logger.info("📊 [Embeddings] Initialized OpenAI embeddings model (text-embedding-3-small)")
+
     return _embeddings_model
+
+
+def reset_embeddings_model() -> None:
+    """
+    Reset the embeddings model singleton (useful for testing or config changes).
+    """
+    global _embeddings_model
+    with _embeddings_lock:
+        _embeddings_model = None
+        logger.info("📊 [Embeddings] Reset embeddings model singleton")
 
 
 @with_retry_sync(max_attempts=3, min_wait=2, max_wait=10, use_retryable=True, jitter=True)

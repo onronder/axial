@@ -23,7 +23,13 @@ from services.llm_factory import LLMFactory
 from services.guardrails import guardrail_service
 from services.router import llm_router, ComplexityEvaluator, ModelSelection
 from services.team_service import team_service
-from services.usage import check_llm_quota, record_llm_usage
+from services.usage import (
+    check_llm_quota,
+    record_llm_usage,
+    reserve_llm_tokens,
+    release_reserved_tokens,
+    check_per_request_token_limit,
+)
 from services.scope_analysis import (
     analyze_scope_distribution,
     get_scope_candidates_for_clarification,
@@ -37,10 +43,24 @@ from langchain_core.output_parsers import StrOutputParser
 from datetime import datetime, timezone
 import logging
 import json
+import re
 import sentry_sdk
 import asyncio
 
 logger = logging.getLogger(__name__)
+
+# Global semaphore to limit concurrent LLM calls (Issue #13)
+_llm_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _get_llm_semaphore() -> asyncio.Semaphore:
+    """Get or create global LLM concurrency semaphore (lazy init for async context)."""
+    global _llm_semaphore
+    if _llm_semaphore is None:
+        max_concurrent = getattr(settings, 'LLM_MAX_CONCURRENT_REQUESTS', 20)
+        _llm_semaphore = asyncio.Semaphore(max_concurrent)
+        logger.info(f"🔒 [Chat] Initialized LLM semaphore with max_concurrent={max_concurrent}")
+    return _llm_semaphore
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 # ============================================================
@@ -507,31 +527,37 @@ def condense_question(query: str, history: List[Dict[str, str]]) -> str:
     """
     If chat history exists, rewrite the query as a standalone question.
     Uses GPT-4o-mini for speed and cost efficiency.
+
+    GAP 6 FIX: Uses LLMFactory instead of direct ChatOpenAI() to leverage
+    client pooling and consistent timeout configuration.
     """
     if not history or all(not (msg.get("content") or "").strip() for msg in history):
         return query
-    
+
     # Format history for the prompt
     history_text = ""
     for msg in history[-6:]:  # Last 6 messages max (3 turns)
         role = msg.get("role", "user")
         content = msg.get("content", "")[:500]  # Truncate long messages
         history_text += f"{role.upper()}: {content}\n"
-    
+
     try:
-        llm = ChatOpenAI(
-            model="gpt-4o-mini",  # Fast and cheap for condensing
+        # GAP 6 FIX: Use LLMFactory for pooled connections and timeout config
+        llm, _ = LLMFactory.get_model(
+            provider="openai",
+            model_name="gpt-4o-mini",
             temperature=0,
-            api_key=settings.OPENAI_API_KEY
+            streaming=False,
+            allow_override=True,
         )
-        
+
         prompt = ChatPromptTemplate.from_template(CONDENSE_PROMPT)
         chain = prompt | llm | StrOutputParser()
-        
+
         standalone = chain.invoke({"history": history_text, "question": query})
         logger.info(f"🔄 [Chat] Condensed: '{query[:50]}...' → '{standalone[:50]}...'")
         return standalone.strip()
-        
+
     except Exception as e:
         logger.warning(f"⚠️ [Chat] Condense failed, using original query: {e}")
         return query
@@ -757,41 +783,92 @@ def fetch_scope_candidates_with_summaries(
 def build_scope_identity_context(scope_identity: Dict[str, Any]) -> str:
     """
     Build a human-readable scope identity context for system prompt injection.
+
+    SECURITY FIX (Issue #10): All user-controlled content is sanitized to prevent
+    prompt injection attacks via crafted scope names/descriptions.
     """
     if not scope_identity:
         return "(No scope identity available)"
-    
-    scope_id = scope_identity.get("id", "Unknown")
-    scope_type = scope_identity.get("type", "unknown")
-    summary = scope_identity.get("summary", "")
-    attributes = scope_identity.get("attributes", {})
-    
-    # Extract key attributes
+
+    # Sanitize all user-controlled fields before injection
+    scope_id = _sanitize_prompt_content(str(scope_identity.get("id", "Unknown")), max_length=200)
+    scope_type = _sanitize_prompt_content(str(scope_identity.get("type", "unknown")), max_length=50)
+    summary = _sanitize_prompt_content(str(scope_identity.get("summary", "")), max_length=1000)
+    attributes = scope_identity.get("attributes", {}) or {}
+
+    # Extract key attributes (sanitize to prevent injection via metadata)
     file_count = attributes.get("file_count", "unknown")
+    if not isinstance(file_count, (int, str)) or (isinstance(file_count, str) and not file_count.isdigit()):
+        file_count = "unknown"
+
     languages = attributes.get("languages", [])
-    
+    if isinstance(languages, list):
+        # Sanitize each language/extension entry
+        languages = [_sanitize_prompt_content(str(lang), max_length=30) for lang in languages[:10]]
+    else:
+        languages = []
+
     context_parts = [
         f"Scope: {scope_id}",
         f"Type: {scope_type}",
     ]
-    
+
     if file_count != "unknown":
         context_parts.append(f"Files: {file_count}")
-    
+
     if languages:
-        context_parts.append(f"Languages/Extensions: {', '.join(languages[:10])}")
-    
+        context_parts.append(f"Languages/Extensions: {', '.join(languages)}")
+
     if summary:
-        # Truncate very long summaries
-        context_parts.append(f"\n{summary[:1000]}")
-    
+        context_parts.append(f"\n{summary}")
+
     return "\n".join(context_parts)
+
+
+def _sanitize_prompt_content(text: str, max_length: int = 5000) -> str:
+    """
+    Sanitize user-controlled content before injecting into system prompts.
+
+    Prevents prompt injection attacks by:
+    1. Removing prompt delimiter sequences
+    2. Escaping special formatting characters
+    3. Truncating to prevent context flooding
+    4. Removing control characters
+
+    Issue #10: Scope metadata was injected without sanitization.
+    """
+    if not text:
+        return ""
+
+    # Remove control characters (except newlines and tabs)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+
+    # Remove common prompt injection patterns
+    # These patterns attempt to break out of the context or inject new instructions
+    injection_patterns = [
+        r'```\s*(system|user|assistant)',  # Code block role injection
+        r'<\|?(system|user|assistant|im_start|im_end)\|?>',  # ChatML tags
+        r'\[INST\]|\[/INST\]',  # Llama instruction markers
+        r'###\s*(System|User|Assistant|Instruction)',  # Markdown role headers
+        r'Human:|Assistant:|System:',  # Role prefixes
+        r'<\|endoftext\|>',  # Token boundaries
+        r'IGNORE\s+(PREVIOUS|ALL)\s+INSTRUCTIONS',  # Explicit injection attempts
+    ]
+
+    for pattern in injection_patterns:
+        text = re.sub(pattern, '[filtered]', text, flags=re.IGNORECASE)
+
+    # Truncate to max length
+    if len(text) > max_length:
+        text = text[:max_length] + "... [truncated]"
+
+    return text.strip()
 
 
 def extract_scope_name(scope_id: str) -> str:
     """
     Extract a human-readable name from a scope URI.
-    
+
     Examples:
     - github://org/repo@main -> repo
     - s3://bucket/prefix/ -> bucket/prefix
@@ -1366,9 +1443,24 @@ async def chat_endpoint(
         else settings.SECONDARY_MODEL_NAME
     )
 
-    llm_candidates = [ModelSelection(provider=primary_provider, model=primary_model_name, reason="primary")]
-    if primary_provider == "openai":
-        llm_candidates.extend(llm_router.get_fallback_models())
+    # Build candidate list with fallbacks for resilience (Issue #5)
+    # If primary is OpenAI and circuit is open, insert fallbacks FIRST
+    llm_candidates = []
+    circuit_open = primary_provider == "openai" and not llm_router.is_provider_available("openai")
+
+    if circuit_open:
+        # Circuit breaker is open - try fallbacks first, then OpenAI as last resort
+        logger.warning("⚡ [Chat] OpenAI circuit open, prioritizing fallback providers")
+        fallbacks = llm_router.get_fallback_models()
+        if fallbacks:
+            llm_candidates.extend(fallbacks)
+        # Still include OpenAI as last resort (circuit might close)
+        llm_candidates.append(ModelSelection(provider=primary_provider, model=primary_model_name, reason="primary_fallback"))
+    else:
+        # Normal operation: primary first, then fallbacks
+        llm_candidates.append(ModelSelection(provider=primary_provider, model=primary_model_name, reason="primary"))
+        if primary_provider == "openai":
+            llm_candidates.extend(llm_router.get_fallback_models())
 
     candidate_models = [c.model for c in llm_candidates if c.model]
     if candidate_models:
@@ -1428,11 +1520,34 @@ async def chat_endpoint(
         for provider in provider_set
     )
 
+    # ========== STEP 12.1: PER-REQUEST TOKEN LIMIT CHECK (Issue #9) ==========
     try:
-        await check_llm_quota(
+        check_per_request_token_limit(estimated_input_tokens)
+    except QuotaExceededError as exc:
+        raise_http_error(
+            status.HTTP_400_BAD_REQUEST,
+            "REQUEST_TOO_LARGE",
+            str(exc),
+            exc.details if isinstance(exc, QuotaExceededError) else None,
+        )
+
+    # ========== STEP 12.2: ATOMIC TOKEN RESERVATION (Issue #3) ==========
+    # Reserve tokens BEFORE making LLM call to prevent race condition
+    # where concurrent requests both pass quota check then exceed budget
+    estimated_total_tokens = estimated_input_tokens + 4000  # Add buffer for response
+    token_reservation = None
+
+    try:
+        token_reservation = await reserve_llm_tokens(
             organization_id,
             user_plan,
-            required_tokens=estimated_input_tokens,
+            estimated_total_tokens,
+        )
+        logger.debug(
+            "🎫 [Chat] Reserved %s tokens for org=%s (remaining=%s)",
+            token_reservation.get("reserved_tokens"),
+            organization_id,
+            token_reservation.get("remaining_balance"),
         )
     except QuotaExceededError as exc:
         raise_http_error(
@@ -1441,7 +1556,7 @@ async def chat_endpoint(
             "LLM token quota exceeded.",
             exc.details if isinstance(exc, QuotaExceededError) else None,
         )
-    
+
     # ========== STEP 13: GENERATION ==========
     if payload.stream:
         # Wrap the stream to include status events for RAG pipeline visualization
@@ -1514,6 +1629,7 @@ async def chat_endpoint(
                 scope_context,
                 organization_id,
                 user_plan,
+                estimated_total_tokens,  # GAP 1 FIX: Pass for token release
             ):
                 yield event
         
@@ -1522,118 +1638,211 @@ async def chat_endpoint(
             media_type="text/event-stream"
         )
     else:
-        answer = None
-        used_provider = primary_provider
-        used_model = primary_model_name
-        used_prompt_tokens = estimated_input_tokens
-        last_exc: Optional[Exception] = None
+        # GAP 3 FIX: Acquire semaphore to limit concurrent LLM calls (non-streaming path)
+        semaphore = _get_llm_semaphore()
 
-        for idx, candidate in enumerate(llm_candidates):
-            if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
-                logger.warning("⚡ [Chat] OpenAI circuit open, skipping primary")
-                continue
+        async with semaphore:
+            answer = None
+            used_provider = primary_provider
+            used_model = primary_model_name
+            used_prompt_tokens = estimated_input_tokens
+            last_exc: Optional[Exception] = None
 
-            current_llm = llm
-            if idx > 0:
-                try:
-                    llm_result = LLMFactory.get_model(
-                        provider=candidate.provider,
-                        model_name=candidate.model,
-                        user_plan=user_plan,
-                        requested_tier=actual_tier,
-                        temperature=0.1,
-                        streaming=False,
-                        allow_override=True,
-                    )
-                    current_llm = llm_result[0] if isinstance(llm_result, tuple) else llm_result
-                except Exception as e:
-                    last_exc = e
-                    if _should_failover(e):
-                        logger.warning("⚠️ [Chat] Fallback init failed for %s/%s: %s", candidate.provider, candidate.model, e)
-                        continue
-                    raise
-
-            candidate_prompt, candidate_vars, system_prompt = _prompt_bundle_for(candidate.provider)
-            chain = candidate_prompt | current_llm | StrOutputParser()
-
-            try:
-                if candidate.provider == "openai":
-                    with openai_breaker:
-                        answer = chain.invoke(candidate_vars)
-                else:
-                    answer = chain.invoke(candidate_vars)
-                used_provider = candidate.provider
-                used_model = candidate.model
-                used_prompt_tokens = _estimate_prompt_tokens(system_prompt, candidate_vars)
-                break
-            except Exception as e:
-                last_exc = e
-                if _should_failover(e):
-                    logger.warning("⚠️ [Chat] LLM failover from %s/%s: %s", candidate.provider, candidate.model, e)
+            for idx, candidate in enumerate(llm_candidates):
+                if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
+                    logger.warning("⚡ [Chat] OpenAI circuit open, skipping primary")
                     continue
-                logger.error("ERROR: LLM Generation failed: %s", e)
-                sentry_sdk.capture_exception(e)
-                if _is_timeout_error(e):
+
+                current_llm = llm
+                if idx > 0:
+                    try:
+                        llm_result = LLMFactory.get_model(
+                            provider=candidate.provider,
+                            model_name=candidate.model,
+                            user_plan=user_plan,
+                            requested_tier=actual_tier,
+                            temperature=0.1,
+                            streaming=False,
+                            allow_override=True,
+                        )
+                        current_llm = llm_result[0] if isinstance(llm_result, tuple) else llm_result
+                    except Exception as e:
+                        last_exc = e
+                        if _should_failover(e):
+                            logger.warning("⚠️ [Chat] Fallback init failed for %s/%s: %s", candidate.provider, candidate.model, e)
+                            continue
+                        # GAP 1 FIX: Release reserved tokens on error before raising
+                        await release_reserved_tokens(organization_id, estimated_total_tokens)
+                        raise
+
+                candidate_prompt, candidate_vars, system_prompt = _prompt_bundle_for(candidate.provider)
+                chain = candidate_prompt | current_llm | StrOutputParser()
+
+                try:
+                    # GAP 4 FIX: Wrap chain.invoke() with timeout to prevent indefinite hangs
+                    if candidate.provider == "openai":
+                        with openai_breaker:
+                            answer = await asyncio.wait_for(
+                                asyncio.to_thread(chain.invoke, candidate_vars),
+                                timeout=settings.LLM_REQUEST_TIMEOUT
+                            )
+                    else:
+                        answer = await asyncio.wait_for(
+                            asyncio.to_thread(chain.invoke, candidate_vars),
+                            timeout=settings.LLM_REQUEST_TIMEOUT
+                        )
+                    used_provider = candidate.provider
+                    used_model = candidate.model
+                    used_prompt_tokens = _estimate_prompt_tokens(system_prompt, candidate_vars)
+                    break
+                except asyncio.TimeoutError:
+                    last_exc = asyncio.TimeoutError(f"LLM request timed out after {settings.LLM_REQUEST_TIMEOUT}s")
+                    if _should_failover(last_exc):
+                        logger.warning("⚠️ [Chat] LLM timeout, trying fallback from %s/%s", candidate.provider, candidate.model)
+                        continue
+                    logger.error("ERROR: LLM timeout: %s", last_exc)
+                    sentry_sdk.capture_exception(last_exc)
+                    # GAP 1 FIX: Release reserved tokens on timeout
+                    await release_reserved_tokens(organization_id, estimated_total_tokens)
                     raise_http_error(
                         status.HTTP_504_GATEWAY_TIMEOUT,
                         "LLM_TIMEOUT",
                         "The model took too long to respond. Please try again.",
+                        {"reason": str(last_exc)[:500]},
+                    )
+                except Exception as e:
+                    last_exc = e
+                    if _should_failover(e):
+                        logger.warning("⚠️ [Chat] LLM failover from %s/%s: %s", candidate.provider, candidate.model, e)
+                        continue
+                    logger.error("ERROR: LLM Generation failed: %s", e)
+                    sentry_sdk.capture_exception(e)
+                    # GAP 1 FIX: Release reserved tokens on error
+                    await release_reserved_tokens(organization_id, estimated_total_tokens)
+                    if _is_timeout_error(e):
+                        raise_http_error(
+                            status.HTTP_504_GATEWAY_TIMEOUT,
+                            "LLM_TIMEOUT",
+                            "The model took too long to respond. Please try again.",
+                            {"reason": str(e)[:500]},
+                        )
+                    raise_http_error(
+                        status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        "LLM_FAILED",
+                        "LLM generation failed.",
                         {"reason": str(e)[:500]},
+                    )
+
+            if answer is None and last_exc is not None:
+                logger.error("ERROR: All LLM providers failed: %s", last_exc)
+                sentry_sdk.capture_exception(last_exc)
+                # GAP 1 FIX: Release reserved tokens when all providers fail
+                await release_reserved_tokens(organization_id, estimated_total_tokens)
+                if _is_timeout_error(last_exc):
+                    raise_http_error(
+                        status.HTTP_504_GATEWAY_TIMEOUT,
+                        "LLM_TIMEOUT",
+                        "The model took too long to respond. Please try again.",
+                        {"reason": str(last_exc)[:500]},
                     )
                 raise_http_error(
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
                     "LLM_FAILED",
                     "LLM generation failed.",
-                    {"reason": str(e)[:500]},
-                )
-
-        if answer is None and last_exc is not None:
-            logger.error("ERROR: All LLM providers failed: %s", last_exc)
-            sentry_sdk.capture_exception(last_exc)
-            if _is_timeout_error(last_exc):
-                raise_http_error(
-                    status.HTTP_504_GATEWAY_TIMEOUT,
-                    "LLM_TIMEOUT",
-                    "The model took too long to respond. Please try again.",
                     {"reason": str(last_exc)[:500]},
                 )
-            raise_http_error(
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
-                "LLM_FAILED",
-                "LLM generation failed.",
-                {"reason": str(last_exc)[:500]},
+
+            # Add scope footnote for DOMINANT/CONTESTED classifications
+            if scope_context and scope_context.classification in ("dominant", "contested"):
+                footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
+                answer = answer + footnote
+
+            total_tokens = used_prompt_tokens + _estimate_token_count(answer)
+            try:
+                await record_llm_usage(
+                    organization_id,
+                    total_tokens,
+                    plan_code=user_plan,
+                    provider=used_provider,
+                    model=used_model,
+                )
+            except Exception as e:
+                logger.warning("⚠️ [Chat] Failed to record LLM usage: %s", e)
+
+            # GAP 1 FIX: Release unused reserved tokens after recording actual usage
+            unused_tokens = estimated_total_tokens - total_tokens
+            if unused_tokens > 0:
+                await release_reserved_tokens(organization_id, unused_tokens)
+
+            message_id = save_messages(
+                supabase, payload.conversation_id, payload.query, answer,
+                sources_metadata,
+                organization_id=organization_id  # Org-scoped validation
             )
 
-        # Add scope footnote for DOMINANT/CONTESTED classifications
-        if scope_context and scope_context.classification in ("dominant", "contested"):
-            footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
-            answer = answer + footnote
-
-        total_tokens = used_prompt_tokens + _estimate_token_count(answer)
-        try:
-            await record_llm_usage(
-                organization_id,
-                total_tokens,
-                plan_code=user_plan,
-                provider=used_provider,
-                model=used_model,
+            return ChatResponse(
+                answer=answer,
+                sources=sources_metadata,
+                conversation_id=payload.conversation_id,
+                message_id=message_id,
+                scope_context=scope_context,
             )
-        except Exception as e:
-            logger.warning("⚠️ [Chat] Failed to record LLM usage: %s", e)
 
-        message_id = save_messages(
-            supabase, payload.conversation_id, payload.query, answer,
-            sources_metadata,
-            organization_id=organization_id  # Org-scoped validation
-        )
 
-        return ChatResponse(
-            answer=answer,
-            sources=sources_metadata,
-            conversation_id=payload.conversation_id,
-            message_id=message_id,
-            scope_context=scope_context,
-        )
+async def _stream_with_timeout_and_heartbeat(
+    chain,
+    input_vars: Dict[str, Any],
+    provider: str,
+    timeout_seconds: float,
+    heartbeat_interval: float,
+) -> AsyncGenerator[Any, None]:
+    """
+    Stream LLM response with timeout protection and heartbeat to detect stalled connections.
+
+    Issue #2: Original chain.astream() had no timeout and could hang indefinitely.
+    Issue #4: Heartbeat events help detect mid-stream failures.
+    """
+    import time
+
+    last_chunk_time = time.monotonic()
+
+    async def stream_generator():
+        nonlocal last_chunk_time
+        if provider == "openai":
+            with openai_breaker:
+                async for chunk in chain.astream(input_vars):
+                    last_chunk_time = time.monotonic()
+                    yield chunk
+        else:
+            async for chunk in chain.astream(input_vars):
+                last_chunk_time = time.monotonic()
+                yield chunk
+
+    stream = stream_generator()
+
+    try:
+        while True:
+            try:
+                # Use wait_for with heartbeat interval for chunk-level timeout
+                chunk = await asyncio.wait_for(
+                    stream.__anext__(),
+                    timeout=min(heartbeat_interval, timeout_seconds)
+                )
+                yield ("chunk", chunk)
+            except asyncio.TimeoutError:
+                # Check if we've exceeded total timeout
+                elapsed = time.monotonic() - last_chunk_time
+                if elapsed >= timeout_seconds:
+                    raise asyncio.TimeoutError(
+                        f"LLM stream timed out after {timeout_seconds}s without new content"
+                    )
+                # Emit heartbeat to keep connection alive
+                yield ("heartbeat", None)
+            except StopAsyncIteration:
+                break
+    finally:
+        # Ensure generator is closed
+        await stream.aclose()
 
 
 async def stream_chat_response(
@@ -1650,140 +1859,185 @@ async def stream_chat_response(
     scope_context: Optional[ScopeContext] = None,
     organization_id: str = "",
     plan_code: str = "free",
+    estimated_total_tokens: int = 0,  # GAP 1 FIX: Add for token release
 ) -> AsyncGenerator[str, None]:
     """
     Stream chat response using Server-Sent Events (SSE) with failover support.
 
     Event format:
     - data: {"type": "token", "content": "..."}
+    - data: {"type": "heartbeat"}  -- NEW: Keeps connection alive
     - data: {"type": "sources", "sources": [...]}
     - data: {"type": "scope_context", "scope_context": {...}}
     - data: {"type": "done"}
+    - data: {"type": "error", ...}
+
+    Fixes implemented:
+    - Issue #2: Timeout wrapper prevents indefinite hangs
+    - Issue #4: Heartbeat events for mid-stream failure detection
+    - Issue #6: Uses list append + join instead of string concatenation O(n^2)
+    - Issue #13: Respects global concurrency semaphore
+    - GAP 1: Releases reserved tokens after actual usage recording
     """
     last_exc: Optional[Exception] = None
+    stream_timeout = getattr(settings, 'LLM_STREAM_TIMEOUT', 60)
+    heartbeat_interval = getattr(settings, 'LLM_HEARTBEAT_INTERVAL', 10.0)
 
-    for candidate in llm_candidates:
-        if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
-            logger.warning("⚡ [Chat] OpenAI circuit open, skipping stream attempt")
-            continue
+    # Acquire semaphore to limit concurrent LLM calls
+    semaphore = _get_llm_semaphore()
 
-        full_response = ""
-        sent_any = False
-
-        try:
-            llm_result = LLMFactory.get_model(
-                provider=candidate.provider,
-                model_name=candidate.model,
-                user_plan=plan_code,
-                requested_tier=actual_tier,
-                temperature=0.1,
-                streaming=True,
-                allow_override=True,
-            )
-            llm = llm_result[0] if isinstance(llm_result, tuple) else llm_result
-        except Exception as e:
-            last_exc = e
-            if _should_failover(e):
-                logger.warning("⚠️ [Chat] Failed to init stream provider %s/%s: %s", candidate.provider, candidate.model, e)
+    async with semaphore:
+        for candidate in llm_candidates:
+            if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
+                logger.warning("⚡ [Chat] OpenAI circuit open, skipping stream attempt")
                 continue
-            raise
 
-        prompt, input_vars, system_prompt = prompt_builder(candidate.provider)
-        chain = prompt | llm
+            # Fix Issue #6: Use list for O(n) string building instead of O(n^2) concatenation
+            response_chunks: List[str] = []
+            sent_any = False
 
-        try:
-            if candidate.provider == "openai":
-                with openai_breaker:
-                    async for chunk in chain.astream(input_vars):
+            try:
+                llm_result = LLMFactory.get_model(
+                    provider=candidate.provider,
+                    model_name=candidate.model,
+                    user_plan=plan_code,
+                    requested_tier=actual_tier,
+                    temperature=0.1,
+                    streaming=True,
+                    allow_override=True,
+                )
+                llm = llm_result[0] if isinstance(llm_result, tuple) else llm_result
+            except Exception as e:
+                last_exc = e
+                if _should_failover(e):
+                    logger.warning("⚠️ [Chat] Failed to init stream provider %s/%s: %s", candidate.provider, candidate.model, e)
+                    continue
+                raise
+
+            prompt, input_vars, system_prompt = prompt_builder(candidate.provider)
+            chain = prompt | llm
+
+            try:
+                # Issue #2 & #4: Stream with timeout and heartbeat
+                async for event_type, event_data in _stream_with_timeout_and_heartbeat(
+                    chain,
+                    input_vars,
+                    candidate.provider,
+                    stream_timeout,
+                    heartbeat_interval,
+                ):
+                    if event_type == "heartbeat":
+                        # Send heartbeat to keep connection alive and signal health
+                        yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    elif event_type == "chunk":
+                        chunk = event_data
                         if hasattr(chunk, "content") and chunk.content:
                             sent_any = True
-                            full_response += chunk.content
+                            response_chunks.append(chunk.content)  # O(1) amortized
                             yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
-            else:
-                async for chunk in chain.astream(input_vars):
-                    if hasattr(chunk, "content") and chunk.content:
-                        sent_any = True
-                        full_response += chunk.content
-                        yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
 
-            # Add scope footnote for DOMINANT/CONTESTED classifications
-            if scope_context and scope_context.classification in ("dominant", "contested"):
-                footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
-                full_response += footnote
-                yield f"data: {json.dumps({'type': 'token', 'content': footnote})}\n\n"
+                # Join all chunks at end (O(n) total instead of O(n^2))
+                full_response = "".join(response_chunks)
 
-            # Send sources after completion
-            yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+                # Add scope footnote for DOMINANT/CONTESTED classifications
+                if scope_context and scope_context.classification in ("dominant", "contested"):
+                    footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
+                    full_response += footnote
+                    yield f"data: {json.dumps({'type': 'token', 'content': footnote})}\n\n"
 
-            # Send scope context if available
-            if scope_context:
-                yield f"data: {json.dumps({'type': 'scope_context', 'scope_context': scope_context.model_dump()})}\n\n"
+                # Send sources after completion
+                yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
-            # Save messages (org-scoped validation)
-            message_id = save_messages(
-                supabase, conversation_id, question, full_response,
-                sources,
-                organization_id=organization_id  # Org-scoped validation
-            )
+                # Send scope context if available
+                if scope_context:
+                    yield f"data: {json.dumps({'type': 'scope_context', 'scope_context': scope_context.model_dump()})}\n\n"
 
-            total_tokens = _estimate_prompt_tokens(system_prompt, input_vars) + _estimate_token_count(full_response)
-            try:
-                await record_llm_usage(
-                    organization_id,
-                    total_tokens,
-                    plan_code=plan_code,
-                    provider=candidate.provider,
-                    model=candidate.model,
+                # Save messages (org-scoped validation)
+                message_id = save_messages(
+                    supabase, conversation_id, question, full_response,
+                    sources,
+                    organization_id=organization_id
                 )
+
+                total_tokens = _estimate_prompt_tokens(system_prompt, input_vars) + _estimate_token_count(full_response)
+                try:
+                    await record_llm_usage(
+                        organization_id,
+                        total_tokens,
+                        plan_code=plan_code,
+                        provider=candidate.provider,
+                        model=candidate.model,
+                    )
+                except Exception as e:
+                    logger.warning("⚠️ [Chat] Failed to record LLM usage: %s", e)
+
+                # GAP 1 FIX: Release unused reserved tokens after recording actual usage
+                unused_tokens = estimated_total_tokens - total_tokens
+                if unused_tokens > 0:
+                    await release_reserved_tokens(organization_id, unused_tokens)
+
+                yield f"data: {json.dumps({'type': 'done', 'message_id': message_id})}\n\n"
+                return
+
             except Exception as e:
-                logger.warning("⚠️ [Chat] Failed to record LLM usage: %s", e)
+                last_exc = e
+                if sent_any:
+                    # Issue #4: Enhanced error signaling after partial output
+                    logger.error("Streaming error after partial output: %s", e)
+                    sentry_sdk.capture_exception(e)
 
-            yield f"data: {json.dumps({'type': 'done', 'message_id': message_id})}\n\n"
-            return
+                    # Build partial response from chunks collected so far
+                    partial_response = "".join(response_chunks)
 
-        except Exception as e:
-            last_exc = e
-            if sent_any:
-                logger.error("Streaming error after partial output: %s", e)
+                    # GAP 1 FIX: Release reserved tokens on error (partial response)
+                    await release_reserved_tokens(organization_id, estimated_total_tokens)
+
+                    payload = build_error_payload(
+                        "LLM_STREAM_INTERRUPTED",
+                        "Streaming was interrupted. Partial response may be incomplete.",
+                        {
+                            "reason": str(e)[:500],
+                            "partial_length": len(partial_response),
+                            "recoverable": False,
+                        },
+                    )
+                    yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
+                    return
+
+                if _should_failover(e):
+                    logger.warning("⚠️ [Chat] Streaming failover from %s/%s: %s", candidate.provider, candidate.model, e)
+                    continue
+
+                logger.error("Streaming error: %s", e)
                 sentry_sdk.capture_exception(e)
-                payload = build_error_payload(
-                    "LLM_FAILED",
-                    "Streaming interrupted.",
-                    {"reason": str(e)[:500]},
-                )
+                # GAP 1 FIX: Release reserved tokens on error
+                await release_reserved_tokens(organization_id, estimated_total_tokens)
+                if _is_timeout_error(e):
+                    payload = build_error_payload(
+                        "LLM_TIMEOUT",
+                        "The model took too long to respond. Please try again.",
+                        {"reason": str(e)[:500]},
+                    )
+                else:
+                    payload = build_error_payload(
+                        "LLM_FAILED",
+                        "LLM generation failed.",
+                        {"reason": str(e)[:500]},
+                    )
                 yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
                 return
 
-            if _should_failover(e):
-                logger.warning("⚠️ [Chat] Streaming failover from %s/%s: %s", candidate.provider, candidate.model, e)
-                continue
-
-            logger.error("Streaming error: %s", e)
-            sentry_sdk.capture_exception(e)
-            if _is_timeout_error(e):
-                payload = build_error_payload(
-                    "LLM_TIMEOUT",
-                    "The model took too long to respond. Please try again.",
-                    {"reason": str(e)[:500]},
-                )
-            else:
-                payload = build_error_payload(
-                    "LLM_FAILED",
-                    "LLM generation failed.",
-                    {"reason": str(e)[:500]},
-                )
+        if last_exc:
+            logger.error("Streaming error: %s", last_exc)
+            sentry_sdk.capture_exception(last_exc)
+            # GAP 1 FIX: Release reserved tokens when all providers fail
+            await release_reserved_tokens(organization_id, estimated_total_tokens)
+            payload = build_error_payload(
+                "LLM_FAILED",
+                "LLM generation failed.",
+                {"reason": str(last_exc)[:500]},
+            )
             yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
-            return
-
-    if last_exc:
-        logger.error("Streaming error: %s", last_exc)
-        sentry_sdk.capture_exception(last_exc)
-        payload = build_error_payload(
-            "LLM_FAILED",
-            "LLM generation failed.",
-            {"reason": str(last_exc)[:500]},
-        )
-        yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
 
 
 def save_messages(

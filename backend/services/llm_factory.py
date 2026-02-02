@@ -4,16 +4,20 @@ LLM Factory Service
 Centralized factory for instantiating LangChain Chat Models.
 Supports multiple providers (OpenAI, Groq) with seamless switching.
 
+PERFORMANCE FIX: Uses singleton/pool pattern to reuse LLM client instances
+instead of creating new ones per-request (prevents connection overhead and
+potential socket exhaustion under load).
+
 Usage:
     from services.llm_factory import LLMFactory
     from core.config import settings
-    
+
     # Get primary model (GPT-4o)
     llm = LLMFactory.get_model(
         provider=settings.PRIMARY_MODEL_PROVIDER,
         model_name=settings.PRIMARY_MODEL_NAME
     )
-    
+
     # Get fast model (Groq Llama)
     fast_llm = LLMFactory.get_model(
         provider=settings.SECONDARY_MODEL_PROVIDER,
@@ -22,12 +26,18 @@ Usage:
 """
 
 import logging
-from typing import Optional
+import threading
+from typing import Optional, Dict, Tuple
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models.chat_models import BaseChatModel
 from core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Thread-safe client pool for LLM instances
+# Key format: (provider, model_name, streaming)
+_llm_client_pool: Dict[Tuple[str, str, bool], BaseChatModel] = {}
+_llm_pool_lock = threading.Lock()
 
 
 class LLMFactory:
@@ -142,39 +152,129 @@ class LLMFactory:
             logger.error(f"❌ [LLMFactory] Failed to initialize {final_provider}/{final_model}: {e}")
             raise
             
-    # _create_openai and _create_groq methods remain unchanged...
-    @staticmethod
-    def _create_openai(model_name, temperature, streaming, max_tokens) -> ChatOpenAI:
-        kwargs = {"model": model_name, "temperature": temperature, "streaming": streaming, "api_key": settings.OPENAI_API_KEY}
-        if max_tokens: kwargs["max_tokens"] = max_tokens
-        return ChatOpenAI(**kwargs)
+    # CLIENT POOLING: Create or retrieve pooled LLM instances
+    # Temperature and max_tokens are set per-request via model.bind() if needed
 
     @staticmethod
-    def _create_grok(model_name, temperature, streaming, max_tokens) -> ChatOpenAI:
+    def _get_pool_key(provider: str, model_name: str, streaming: bool) -> Tuple[str, str, bool]:
+        """Generate cache key for client pool."""
+        return (provider.lower(), model_name.lower(), streaming)
+
+    @staticmethod
+    def _get_pooled_openai(model_name: str, streaming: bool) -> ChatOpenAI:
+        """Get or create pooled OpenAI client."""
+        pool_key = LLMFactory._get_pool_key("openai", model_name, streaming)
+
+        with _llm_pool_lock:
+            if pool_key not in _llm_client_pool:
+                logger.info(f"🔧 [LLMFactory] Creating pooled OpenAI client: {model_name} streaming={streaming}")
+                _llm_client_pool[pool_key] = ChatOpenAI(
+                    model=model_name,
+                    temperature=0,  # Default, overridden per-request
+                    streaming=streaming,
+                    api_key=settings.OPENAI_API_KEY,
+                    request_timeout=settings.LLM_REQUEST_TIMEOUT if hasattr(settings, 'LLM_REQUEST_TIMEOUT') else 120,
+                )
+            return _llm_client_pool[pool_key]
+
+    @staticmethod
+    def _get_pooled_grok(model_name: str, streaming: bool) -> ChatOpenAI:
+        """Get or create pooled Grok client."""
         if not settings.GROK_API_KEY:
             raise ValueError("GROK_API_KEY not configured.")
-        kwargs = {
-            "model": model_name,
-            "temperature": temperature,
-            "streaming": streaming,
-            "api_key": settings.GROK_API_KEY,
-            "base_url": settings.GROK_BASE_URL,
-        }
-        if max_tokens:
-            kwargs["max_tokens"] = max_tokens
-        return ChatOpenAI(**kwargs)
+
+        pool_key = LLMFactory._get_pool_key("grok", model_name, streaming)
+
+        with _llm_pool_lock:
+            if pool_key not in _llm_client_pool:
+                logger.info(f"🔧 [LLMFactory] Creating pooled Grok client: {model_name} streaming={streaming}")
+                _llm_client_pool[pool_key] = ChatOpenAI(
+                    model=model_name,
+                    temperature=0,
+                    streaming=streaming,
+                    api_key=settings.GROK_API_KEY,
+                    base_url=settings.GROK_BASE_URL,
+                    request_timeout=settings.LLM_REQUEST_TIMEOUT if hasattr(settings, 'LLM_REQUEST_TIMEOUT') else 120,
+                )
+            return _llm_client_pool[pool_key]
 
     @staticmethod
-    def _create_groq(model_name, temperature, streaming, max_tokens) -> BaseChatModel:
+    def _get_pooled_groq(model_name: str, streaming: bool) -> BaseChatModel:
+        """Get or create pooled Groq client."""
         try:
             from langchain_groq import ChatGroq
         except ImportError:
             raise ImportError("langchain-groq package not installed")
+
         if not settings.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY not configured.")
-        kwargs = {"model_name": model_name, "temperature": temperature, "api_key": settings.GROQ_API_KEY, "streaming": streaming}
-        if max_tokens: kwargs["max_tokens"] = max_tokens
-        return ChatGroq(**kwargs)
+
+        pool_key = LLMFactory._get_pool_key("groq", model_name, streaming)
+
+        with _llm_pool_lock:
+            if pool_key not in _llm_client_pool:
+                logger.info(f"🔧 [LLMFactory] Creating pooled Groq client: {model_name} streaming={streaming}")
+                _llm_client_pool[pool_key] = ChatGroq(
+                    model_name=model_name,
+                    temperature=0,
+                    api_key=settings.GROQ_API_KEY,
+                    streaming=streaming,
+                    request_timeout=settings.LLM_REQUEST_TIMEOUT if hasattr(settings, 'LLM_REQUEST_TIMEOUT') else 120,
+                )
+            return _llm_client_pool[pool_key]
+
+    @staticmethod
+    def _create_openai(model_name, temperature, streaming, max_tokens) -> ChatOpenAI:
+        """Create OpenAI client with per-request settings using pooled base client."""
+        base_client = LLMFactory._get_pooled_openai(model_name, streaming)
+
+        # Use .bind() or create new instance with specific settings
+        # For temperature/max_tokens that vary per request, we need to bind
+        bind_kwargs = {"temperature": temperature}
+        if max_tokens:
+            bind_kwargs["max_tokens"] = max_tokens
+
+        # Return bound client with specific temperature/max_tokens
+        return base_client.bind(**bind_kwargs) if bind_kwargs else base_client
+
+    @staticmethod
+    def _create_grok(model_name, temperature, streaming, max_tokens) -> ChatOpenAI:
+        """Create Grok client with per-request settings using pooled base client."""
+        base_client = LLMFactory._get_pooled_grok(model_name, streaming)
+
+        bind_kwargs = {"temperature": temperature}
+        if max_tokens:
+            bind_kwargs["max_tokens"] = max_tokens
+
+        return base_client.bind(**bind_kwargs) if bind_kwargs else base_client
+
+    @staticmethod
+    def _create_groq(model_name, temperature, streaming, max_tokens) -> BaseChatModel:
+        """Create Groq client with per-request settings using pooled base client."""
+        base_client = LLMFactory._get_pooled_groq(model_name, streaming)
+
+        bind_kwargs = {"temperature": temperature}
+        if max_tokens:
+            bind_kwargs["max_tokens"] = max_tokens
+
+        return base_client.bind(**bind_kwargs) if bind_kwargs else base_client
+
+
+def get_llm_pool_stats() -> Dict[str, int]:
+    """Get statistics about the LLM client pool."""
+    with _llm_pool_lock:
+        return {
+            "total_clients": len(_llm_client_pool),
+            "clients": list(_llm_client_pool.keys()),
+        }
+
+
+def clear_llm_pool():
+    """Clear the LLM client pool (useful for testing or shutdown)."""
+    global _llm_client_pool
+    with _llm_pool_lock:
+        _llm_client_pool.clear()
+        logger.info("🧹 [LLMFactory] Cleared LLM client pool")
 
     # Convenience methods updated to use new signature if needed, or removed if obsolete.
     # We will keep them for backward compatibility but redirecting to get_model is safer.

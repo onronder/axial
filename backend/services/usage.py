@@ -372,6 +372,161 @@ async def check_llm_quota(
     return usage
 
 
+async def reserve_llm_tokens(
+    org_id: str,
+    plan_code: Optional[str],
+    tokens_to_reserve: int,
+) -> dict:
+    """
+    RACE CONDITION FIX (Issue #3): Atomically reserve tokens BEFORE making LLM call.
+
+    This prevents the time-of-check to time-of-use (TOCTOU) race condition where
+    concurrent requests could both pass the quota check and then exceed the quota.
+
+    The reservation pattern:
+    1. reserve_llm_tokens(org_id, plan_code, estimated_tokens) - atomic decrement
+    2. Make LLM call
+    3. release_reserved_tokens(org_id, reserved - actual_used) - return unused
+
+    Returns:
+        dict with reservation_id, reserved_tokens, remaining_balance
+    """
+    supabase = get_supabase()
+    tokens_to_reserve = max(0, int(tokens_to_reserve))
+
+    if tokens_to_reserve <= 0:
+        return {"reservation_id": None, "reserved_tokens": 0, "remaining_balance": 0}
+
+    try:
+        # Atomic reservation via database RPC
+        result = supabase.rpc(
+            "reserve_llm_tokens",
+            {
+                "p_org_id": org_id,
+                "p_tokens": tokens_to_reserve,
+                "p_plan_code": plan_code,
+            }
+        ).execute()
+
+        if result.data:
+            row = result.data[0] if isinstance(result.data, list) else result.data
+            if isinstance(row, dict):
+                if row.get("success") is False:
+                    # Reservation failed due to insufficient balance
+                    raise QuotaExceededError(
+                        "LLM token quota exceeded during reservation.",
+                        {
+                            "balance": row.get("remaining_balance", 0),
+                            "required": tokens_to_reserve,
+                            "plan": plan_code,
+                            "organization_id": org_id,
+                        },
+                    )
+                return {
+                    "reservation_id": row.get("reservation_id"),
+                    "reserved_tokens": row.get("reserved_tokens", tokens_to_reserve),
+                    "remaining_balance": row.get("remaining_balance", 0),
+                }
+
+        # Fallback if RPC doesn't exist
+        logger.warning("⚠️ [Usage] reserve_llm_tokens RPC not found, using check-only fallback")
+        return await _reserve_tokens_fallback(org_id, plan_code, tokens_to_reserve)
+
+    except QuotaExceededError:
+        raise
+    except Exception as exc:
+        error_msg = str(exc)
+        if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+            logger.warning("⚠️ [Usage] reserve_llm_tokens RPC not found, using fallback")
+            return await _reserve_tokens_fallback(org_id, plan_code, tokens_to_reserve)
+        logger.error("❌ [Usage] Failed to reserve tokens for %s: %s", org_id, exc)
+        raise
+
+
+async def release_reserved_tokens(
+    org_id: str,
+    unused_tokens: int,
+) -> None:
+    """
+    Release unused reserved tokens back to the org's balance.
+
+    Call this after LLM request completes if actual usage was less than reserved.
+    """
+    if unused_tokens <= 0:
+        return
+
+    supabase = get_supabase()
+    unused_tokens = int(unused_tokens)
+
+    try:
+        result = supabase.rpc(
+            "release_llm_tokens",
+            {
+                "p_org_id": org_id,
+                "p_tokens": unused_tokens,
+            }
+        ).execute()
+
+        logger.debug("✅ [Usage] Released %s unused tokens for org %s", unused_tokens, org_id)
+
+    except Exception as exc:
+        error_msg = str(exc)
+        if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
+            # RPC doesn't exist, tokens were never reserved atomically
+            logger.debug("⚠️ [Usage] release_llm_tokens RPC not found (expected during migration)")
+        else:
+            logger.warning("⚠️ [Usage] Failed to release tokens for %s: %s", org_id, exc)
+
+
+async def _reserve_tokens_fallback(
+    org_id: str,
+    plan_code: Optional[str],
+    tokens_to_reserve: int,
+) -> dict:
+    """
+    Fallback reservation when atomic RPC doesn't exist.
+
+    NOTE: This has the original race condition - only use during migration.
+    """
+    usage = await check_llm_quota(org_id, plan_code, required_tokens=tokens_to_reserve)
+    return {
+        "reservation_id": None,
+        "reserved_tokens": tokens_to_reserve,
+        "remaining_balance": usage.get("balance", 0) - tokens_to_reserve,
+    }
+
+
+def check_per_request_token_limit(
+    estimated_tokens: int,
+    max_tokens_per_request: Optional[int] = None,
+) -> None:
+    """
+    Enforce per-request token limit to prevent single requests from consuming
+    entire monthly budget (Issue #9).
+
+    Args:
+        estimated_tokens: Estimated input tokens for the request
+        max_tokens_per_request: Maximum allowed (defaults to settings.LLM_MAX_TOKENS_PER_REQUEST)
+
+    Raises:
+        QuotaExceededError: If estimated tokens exceed per-request limit
+    """
+    from core.config import settings
+
+    if max_tokens_per_request is None:
+        max_tokens_per_request = getattr(settings, 'LLM_MAX_TOKENS_PER_REQUEST', 50000)
+
+    if estimated_tokens > max_tokens_per_request:
+        raise QuotaExceededError(
+            f"Request exceeds per-request token limit ({estimated_tokens:,} > {max_tokens_per_request:,}).",
+            {
+                "estimated_tokens": estimated_tokens,
+                "max_per_request": max_tokens_per_request,
+                "suggestion": "Please reduce context size or split into multiple requests.",
+            },
+        )
+
+
 async def record_llm_usage(
     org_id: str,
     tokens_used: int,

@@ -258,6 +258,16 @@ class Settings(BaseSettings):
 
     # Optional load balancing across LLM providers
     LLM_LOAD_BALANCE: bool = False
+
+    # =========================================================================
+    # LLM Call Safety & Performance Settings
+    # =========================================================================
+    # Timeouts prevent hung requests from consuming resources indefinitely
+    LLM_REQUEST_TIMEOUT: int = 120  # Base timeout for LLM HTTP calls (seconds)
+    LLM_STREAM_TIMEOUT: int = 60  # Timeout for streaming responses (seconds)
+    LLM_MAX_CONCURRENT_REQUESTS: int = 20  # Global semaphore limit for LLM calls
+    LLM_MAX_TOKENS_PER_REQUEST: int = 50000  # Max input tokens per single request
+    LLM_HEARTBEAT_INTERVAL: float = 10.0  # SSE heartbeat interval (seconds)
     
     # =========================================================================
     # Payment Integration (Polar.sh)
