@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { clearAuthCache } from "@/lib/api";
 import { User, AuthError, Provider } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 
@@ -262,7 +263,10 @@ export const useAuth = () => {
         // 1. Navigate to login FIRST (prevents flash of pricing page)
         router.push("/login");
 
-        // 2. Sign out from Supabase (clears session/cookies)
+        // 2. Clear cached API tokens to prevent stale auth
+        clearAuthCache();
+
+        // 3. Sign out from Supabase (clears session/cookies)
         try {
             const { error } = await supabase.auth.signOut();
             if (error) {
@@ -272,7 +276,7 @@ export const useAuth = () => {
             console.error("Logout exception:", error);
         }
 
-        // 3. Clear local user state last
+        // 4. Clear local user state last
         setUser(null);
     };
 

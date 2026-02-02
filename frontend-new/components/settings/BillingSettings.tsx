@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Check, CreditCard, Sparkles, Users, Zap, Building2, ExternalLink, Receipt, Calendar, AlertTriangle, RefreshCw } from "lucide-react";
+import { Check, CreditCard, Sparkles, Users, Zap, Building2, ExternalLink, Receipt, Calendar, AlertTriangle, RefreshCw, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,6 +17,7 @@ import { useUsage } from "@/hooks/useUsage";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { isValidCheckoutUrl } from "@/lib/url-validation";
 import { toast } from "sonner";
 import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
 import {
@@ -149,6 +150,7 @@ export function BillingSettings() {
   const [isPortalLoading, setIsPortalLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [isEnterpriseModalOpen, setIsEnterpriseModalOpen] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const currentPlan = effectivePlan || profile?.plan || "free";
   // Check for both 'free' (post-cancellation) and 'none' (new user without plan)
@@ -225,6 +227,32 @@ export function BillingSettings() {
       toast.error("Failed to open subscription portal");
     } finally {
       setIsPortalLoading(false);
+    }
+  };
+
+  const handleDownloadInvoice = async (orderId: string) => {
+    try {
+      setDownloadingId(orderId);
+      const response = await api.get(`/billing/invoices/${orderId}/download`);
+
+      if (response.data?.url) {
+        // Validate URL before opening
+        if (isValidCheckoutUrl(response.data.url)) {
+          window.open(response.data.url, "_blank", "noopener,noreferrer");
+          toast.success("Opening invoice...");
+        } else {
+          throw new Error("Invalid invoice URL");
+        }
+      } else if (response.data?.status === "generating") {
+        toast.info("Invoice is being generated. Please try again in a few seconds.");
+      } else {
+        throw new Error("No invoice URL returned");
+      }
+    } catch (error) {
+      console.error("[Billing] Invoice download failed:", error);
+      toast.error("Failed to download invoice");
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -521,15 +549,22 @@ export function BillingSettings() {
                         {invoice.status}
                       </Badge>
                     </div>
-                    {invoice.invoice_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.open(invoice.invoice_url, "_blank", "noopener,noreferrer")}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDownloadInvoice(invoice.id)}
+                      disabled={downloadingId === invoice.id}
+                      className="gap-2"
+                    >
+                      {downloadingId === invoice.id ? (
+                        <Spinner className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Download className="h-4 w-4" />
+                          <span className="sr-only sm:not-sr-only">Download</span>
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
               ))}

@@ -7,6 +7,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { useUsage } from "@/hooks/useUsage";
 import { usePlans } from "@/hooks/usePlans";
 import { api } from "@/lib/api";
+import { isValidCheckoutUrl } from "@/lib/url-validation";
 import { useToast } from "@/components/ui/use-toast";
 import { useState } from "react";
 import { EnterpriseContactModal } from "@/components/billing/EnterpriseContactModal";
@@ -70,8 +71,10 @@ export function PaywallGuard({ children }: { children: React.ReactNode }) {
             setIsCheckoutLoading(planType);
 
             const response = await api.post('/billing/checkout', { plan: planType });
-            if (response.data?.url) {
+            if (response.data?.url && isValidCheckoutUrl(response.data.url)) {
                 window.location.href = response.data.url;
+            } else if (response.data?.url) {
+                throw new Error("Invalid checkout URL");
             } else {
                 throw new Error(response.data?.error || "No checkout URL");
             }

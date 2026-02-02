@@ -12,11 +12,12 @@ import logging
 import json
 import redis.asyncio as redis
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from typing import Optional
 from core.config import settings
 from core.db import get_supabase
 from services.subscription import subscription_service
+from api.v1.dependencies import require_admin
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -331,20 +332,23 @@ async def polar_webhook(request: Request):
 
 
 @router.post("/webhooks/dlq/retry")
-async def retry_dlq_events(max_events: int = 10):
+async def retry_dlq_events(max_events: int = 10, _: str = Depends(require_admin)):
     """
     Manually trigger DLQ retry for failed webhook events.
-    
+
     This endpoint can be called by a cron job or admin.
+    Requires admin authentication.
     """
     count = await WebhookDLQ.retry_pending_events(max_events)
     return {"status": "ok", "processed": count}
 
 
 @router.get("/webhooks/dlq/stats")
-async def dlq_stats():
+async def dlq_stats(_: str = Depends(require_admin)):
     """
     Get DLQ statistics for monitoring.
+
+    Requires admin authentication.
     """
     try:
         supabase = get_supabase()

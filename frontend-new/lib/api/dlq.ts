@@ -1,10 +1,12 @@
 /**
  * DLQ API Service
- * 
+ *
  * Frontend service for interacting with Dead Letter Queue API endpoints.
+ * Uses the axios api client for consistent auth handling and error formatting.
  */
 
-import { createClient } from '@/lib/supabase/client';
+import { api } from '@/lib/api';
+import { AxiosError } from 'axios';
 
 export interface FailedTask {
     id: string;
@@ -43,27 +45,15 @@ export interface ManualRetryResponse {
  * Get failed task for a specific job
  */
 export async function getFailedTaskForJob(jobId: string): Promise<FailedTask | null> {
-    const supabase = createClient();
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(`/api/v1/dlq/failed-tasks/${jobId}`, {
-        headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-        },
-    });
-
-    if (!response.ok) {
-        if (response.status === 404) {
+    try {
+        const response = await api.get<FailedTask>(`/dlq/failed-tasks/${jobId}`);
+        return response.data;
+    } catch (error) {
+        if (error instanceof AxiosError && error.response?.status === 404) {
             return null;
         }
-        throw new Error('Failed to fetch failed task');
+        throw error;
     }
-
-    return response.json();
 }
 
 /**
@@ -73,52 +63,16 @@ export async function manualRetryTask(
     taskId: string,
     reason?: string
 ): Promise<ManualRetryResponse> {
-    const supabase = createClient();
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        throw new Error('Not authenticated');
-    }
-
-    const response = await fetch(`/api/v1/dlq/retry/${taskId}`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ reason }),
-    });
-
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to retry task');
-    }
-
-    return response.json();
+    const response = await api.post<ManualRetryResponse>(`/dlq/retry/${taskId}`, { reason });
+    return response.data;
 }
 
 /**
  * Get DLQ statistics for current user
  */
 export async function getDLQStats(): Promise<DLQStats> {
-    const supabase = createClient();
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        throw new Error('Not authenticated');
-    }
-
-    const response = await fetch('/api/v1/dlq/stats', {
-        headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-        },
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed to fetch DLQ stats');
-    }
-
-    return response.json();
+    const response = await api.get<DLQStats>('/dlq/stats');
+    return response.data;
 }
 
 /**
@@ -134,13 +88,6 @@ export async function getMyFailedTasks(
     page: number;
     page_size: number;
 }> {
-    const supabase = createClient();
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        throw new Error('Not authenticated');
-    }
-
     const params = new URLSearchParams({
         page: page.toString(),
         page_size: pageSize.toString(),
@@ -150,15 +97,6 @@ export async function getMyFailedTasks(
         params.append('status_filter', statusFilter);
     }
 
-    const response = await fetch(`/api/v1/dlq/my-tasks?${params}`, {
-        headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-        },
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed to fetch failed tasks');
-    }
-
-    return response.json();
+    const response = await api.get(`/dlq/my-tasks?${params}`);
+    return response.data;
 }
