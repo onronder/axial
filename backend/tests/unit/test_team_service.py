@@ -1577,9 +1577,15 @@ class TestPlanNormalization:
     @pytest.mark.unit
     def test_normalize_plan_valid_plans(self, team_service):
         """Valid plans are returned as-is (lowercase)."""
+        # 'none' - new users who haven't selected a plan
+        assert team_service._normalize_plan("none") == "none"
+        assert team_service._normalize_plan("None") == "none"
+        assert team_service._normalize_plan("NONE") == "none"
+        # 'free' - users after trial/cancellation
         assert team_service._normalize_plan("free") == "free"
         assert team_service._normalize_plan("Free") == "free"
         assert team_service._normalize_plan("FREE") == "free"
+        # Paid plans
         assert team_service._normalize_plan("starter") == "starter"
         assert team_service._normalize_plan("Starter") == "starter"
         assert team_service._normalize_plan("pro") == "pro"
@@ -1589,8 +1595,8 @@ class TestPlanNormalization:
         assert team_service._normalize_plan("ENTERPRISE") == "enterprise"
 
     @pytest.mark.unit
-    def test_normalize_plan_none_returns_free(self, team_service):
-        """None plan defaults to free."""
+    def test_normalize_plan_null_or_empty_returns_free(self, team_service):
+        """Null/empty plan defaults to free (not 'none' - that's for explicit assignment)."""
         assert team_service._normalize_plan(None) == "free"
         assert team_service._normalize_plan("") == "free"
 

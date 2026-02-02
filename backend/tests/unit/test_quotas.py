@@ -45,6 +45,24 @@ def test_get_plan_limits_returns_enterprise():
     assert limits.max_team_seats == 100
 
 
+def test_get_plan_limits_returns_none():
+    """Test 'none' plan for new users who haven't selected a plan."""
+    limits = quotas.get_plan_limits("none")
+    assert limits.plan_name == "none"
+    assert limits.max_files == 0
+    assert limits.max_storage_bytes == 0
+    assert limits.max_scopes == 0
+
+
+def test_get_plan_limits_returns_free():
+    """Test 'free' plan for users after trial/cancellation."""
+    limits = quotas.get_plan_limits("free")
+    assert limits.plan_name == "free"
+    assert limits.max_files == 0
+    assert limits.max_storage_bytes == 0
+    assert limits.max_scopes == 0
+
+
 def test_get_plan_limits_defaults_to_free():
     limits = quotas.get_plan_limits("unknown-plan")
     assert limits.plan_name == "free"
@@ -58,6 +76,8 @@ def test_plan_limits_storage_mb_property():
 
 
 def test_quota_limits_contains_all_plans():
-    expected_plans = {"free", "starter", "pro", "enterprise"}
+    """All valid plan types should be in QUOTA_LIMITS."""
+    # 'none' = new users, 'free' = post-trial/canceled, rest = paid plans
+    expected_plans = {"none", "free", "starter", "pro", "enterprise"}
     actual_plans = set(quotas.QUOTA_LIMITS.keys())
     assert actual_plans == expected_plans

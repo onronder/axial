@@ -29,7 +29,21 @@ class PlanLimits(BaseModel):
         return self.max_storage_bytes / (1024 * 1024)
 
 # Define Plans using Settings
+# Plan Hierarchy:
+# - 'none': New users who haven't selected a plan yet (shows paywall)
+# - 'free': Users after trial ends or subscription cancellation (shows paywall)
+# - 'starter', 'pro', 'enterprise': Paid plans with full access
 QUOTA_LIMITS = {
+    "none": PlanLimits(
+        plan_name="none",
+        max_files=0,
+        max_storage_bytes=0,
+        max_scopes=0,
+        max_llm_tokens=0,
+        max_team_seats=1,
+        allow_web_crawl=False,
+        model_tier="standard",
+    ),
     "free": PlanLimits(
         plan_name="free",
         max_files=0,

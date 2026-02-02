@@ -151,7 +151,8 @@ export function BillingSettings() {
   const [isEnterpriseModalOpen, setIsEnterpriseModalOpen] = useState(false);
 
   const currentPlan = effectivePlan || profile?.plan || "free";
-  const isFreePlan = currentPlan === "free";
+  // Check for both 'free' (post-cancellation) and 'none' (new user without plan)
+  const isFreePlan = currentPlan === "free" || currentPlan === "none";
   const planKey = currentPlan?.startsWith("enterprise") ? "enterprise" : currentPlan;
   const planInfo = planDetails[planKey] || planDetails.starter;
   const planTitle = isFreePlan ? "No Active Plan" : `${planInfo.name} Plan`;
