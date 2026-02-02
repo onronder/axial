@@ -1,71 +1,87 @@
-# SECURITY FIX: Upgraded for starlette>=0.47.2 compatibility (CVE-2024-47874)
+# =============================================================================
+# AXIAL ROOT - PRODUCTION REQUIREMENTS  
+# =============================================================================
+# Last Updated: 2026-02-02
+# For worker processes and shared dependencies
+# Security audit: Aikido Security Scan compliance
+# =============================================================================
+
+# --- CORE FRAMEWORK ---
 fastapi>=0.115.0
+starlette>=0.47.2
 uvicorn>=0.30.0
-# UPDATED: Python 3.13 compatibility
+
+# --- DATABASE ---
 sqlalchemy>=2.0.30
 alembic>=1.13.1
-# UPDATED: psycopg3 (psycopg[binary]) for Python 3.13 compatibility
 psycopg[binary]>=3.1.0
+sqlmodel==0.0.16
+
+# --- AUTH ---
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]>=1.7.4
-# SECURITY FIX: CVE-2024-53981 DoS vulnerability
 python-multipart>=0.0.18
-# UPDATED: realtime 2.27.0 requires pydantic>=2.11.7
+
+# --- PYDANTIC ---
 pydantic>=2.11.7
 pydantic-settings>=2.1.0
-# UPDATED: Loosened version for httpx compatibility
+
+# --- AI ---
 openai>=1.12.0,<2.0.0
+langchain>=0.3.0
+langchain-core>=0.3.81
+langchain-openai>=0.3.0
+langchain-community>=0.3.27
+langchain-text-splitters>=0.3.0
+tiktoken>=0.6.0
+
+# --- CELERY ---
 celery[redis]==5.3.6
-# CRITICAL: gevent required for async Celery pool (added 2026-01-05)
-# SECURITY FIX: CVE-2025-10247 HTTP request smuggling
-gevent>=25.4.1
+gevent>=25.4.1         # CVE-2025-10247 HTTP request smuggling
 redis==5.0.1
-# CRITICAL FIX: Upgraded supabase to support newer httpx
+
+# --- SUPABASE ---
+# Note: For root requirements, we can use httpx>=0.28 with newer supabase
+httpx>=0.28.0
 supabase>=2.27.0,<3.0.0
+
+# --- DOCUMENT PROCESSING ---
 python-docx==1.1.0
-# PDF processing chain: LlamaParse -> PyMuPDF -> pypdf
-# SECURITY FIX: AIKIDO-2025-10959 path traversal
 PyMuPDF>=1.26.7
-# SECURITY FIX: Multiple CVEs (DoS, infinite loops)
 pypdf>=6.6.2
 beautifulsoup4==4.12.3
 extract-msg>=0.45.0,<1.0.0
 openpyxl>=3.1.0,<4.0.0
 pandas>=2.0.0,<3.0.0
 python-pptx>=0.6.21,<1.0.0
-# UPDATED: Allow newer versions for compatibility
-tiktoken>=0.6.0
-# SECURITY FIX: Updated sentry-sdk
-sentry-sdk>=2.0.0
-async-lru==2.0.4
-# UPDATED: llama-cloud-services requires tenacity>=8.5.0
-tenacity>=8.5.0
-# CRITICAL FIX: Valid Polar SDK version
-polar-sdk>=0.28.0
-# CRITICAL FIX: Compatible httpx version for all packages
-httpx>=0.28.0
-sqlmodel==0.0.16
-# SECURITY FIX: Multiple critical CVEs (SQL injection, SSRF, XXE)
-# Upgraded to 0.3.x+ for langchain-core>=0.3.81 compatibility
-langchain>=0.3.0
-langchain-openai>=0.3.0
-langchain-community>=0.3.27
-langchain-core>=0.3.81
-langchain-text-splitters>=0.3.0
-# UPDATED: Upgraded for requests>=2.32.4 compatibility
-resend>=2.0.0
-# SECURITY FIX: XXE and resource exposure vulnerabilities
 unstructured>=0.16.20
 pdfminer.six==20231228
 docx2txt==0.8
 markdown==3.5.2
 python-magic==0.4.27
+
+# --- EMAIL ---
 email-validator==2.1.0.post1
+
+# --- RESILIENCE ---
 pybreaker==1.0.1
-psutil==5.9.8
+tenacity>=8.5.0
+
+# --- MONITORING ---
+psutil>=5.9.0
 prometheus-client==0.20.0
 python-json-logger==2.0.7
 structlog==24.1.0
-# SECURITY FIX: CVE-2024-35195, CVE-2024-47081 credential leaks
+
+# --- HTTP ---
 requests>=2.32.4
-# Note: starlette is installed via FastAPI (>=0.47.2 for CVE-2024-47874 fix)
+resend>=2.0.0
+
+# --- OBSERVABILITY ---
+sentry-sdk>=2.0.0
+
+# --- ASYNC ---
+async-lru==2.0.4
+
+# --- BILLING ---
+polar-sdk>=0.28.0
