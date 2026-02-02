@@ -20,6 +20,22 @@ SessionLocal = None
 IngestionSessionLocal = None
 
 
+def _convert_to_psycopg3_url(url: str | None) -> str | None:
+    """
+    Convert PostgreSQL URL to use psycopg3 dialect.
+    
+    psycopg3 (psycopg[binary]) requires 'postgresql+psycopg://' dialect
+    instead of the default 'postgresql://' which uses psycopg2.
+    """
+    if url is None:
+        return None
+    # Convert postgresql:// to postgresql+psycopg:// for psycopg3
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    # Already using a specific dialect
+    return url
+
+
 def _init_sqlalchemy_sessions():
     """
     Initialize SQLAlchemy session factories for general and ingestion roles.
@@ -27,8 +43,10 @@ def _init_sqlalchemy_sessions():
     """
     global SessionLocal, IngestionSessionLocal
 
-    ingestion_url = settings.INGESTION_DATABASE_URL or os.getenv("INGESTION_DATABASE_URL")
-    default_url = ingestion_url or os.getenv("DATABASE_URL")
+    ingestion_url = _convert_to_psycopg3_url(
+        settings.INGESTION_DATABASE_URL or os.getenv("INGESTION_DATABASE_URL")
+    )
+    default_url = ingestion_url or _convert_to_psycopg3_url(os.getenv("DATABASE_URL"))
 
     ingestion_engine = None
     if ingestion_url:
