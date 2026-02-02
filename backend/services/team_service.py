@@ -136,12 +136,29 @@ class TeamService:
         
         PRIORITY ORDER:
         1. Check subscriptions table (populated by Polar webhooks) 
-        2. Fallback to user_profiles.plan (legacy/default)
+        2. Fallback to user_profiles.plan (could be 'none' for new users)
+        3. Default to 'free' only if nothing found
         
         Used when RPC is unavailable or fails.
         """
         try:
             supabase = get_supabase()
+            
+            # Helper to get user's profile plan (fallback for no subscription)
+            def _get_profile_plan() -> str:
+                """Get plan from user_profiles (could be 'none' for new users)."""
+                try:
+                    profile_response = supabase.table("user_profiles").select(
+                        "plan"
+                    ).eq("user_id", user_id).limit(1).execute()
+                    
+                    if profile_response.data and profile_response.data[0]:
+                        profile_plan = profile_response.data[0].get("plan")
+                        if profile_plan:
+                            return self._normalize_plan(profile_plan)
+                except Exception as profile_error:
+                    logger.warning(f"[TeamService] Failed to get profile plan: {profile_error}")
+                return "free"  # Ultimate fallback
             
             # ✅ OPTIMIZED: Single RPC call instead of N+1 queries
             try:
@@ -152,7 +169,7 @@ class TeamService:
                 if team_data_response.data:
                     data = team_data_response.data
                     
-                    # Subscription is source of truth (no subscription = free)
+                    # Subscription is source of truth
                     if data.get('subscription'):
                         sub = data['subscription']
                         sub_status = sub.get('status', '')
@@ -163,12 +180,16 @@ class TeamService:
                             return sub_plan
                         if sub_status in ['trialing']:
                             return sub_plan
-                        logger.info(f"[TeamService] User {user_id[:8]}... subscription inactive, returning 'free'")
-                        return "free"
+                        # Subscription inactive - fall back to profile plan
+                        profile_plan = _get_profile_plan()
+                        logger.info(f"[TeamService] User {user_id[:8]}... subscription inactive, profile plan: {profile_plan}")
+                        return profile_plan
                     
+                    # No subscription - fall back to profile plan
                     if data.get('profile'):
-                        logger.info(f"[TeamService] User {user_id[:8]}... no subscription record, returning 'free'")
-                        return "free"
+                        profile_plan = _get_profile_plan()
+                        logger.info(f"[TeamService] User {user_id[:8]}... no subscription, profile plan: {profile_plan}")
+                        return profile_plan
                         
             except Exception as rpc_error:
                 logger.warning(f"[TeamService] RPC call failed, falling back to sequential queries: {rpc_error}")
@@ -199,11 +220,13 @@ class TeamService:
                         return sub_plan
                     if sub_status in ["trialing"]:
                         return sub_plan
-                    logger.info(f"[TeamService] User {user_id[:8]}... subscription inactive, returning 'free'")
-                    return "free"
+                    # Subscription inactive - fall back to profile plan
+                    profile_plan = _get_profile_plan()
+                    logger.info(f"[TeamService] User {user_id[:8]}... subscription inactive, profile plan: {profile_plan}")
+                    return profile_plan
                 
-                # No subscription record for team -> free
-                return "free"
+                # No subscription record for team - fall back to profile plan
+                return _get_profile_plan()
             
             # Fallback: Get user's own plan from subscription or profile
             # First check if user has their own subscription via their team
@@ -218,8 +241,8 @@ class TeamService:
                     if own_sub.data[0].get("status") == "active":
                         return self._normalize_plan(own_sub.data[0].get("plan_type"))
             
-            # Final fallback: no active subscription
-            return "free"
+            # Final fallback: check profile plan (could be 'none' for new users)
+            return _get_profile_plan()
             
         except Exception as e:
             logger.error(f"[TeamService] Direct query failed: {e}")
