@@ -72,7 +72,7 @@ const STATIC_PLANS = [
       "2,000 files, 10 GB storage",
       "100 connected data sources",
       "10 million AI tokens/month",
-      "Smart AI model (GPT-4o)",
+      "Axio Pro 🧠 smart AI",
       "Team collaboration (5 members)",
       "Priority support",
       "Everything in Starter",

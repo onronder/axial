@@ -250,9 +250,9 @@ When you send a message, our Smart Router analyzes:
 
 ## Available Models
 
-### ⚡ Fast Mode (GPT-4o-mini)
+### ⚡ Axio Fast
 
-Used for routine tasks requiring quick responses:
+Our speed-optimized model for routine tasks requiring quick responses:
 
 - Simple questions and lookups
 - Document summarization
@@ -261,9 +261,9 @@ Used for routine tasks requiring quick responses:
 
 **Response time:** Typically under 2 seconds
 
-### 🧠 Smart Mode (GPT-4o)
+### 🧠 Axio Pro
 
-Automatically selected for complex tasks:
+Our intelligence-optimized model, automatically selected for complex tasks:
 
 - Multi-step reasoning
 - Code generation and analysis
@@ -271,12 +271,12 @@ Automatically selected for complex tasks:
 - Comparisons across multiple documents
 - Tasks requiring deep understanding
 
-**Trigger keywords:** Questions containing "refactor", "architect", "optimize", "analyze in detail", or "compare and contrast" may trigger Smart Mode.
+**Trigger keywords:** Questions containing "refactor", "architect", "optimize", "analyze in detail", or "compare and contrast" may trigger Axio Pro.
 
 ## Model Access by Plan
 
-| Plan | Fast Mode | Smart Mode |
-|------|-----------|------------|
+| Plan | Axio Fast ⚡ | Axio Pro 🧠 |
+|------|-------------|-------------|
 | **Starter** | ✅ Always | ❌ Not available |
 | **Pro** | ✅ Default | ✅ Auto-routed |
 | **Enterprise** | ✅ Default | ✅ Auto-routed |
@@ -306,7 +306,7 @@ If the primary model is temporarily unavailable, Axio Hub automatically falls ba
 1. **Be specific** — Clear questions get better answers
 2. **Provide context** — "In the Q3 report, what was..." is better than "What was the revenue?"
 3. **Use follow-ups** — The AI remembers conversation context
-4. **Starter users:** Upgrade to Pro for complex analysis tasks
+4. **Starter users:** Upgrade to Pro to unlock Axio Pro 🧠 for complex analysis tasks
         `
     },
     {
