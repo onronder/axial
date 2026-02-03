@@ -263,6 +263,18 @@ app.include_router(dlq_router, prefix="/api/v1/dlq", tags=["Dead Letter Queue"])
 from api.v1.feedback import router as feedback_router
 app.include_router(feedback_router, prefix="/api/v1", tags=["feedback"])
 
+from api.v1.mcp import router as mcp_router
+app.include_router(mcp_router, prefix="/api/v1", tags=["mcp"])
+
+from api.v1.approvals import router as approvals_router
+app.include_router(approvals_router, prefix="/api/v1", tags=["approvals"])
+
+from api.v1.consent import router as consent_router
+app.include_router(consent_router, prefix="/api/v1", tags=["consent"])
+
+from api.v1.compliance import router as compliance_router
+app.include_router(compliance_router, prefix="/api/v1", tags=["compliance"])
+
 
 # =============================================================================
 # Health & Root Endpoints

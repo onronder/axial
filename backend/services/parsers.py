@@ -1720,28 +1720,33 @@ class LegacyOfficeProcessor(BaseProcessor):
 
 class ImageProcessor(BaseProcessor):
     """
-    Processor for images with 2-Tier OCR Architecture.
-    
+    Processor for images with 4-Tier Resilient Architecture.
+
     Tier 1 (Fast Local): Tesseract OCR - Direct image-to-text
-    Tier 2 (Cloud Premium): LlamaParse - Better quality for complex layouts
-    
+    Tier 2 (Cloud OCR): LlamaParse - Better quality for complex layouts
+    Tier 3 (Vision LLM): GPT-4o/Gemini - Semantic understanding for diagrams
+    Tier 4 (Metadata): EXIF/filename fallback
+
     Handles: JPG, JPEG, PNG, TIFF, BMP, GIF
-    
+
     This ensures images can be processed even without cloud API access,
-    with graceful fallback to LlamaParse for better quality when available.
+    with cascading fallback through multiple tiers for best quality.
     """
-    
+
     MIN_TOKENS_THRESHOLD = 20  # Below this, try cloud fallback
 
     def process(self, content: bytes, filename: str) -> ProcessedDocument:
         """
-        Process image with 2-tier cascading fallback.
-        
+        Process image with 4-tier cascading fallback.
+
         Flow:
         1. Try Tesseract OCR locally
         2. If low content or failed, try LlamaParse (if configured)
+        3. If still low content, try Vision LLM (if enabled)
+        4. If all else fails, return metadata-only result
         """
-        
+        from core.config import settings
+
         # =====================================================================
         # TIER 1: Tesseract OCR (Fast Local)
         # =====================================================================
@@ -1761,11 +1766,10 @@ class ImageProcessor(BaseProcessor):
             logger.warning(f"[ImageProcessor] Tesseract not available: {e}")
         except Exception as e:
             logger.error(f"[ImageProcessor] Tesseract failed for {safe_file_ref(filename=filename)}: {e}")
-        
+
         # =====================================================================
-        # TIER 2: LlamaParse (Cloud Premium Fallback)
+        # TIER 2: LlamaParse (Cloud OCR Fallback)
         # =====================================================================
-        from core.config import settings
         if settings.LLAMA_CLOUD_API_KEY:
             can_execute, reason = LLAMAPARSE_CIRCUIT.can_execute()
             if can_execute:
@@ -1790,12 +1794,172 @@ class ImageProcessor(BaseProcessor):
                 logger.info(f"[ImageProcessor] Skipping LlamaParse ({reason}) for {safe_file_ref(filename=filename)}")
                 if llamaparse_fallback_total:
                     llamaparse_fallback_total.labels(f"image_{reason}").inc()
-        
+
+        # =====================================================================
+        # TIER 3: Vision LLM (Semantic Understanding)
+        # =====================================================================
+        if settings.VISION_LLM_ENABLED:
+            result = self._process_with_vision_llm(content, filename)
+            if result and result.chunks:
+                logger.info(f"[ImageProcessor] Tier 3 Vision LLM success: {result.total_tokens} tokens from {safe_file_ref(filename=filename)}")
+                if image_ocr_total:
+                    image_ocr_total.labels("tier3_vision_llm_success").inc()
+                return result
+
+        # =====================================================================
+        # TIER 4: Metadata Fallback
+        # =====================================================================
         # Return empty if nothing worked
         if image_ocr_total:
             image_ocr_total.labels("all_tiers_failed").inc()
         logger.warning(f"[ImageProcessor] All tiers failed for {safe_file_ref(filename=filename)}")
         return ProcessedDocument(chunks=[], file_type="image")
+
+    def _process_with_vision_llm(self, content: bytes, filename: str) -> ProcessedDocument:
+        """
+        Process image using Vision LLM for semantic understanding.
+
+        Uses GPT-4o or Gemini Pro Vision to analyze diagrams, charts,
+        and technical images, extracting semantic meaning rather than
+        just text.
+
+        Returns:
+            ProcessedDocument with Vision LLM analysis
+        """
+        import asyncio
+        import time
+        from core.config import settings
+        from services.secure_cleanup import SmartBuffer
+
+        try:
+            from core.metrics import vision_llm_total, vision_llm_duration, vision_llm_diagram_types
+        except ImportError:
+            vision_llm_total = None
+            vision_llm_duration = None
+            vision_llm_diagram_types = None
+
+        # Check file size
+        if len(content) > settings.VISION_LLM_MAX_IMAGE_SIZE:
+            logger.warning(f"[ImageProcessor] Image too large for Vision LLM: {len(content)} bytes")
+            if vision_llm_total:
+                vision_llm_total.labels(provider=settings.VISION_LLM_PROVIDER, result="skipped_size").inc()
+            return ProcessedDocument(chunks=[], file_type="image")
+
+        # Use SmartBuffer for Ghost Protocol compliance
+        with SmartBuffer(content, filename=filename) as buffer:
+            try:
+                # Get appropriate processor
+                from services.vision.circuit import get_circuit_for_provider
+                circuit = get_circuit_for_provider(settings.VISION_LLM_PROVIDER)
+
+                can_execute, reason = circuit.can_execute()
+                if not can_execute:
+                    logger.info(f"[ImageProcessor] Skipping Vision LLM ({reason})")
+                    if vision_llm_total:
+                        vision_llm_total.labels(provider=settings.VISION_LLM_PROVIDER, result=f"skipped_{reason}").inc()
+                    return ProcessedDocument(chunks=[], file_type="image")
+
+                # Get processor based on provider
+                if settings.VISION_LLM_PROVIDER == "gemini":
+                    from services.vision.gemini_vision import GeminiVisionProcessor
+                    processor = GeminiVisionProcessor()
+                else:
+                    from services.vision.openai_vision import GPT4VisionProcessor
+                    processor = GPT4VisionProcessor()
+
+                if not processor.is_available():
+                    logger.warning(f"[ImageProcessor] Vision LLM not available: {settings.VISION_LLM_PROVIDER}")
+                    if vision_llm_total:
+                        vision_llm_total.labels(provider=settings.VISION_LLM_PROVIDER, result="not_available").inc()
+                    return ProcessedDocument(chunks=[], file_type="image")
+
+                # Run analysis
+                start_time = time.time()
+
+                # Run async in sync context
+                loop = asyncio.new_event_loop()
+                try:
+                    vision_result = loop.run_until_complete(
+                        processor.analyze_image(buffer.get_bytes(), filename)
+                    )
+                finally:
+                    loop.close()
+
+                duration = time.time() - start_time
+
+                # Record metrics
+                if vision_llm_total:
+                    vision_llm_total.labels(provider=settings.VISION_LLM_PROVIDER, result="success").inc()
+                if vision_llm_duration:
+                    vision_llm_duration.labels(provider=settings.VISION_LLM_PROVIDER).observe(duration)
+                if vision_llm_diagram_types and vision_result.diagram_type:
+                    vision_llm_diagram_types.labels(diagram_type=vision_result.diagram_type.value).inc()
+
+                circuit.record_success()
+
+                # Convert to searchable text
+                text = vision_result.to_searchable_text()
+
+                if not text.strip():
+                    return ProcessedDocument(chunks=[], file_type="image")
+
+                # Chunk the vision analysis text
+                splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=1000,
+                    chunk_overlap=200,
+                    separators=["\n\n", "\n", ". ", " ", ""]
+                )
+                raw_chunks = splitter.split_text(text)
+
+                chunks = []
+                total_tokens = 0
+                for i, chunk_text in enumerate(raw_chunks):
+                    contextualized = f"[File: {filename}]\n{chunk_text}"
+                    token_count = self.count_tokens(contextualized)
+                    total_tokens += token_count
+
+                    chunks.append(ProcessedChunk(
+                        content=contextualized,
+                        metadata={
+                            "file_type": "image",
+                            "parser": "vision_llm",
+                            "vision_provider": settings.VISION_LLM_PROVIDER,
+                            "diagram_type": vision_result.diagram_type.value if vision_result.diagram_type else None,
+                            "confidence": vision_result.confidence,
+                            "filename": filename,
+                        },
+                        token_count=token_count,
+                        chunk_index=i
+                    ))
+
+                logger.info(
+                    f"[ImageProcessor] Vision LLM: {safe_file_ref(filename=filename)}: "
+                    f"{len(chunks)} chunks, {total_tokens} tokens, "
+                    f"type={vision_result.diagram_type.value if vision_result.diagram_type else 'unknown'}"
+                )
+
+                return ProcessedDocument(
+                    chunks=chunks,
+                    file_type="image",
+                    total_tokens=total_tokens,
+                    metadata={
+                        "parser": "vision_llm",
+                        "vision_provider": settings.VISION_LLM_PROVIDER,
+                        "diagram_type": vision_result.diagram_type.value if vision_result.diagram_type else None,
+                    }
+                )
+
+            except Exception as e:
+                error_str = str(e).lower()
+                if "402" in error_str or "quota" in error_str or "rate" in error_str:
+                    circuit.record_failure("quota")
+                else:
+                    circuit.record_failure("error")
+
+                logger.error(f"[ImageProcessor] Vision LLM failed for {safe_file_ref(filename=filename)}: {e}")
+                if vision_llm_total:
+                    vision_llm_total.labels(provider=settings.VISION_LLM_PROVIDER, result="failure").inc()
+                return ProcessedDocument(chunks=[], file_type="image")
     
     def _process_with_tesseract(self, content: bytes, filename: str) -> ProcessedDocument:
         """

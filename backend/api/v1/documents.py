@@ -12,9 +12,21 @@ from api.v1.dependencies import validate_team_access, require_editor, require_pa
 from api.v1.error_utils import api_error, ApiErrorCode
 from services.cleanup import cleanup_service
 from services.team_service import team_service
+from services.scope_guard import ScopeGuardStateMachine, ActionType
 import logging
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Ghost Protocol: Bulk Delete Approval Thresholds
+# =============================================================================
+# These thresholds determine when human approval is required for destructive actions
+
+# Number of documents above which bulk delete requires approval
+BULK_DELETE_APPROVAL_THRESHOLD = 10
+
+# Whether to enforce approval workflow for destructive actions
+ENFORCE_APPROVAL_WORKFLOW = True
 
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
@@ -116,6 +128,11 @@ class BulkDeleteRequest(BaseModel):
     """Payload for bulk document deletion."""
     document_ids: Optional[List[str]] = None
     source_type: Optional[str] = None
+    # Ghost Protocol: ScopeGuard approval credentials
+    approval_id: Optional[str] = None
+    mandate_signature: Optional[str] = None
+    # Skip approval for small deletes (internal use)
+    force: bool = False
 
 
 # =============================================================================
@@ -349,10 +366,17 @@ async def bulk_delete_documents(
 ):
     """
     Bulk delete documents by ID list or by source type.
-    
+
     Does NOT disconnect connectors; only removes indexed records and related chunks.
     Deletes from the organization's shared knowledge base.
+
+    Ghost Protocol: ScopeGuard Approval Workflow
+    - If document count exceeds BULK_DELETE_APPROVAL_THRESHOLD, approval is required
+    - Provide approval_id and mandate_signature to execute approved deletion
+    - Use force=true to skip approval (only for small deletes under threshold)
     """
+    from services.audit import audit_logger
+
     supabase = get_supabase()
 
     if not payload.document_ids and not payload.source_type:
@@ -394,6 +418,91 @@ async def bulk_delete_documents(
     if not doc_ids:
         return {"status": "success", "deleted": 0, "failed": []}
 
+    # ==========================================================================
+    # Ghost Protocol: ScopeGuard Approval Workflow
+    # ==========================================================================
+    requires_approval = (
+        ENFORCE_APPROVAL_WORKFLOW and
+        len(doc_ids) > BULK_DELETE_APPROVAL_THRESHOLD and
+        not payload.force
+    )
+
+    if requires_approval:
+        # Check if this is an execution with valid approval
+        if payload.approval_id and payload.mandate_signature:
+            # Validate and execute approved action
+            state_machine = ScopeGuardStateMachine()
+            try:
+                execution_result = await state_machine.execute(
+                    approval_id=payload.approval_id,
+                    organization_id=organization_id,
+                    executor_id=user_id,
+                    mandate_signature=payload.mandate_signature,
+                )
+                # The execute method already calls cleanup_service, so return its result
+                return {
+                    "status": "success",
+                    "approval_executed": True,
+                    **execution_result.get("result", {}),
+                }
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(e)
+                )
+        else:
+            # Request approval for bulk delete
+            state_machine = ScopeGuardStateMachine()
+            try:
+                approval_result = await state_machine.request_approval(
+                    action_type=ActionType.BULK_DELETE,
+                    resource_type="document",
+                    resource_id="bulk",
+                    organization_id=organization_id,
+                    requested_by=user_id,
+                    context={
+                        "document_ids": doc_ids,
+                        "document_count": len(doc_ids),
+                        "source_type": payload.source_type,
+                        "user_id": user_id,
+                    },
+                    ttl_minutes=30,
+                )
+
+                # Audit log the approval request
+                audit_logger.log(
+                    background_tasks,
+                    user_id=user_id,
+                    action="document.bulk_delete_approval_requested",
+                    resource_type="document",
+                    resource_id="bulk",
+                    details={
+                        "document_count": len(doc_ids),
+                        "source_type": payload.source_type,
+                        "approval_id": approval_result["approval_id"],
+                    },
+                    request=request
+                )
+
+                # Return approval required response
+                return {
+                    "status": "approval_required",
+                    "approval_required": True,
+                    "document_count": len(doc_ids),
+                    "threshold": BULK_DELETE_APPROVAL_THRESHOLD,
+                    "message": (
+                        f"Bulk deletion of {len(doc_ids)} documents requires approval. "
+                        f"Threshold is {BULK_DELETE_APPROVAL_THRESHOLD} documents."
+                    ),
+                    **approval_result,
+                }
+            except Exception as e:
+                logger.error(f"[ScopeGuard] Failed to request approval: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to request approval: {str(e)}"
+                )
+
     deleted: List[str] = []
     failed: List[Dict[str, str]] = []
 
@@ -423,7 +532,6 @@ async def bulk_delete_documents(
     # Audit log only records aggregate to avoid noisy entries
     if deleted:
         try:
-            from services.audit import audit_logger
             audit_logger.log(
                 background_tasks,
                 user_id=user_id,
@@ -432,7 +540,9 @@ async def bulk_delete_documents(
                 resource_id="bulk",
                 details={
                     "deleted_count": len(deleted),
+                    "failed_count": len(failed),
                     "source_type": payload.source_type,
+                    "ghost_protocol": True,
                 },
                 request=request
             )
@@ -442,7 +552,8 @@ async def bulk_delete_documents(
     return {
         "status": "success",
         "deleted": len(deleted),
-        "failed": failed
+        "failed": failed,
+        "ghost_protocol": True,  # Indicates secure wipe was used
     }
 
 @router.delete("/documents/{doc_id}")

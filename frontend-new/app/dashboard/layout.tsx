@@ -11,6 +11,7 @@ import { IngestionProgressProvider } from "@/hooks/useIngestionProgress";
 import { ProfileProvider } from "@/hooks/useProfile";
 import { UsageProvider } from "@/hooks/useUsage";
 import { QuotaStatusProvider } from "@/hooks/useQuotaStatus";
+import { DataInvalidationProvider } from "@/components/providers/DataInvalidationProvider";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { LazyGlobalIngestModal, LazyGlobalProgress } from "@/components/lazy";
@@ -67,6 +68,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <ProfileProvider>
             <UsageProvider>
                 <QuotaStatusProvider>
+                    <DataInvalidationProvider>
                     <ChatHistoryProvider>
                         <IngestModalProvider>
                             <IngestionProgressProvider>
@@ -119,6 +121,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                             </IngestionProgressProvider>
                         </IngestModalProvider>
                     </ChatHistoryProvider>
+                    </DataInvalidationProvider>
                 </QuotaStatusProvider>
             </UsageProvider>
         </ProfileProvider>

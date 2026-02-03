@@ -138,7 +138,16 @@ class Settings(BaseSettings):
     # =========================================================================
     # Advanced Document Parsing (LlamaParse OCR)
     # =========================================================================
-    LLAMA_CLOUD_API_KEY: Optional[str] = None 
+    LLAMA_CLOUD_API_KEY: Optional[str] = None
+
+    # =========================================================================
+    # Vision LLM Configuration
+    # =========================================================================
+    # Enable Vision LLM for semantic image/diagram understanding
+    # When enabled, images are analyzed by Vision LLMs for meaning extraction
+    VISION_LLM_ENABLED: bool = False  # Opt-in due to cost considerations
+    VISION_LLM_PROVIDER: str = "openai"  # "openai" | "gemini"
+    VISION_LLM_MAX_IMAGE_SIZE: int = 20 * 1024 * 1024  # 20MB max image size 
     
     # =========================================================================
     # Resource Limits & Memory Management
@@ -183,8 +192,17 @@ class Settings(BaseSettings):
     
     # Secure wipe passes for forensic-grade file deletion
     # 1 = fast (single overwrite), 3 = DoD 5220.22-M compliant (3 passes)
-    SECURE_WIPE_PASSES: int = 1
-    
+    SECURE_WIPE_PASSES: int = 3  # Default to DoD 3-pass for enterprise compliance
+
+    # Secure wipe pattern: "dod_5220_22_m" or "random"
+    # dod_5220_22_m: 0x00 → 0xFF → Random (DoD compliant)
+    # random: All passes use random data (faster, still secure)
+    SECURE_WIPE_PATTERN: str = "dod_5220_22_m"
+
+    # Enable verify read after secure wipe
+    # Samples file content to ensure random pass completed successfully
+    SECURE_WIPE_VERIFY: bool = True
+
     # Strict encryption mode: crash on unencrypted content retrieval
     # For greenfield deployments (no legacy data), this should ALWAYS be True
     # Set to False only for migration periods with legacy plaintext data

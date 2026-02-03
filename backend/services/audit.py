@@ -248,3 +248,126 @@ def log_settings_update(
         details={"old": old_value, "new": new_value},
         request=request,
     )
+
+
+# ============================================================================
+# Ghost Protocol: Security Event Logging
+# ============================================================================
+
+def log_security_wipe(
+    user_id: Optional[str],
+    event_type: str,  # document_wiped, scope_deleted, chunk_purged, organization_purged
+    resource_id: str,
+    resource_name: str,
+    wipe_pattern: Optional[str] = None,
+    wipe_verified: bool = False,
+    duration_ms: int = 0,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Log Ghost Protocol security wipe event (synchronous for Celery compatibility).
+
+    These events are critical for compliance auditing and forensics.
+    Always logged with ghost_protocol=True for easy filtering.
+
+    Args:
+        user_id: User who initiated the action
+        event_type: Type of wipe event
+        resource_id: ID of the affected resource
+        resource_name: Human-readable name
+        wipe_pattern: Wipe pattern used (dod_5220_22_m, random, etc.)
+        wipe_verified: Whether verify read passed
+        duration_ms: Operation duration in milliseconds
+        metadata: Additional context
+    """
+    audit_logger.log_sync(
+        user_id=user_id,
+        action=f"security.{event_type}",
+        resource_type=event_type.split("_")[0],
+        resource_id=resource_id,
+        details={
+            "resource_name": resource_name,
+            "wipe_pattern": wipe_pattern,
+            "wipe_verified": wipe_verified,
+            "duration_ms": duration_ms,
+            "ghost_protocol": True,
+            **(metadata or {}),
+        },
+    )
+
+
+def log_approval_event(
+    background_tasks: BackgroundTasks,
+    user_id: str,
+    action_type: str,  # request, approve, reject, execute
+    approval_id: str,
+    resource_type: str,
+    resource_id: str,
+    details: Optional[Dict[str, Any]] = None,
+    request: Optional[Request] = None,
+) -> None:
+    """
+    Log ScopeGuard approval workflow event.
+
+    Args:
+        background_tasks: FastAPI BackgroundTasks
+        user_id: User performing the action
+        action_type: Type of approval action
+        approval_id: ID of the approval request
+        resource_type: Type of resource being approved
+        resource_id: ID of the resource
+        details: Additional context
+        request: FastAPI Request for IP/UA
+    """
+    audit_logger.log(
+        background_tasks,
+        user_id=user_id,
+        action=f"approval.{action_type}",
+        resource_type=resource_type,
+        resource_id=resource_id,
+        details={
+            "approval_id": approval_id,
+            "scope_guard": True,
+            **(details or {}),
+        },
+        request=request,
+    )
+
+
+def log_consent_change(
+    background_tasks: BackgroundTasks,
+    user_id: str,
+    consent_level: str,  # organization, scope, document
+    resource_id: str,
+    field_changed: str,
+    old_value: Any,
+    new_value: Any,
+    request: Optional[Request] = None,
+) -> None:
+    """
+    Log KVKK consent change event.
+
+    Args:
+        background_tasks: FastAPI BackgroundTasks
+        user_id: User making the change
+        consent_level: Level of consent (organization, scope, document)
+        resource_id: ID of the resource
+        field_changed: Which consent field changed
+        old_value: Previous value
+        new_value: New value
+        request: FastAPI Request for IP/UA
+    """
+    audit_logger.log(
+        background_tasks,
+        user_id=user_id,
+        action=f"consent.{consent_level}_update",
+        resource_type=consent_level,
+        resource_id=resource_id,
+        details={
+            "field_changed": field_changed,
+            "old_value": old_value,
+            "new_value": new_value,
+            "kvkk_compliance": True,
+        },
+        request=request,
+    )

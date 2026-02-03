@@ -1289,7 +1289,13 @@ async def chat_endpoint(
         
         # GHOST PROTOCOL: Decrypt content before processing
         docs = _decrypt_search_results(docs)
-        
+
+        # GHOST PROTOCOL: Defense-in-depth tombstone filter
+        # hybrid_search already filters tombstoned docs at SQL level,
+        # but we double-check here for race condition protection
+        from services.compliance_switch import compliance_switch
+        docs = await compliance_switch.filter_tombstoned_docs(docs, organization_id)
+
     except Exception as e:
         logger.error("ERROR: Retrieval failed: %s", e)
         raise HTTPException(500, f"Retrieval failed: {e}")

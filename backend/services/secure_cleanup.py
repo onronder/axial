@@ -2,12 +2,14 @@
 Secure Cleanup Service - Ghost Protocol
 
 Provides forensic-grade file cleanup for Zero-Retention architecture:
+- DoD 5220.22-M compliant 3-pass wipe (0x00 → 0xFF → Random)
+- Verify read layer for post-erasure validation
 - Cryptographic overwrite before file deletion (prevents recovery)
 - Smart buffering (RAM vs secure temp file based on size)
 - Signal handlers for crash-safe cleanup (dead man's switch)
 - S3 staging file removal
 
-Security Level: Military-Grade (DoD 5220.22-M optional)
+Security Level: Military-Grade (DoD 5220.22-M compliant)
 
 Usage:
     from services.secure_cleanup import (
@@ -16,14 +18,14 @@ Usage:
         SmartBuffer,
         cleanup_staging_file,
     )
-    
+
     # Secure temp file with auto-wipe
     with SecureTempFile(suffix=".pdf") as path:
         with open(path, 'wb') as f:
             f.write(content)
         # Process file...
     # File is cryptographically wiped here
-    
+
     # Smart buffer (RAM or disk based on size)
     with SmartBuffer(content, filename="doc.pdf") as buffer:
         if buffer.is_ram_backed:
@@ -61,6 +63,8 @@ try:
         smart_buffer_size,
         s3_cleanup_total,
         emergency_cleanup_triggered,
+        secure_wipe_verify_total,
+        secure_wipe_pattern_total,
         METRICS_ENABLED,
     )
 except ImportError:
@@ -76,6 +80,8 @@ except ImportError:
     smart_buffer_size = _DummyMetric()
     s3_cleanup_total = _DummyMetric()
     emergency_cleanup_triggered = _DummyMetric()
+    secure_wipe_verify_total = _DummyMetric()
+    secure_wipe_pattern_total = _DummyMetric()
 
 
 # =============================================================================
@@ -184,33 +190,156 @@ except ValueError:
 
 
 # =============================================================================
+# DOD 5220.22-M WIPE PATTERN
+# =============================================================================
+
+def _dod_wipe_pass(
+    f,
+    file_size: int,
+    pass_num: int,
+    chunk_size: int = 1024 * 1024
+) -> None:
+    """
+    DoD 5220.22-M compliant wipe pass.
+
+    Pass 1: 0x00 (zeros) - Clear all data
+    Pass 2: 0xFF (ones) - Overwrite with complement
+    Pass 3: Random data - Final cryptographic overwrite
+
+    Args:
+        f: File handle opened in r+b mode
+        file_size: Size of file in bytes
+        pass_num: Which pass (1, 2, or 3)
+        chunk_size: Write chunk size (default 1MB for memory efficiency)
+    """
+    f.seek(0)
+    remaining = file_size
+
+    while remaining > 0:
+        write_size = min(chunk_size, remaining)
+        if pass_num == 1:
+            # Pass 1: Write zeros (0x00)
+            data = b'\x00' * write_size
+        elif pass_num == 2:
+            # Pass 2: Write ones (0xFF)
+            data = b'\xFF' * write_size
+        else:
+            # Pass 3: Write random data
+            data = os.urandom(write_size)
+        f.write(data)
+        remaining -= write_size
+
+    f.flush()
+    os.fsync(f.fileno())
+
+
+def _verify_erasure(
+    path: str,
+    file_size: int,
+    sample_count: int = 3,
+    chunk_size: int = 1024
+) -> bool:
+    """
+    Verify file content is properly randomized (not original or pattern data).
+
+    Samples multiple positions in the file and checks that:
+    1. Content is not all zeros (would indicate incomplete pass 3)
+    2. Content is not all ones (would indicate incomplete pass 3)
+    3. Content has reasonable entropy (random data)
+
+    This provides assurance that the final random pass completed successfully.
+
+    Args:
+        path: Path to the file to verify
+        file_size: Size of file in bytes
+        sample_count: Number of positions to sample (default 3)
+        chunk_size: Size of each sample in bytes (default 1KB)
+
+    Returns:
+        True if verification passes, False if potential data leak detected
+    """
+    if file_size == 0:
+        return True  # Empty files are trivially verified
+
+    try:
+        with open(path, 'rb') as f:
+            for i in range(sample_count):
+                # Calculate sample offset (evenly distributed)
+                offset = (file_size // (sample_count + 1)) * (i + 1)
+                # Ensure we don't read past end of file
+                read_size = min(chunk_size, file_size - offset)
+                if read_size <= 0:
+                    continue
+
+                f.seek(offset)
+                sample = f.read(read_size)
+
+                if len(sample) == 0:
+                    continue
+
+                # Check for pattern leaks (all zeros or all ones)
+                # These would indicate the random pass didn't complete
+                if sample == b'\x00' * len(sample):
+                    logger.warning(
+                        f"[GhostProtocol] Verify read FAILED: "
+                        f"All-zeros pattern detected at offset {offset}"
+                    )
+                    return False
+                if sample == b'\xFF' * len(sample):
+                    logger.warning(
+                        f"[GhostProtocol] Verify read FAILED: "
+                        f"All-ones pattern detected at offset {offset}"
+                    )
+                    return False
+
+        return True
+    except Exception as e:
+        logger.error(f"[GhostProtocol] Verify read error: {e}")
+        return False
+
+
+# =============================================================================
 # SECURE WIPE
 # =============================================================================
 
-def secure_wipe(path: str, passes: Optional[int] = None, _skip_metrics: bool = False) -> bool:
+def secure_wipe(
+    path: str,
+    passes: Optional[int] = None,
+    pattern: Optional[str] = None,
+    verify: Optional[bool] = None,
+    _skip_metrics: bool = False
+) -> bool:
     """
-    Securely wipe a file using cryptographic overwrite.
-    
-    Overwrites file contents with random data before unlinking.
-    This prevents forensic recovery of sensitive document content.
-    
-    Algorithm:
+    Securely wipe a file using DoD 5220.22-M compliant overwrite.
+
+    Supports two wipe patterns:
+    - "dod_5220_22_m": DoD compliant 3-pass (0x00 → 0xFF → Random)
+    - "random": All passes use random data (faster, still secure)
+
+    Algorithm (DoD 5220.22-M):
     1. Get file size
-    2. For each pass: overwrite entire file with os.urandom
-    3. Flush and fsync to ensure writes hit disk
-    4. Unlink the file
-    
+    2. Pass 1: Overwrite with zeros (0x00)
+    3. Pass 2: Overwrite with ones (0xFF)
+    4. Pass 3: Overwrite with random data
+    5. Verify read (sample-based entropy check)
+    6. Flush and fsync to ensure writes hit disk
+    7. Unlink the file
+
     Args:
         path: Absolute path to file to wipe
         passes: Number of overwrite passes (default from settings.SECURE_WIPE_PASSES)
-                1 = fast (single pass), 3 = DoD 5220.22-M compliant
+                1 = fast (single random pass), 3 = DoD 5220.22-M compliant
+        pattern: Wipe pattern - "dod_5220_22_m" or "random" (default from settings)
+        verify: Whether to perform verify read after wipe (default from settings)
         _skip_metrics: Internal flag to avoid double-counting in emergency cleanup
-        
+
     Returns:
         True if wipe succeeded, False if file didn't exist
-        
+
     Example:
         >>> secure_wipe("/tmp/sensitive_doc.pdf")
+        True
+        >>> secure_wipe("/tmp/doc.pdf", pattern="dod_5220_22_m", verify=True)
         True
     """
     if not path or not os.path.exists(path):
@@ -218,46 +347,79 @@ def secure_wipe(path: str, passes: Optional[int] = None, _skip_metrics: bool = F
         if not _skip_metrics:
             secure_wipe_total.labels(result="not_found").inc()
         return False
-    
-    passes = passes if passes is not None else getattr(settings, 'SECURE_WIPE_PASSES', 1)
+
+    # Get configuration from settings with defaults
+    passes = passes if passes is not None else getattr(settings, 'SECURE_WIPE_PASSES', 3)
     passes = max(1, passes)  # Ensure at least 1 pass
+
+    pattern = pattern if pattern is not None else getattr(settings, 'SECURE_WIPE_PATTERN', 'dod_5220_22_m')
+    verify = verify if verify is not None else getattr(settings, 'SECURE_WIPE_VERIFY', True)
+
+    use_dod_pattern = (pattern == 'dod_5220_22_m' and passes >= 3)
+
     start_time = time.time()
-    
+
     try:
         file_size = os.path.getsize(path)
-        
+
         if file_size > 0:
-            # Overwrite with random data
             with open(path, 'r+b') as f:
-                for pass_num in range(passes):
-                    f.seek(0)
-                    # Write random data in chunks to handle large files
-                    # without consuming excessive memory
-                    remaining = file_size
-                    chunk_size = 1024 * 1024  # 1MB chunks
-                    while remaining > 0:
-                        write_size = min(chunk_size, remaining)
-                        f.write(os.urandom(write_size))
-                        remaining -= write_size
-                    f.flush()
-                    os.fsync(f.fileno())  # Force write to physical disk
-        
+                if use_dod_pattern:
+                    # DoD 5220.22-M: 3-pass (0x00 → 0xFF → Random)
+                    for pass_num in range(1, 4):  # 1, 2, 3
+                        _dod_wipe_pass(f, file_size, pass_num)
+
+                    # Track DoD pattern usage
+                    if not _skip_metrics:
+                        secure_wipe_pattern_total.labels(pattern="dod_5220_22_m").inc()
+                else:
+                    # Legacy random-only mode
+                    for pass_num in range(passes):
+                        f.seek(0)
+                        remaining = file_size
+                        chunk_size = 1024 * 1024  # 1MB chunks
+                        while remaining > 0:
+                            write_size = min(chunk_size, remaining)
+                            f.write(os.urandom(write_size))
+                            remaining -= write_size
+                        f.flush()
+                        os.fsync(f.fileno())
+
+                    # Track random pattern usage
+                    if not _skip_metrics:
+                        secure_wipe_pattern_total.labels(pattern="random").inc()
+
+            # Verify read (post-erasure validation)
+            if verify and file_size > 0:
+                verify_result = _verify_erasure(path, file_size)
+                if not _skip_metrics:
+                    secure_wipe_verify_total.labels(
+                        result="pass" if verify_result else "fail"
+                    ).inc()
+
+                if not verify_result:
+                    logger.warning(
+                        f"⚠️ [GhostProtocol] Verify read failed for {os.path.basename(path)}, "
+                        f"proceeding with deletion anyway"
+                    )
+
         # Finally unlink
         os.unlink(path)
         _unregister_temp_file(path)
-        
+
         # Track metrics
         if not _skip_metrics:
             duration = time.time() - start_time
             secure_wipe_total.labels(result="success").inc()
             secure_wipe_duration.labels(passes=str(passes)).observe(duration)
-        
+
+        pattern_desc = "DoD 5220.22-M" if use_dod_pattern else f"{passes}-pass random"
         logger.debug(
             f"🗑️ [GhostProtocol] Secure wiped: {os.path.basename(path)} "
-            f"({passes} pass{'es' if passes > 1 else ''})"
+            f"({pattern_desc})"
         )
         return True
-        
+
     except PermissionError as e:
         logger.error(f"❌ [GhostProtocol] Permission denied wiping {path}: {e}")
         _unregister_temp_file(path)

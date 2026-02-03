@@ -340,6 +340,18 @@ emergency_cleanup_triggered = Counter(
     ['trigger']  # sigterm, sigint, atexit
 )
 
+secure_wipe_verify_total = Counter(
+    'ghost_protocol_secure_wipe_verify_total',
+    'Verify read results after secure wipe',
+    ['result']  # pass, fail
+)
+
+secure_wipe_pattern_total = Counter(
+    'ghost_protocol_secure_wipe_pattern_total',
+    'Wipe patterns used for secure file deletion',
+    ['pattern']  # random, dod_5220_22_m
+)
+
 encryption_operations = Counter(
     'ghost_protocol_encryption_operations_total',
     'Content encryption/decryption operations',
@@ -356,6 +368,29 @@ malware_scan_duration = Histogram(
     'ghost_protocol_malware_scan_duration_seconds',
     'Malware scan operation duration',
     buckets=[0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0]
+)
+
+# =============================================================================
+# Vision LLM Metrics
+# =============================================================================
+
+vision_llm_total = Counter(
+    'vision_llm_analysis_total',
+    'Vision LLM analysis attempts',
+    ['provider', 'result']  # provider: openai/gemini, result: success/failure/skipped
+)
+
+vision_llm_duration = Histogram(
+    'vision_llm_analysis_duration_seconds',
+    'Vision LLM analysis duration',
+    ['provider'],
+    buckets=[0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]
+)
+
+vision_llm_diagram_types = Counter(
+    'vision_llm_diagram_types_total',
+    'Types of diagrams detected by Vision LLM',
+    ['diagram_type']  # flowchart, architecture, chart, etc.
 )
 
 logger.info("📊 Prometheus metrics initialized (including Ghost Protocol)")

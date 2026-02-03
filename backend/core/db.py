@@ -25,19 +25,39 @@ SessionLocal = None
 IngestionSessionLocal = None
 
 
+def _check_psycopg3_available() -> bool:
+    """Check if psycopg3 (psycopg) is available."""
+    try:
+        import psycopg  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+# Cache the check result
+_PSYCOPG3_AVAILABLE = _check_psycopg3_available()
+
+
 def _convert_to_psycopg3_url(url: str | None) -> str | None:
     """
-    Convert PostgreSQL URL to use psycopg3 dialect.
-    
-    psycopg3 (psycopg[binary]) requires 'postgresql+psycopg://' dialect
-    instead of the default 'postgresql://' which uses psycopg2.
+    Convert PostgreSQL URL to use psycopg3 dialect if available.
+
+    psycopg3 (psycopg[binary]) requires 'postgresql+psycopg://' dialect.
+    Falls back to psycopg2 ('postgresql://') if psycopg3 is not installed.
     """
     if url is None:
         return None
-    # Convert postgresql:// to postgresql+psycopg:// for psycopg3
-    if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+psycopg://", 1)
-    # Already using a specific dialect
+
+    # If psycopg3 is available, use it
+    if _PSYCOPG3_AVAILABLE:
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return url
+
+    # Fallback: use psycopg2 (default 'postgresql://' dialect)
+    logger.warning("psycopg3 not available, falling back to psycopg2")
+    if url.startswith("postgresql+psycopg://"):
+        return url.replace("postgresql+psycopg://", "postgresql://", 1)
     return url
 
 

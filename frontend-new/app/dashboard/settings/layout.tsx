@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
-import { User, Database, FileText, Bell, CreditCard, Users, Settings, AlertTriangle, BarChart3, ScrollText, Briefcase } from "lucide-react";
+import { User, Database, FileText, Bell, CreditCard, Users, Settings, AlertTriangle, BarChart3, ScrollText, Briefcase, Shield, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useUsage } from "@/hooks/useUsage";
@@ -21,10 +21,12 @@ const settingsNav: NavItem[] = [
     { name: "General", path: "/dashboard/settings/general", icon: User, freeAllowed: true },
     { name: "Data Sources", path: "/dashboard/settings/data-sources", icon: Database },
     { name: "Knowledge Base", path: "/dashboard/settings/knowledge-base", icon: FileText },
-    { name: "Jobs", path: "/dashboard/settings/jobs", icon: Briefcase, freeAllowed: true },  // Always visible
+    { name: "Jobs", path: "/dashboard/settings/jobs", icon: Briefcase, freeAllowed: true },
     { name: "Team", path: "/dashboard/settings/team", icon: Users },
     { name: "Analytics", path: "/dashboard/settings/analytics", icon: BarChart3, adminOnly: true },
     { name: "Audit Logs", path: "/dashboard/settings/audit-logs", icon: ScrollText, adminOnly: true },
+    { name: "Security Log", path: "/dashboard/settings/security-log", icon: Lock, adminOnly: true },
+    { name: "Consent", path: "/dashboard/settings/consent", icon: Shield, adminOnly: true },
     { name: "Notifications", path: "/dashboard/settings/notifications", icon: Bell },
     { name: "Billing", path: "/dashboard/settings/billing", icon: CreditCard, freeAllowed: true },
     { name: "Failed Tasks", path: "/dashboard/settings/failed-tasks", icon: AlertTriangle },

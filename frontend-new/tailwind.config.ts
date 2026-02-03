@@ -68,12 +68,40 @@ export default {
                 shimmer: {
                     "0%": { backgroundPosition: "-200% 0" },
                     "100%": { backgroundPosition: "200% 0" }
+                },
+                // Ghost Protocol animations
+                shred: {
+                    "0%": { transform: "translateY(0) rotateZ(0)", opacity: "1" },
+                    "50%": { opacity: "1" },
+                    "100%": { transform: "translateY(200px) rotateZ(15deg)", opacity: "0" }
+                },
+                "pulse-border": {
+                    "0%, 100%": { borderColor: "hsl(var(--warning) / 0.5)", boxShadow: "0 0 20px hsl(var(--warning) / 0.3)" },
+                    "50%": { borderColor: "hsl(var(--destructive) / 0.7)", boxShadow: "0 0 30px hsl(var(--destructive) / 0.4)" }
+                },
+                "matrix-scroll": {
+                    "0%": { transform: "translateY(0)" },
+                    "100%": { transform: "translateY(-10px)" }
+                },
+                "countdown-pulse": {
+                    "0%, 100%": { opacity: "1" },
+                    "50%": { opacity: "0.5" }
+                },
+                "glow-pulse": {
+                    "0%, 100%": { boxShadow: "0 0 5px currentColor, 0 0 10px currentColor" },
+                    "50%": { boxShadow: "0 0 10px currentColor, 0 0 20px currentColor, 0 0 30px currentColor" }
                 }
             },
             animation: {
                 "accordion-down": "accordion-down 0.2s ease-out",
                 "accordion-up": "accordion-up 0.2s ease-out",
-                shimmer: "shimmer 2s linear infinite"
+                shimmer: "shimmer 2s linear infinite",
+                // Ghost Protocol animations
+                shred: "shred 1.5s ease-in forwards",
+                "pulse-border": "pulse-border 2s ease-in-out infinite",
+                "matrix-scroll": "matrix-scroll 0.5s linear infinite",
+                "countdown-pulse": "countdown-pulse 1s linear infinite",
+                "glow-pulse": "glow-pulse 2s ease-in-out infinite"
             },
         },
     },

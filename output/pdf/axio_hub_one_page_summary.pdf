@@ -1,0 +1,112 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 6 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 2814 >>
+stream
+BT
+/F2 18 Tf
+1 0 0 1 48.00 744.00 Tm
+(Axio Hub - One-Page App Summary) Tj
+/F2 12 Tf
+1 0 0 1 48.00 716.00 Tm
+(What it is) Tj
+/F1 10 Tf
+1 0 0 1 48.00 700.00 Tm
+(Axio Hub is an AI-powered knowledge management platform with RAG capabilities.) Tj
+1 0 0 1 48.00 688.00 Tm
+(It delivers a Next.js web app backed by a FastAPI API for search and chat over) Tj
+1 0 0 1 48.00 676.00 Tm
+(ingested content.) Tj
+/F2 12 Tf
+1 0 0 1 48.00 656.00 Tm
+(Who it's for) Tj
+/F1 10 Tf
+1 0 0 1 48.00 640.00 Tm
+(Primary persona: privacy-conscious teams that need a unified, searchable knowledge base) Tj
+1 0 0 1 48.00 628.00 Tm
+(across many sources.) Tj
+/F2 12 Tf
+1 0 0 1 48.00 608.00 Tm
+(What it does) Tj
+/F1 10 Tf
+1 0 0 1 48.00 592.00 Tm
+(- Connects data sources: Google Drive, Dropbox, OneDrive/SharePoint, Box, Notion,) Tj
+1 0 0 1 48.00 580.00 Tm
+(  GitHub, S3/SFTP, web crawl, and file uploads.) Tj
+1 0 0 1 48.00 568.00 Tm
+(- Parses many formats \(PDF, DOCX, code, Markdown, HTML, CSV, images, email\).) Tj
+1 0 0 1 48.00 556.00 Tm
+(- Generates embeddings and indexes chunks for hybrid search \(pgvector + full-text + RRF\).) Tj
+1 0 0 1 48.00 544.00 Tm
+(- Provides scope-aware chat/conversations with guardrails for context disambiguation.) Tj
+1 0 0 1 48.00 532.00 Tm
+(- Supports teams/orgs, usage/quotas, subscriptions/billing, and notifications.) Tj
+1 0 0 1 48.00 520.00 Tm
+(- Includes Ghost Protocol zero-retention security and malware scanning.) Tj
+/F2 12 Tf
+1 0 0 1 48.00 500.00 Tm
+(How it works) Tj
+/F1 10 Tf
+1 0 0 1 48.00 484.00 Tm
+(- Frontend: Next.js 14 App Router \(TypeScript, Tailwind\) with Supabase Auth/Realtime.) Tj
+1 0 0 1 48.00 472.00 Tm
+(- API: FastAPI service exposes uploads/search/chat/documents; uses Supabase client.) Tj
+1 0 0 1 48.00 460.00 Tm
+(- Workers: Celery \(Redis broker\) queues parsing, embedding, and indexing tasks.) Tj
+1 0 0 1 48.00 448.00 Tm
+(- Parsing: document processor factory handles PDF/DOCX/code/HTML/etc with OCR fallbacks.) Tj
+1 0 0 1 48.00 436.00 Tm
+(- Storage & retrieval: Supabase Postgres with pgvector + full-text; hybrid search with RRF.) Tj
+1 0 0 1 48.00 424.00 Tm
+(- Data flow: Sources/Uploads -> Connectors -> Parsing -> Embeddings -> Index -> Search/Chat.) Tj
+/F2 12 Tf
+1 0 0 1 48.00 404.00 Tm
+(How to run) Tj
+/F1 10 Tf
+1 0 0 1 48.00 388.00 Tm
+(1. Backend + Redis: docker-compose up --build \(uses .env\).) Tj
+1 0 0 1 48.00 376.00 Tm
+(   Backend required keys listed in backend/core/config.py.) Tj
+1 0 0 1 48.00 364.00 Tm
+(2. Frontend: cd frontend-new) Tj
+1 0 0 1 48.00 352.00 Tm
+(   npm install) Tj
+1 0 0 1 48.00 340.00 Tm
+(   npm run dev) Tj
+1 0 0 1 48.00 328.00 Tm
+(3. Frontend env: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY) Tj
+1 0 0 1 48.00 316.00 Tm
+(   \(Google/Microsoft client IDs optional\).) Tj
+1 0 0 1 48.00 304.00 Tm
+(4. Open http://localhost:3000) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000251 00000 n 
+0000000321 00000 n 
+0000003187 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+3262
+%%EOF
