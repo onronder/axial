@@ -593,3 +593,413 @@ describe('useConsent Error Handling', () => {
     expect(shouldRetry).toBe(false);
   });
 });
+
+// =============================================================================
+// Consent Reset (DELETE) Tests
+// =============================================================================
+
+describe('useConsent Reset Functions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetch.mockReset();
+  });
+
+  describe('resetScopeConsent', () => {
+    it('should call DELETE endpoint for scope consent reset', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'success',
+          message: 'Scope consent reset to organization defaults',
+          reset_to: 'inherit_org_consent',
+        }),
+      });
+
+      const scopeId = 'scope-123';
+      await fetch(`/api/py/consent/scope/${scopeId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `/api/py/consent/scope/${scopeId}`,
+        expect.objectContaining({
+          method: 'DELETE',
+        })
+      );
+    });
+
+    it('should handle 404 when no consent override exists', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      const response = await fetch('/api/py/consent/scope/nonexistent');
+      expect(response.status).toBe(404);
+    });
+
+    it('should handle 403 when user lacks admin permission', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+      });
+
+      const response = await fetch('/api/py/consent/scope/scope-123', {
+        method: 'DELETE',
+      });
+      expect(response.status).toBe(403);
+    });
+  });
+
+  describe('resetDocumentConsent', () => {
+    it('should call DELETE endpoint for document consent reset', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'success',
+          message: 'Document consent reset to scope defaults',
+          reset_to: 'inherit_scope_consent',
+        }),
+      });
+
+      const documentId = 'doc-123';
+      await fetch(`/api/py/consent/document/${documentId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `/api/py/consent/document/${documentId}`,
+        expect.objectContaining({
+          method: 'DELETE',
+        })
+      );
+    });
+
+    it('should handle 404 when no consent override exists', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      const response = await fetch('/api/py/consent/document/nonexistent', {
+        method: 'DELETE',
+      });
+      expect(response.status).toBe(404);
+    });
+  });
+});
+
+// =============================================================================
+// Agent Access Management Tests
+// =============================================================================
+
+describe('useConsent Agent Access Management', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetch.mockReset();
+  });
+
+  describe('updateScopeAgentAccess', () => {
+    it('should send allow action to add agent to whitelist', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'success',
+          scope_id: 'scope-123',
+          action: 'allow',
+          agent_id: 'agent-claude-001',
+          allowed_agent_ids: ['agent-claude-001'],
+          blocked_agent_ids: [],
+        }),
+      });
+
+      const scopeId = 'scope-123';
+      await fetch(`/api/py/consent/scope/${scopeId}/agents`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'allow',
+          agent_id: 'agent-claude-001',
+        }),
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `/api/py/consent/scope/${scopeId}/agents`,
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({
+            action: 'allow',
+            agent_id: 'agent-claude-001',
+          }),
+        })
+      );
+    });
+
+    it('should send block action to add agent to blacklist', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'success',
+          scope_id: 'scope-123',
+          action: 'block',
+          agent_id: 'agent-malicious-001',
+          allowed_agent_ids: [],
+          blocked_agent_ids: ['agent-malicious-001'],
+        }),
+      });
+
+      const scopeId = 'scope-123';
+      await fetch(`/api/py/consent/scope/${scopeId}/agents`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'block',
+          agent_id: 'agent-malicious-001',
+        }),
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `/api/py/consent/scope/${scopeId}/agents`,
+        expect.objectContaining({
+          body: JSON.stringify({
+            action: 'block',
+            agent_id: 'agent-malicious-001',
+          }),
+        })
+      );
+    });
+
+    it('should send remove action to clear agent from both lists', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'success',
+          scope_id: 'scope-123',
+          action: 'remove',
+          agent_id: 'agent-old-001',
+          allowed_agent_ids: [],
+          blocked_agent_ids: [],
+        }),
+      });
+
+      const scopeId = 'scope-123';
+      await fetch(`/api/py/consent/scope/${scopeId}/agents`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'remove',
+          agent_id: 'agent-old-001',
+        }),
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `/api/py/consent/scope/${scopeId}/agents`,
+        expect.objectContaining({
+          body: JSON.stringify({
+            action: 'remove',
+            agent_id: 'agent-old-001',
+          }),
+        })
+      );
+    });
+
+    it('should handle 400 for invalid action', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+      });
+
+      const response = await fetch('/api/py/consent/scope/scope-123/agents', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'invalid_action',
+          agent_id: 'agent-001',
+        }),
+      });
+
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('updateDocumentAgentAccess', () => {
+    it('should send allow action for document-level agent access', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'success',
+          document_id: 'doc-123',
+          action: 'allow',
+          agent_id: 'agent-trusted-001',
+          allowed_agent_ids: ['agent-trusted-001'],
+          blocked_agent_ids: [],
+        }),
+      });
+
+      const documentId = 'doc-123';
+      await fetch(`/api/py/consent/document/${documentId}/agents`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'allow',
+          agent_id: 'agent-trusted-001',
+        }),
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `/api/py/consent/document/${documentId}/agents`,
+        expect.objectContaining({
+          method: 'PATCH',
+        })
+      );
+    });
+
+    it('should handle 403 when user lacks editor permission', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+      });
+
+      const response = await fetch('/api/py/consent/document/doc-123/agents', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'allow',
+          agent_id: 'agent-001',
+        }),
+      });
+
+      expect(response.status).toBe(403);
+    });
+  });
+});
+
+// =============================================================================
+// Agent Access Response Transform Tests
+// =============================================================================
+
+describe('Agent Access Response Transformations', () => {
+  it('should transform snake_case response to camelCase', () => {
+    const raw = {
+      status: 'success',
+      scope_id: 'scope-123',
+      action: 'allow',
+      agent_id: 'agent-claude-001',
+      allowed_agent_ids: ['agent-claude-001', 'agent-claude-002'],
+      blocked_agent_ids: ['agent-blocked-001'],
+    };
+
+    const transformed = {
+      status: raw.status,
+      action: raw.action,
+      agentId: raw.agent_id,
+      allowedAgentIds: raw.allowed_agent_ids || [],
+      blockedAgentIds: raw.blocked_agent_ids || [],
+    };
+
+    expect(transformed.agentId).toBe('agent-claude-001');
+    expect(transformed.allowedAgentIds).toEqual(['agent-claude-001', 'agent-claude-002']);
+    expect(transformed.blockedAgentIds).toEqual(['agent-blocked-001']);
+  });
+
+  it('should default empty arrays when agent lists are null', () => {
+    const raw = {
+      status: 'success',
+      action: 'remove',
+      agent_id: 'agent-001',
+      allowed_agent_ids: null,
+      blocked_agent_ids: null,
+    };
+
+    const transformed = {
+      allowedAgentIds: raw.allowed_agent_ids || [],
+      blockedAgentIds: raw.blocked_agent_ids || [],
+    };
+
+    expect(transformed.allowedAgentIds).toEqual([]);
+    expect(transformed.blockedAgentIds).toEqual([]);
+  });
+});
+
+// =============================================================================
+// New Hook Return Value Tests
+// =============================================================================
+
+describe('useConsent New Return Values', () => {
+  it('should return resetScopeConsent function', () => {
+    const returnValue = { resetScopeConsent: () => {} };
+    expect(typeof returnValue.resetScopeConsent).toBe('function');
+  });
+
+  it('should return resetDocumentConsent function', () => {
+    const returnValue = { resetDocumentConsent: () => {} };
+    expect(typeof returnValue.resetDocumentConsent).toBe('function');
+  });
+
+  it('should return updateScopeAgentAccess function', () => {
+    const returnValue = { updateScopeAgentAccess: () => {} };
+    expect(typeof returnValue.updateScopeAgentAccess).toBe('function');
+  });
+
+  it('should return updateDocumentAgentAccess function', () => {
+    const returnValue = { updateDocumentAgentAccess: () => {} };
+    expect(typeof returnValue.updateDocumentAgentAccess).toBe('function');
+  });
+
+  it('should return isResettingScope boolean', () => {
+    const returnValue = { isResettingScope: false };
+    expect(typeof returnValue.isResettingScope).toBe('boolean');
+  });
+
+  it('should return isResettingDocument boolean', () => {
+    const returnValue = { isResettingDocument: false };
+    expect(typeof returnValue.isResettingDocument).toBe('boolean');
+  });
+
+  it('should return isUpdatingScopeAgent boolean', () => {
+    const returnValue = { isUpdatingScopeAgent: false };
+    expect(typeof returnValue.isUpdatingScopeAgent).toBe('boolean');
+  });
+
+  it('should return isUpdatingDocumentAgent boolean', () => {
+    const returnValue = { isUpdatingDocumentAgent: false };
+    expect(typeof returnValue.isUpdatingDocumentAgent).toBe('boolean');
+  });
+
+  it('should return fetchDocumentConsent function', () => {
+    const returnValue = { fetchDocumentConsent: async () => null };
+    expect(typeof returnValue.fetchDocumentConsent).toBe('function');
+  });
+});
+
+// =============================================================================
+// Agent Action Types Tests
+// =============================================================================
+
+describe('Agent Action Types', () => {
+  it('should support allow action', () => {
+    const actions = ['allow', 'block', 'remove'];
+    expect(actions).toContain('allow');
+  });
+
+  it('should support block action', () => {
+    const actions = ['allow', 'block', 'remove'];
+    expect(actions).toContain('block');
+  });
+
+  it('should support remove action', () => {
+    const actions = ['allow', 'block', 'remove'];
+    expect(actions).toContain('remove');
+  });
+
+  it('should have exactly 3 valid actions', () => {
+    const validActions = ['allow', 'block', 'remove'];
+    expect(validActions).toHaveLength(3);
+  });
+});

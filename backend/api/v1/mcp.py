@@ -161,6 +161,49 @@ async def list_api_keys(
     return await list_mcp_api_keys(organization_id)
 
 
+@router.get("/mcp/api-keys/{key_id}", response_model=MCPApiKey)
+@limiter.limit("30/minute")
+async def get_api_key(
+    key_id: str,
+    request: Request,
+    user_id: str = Depends(require_admin),
+    organization_id: str = Depends(get_user_organization_id),
+) -> MCPApiKey:
+    """
+    Get details of a specific MCP API key.
+
+    Only organization admins can view API key details.
+    Returns metadata only - the actual key is not retrievable after creation.
+    """
+    from core.db import get_supabase
+
+    supabase = get_supabase()
+
+    result = supabase.table("mcp_api_keys")\
+        .select("id, agent_name, scopes, created_at, expires_at, revoked_at")\
+        .eq("id", key_id)\
+        .eq("organization_id", organization_id)\
+        .maybe_single()\
+        .execute()
+
+    if not result or not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="API key not found"
+        )
+
+    data = result.data
+    return MCPApiKey(
+        id=data["id"],
+        organization_id=organization_id,
+        agent_name=data["agent_name"],
+        scopes=data.get("scopes") or ["*"],
+        created_at=data["created_at"],
+        expires_at=data.get("expires_at"),
+        revoked_at=data.get("revoked_at"),
+    )
+
+
 @router.delete("/mcp/api-keys/{key_id}")
 @limiter.limit("10/minute")
 async def revoke_api_key(

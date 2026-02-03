@@ -243,10 +243,43 @@ export function DataSourceCard({
       <div className="mb-4 min-h-[52px]">
         <h3 className="font-semibold text-foreground text-base">{source.name}</h3>
         {source.isConnected ? (
-          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-            <Clock className="h-3 w-3" />
-            Synced: {formatLastSync(source.lastSyncAt)}
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+              <Clock className="h-3 w-3" />
+              Synced: {formatLastSync(source.lastSyncAt)}
+              {source.lastSyncStatus === 'failed' && (
+                <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0 border-destructive/30 text-destructive">
+                  Failed
+                </Badge>
+              )}
+              {source.lastSyncStatus === 'running' && (
+                <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0 border-blue-500/30 text-blue-500">
+                  Running
+                </Badge>
+              )}
+            </p>
+            {/* Sync Error Display */}
+            {source.lastSyncError && (
+              <TooltipProvider delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="text-xs text-destructive flex items-center gap-1 cursor-help">
+                      <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{source.lastSyncError.slice(0, 40)}...</span>
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent 
+                    side="bottom" 
+                    className="max-w-[320px] text-left z-50"
+                    sideOffset={5}
+                  >
+                    <p className="text-xs font-medium text-destructive mb-1">Sync Error</p>
+                    <p className="text-xs text-muted-foreground">{source.lastSyncError}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
         ) : (
           <TooltipProvider delayDuration={300}>
             <Tooltip>

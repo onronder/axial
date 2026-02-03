@@ -48,6 +48,8 @@ import { cn } from "@/lib/utils";
 interface AuditLogEntry {
   id: string;
   user_id: string | null;
+  user_email: string | null;
+  user_name: string | null;
   action: string;
   resource_type: string | null;
   resource_id: string | null;
@@ -226,9 +228,11 @@ export default function AuditLogsPage() {
   // Export logs as CSV
   const exportLogs = () => {
     const csvContent = [
-      ["Timestamp", "Action", "Resource Type", "Resource ID", "Details", "IP Address"],
+      ["Timestamp", "User Name", "User Email", "Action", "Resource Type", "Resource ID", "Details", "IP Address"],
       ...filteredLogs.map((log) => [
         log.created_at,
+        log.user_name || "",
+        log.user_email || "",
         log.action,
         log.resource_type || "",
         log.resource_id || "",
@@ -236,7 +240,7 @@ export default function AuditLogsPage() {
         log.ip_address || "",
       ]),
     ]
-      .map((row) => row.map((cell) => `"${cell}"`).join(","))
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -373,6 +377,7 @@ export default function AuditLogsPage() {
                   <TableHeader>
                     <TableRow className="bg-muted/30">
                       <TableHead className="w-[180px]">Timestamp</TableHead>
+                      <TableHead className="w-[150px]">User</TableHead>
                       <TableHead className="w-[180px]">Action</TableHead>
                       <TableHead className="w-[120px]">Resource</TableHead>
                       <TableHead>Details</TableHead>
@@ -388,6 +393,31 @@ export default function AuditLogsPage() {
                         <TableRow key={log.id} className="hover:bg-muted/30">
                           <TableCell className="font-mono text-xs">
                             {format(parseISO(log.created_at), "MMM dd, yyyy HH:mm:ss")}
+                          </TableCell>
+                          <TableCell>
+                            {log.user_name || log.user_email ? (
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                  <User className="h-3.5 w-3.5" />
+                                </div>
+                                <div className="min-w-0">
+                                  {log.user_name && (
+                                    <div className="text-sm font-medium truncate max-w-[100px]" title={log.user_name}>
+                                      {log.user_name}
+                                    </div>
+                                  )}
+                                  {log.user_email && (
+                                    <div className="text-xs text-muted-foreground truncate max-w-[100px]" title={log.user_email}>
+                                      {log.user_email}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">
+                                {log.user_id ? log.user_id.slice(0, 8) + "..." : "System"}
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary" className={cn("gap-1.5", colorClass)}>

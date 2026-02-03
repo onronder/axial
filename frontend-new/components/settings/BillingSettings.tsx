@@ -113,6 +113,18 @@ interface Invoice {
   invoice_url?: string;
 }
 
+interface SubscriptionDetail {
+  id: string;
+  status: string;
+  plan_name: string;
+  price_amount: number;
+  price_currency: string;
+  interval: string;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+}
+
 const planDetails: Record<string, { name: string; description: string }> = {
   starter: { name: "Starter", description: "For individuals getting started" },
   pro: { name: "Pro", description: "For professionals and power users" },
@@ -151,6 +163,8 @@ export function BillingSettings() {
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [isEnterpriseModalOpen, setIsEnterpriseModalOpen] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [subscriptionDetail, setSubscriptionDetail] = useState<SubscriptionDetail | null>(null);
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
 
   const currentPlan = effectivePlan || profile?.plan || "free";
   // Check for both 'free' (post-cancellation) and 'none' (new user without plan)
@@ -163,6 +177,23 @@ export function BillingSettings() {
     : planInfo.description;
   const subscriptionStatus = usage?.subscription_status || "inactive";
   const hasActiveSubscription = !isFreePlan && !["inactive", "canceled", "cancelled", "none"].includes(subscriptionStatus);
+
+  // Fetch subscription details
+  const fetchSubscriptionDetail = useCallback(async () => {
+    try {
+      setIsLoadingSubscription(true);
+      const response = await api.get("/billing/subscription");
+      if (response.data) {
+        setSubscriptionDetail(response.data);
+      }
+    } catch (error) {
+      // 404 is expected for users without subscription
+      console.debug("[Billing] No subscription found:", error);
+      setSubscriptionDetail(null);
+    } finally {
+      setIsLoadingSubscription(false);
+    }
+  }, []);
 
   // Fetch billing history
   const fetchInvoices = useCallback(async () => {
@@ -180,8 +211,9 @@ export function BillingSettings() {
   }, []);
 
   useEffect(() => {
+    fetchSubscriptionDetail();
     fetchInvoices();
-  }, [fetchInvoices]);
+  }, [fetchSubscriptionDetail, fetchInvoices]);
 
   const handleUpgrade = async (planType: string) => {
     // Enterprise: open contact form modal
@@ -343,6 +375,71 @@ export function BillingSettings() {
               </Button>
             )}
           </div>
+
+          {/* Subscription Details */}
+          {subscriptionDetail && hasActiveSubscription && (
+            <div className="grid gap-4 md:grid-cols-3 mt-4">
+              <div className="p-4 rounded-lg border border-border/50 bg-muted/20">
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <CreditCard className="h-4 w-4" />
+                  <span className="text-xs font-medium uppercase tracking-wide">Billing Amount</span>
+                </div>
+                <p className="text-lg font-semibold">
+                  {formatPrice(subscriptionDetail.price_amount, subscriptionDetail.price_currency)}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    /{subscriptionDetail.interval}
+                  </span>
+                </p>
+              </div>
+
+              <div className="p-4 rounded-lg border border-border/50 bg-muted/20">
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <Calendar className="h-4 w-4" />
+                  <span className="text-xs font-medium uppercase tracking-wide">Current Period</span>
+                </div>
+                <p className="text-sm">
+                  {subscriptionDetail.current_period_start && subscriptionDetail.current_period_end ? (
+                    <>
+                      {formatDate(subscriptionDetail.current_period_start)} - {formatDate(subscriptionDetail.current_period_end)}
+                    </>
+                  ) : (
+                    "Active"
+                  )}
+                </p>
+              </div>
+
+              <div className="p-4 rounded-lg border border-border/50 bg-muted/20">
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <RefreshCw className="h-4 w-4" />
+                  <span className="text-xs font-medium uppercase tracking-wide">Renewal Status</span>
+                </div>
+                {subscriptionDetail.cancel_at_period_end ? (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+                      Cancels at period end
+                    </Badge>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20">
+                      Auto-renews
+                    </Badge>
+                    {subscriptionDetail.current_period_end && (
+                      <span className="text-xs text-muted-foreground">
+                        on {formatDate(subscriptionDetail.current_period_end)}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {isLoadingSubscription && hasActiveSubscription && (
+            <div className="flex items-center justify-center py-4">
+              <Spinner className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
         </CardContent>
       </Card>
 

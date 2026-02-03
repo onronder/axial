@@ -27,6 +27,8 @@ class AuditLogEntry(BaseModel):
     """Response model for audit log entries."""
     id: str
     user_id: Optional[str] = None
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
     action: str
     resource_type: Optional[str] = None
     resource_id: Optional[str] = None
@@ -60,17 +62,18 @@ async def get_audit_logs(
 ):
     """
     Get audit logs for the user's team/account.
-    
+
     Filters:
     - action: Filter by action type (e.g., 'document.delete')
     - resource_type: Filter by resource (e.g., 'document', 'chat')
     - from_date: ISO date string for start of range
     - to_date: ISO date string for end of range
-    
+
     Only team owners/admins can view audit logs.
+    Returns logs for ALL team members (organization-scoped).
     """
     supabase = get_supabase()
-    
+
     try:
         # Check if user is team owner or admin
         team = await team_service.get_user_team(user_id)
@@ -81,11 +84,23 @@ async def get_audit_logs(
                     status_code=403,
                     detail="Only team owners and admins can view audit logs"
                 )
-        
-        # Build query
+
+        # Get all team member user_ids for organization-scoped audit logs
+        team_member_ids = [user_id]  # Default to current user
+        if team and team.get("id"):
+            team_id = team["id"]
+            members_response = supabase.table("team_members")\
+                .select("member_user_id")\
+                .eq("team_id", team_id)\
+                .neq("status", "removed")\
+                .execute()
+            if members_response.data:
+                team_member_ids = [m["member_user_id"] for m in members_response.data if m.get("member_user_id")]
+
+        # Build query - filter by all organization members
         query = supabase.table("audit_logs")\
             .select("*", count="exact")\
-            .eq("user_id", user_id)
+            .in_("user_id", team_member_ids)
         
         # Apply filters
         if action:
@@ -104,7 +119,47 @@ async def get_audit_logs(
             .execute()
         
         total = result.count if result.count is not None else 0
-        items = [AuditLogEntry(**log) for log in (result.data or [])]
+        
+        # Fetch user profiles for display names
+        user_ids = list(set(
+            log.get("user_id") for log in (result.data or []) 
+            if log.get("user_id")
+        ))
+        
+        user_profiles: dict = {}
+        if user_ids:
+            try:
+                profiles_response = supabase.table("profiles")\
+                    .select("id, email, first_name, last_name")\
+                    .in_("id", user_ids)\
+                    .execute()
+                for profile in (profiles_response.data or []):
+                    user_profiles[profile["id"]] = {
+                        "email": profile.get("email"),
+                        "name": " ".join(filter(None, [
+                            profile.get("first_name"),
+                            profile.get("last_name")
+                        ])) or None
+                    }
+            except Exception as profile_error:
+                logger.warning(f"Failed to fetch user profiles: {profile_error}")
+        
+        # Build response items with user info
+        items = []
+        for log in (result.data or []):
+            user_info = user_profiles.get(log.get("user_id"), {})
+            items.append(AuditLogEntry(
+                id=log["id"],
+                user_id=log.get("user_id"),
+                user_email=user_info.get("email"),
+                user_name=user_info.get("name"),
+                action=log["action"],
+                resource_type=log.get("resource_type"),
+                resource_id=log.get("resource_id"),
+                details=log.get("details", {}),
+                ip_address=log.get("ip_address"),
+                created_at=log["created_at"]
+            ))
         
         return AuditLogListResponse(
             items=items,
@@ -216,6 +271,7 @@ async def get_security_log(
     - organization_purged: Full organization data purge
 
     Only team admins can view security logs.
+    Returns logs for ALL team members (organization-scoped).
     """
     supabase = get_supabase()
 
@@ -230,10 +286,22 @@ async def get_security_log(
                     detail="Only team owners and admins can view security logs"
                 )
 
-        # Build query - filter to security actions
+        # Get all team member user_ids for organization-scoped security logs
+        team_member_ids = [user_id]  # Default to current user
+        if team and team.get("id"):
+            team_id = team["id"]
+            members_response = supabase.table("team_members")\
+                .select("member_user_id")\
+                .eq("team_id", team_id)\
+                .neq("status", "removed")\
+                .execute()
+            if members_response.data:
+                team_member_ids = [m["member_user_id"] for m in members_response.data if m.get("member_user_id")]
+
+        # Build query - filter to security actions for all organization members
         query = supabase.table("audit_logs")\
             .select("*", count="exact")\
-            .eq("user_id", user_id)\
+            .in_("user_id", team_member_ids)\
             .in_("action", SECURITY_ACTIONS)
 
         # Apply event type filter

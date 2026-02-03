@@ -62,10 +62,12 @@ export interface FailedTask {
 }
 
 interface DLQStats {
+    total_failed: number;
     total: number;
     pending_retry: number;
     retrying: number;
     permanently_failed: number;
+    resolved: number;
     resolved_today: number;
 }
 

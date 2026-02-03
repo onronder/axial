@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 // =============================================================================
@@ -23,7 +23,7 @@ export interface SecurityEvent {
   duration_ms: number;
 }
 
-interface SecurityLogResponse {
+export interface SecurityLogResponse {
   items: SecurityEvent[];
   total: number;
   has_more: boolean;
@@ -36,6 +36,8 @@ export interface UseSecurityLogOptions {
   toDate?: string;
   limit?: number;
   offset?: number;
+  page?: number;
+  pageSize?: number;
   enabled?: boolean;
 }
 
@@ -43,18 +45,24 @@ export interface UseSecurityLogOptions {
 // API Function
 // =============================================================================
 
-async function fetchSecurityLog(options: UseSecurityLogOptions): Promise<SecurityEvent[]> {
+async function fetchSecurityLog(options: UseSecurityLogOptions): Promise<SecurityLogResponse> {
   const params: Record<string, string> = {};
 
   if (options.search) params.search = options.search;
   if (options.eventType) params.event_type = options.eventType;
   if (options.fromDate) params.from_date = options.fromDate;
   if (options.toDate) params.to_date = options.toDate;
-  if (options.limit) params.limit = options.limit.toString();
-  if (options.offset) params.offset = options.offset.toString();
+
+  // Handle pagination: prefer page/pageSize, fall back to limit/offset
+  const pageSize = options.pageSize ?? options.limit ?? 20;
+  const page = options.page ?? 0;
+  const offset = options.offset ?? page * pageSize;
+
+  params.limit = pageSize.toString();
+  params.offset = offset.toString();
 
   const response = await api.get<SecurityLogResponse>('/admin/security-log', { params });
-  return response.data.items;
+  return response.data;
 }
 
 // =============================================================================
@@ -62,14 +70,15 @@ async function fetchSecurityLog(options: UseSecurityLogOptions): Promise<Securit
 // =============================================================================
 
 export function useSecurityLog(options: UseSecurityLogOptions = {}) {
-  const { enabled = true, ...queryOptions } = options;
+  const { enabled = true, pageSize = 20, page = 0, ...queryOptions } = options;
 
   const query = useQuery({
-    queryKey: ['security-log', queryOptions],
-    queryFn: () => fetchSecurityLog(queryOptions),
+    queryKey: ['security-log', { ...queryOptions, page, pageSize }],
+    queryFn: () => fetchSecurityLog({ ...queryOptions, page, pageSize }),
     enabled,
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // Refetch every minute
+    placeholderData: keepPreviousData, // Keep showing old data while fetching new page
     retry: (failureCount, error) => {
       // Don't retry on auth errors
       if (error instanceof Error && (error.message.includes('Unauthorized') || error.message.includes('Admin'))) {
@@ -79,9 +88,25 @@ export function useSecurityLog(options: UseSecurityLogOptions = {}) {
     },
   });
 
+  const response = query.data;
+  const totalPages = response ? Math.ceil(response.total / pageSize) : 0;
+
   return {
-    data: query.data ?? [],
+    // Data
+    data: response?.items ?? [],
+    total: response?.total ?? 0,
+    hasMore: response?.has_more ?? false,
+
+    // Pagination info
+    page,
+    pageSize,
+    totalPages,
+    hasNextPage: page < totalPages - 1,
+    hasPreviousPage: page > 0,
+
+    // Query state
     isLoading: query.isLoading,
+    isFetching: query.isFetching,
     isError: query.isError,
     error: query.error,
     refetch: query.refetch,

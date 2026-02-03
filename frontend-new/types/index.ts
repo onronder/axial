@@ -154,6 +154,8 @@ export interface MergedDataSource {
     category: string;
     isConnected: boolean;
     lastSyncAt: string | null;
+    lastSyncStatus?: 'success' | 'failed' | 'running' | null;
+    lastSyncError?: string | null;
     integrationId: string | null;
     /** If true, this connector requires Enterprise plan */
     enterpriseOnly?: boolean;

@@ -6,7 +6,7 @@ Production-grade API for managing failed tasks and retry operations.
 
 import logging
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -49,19 +49,23 @@ class FailedTaskResponse(BaseModel):
 class DLQStatsResponse(BaseModel):
     """Response model for DLQ statistics."""
     total_failed: int = Field(..., description="Total number of failed tasks")
+    total: int = Field(..., description="Alias for total_failed (frontend compatibility)")
     pending_retry: int = Field(..., description="Tasks waiting for retry")
     retrying: int = Field(..., description="Tasks currently retrying")
     permanently_failed: int = Field(..., description="Tasks that failed all retries")
-    resolved: int = Field(..., description="Tasks that succeeded after retry")
+    resolved: int = Field(..., description="Total tasks resolved (all time)")
+    resolved_today: int = Field(..., description="Tasks resolved in last 24 hours")
     
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "total_failed": 42,
+                "total": 42,
                 "pending_retry": 5,
                 "retrying": 2,
                 "permanently_failed": 10,
-                "resolved": 25
+                "resolved": 25,
+                "resolved_today": 3
             }
         }
     )
@@ -324,14 +328,14 @@ async def get_dlq_stats(
     """
     Get DLQ statistics for the authenticated user.
     
-    Returns counts of tasks in each status category.
+    Returns counts of tasks in each status category including resolved_today.
     """
     try:
         supabase = get_supabase()
         
-        # Get all tasks for user
+        # Get all tasks for user with resolved_at for today calculation
         result = supabase.table("failed_tasks").select(
-            "status"
+            "status, resolved_at"
         ).eq(
             "user_id", user_id
         ).execute()
@@ -339,10 +343,12 @@ async def get_dlq_stats(
         if not result.data:
             return DLQStatsResponse(
                 total_failed=0,
+                total=0,
                 pending_retry=0,
                 retrying=0,
                 permanently_failed=0,
-                resolved=0
+                resolved=0,
+                resolved_today=0
             )
         
         # Count by status
@@ -353,19 +359,36 @@ async def get_dlq_stats(
             "resolved": 0
         }
         
+        # Calculate resolved_today (last 24 hours)
+        now = datetime.now(timezone.utc)
+        today_start = now - timedelta(hours=24)
+        resolved_today = 0
+        
         for task in result.data:
             task_status = task["status"]
             if task_status in status_counts:
                 status_counts[task_status] += 1
+            
+            # Check if resolved within last 24 hours
+            resolved_at = task.get("resolved_at")
+            if resolved_at and task_status == "resolved":
+                try:
+                    resolved_dt = datetime.fromisoformat(resolved_at.replace("Z", "+00:00"))
+                    if resolved_dt >= today_start:
+                        resolved_today += 1
+                except (ValueError, TypeError):
+                    pass
         
         total = len(result.data)
         
         return DLQStatsResponse(
             total_failed=total,
+            total=total,
             pending_retry=status_counts["pending_retry"],
             retrying=status_counts["retrying"],
             permanently_failed=status_counts["permanently_failed"],
-            resolved=status_counts["resolved"]
+            resolved=status_counts["resolved"],
+            resolved_today=resolved_today
         )
         
     except Exception as e:

@@ -26,7 +26,9 @@ import {
     AlertTriangle,
     MessageSquare,
     ShieldAlert,
+    Calendar,
 } from 'lucide-react';
+import { subDays, format, startOfDay, endOfDay } from 'date-fns';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -101,20 +103,52 @@ interface SourceMetricsResponse {
 }
 
 // =============================================================================
+// Date Range Presets
+// =============================================================================
+
+interface DateRange {
+    from: Date | null;
+    to: Date | null;
+}
+
+const DATE_RANGE_PRESETS = [
+    { label: 'Last 7 days', value: '7d', getDates: () => ({ from: subDays(new Date(), 7), to: new Date() }) },
+    { label: 'Last 30 days', value: '30d', getDates: () => ({ from: subDays(new Date(), 30), to: new Date() }) },
+    { label: 'Last 90 days', value: '90d', getDates: () => ({ from: subDays(new Date(), 90), to: new Date() }) },
+    { label: 'All time', value: 'all', getDates: () => ({ from: null, to: null }) },
+];
+
+// =============================================================================
 // API Functions
 // =============================================================================
 
-async function fetchFeedback(rating?: string, limit: number = 20): Promise<FeedbackResponse> {
+async function fetchFeedback(
+    rating?: string, 
+    limit: number = 20,
+    fromDate?: Date | null,
+    toDate?: Date | null
+): Promise<FeedbackResponse> {
     const params = new URLSearchParams();
     params.set('limit', String(limit));
     if (rating) params.set('rating', rating);
+    if (fromDate) params.set('from_date', startOfDay(fromDate).toISOString());
+    if (toDate) params.set('to_date', endOfDay(toDate).toISOString());
     
     const response = await api.get(`/analytics/feedback?${params.toString()}`);
     return response.data;
 }
 
-async function fetchSourceMetrics(): Promise<SourceMetricsResponse> {
-    const response = await api.get('/analytics/feedback/sources?min_feedback_count=3&limit=10');
+async function fetchSourceMetrics(
+    fromDate?: Date | null,
+    toDate?: Date | null
+): Promise<SourceMetricsResponse> {
+    const params = new URLSearchParams();
+    params.set('min_feedback_count', '3');
+    params.set('limit', '10');
+    if (fromDate) params.set('from_date', startOfDay(fromDate).toISOString());
+    if (toDate) params.set('to_date', endOfDay(toDate).toISOString());
+    
+    const response = await api.get(`/analytics/feedback/sources?${params.toString()}`);
     return response.data;
 }
 
@@ -126,6 +160,20 @@ export default function FeedbackAnalyticsPage() {
     const { profile, isLoading: profileLoading } = useProfile();
     const [ratingFilter, setRatingFilter] = useState<string>('all');
     const [feedbackLimit, setFeedbackLimit] = useState(20);
+    const [dateRangePreset, setDateRangePreset] = useState<string>('30d');
+    const [dateRange, setDateRange] = useState<DateRange>(() => 
+        DATE_RANGE_PRESETS.find(p => p.value === '30d')?.getDates() ?? { from: null, to: null }
+    );
+    
+    // Handle date range preset change
+    const handleDateRangeChange = useCallback((preset: string) => {
+        setDateRangePreset(preset);
+        const presetConfig = DATE_RANGE_PRESETS.find(p => p.value === preset);
+        if (presetConfig) {
+            setDateRange(presetConfig.getDates());
+        }
+        setFeedbackLimit(20); // Reset pagination
+    }, []);
     
     // Reset limit when filter changes
     useEffect(() => {
@@ -143,8 +191,13 @@ export default function FeedbackAnalyticsPage() {
         error: feedbackError,
         refetch: refetchFeedback,
     } = useQuery({
-        queryKey: ['feedback', ratingFilter, feedbackLimit],
-        queryFn: () => fetchFeedback(ratingFilter === 'all' ? undefined : ratingFilter, feedbackLimit),
+        queryKey: ['feedback', ratingFilter, feedbackLimit, dateRange.from?.toISOString(), dateRange.to?.toISOString()],
+        queryFn: () => fetchFeedback(
+            ratingFilter === 'all' ? undefined : ratingFilter, 
+            feedbackLimit,
+            dateRange.from,
+            dateRange.to
+        ),
         staleTime: 60_000, // 1 minute
         enabled: isAuthorized && !profileLoading,
     });
@@ -155,8 +208,8 @@ export default function FeedbackAnalyticsPage() {
         isLoading: metricsLoading,
         refetch: refetchMetrics,
     } = useQuery({
-        queryKey: ['sourceMetrics'],
-        queryFn: fetchSourceMetrics,
+        queryKey: ['sourceMetrics', dateRange.from?.toISOString(), dateRange.to?.toISOString()],
+        queryFn: () => fetchSourceMetrics(dateRange.from, dateRange.to),
         staleTime: 60_000,
         enabled: isAuthorized && !profileLoading,
     });
@@ -206,16 +259,39 @@ export default function FeedbackAnalyticsPage() {
                         Monitor AI response quality based on user feedback
                     </p>
                 </div>
-                <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={handleRefresh}
-                    className="gap-2"
-                >
-                    <RefreshCw className="h-4 w-4" />
-                    Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                    {/* Date Range Selector */}
+                    <Select value={dateRangePreset} onValueChange={handleDateRangeChange}>
+                        <SelectTrigger className="w-[150px]">
+                            <Calendar className="h-4 w-4 mr-2" />
+                            <SelectValue placeholder="Date range" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {DATE_RANGE_PRESETS.map((preset) => (
+                                <SelectItem key={preset.value} value={preset.value}>
+                                    {preset.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={handleRefresh}
+                        className="gap-2"
+                    >
+                        <RefreshCw className="h-4 w-4" />
+                        Refresh
+                    </Button>
+                </div>
             </div>
+            
+            {/* Date Range Display */}
+            {dateRange.from && dateRange.to && (
+                <p className="text-sm text-muted-foreground -mt-4">
+                    Showing data from {format(dateRange.from, 'MMM d, yyyy')} to {format(dateRange.to, 'MMM d, yyyy')}
+                </p>
+            )}
             
             {/* Summary Cards */}
             <div className="grid gap-4 md:grid-cols-4">

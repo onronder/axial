@@ -117,6 +117,22 @@ class AcceptInviteResponse(BaseModel):
     error: Optional[str] = None
 
 
+class PendingInvite(BaseModel):
+    """A pending team invite for the current user."""
+    id: str
+    team_id: str
+    team_name: str
+    role: str
+    invited_by: Optional[str] = None
+    invited_at: str
+
+
+class PendingInvitesResponse(BaseModel):
+    """Response containing user's pending invites."""
+    invites: List[PendingInvite]
+    count: int
+
+
 # ============================================================
 # TEAM ENDPOINTS
 # ============================================================
@@ -135,6 +151,54 @@ async def get_current_team(request: Request, user_id: str = Depends(get_current_
         raise HTTPException(status_code=404, detail="No team found for user")
     
     return team
+
+
+@router.get("/team/my-invites", response_model=PendingInvitesResponse)
+@limiter.limit("30/minute")
+async def get_pending_invites(
+    request: Request,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get pending team invites for the current user.
+    
+    Matches invites by the user's email address. This endpoint is not
+    gated by paid access so users can see invites before joining a team.
+    """
+    supabase = get_supabase()
+    
+    try:
+        # Get current user's email
+        user_response = supabase.table("profiles").select("email").eq("id", user_id).single().execute()
+        
+        if not user_response.data or not user_response.data.get("email"):
+            return PendingInvitesResponse(invites=[], count=0)
+        
+        user_email = user_response.data["email"]
+        
+        # Find pending invites for this email
+        invites_response = supabase.table("team_members").select(
+            "id, team_id, role, invited_by, created_at, teams(id, name)"
+        ).eq("email", user_email).eq("status", "pending").execute()
+        
+        invites = []
+        for invite in (invites_response.data or []):
+            team_info = invite.get("teams", {})
+            if team_info:
+                invites.append(PendingInvite(
+                    id=invite["id"],
+                    team_id=invite["team_id"],
+                    team_name=team_info.get("name", "Unknown Team"),
+                    role=invite.get("role", "viewer"),
+                    invited_by=invite.get("invited_by"),
+                    invited_at=invite.get("created_at", "")
+                ))
+        
+        return PendingInvitesResponse(invites=invites, count=len(invites))
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch pending invites: {e}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_pending_invites")
 
 
 @router.patch("/team", response_model=TeamResponse, dependencies=_paid_team_deps)
