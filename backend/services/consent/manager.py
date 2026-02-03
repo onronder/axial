@@ -554,7 +554,7 @@ class ConsentManager:
         organization_id: str,
     ) -> Dict[str, Any]:
         """
-        Generate KVKK compliance report for organization.
+        Generate compliance report (GDPR/CCPA/KVKK) for organization.
 
         Returns summary of consent settings across all levels.
         """

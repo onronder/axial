@@ -345,7 +345,7 @@ def log_consent_change(
     request: Optional[Request] = None,
 ) -> None:
     """
-    Log KVKK consent change event.
+    Log consent change event (GDPR/CCPA/KVKK compliance).
 
     Args:
         background_tasks: FastAPI BackgroundTasks

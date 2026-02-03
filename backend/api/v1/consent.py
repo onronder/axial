@@ -1,7 +1,12 @@
 """
-KVKK 2026 Consent Management API Endpoints
+GDPR/CCPA/KVKK 2026 Consent Management API Endpoints
 
 Granular consent controls for AI learning and external agent access.
+
+Compliance Coverage:
+- GDPR Article 6/7: Lawful basis and consent requirements
+- CCPA 2026 ADMT: Automated Decision-Making Technology opt-out
+- KVKK Article 5: Turkish GDPR equivalent consent handling
 """
 
 import logging
@@ -98,7 +103,7 @@ class ConsentAuditEntry(BaseModel):
 
 
 class ComplianceReport(BaseModel):
-    """KVKK compliance report."""
+    """GDPR/CCPA/KVKK compliance report."""
     organization_id: str
     report_generated_at: str
     organization_consent: dict
@@ -476,7 +481,7 @@ async def get_compliance_report(
     organization_id: str = Depends(get_user_organization_id),
 ):
     """
-    Generate KVKK compliance report.
+    Generate compliance report (GDPR/CCPA/KVKK).
 
     Returns summary of consent configuration across
     organization, scopes, and documents.

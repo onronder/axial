@@ -52,23 +52,52 @@ class GracefulShutdown:
         if self.is_shutting_down:
             logger.warning("⚠️ Shutdown already in progress, forcing exit")
             sys.exit(1)
-        
+
         self.is_shutting_down = True
         signal_name = signal.Signals(signum).name
         logger.info(f"🛑 Received {signal_name}, initiating graceful shutdown...")
-        
+
         # Run all cleanup handlers
         for handler in self.shutdown_handlers:
             try:
                 if asyncio.iscoroutinefunction(handler):
-                    asyncio.run(handler())
+                    self._run_async_handler_sync(handler)
                 else:
                     handler()
             except Exception as e:
                 logger.error(f"Error in shutdown handler: {e}")
-        
+
         logger.info("✅ Graceful shutdown complete")
-        sys.exit(0)
+        # Don't call sys.exit() - let uvicorn handle the shutdown gracefully
+        # The signal will propagate naturally to uvicorn's shutdown handling
+
+    def _run_async_handler_sync(self, handler):
+        """Run an async handler synchronously, handling nested event loops."""
+        try:
+            # First, try to get an existing running loop
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop is not None and loop.is_running():
+                # Event loop is already running (e.g., inside uvicorn)
+                # Use nest_asyncio if available, otherwise run synchronously
+                try:
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                    loop.run_until_complete(handler())
+                except ImportError:
+                    # nest_asyncio not available - run handler in a new thread
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, handler())
+                        future.result(timeout=30)  # 30 second timeout
+            else:
+                # No running loop - safe to use asyncio.run()
+                asyncio.run(handler())
+        except Exception as e:
+            logger.error(f"Error running async shutdown handler: {e}")
 
 
 # Global instance

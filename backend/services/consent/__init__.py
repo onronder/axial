@@ -1,7 +1,11 @@
 """
-KVKK 2026 Granular Consent Management
+GDPR/CCPA/KVKK 2026 Granular Consent Management
 
-Implements hierarchical consent management for KVKK (Turkish GDPR) compliance.
+Implements hierarchical consent management for multi-jurisdictional compliance:
+- GDPR Article 6/7: EU consent requirements
+- CCPA 2026 ADMT: California Automated Decision-Making Technology opt-out
+- KVKK Article 5: Turkish GDPR equivalent
+
 Supports organization, scope, and document-level consent controls.
 
 Components:
