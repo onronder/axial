@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 
 // =============================================================================
 // Types - Match backend response structure with frontend-friendly versions
@@ -130,45 +131,22 @@ function transformComplianceReport(raw: ComplianceReportRaw): ComplianceReport {
 // =============================================================================
 
 async function fetchOrgConsent(): Promise<OrgConsent> {
-  const response = await fetch('/api/py/consent/organization', {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) throw new Error('Unauthorized');
-    if (response.status === 403) throw new Error('Access denied');
-    throw new Error('Failed to fetch organization consent');
-  }
-
-  const data: OrgConsentRaw = await response.json();
-  return transformOrgConsent(data);
+  const response = await api.get<OrgConsentRaw>('/consent/organization');
+  return transformOrgConsent(response.data);
 }
 
 async function fetchScopeConsents(): Promise<ScopeConsent[]> {
   // Fetch list of scopes first, then get consent for each
-  const scopesResponse = await fetch('/api/py/scopes', {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  try {
+    const scopesResponse = await api.get<Array<{ id: string; label: string }>>('/scopes');
+    const scopes = scopesResponse.data;
 
-  if (!scopesResponse.ok) {
-    // If scopes endpoint doesn't exist, return empty array
-    if (scopesResponse.status === 404) return [];
-    throw new Error('Failed to fetch scopes');
-  }
-
-  const scopes: Array<{ id: string; label: string }> = await scopesResponse.json();
-
-  // Fetch consent for each scope in parallel
-  const consentPromises = scopes.map(async (scope) => {
-    try {
-      const response = await fetch(`/api/py/consent/scope/${scope.id}`, {
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
+    // Fetch consent for each scope in parallel
+    const consentPromises = scopes.map(async (scope) => {
+      try {
+        const response = await api.get<ScopeConsentRaw>(`/consent/scope/${scope.id}`);
+        return transformScopeConsent(response.data, scope.label);
+      } catch {
         // Return default consent if not found
         return {
           scopeId: scope.id,
@@ -180,61 +158,30 @@ async function fetchScopeConsents(): Promise<ScopeConsent[]> {
           blockedAgentIds: [],
         } as ScopeConsent;
       }
+    });
 
-      const data: ScopeConsentRaw = await response.json();
-      return transformScopeConsent(data, scope.label);
-    } catch {
-      return {
-        scopeId: scope.id,
-        scopeName: scope.label,
-        allowAiLearning: null,
-        allowExternalAgents: null,
-        inherits: true,
-        allowedAgentIds: [],
-        blockedAgentIds: [],
-      } as ScopeConsent;
-    }
-  });
-
-  return Promise.all(consentPromises);
+    return Promise.all(consentPromises);
+  } catch (error) {
+    // If scopes endpoint doesn't exist, return empty array
+    if ((error as { response?: { status?: number } })?.response?.status === 404) return [];
+    throw new Error('Failed to fetch scopes');
+  }
 }
 
 async function fetchComplianceReport(): Promise<ComplianceReport> {
-  const response = await fetch('/api/py/consent/report', {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) throw new Error('Unauthorized');
-    if (response.status === 403) throw new Error('Admin access required');
-    throw new Error('Failed to fetch compliance report');
-  }
-
-  const data: ComplianceReportRaw = await response.json();
-  return transformComplianceReport(data);
+  const response = await api.get<ComplianceReportRaw>('/consent/report');
+  return transformComplianceReport(response.data);
 }
 
 async function updateOrgConsentApi(
   consentType: 'ai_learning' | 'external_agents',
   enabled: boolean
 ): Promise<{ status: string }> {
-  const response = await fetch('/api/py/consent/organization', {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      consent_type: consentType,
-      allowed: enabled,
-    }),
+  const response = await api.patch<{ status: string }>('/consent/organization', {
+    consent_type: consentType,
+    allowed: enabled,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update organization consent');
-  }
-
-  return response.json();
+  return response.data;
 }
 
 async function updateScopeConsentApi(
@@ -243,23 +190,12 @@ async function updateScopeConsentApi(
   enabled: boolean | null,
   inheritOrgConsent: boolean = true
 ): Promise<{ status: string }> {
-  const response = await fetch(`/api/py/consent/scope/${scopeId}`, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      consent_type: consentType,
-      allowed: enabled,
-      inherit_org_consent: inheritOrgConsent,
-    }),
+  const response = await api.patch<{ status: string }>(`/consent/scope/${scopeId}`, {
+    consent_type: consentType,
+    allowed: enabled,
+    inherit_org_consent: inheritOrgConsent,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update scope consent');
-  }
-
-  return response.json();
+  return response.data;
 }
 
 async function updateDocumentConsentApi(
@@ -268,23 +204,12 @@ async function updateDocumentConsentApi(
   enabled: boolean | null,
   inheritScopeConsent: boolean = true
 ): Promise<{ status: string }> {
-  const response = await fetch(`/api/py/consent/document/${documentId}`, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      consent_type: consentType,
-      allowed: enabled,
-      inherit_scope_consent: inheritScopeConsent,
-    }),
+  const response = await api.patch<{ status: string }>(`/consent/document/${documentId}`, {
+    consent_type: consentType,
+    allowed: enabled,
+    inherit_scope_consent: inheritScopeConsent,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to update document consent');
-  }
-
-  return response.json();
+  return response.data;
 }
 
 // =============================================================================

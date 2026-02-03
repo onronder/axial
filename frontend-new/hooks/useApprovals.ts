@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 
 // =============================================================================
 // Types - Match backend response structure
@@ -91,105 +92,31 @@ function transformApproval(raw: ApprovalRaw): Approval {
 }
 
 async function fetchPendingApprovals(): Promise<Approval[]> {
-  const response = await fetch('/api/py/approvals/pending', {
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Unauthorized - please log in');
-    }
-    if (response.status === 403) {
-      throw new Error('Admin access required');
-    }
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to fetch pending approvals');
-  }
-
-  const data: ApprovalRaw[] = await response.json();
-  return data.map(transformApproval);
+  const response = await api.get<ApprovalRaw[]>('/approvals/pending');
+  return response.data.map(transformApproval);
 }
 
 async function approveAction(approvalId: string): Promise<{ status: string; message: string }> {
-  const response = await fetch(`/api/py/approvals/${approvalId}/approve`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to approve action');
-  }
-
-  return response.json();
+  const response = await api.post<{ status: string; message: string }>(`/approvals/${approvalId}/approve`);
+  return response.data;
 }
 
 async function rejectAction(params: { approvalId: string; reason?: string }): Promise<{ status: string; message: string }> {
-  const url = new URL(`/api/py/approvals/${params.approvalId}/reject`, window.location.origin);
-  if (params.reason) {
-    url.searchParams.set('reason', params.reason);
-  }
-
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to reject action');
-  }
-
-  return response.json();
+  const queryParams = params.reason ? `?reason=${encodeURIComponent(params.reason)}` : '';
+  const response = await api.post<{ status: string; message: string }>(`/approvals/${params.approvalId}/reject${queryParams}`);
+  return response.data;
 }
 
 async function executeApproved(params: { approvalId: string; mandateSignature: string }): Promise<{ status: string; result: unknown }> {
-  const response = await fetch(`/api/py/approvals/${params.approvalId}/execute`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      mandate_signature: params.mandateSignature,
-    }),
+  const response = await api.post<{ status: string; result: unknown }>(`/approvals/${params.approvalId}/execute`, {
+    mandate_signature: params.mandateSignature,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to execute approved action');
-  }
-
-  return response.json();
+  return response.data;
 }
 
 async function getApproval(approvalId: string): Promise<Approval> {
-  const response = await fetch(`/api/py/approvals/${approvalId}`, {
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error('Approval not found');
-    }
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to fetch approval');
-  }
-
-  const data: ApprovalRaw = await response.json();
-  return transformApproval(data);
+  const response = await api.get<ApprovalRaw>(`/approvals/${approvalId}`);
+  return transformApproval(response.data);
 }
 
 // =============================================================================

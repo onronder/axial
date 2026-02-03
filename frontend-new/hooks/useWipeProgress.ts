@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { api } from '@/lib/api';
 
 // =============================================================================
 // Types
@@ -91,20 +92,8 @@ export function useWipeProgress({
       if (!isMountedRef.current) return;
 
       try {
-        const response = await fetch(`/api/py/documents/${documentId}/wipe-status`, {
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-        });
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            // Endpoint doesn't exist - this is expected in development
-            return;
-          }
-          throw new Error('Failed to fetch wipe status');
-        }
-
-        const data: WipeProgress = await response.json();
+        const response = await api.get<WipeProgress>(`/documents/${documentId}/wipe-status`);
+        const data = response.data;
 
         if (isMountedRef.current) {
           setProgress(data);
@@ -115,6 +104,10 @@ export function useWipeProgress({
           }
         }
       } catch (err) {
+        // Check if it's a 404 (endpoint doesn't exist - expected in development)
+        if ((err as { response?: { status?: number } })?.response?.status === 404) {
+          return;
+        }
         if (isMountedRef.current) {
           const error = err instanceof Error ? err : new Error('Unknown error');
           setError(error);
@@ -215,22 +208,7 @@ export function useWipeProgress({
     setError(null);
 
     try {
-      const response = await fetch(`/api/py/documents/${documentId}/wipe`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          // Endpoint doesn't exist - fall back to simulation
-          console.warn('Wipe endpoint not found, using simulation');
-          simulateWipe();
-          return;
-        }
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to start wipe operation');
-      }
+      await api.post(`/documents/${documentId}/wipe`);
 
       // Start monitoring progress
       if (typeof EventSource !== 'undefined') {
@@ -239,6 +217,12 @@ export function useWipeProgress({
         startPolling();
       }
     } catch (err) {
+      // Check if it's a 404 (endpoint doesn't exist - fall back to simulation)
+      if ((err as { response?: { status?: number } })?.response?.status === 404) {
+        console.warn('Wipe endpoint not found, using simulation');
+        simulateWipe();
+        return;
+      }
       const error = err instanceof Error ? err : new Error('Unknown error');
       setError(error);
       onError?.(error);

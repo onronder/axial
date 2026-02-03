@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 
 // =============================================================================
 // Types
@@ -43,50 +44,17 @@ export interface UseSecurityLogOptions {
 // =============================================================================
 
 async function fetchSecurityLog(options: UseSecurityLogOptions): Promise<SecurityEvent[]> {
-  const params = new URLSearchParams();
+  const params: Record<string, string> = {};
 
-  if (options.search) {
-    params.set('search', options.search);
-  }
-  if (options.eventType) {
-    params.set('event_type', options.eventType);
-  }
-  if (options.fromDate) {
-    params.set('from_date', options.fromDate);
-  }
-  if (options.toDate) {
-    params.set('to_date', options.toDate);
-  }
-  if (options.limit) {
-    params.set('limit', options.limit.toString());
-  }
-  if (options.offset) {
-    params.set('offset', options.offset.toString());
-  }
+  if (options.search) params.search = options.search;
+  if (options.eventType) params.event_type = options.eventType;
+  if (options.fromDate) params.from_date = options.fromDate;
+  if (options.toDate) params.to_date = options.toDate;
+  if (options.limit) params.limit = options.limit.toString();
+  if (options.offset) params.offset = options.offset.toString();
 
-  const queryString = params.toString();
-  const url = `/api/py/admin/security-log${queryString ? `?${queryString}` : ''}`;
-
-  const response = await fetch(url, {
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Unauthorized - please log in');
-    }
-    if (response.status === 403) {
-      throw new Error('Admin access required to view security logs');
-    }
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to fetch security log');
-  }
-
-  const data: SecurityLogResponse = await response.json();
-  return data.items;
+  const response = await api.get<SecurityLogResponse>('/admin/security-log', { params });
+  return response.data.items;
 }
 
 // =============================================================================
