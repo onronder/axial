@@ -66,22 +66,30 @@ class NotionConnector(EnhancedConnector, BaseConnector):
         """Get the Notion access token for a user with automatic refresh."""
         supabase = get_supabase()
         connector_def_id = self._get_connector_definition_id()
-        
+
         res = supabase.table("user_integrations").select("*").eq(
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
-        
+
         if not res.data:
             raise ValueError("Notion not connected for this user.")
-        
+
+        integration = res.data[0]
+
+        # Check if integration needs reconnection
+        if integration.get("status") == "reconnection_required":
+            raise ConnectorAuthError(
+                integration.get("status_message", "Please reconnect your Notion account.")
+            )
+
         try:
             # Use centralized token manager
             creds_data = OAuthTokenManager.get_valid_credentials(
-                res.data[0],
+                integration,
                 'notion'
             )
             return creds_data['access_token']
-        
+
         except TokenRefreshError as e:
             raise ValueError("Integration requires reconnection") from e
     

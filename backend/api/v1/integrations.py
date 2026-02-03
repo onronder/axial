@@ -338,7 +338,10 @@ async def exchange_google_token(
         "access_token": encrypted_access_token,
         "refresh_token": encrypted_refresh_token,
         "expires_at": expires_at,
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        # Reset status on successful reconnection
+        "status": "active",
+        "status_message": None,
     }
     
     logger.info(f"🔐 [OAuth] Tokens encrypted before storage")
@@ -481,7 +484,10 @@ async def exchange_notion_token(
             "workspace_name": workspace_name,
             "bot_id": bot_id
         },
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        # Reset status on successful reconnection
+        "status": "active",
+        "status_message": None,
     }
     
     logger.info(f"🔐 [OAuth] Token encrypted before storage")
@@ -770,6 +776,9 @@ async def exchange_microsoft_token(
         "expires_at": expires_at,
         "credentials": credentials or None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        # Reset status on successful reconnection
+        "status": "active",
+        "status_message": None,
     }
 
     upsert_res = supabase.table("user_integrations").upsert(
@@ -934,6 +943,9 @@ async def exchange_dropbox_token(
         "expires_at": expires_at,
         "credentials": credentials,
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        # Reset status on successful reconnection
+        "status": "active",
+        "status_message": None,
     }
 
     upsert_res = supabase.table("user_integrations").upsert(
@@ -1085,6 +1097,9 @@ async def exchange_github_token(
         "expires_at": None,  # GitHub tokens don't expire
         "credentials": credentials,
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        # Reset status on successful reconnection
+        "status": "active",
+        "status_message": None,
     }
 
     upsert_res = supabase.table("user_integrations").upsert(
@@ -1372,6 +1387,9 @@ async def exchange_box_token(
         "expires_at": expires_at,
         "credentials": credentials,
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        # Reset status on successful reconnection
+        "status": "active",
+        "status_message": None,
     }
 
     upsert_res = supabase.table("user_integrations").upsert(

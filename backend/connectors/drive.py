@@ -208,6 +208,13 @@ class DriveConnector(EnhancedConnector, BaseConnector):
         Build Google credentials from an integration record.
         Uses centralized token manager for automatic refresh.
         """
+        # Check integration status first - fail early if reconnection required
+        status = integration.get("status", "active")
+        if status == "reconnection_required":
+            status_message = integration.get("status_message", "Please reconnect your Google Drive account.")
+            logger.warning(f"⚠️ [Drive] Integration {integration.get('id')} requires reconnection")
+            raise ValueError(f"Integration requires reconnection: {status_message}")
+
         try:
             # Use centralized token manager for automatic refresh
             creds_data = OAuthTokenManager.get_valid_credentials(

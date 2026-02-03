@@ -11,7 +11,7 @@ Compliance Coverage:
 
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status, Query
 from pydantic import BaseModel
 
 from api.v1.dependencies import (
@@ -415,11 +415,11 @@ async def _trigger_gdpr_ai_learning_wipe(
 # Scope Consent Endpoints
 # =============================================================================
 
-@router.get("/consent/scope/{scope_id}", response_model=ScopeConsentResponse)
+@router.get("/consent/scope", response_model=ScopeConsentResponse)
 @limiter.limit("30/minute")
 async def get_scope_consent(
-    scope_id: str,
     request: Request,
+    scope_id: str = Query(..., description="The scope ID to get consent for"),
     user_id: str = Depends(validate_team_access),
     organization_id: str = Depends(get_user_organization_id),
 ):
@@ -460,13 +460,13 @@ async def get_scope_consent(
     )
 
 
-@router.patch("/consent/scope/{scope_id}")
+@router.patch("/consent/scope")
 @limiter.limit("10/minute")
 async def update_scope_consent(
-    scope_id: str,
     payload: ScopeConsentUpdate,
     request: Request,
     background_tasks: BackgroundTasks,
+    scope_id: str = Query(..., description="The scope ID to update consent for"),
     user_id: str = Depends(require_admin),
     organization_id: str = Depends(get_user_organization_id),
 ):
@@ -702,13 +702,13 @@ class AgentAccessUpdate(BaseModel):
     agent_id: str
 
 
-@router.patch("/consent/scope/{scope_id}/agents")
+@router.patch("/consent/scope/agents")
 @limiter.limit("10/minute")
 async def update_scope_agent_access(
-    scope_id: str,
     payload: AgentAccessUpdate,
     request: Request,
     background_tasks: BackgroundTasks,
+    scope_id: str = Query(..., description="The scope ID to update agent access for"),
     user_id: str = Depends(require_admin),
     organization_id: str = Depends(get_user_organization_id),
 ):
@@ -1004,12 +1004,12 @@ async def update_document_agent_access(
 # Consent DELETE Endpoints (Reset to Inherit)
 # =============================================================================
 
-@router.delete("/consent/scope/{scope_id}")
+@router.delete("/consent/scope")
 @limiter.limit("10/minute")
 async def delete_scope_consent(
-    scope_id: str,
     request: Request,
     background_tasks: BackgroundTasks,
+    scope_id: str = Query(..., description="The scope ID to delete consent for"),
     user_id: str = Depends(require_admin),
     organization_id: str = Depends(get_user_organization_id),
 ):

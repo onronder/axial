@@ -204,9 +204,12 @@ async function fetchScopeConsents(): Promise<ScopeConsent[]> {
     const scopes = scopesResponse.data;
 
     // Fetch consent for each scope in parallel
+    // Using query parameters to handle special characters in scope IDs (e.g., "gdrive://...")
     const consentPromises = scopes.map(async (scope) => {
       try {
-        const response = await api.get<ScopeConsentRaw>(`/consent/scope/${scope.id}`);
+        const response = await api.get<ScopeConsentRaw>('/consent/scope', {
+          params: { scope_id: scope.id },
+        });
         return transformScopeConsent(response.data, scope.label);
       } catch {
         // Return default consent if not found
@@ -266,10 +269,13 @@ async function updateScopeConsentApi(
   enabled: boolean | null,
   inheritOrgConsent: boolean = true
 ): Promise<{ status: string }> {
-  const response = await api.patch<{ status: string }>(`/consent/scope/${scopeId}`, {
+  // Using query parameters to handle special characters in scope IDs (e.g., "gdrive://...")
+  const response = await api.patch<{ status: string }>('/consent/scope', {
     consent_type: consentType,
     allowed: enabled,
     inherit_org_consent: inheritOrgConsent,
+  }, {
+    params: { scope_id: scopeId },
   });
   return response.data;
 }
@@ -330,7 +336,10 @@ async function bulkUpdateScopeConsentApi(
  * Removes any custom consent settings for the scope.
  */
 async function deleteScopeConsentApi(scopeId: string): Promise<ConsentResetResponse> {
-  const response = await api.delete<ConsentResetResponse>(`/consent/scope/${scopeId}`);
+  // Using query parameters to handle special characters in scope IDs (e.g., "gdrive://...")
+  const response = await api.delete<ConsentResetResponse>('/consent/scope', {
+    params: { scope_id: scopeId },
+  });
   return response.data;
 }
 
@@ -358,9 +367,12 @@ async function updateScopeAgentAccessApi(
   action: AgentAction,
   agentId: string
 ): Promise<AgentAccessResult> {
-  const response = await api.patch<AgentAccessResponseRaw>(`/consent/scope/${scopeId}/agents`, {
+  // Using query parameters to handle special characters in scope IDs (e.g., "gdrive://...")
+  const response = await api.patch<AgentAccessResponseRaw>('/consent/scope/agents', {
     action,
     agent_id: agentId,
+  }, {
+    params: { scope_id: scopeId },
   });
   return transformAgentAccessResponse(response.data);
 }

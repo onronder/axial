@@ -119,7 +119,13 @@ def resolve_oauth_credentials(
         integration_id=resolved.get("integration_id"),
         user_id=resolved.get("user_id"),
     )
-    
+
+    # Check if integration needs reconnection
+    if integration.get("status") == "reconnection_required":
+        raise ConnectorAuthError(
+            integration.get("status_message", f"Please reconnect your {connector_type} account.")
+        )
+
     # Get valid credentials with automatic refresh
     try:
         creds = OAuthTokenManager.get_valid_credentials(integration, connector_type)

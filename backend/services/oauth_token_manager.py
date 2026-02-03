@@ -91,9 +91,14 @@ class OAuthTokenManager:
             # Decrypt tokens
             decrypted_access = decrypt_token(access_token) if access_token else None
             decrypted_refresh = decrypt_token(refresh_token) if refresh_token else None
-            
+
             if not decrypted_refresh:
                 raise TokenRefreshError("No refresh token available")
+
+            # Validate token after decryption (catch corruption/invalid tokens early)
+            if len(decrypted_refresh) < 20:
+                logger.warning(f"⚠️ [Google] Refresh token appears invalid (too short) for integration {integration_id}")
+                raise TokenRefreshError("Invalid refresh token format")
             
             # Check if refresh needed
             if not OAuthTokenManager.is_token_expired(expires_at):
@@ -132,7 +137,27 @@ class OAuthTokenManager:
             return new_access_token, new_expires_at
             
         except Exception as e:
+            error_msg = str(e).lower()
             logger.error(f"❌ Failed to refresh Google token: {e}")
+
+            # Handle invalid_grant specifically - token revoked or expired (7-day testing mode limit)
+            if 'invalid_grant' in error_msg or 'token has been expired or revoked' in error_msg:
+                logger.warning(f"🔒 [Google] Token revoked/expired for integration {integration_id}, marking as reconnection_required")
+                try:
+                    # Mark integration as requiring reconnection
+                    supabase = get_supabase()
+                    supabase.table("user_integrations").update({
+                        "status": "reconnection_required",
+                        "status_message": "Your Google Drive connection has expired. Please reconnect your account.",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }).eq("id", integration_id).execute()
+                except Exception as db_err:
+                    logger.error(f"❌ Failed to update integration status: {db_err}")
+
+                raise TokenRefreshError(
+                    "Google Drive connection expired. Please reconnect your account in Settings > Integrations."
+                ) from e
+
             raise TokenRefreshError(f"Token refresh failed: {e}") from e
     
     @staticmethod
@@ -227,6 +252,25 @@ class OAuthTokenManager:
                     timeout=30,
                 )
             if response.status_code != 200:
+                # Check for invalid_grant (token revoked/expired)
+                try:
+                    error_data = response.json()
+                    error_code = error_data.get("error", "")
+                    if error_code == "invalid_grant" or "AADSTS70008" in response.text:
+                        # Mark integration as needing reconnection
+                        supabase = get_supabase()
+                        supabase.table("user_integrations").update({
+                            "status": "reconnection_required",
+                            "status_message": "Your Microsoft connection has expired. Please reconnect.",
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }).eq("id", integration_id).execute()
+                        raise TokenRefreshError(
+                            "Microsoft connection expired. Please reconnect your account in Settings > Integrations."
+                        )
+                except TokenRefreshError:
+                    raise
+                except Exception:
+                    pass
                 raise TokenRefreshError(f"Token refresh failed: {response.text}")
 
             payload = response.json()
@@ -316,6 +360,27 @@ class OAuthTokenManager:
             if response.status_code != 200:
                 error_detail = response.text[:500] if response.text else "Unknown error"
                 logger.error(f"❌ Dropbox token refresh failed: {error_detail}")
+
+                # Check for invalid_grant (token revoked/expired)
+                try:
+                    error_data = response.json()
+                    error_code = error_data.get("error", "")
+                    if error_code == "invalid_grant" or "expired" in str(error_data).lower():
+                        # Mark integration as needing reconnection
+                        supabase = get_supabase()
+                        supabase.table("user_integrations").update({
+                            "status": "reconnection_required",
+                            "status_message": "Your Dropbox connection has expired. Please reconnect.",
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }).eq("id", integration_id).execute()
+                        raise TokenRefreshError(
+                            "Dropbox connection expired. Please reconnect your account in Settings > Integrations."
+                        )
+                except TokenRefreshError:
+                    raise
+                except Exception:
+                    pass
+
                 raise TokenRefreshError(f"Dropbox token refresh failed: {error_detail}")
 
             payload = response.json()
@@ -392,8 +457,19 @@ class OAuthTokenManager:
             )
             
             if response.status_code == 401:
+                # Mark integration as needing reconnection
+                try:
+                    from core.db import get_supabase
+                    supabase = get_supabase()
+                    supabase.table("user_integrations").update({
+                        "status": "reconnection_required",
+                        "status_message": "Your GitHub token has been revoked. Please reconnect.",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }).eq("id", integration_id).execute()
+                except Exception:
+                    pass
                 raise TokenRefreshError("GitHub token has been revoked or is invalid")
-            
+
             if response.status_code == 403:
                 raise TokenRefreshError("GitHub token lacks required permissions")
             
@@ -599,9 +675,17 @@ class OAuthTokenManager:
                         error_json = response.json()
                         error_code = error_json.get("error", "")
                         if error_code == "invalid_grant":
+                            # Mark integration as needing reconnection
+                            supabase.table("user_integrations").update({
+                                "status": "reconnection_required",
+                                "status_message": "Your Box connection has expired. Please reconnect.",
+                                "updated_at": datetime.now(timezone.utc).isoformat()
+                            }).eq("id", integration_id).execute()
                             raise TokenRefreshError(
                                 "Box refresh token has expired or been revoked. Please reconnect your Box account."
                             )
+                    except TokenRefreshError:
+                        raise
                     except Exception:
                         pass
                         

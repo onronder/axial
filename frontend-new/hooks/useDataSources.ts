@@ -256,7 +256,6 @@ export const useDataSources = () => {
                 scope: scope,
                 access_type: 'offline',
                 prompt: 'consent',
-                include_granted_scopes: 'true',
                 state: 'google'
             });
 

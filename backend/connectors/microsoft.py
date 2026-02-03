@@ -168,6 +168,13 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             return resolved
 
         integration = self._load_integration(resolved)
+
+        # Check if integration needs reconnection
+        if integration.get("status") == "reconnection_required":
+            raise ConnectorAuthError(
+                integration.get("status_message", "Please reconnect your Microsoft account.")
+            )
+
         try:
             creds = OAuthTokenManager.get_valid_credentials(integration, resolved["target_type"])
         except TokenRefreshError as exc:
