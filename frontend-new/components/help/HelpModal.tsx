@@ -338,7 +338,7 @@ export function HelpModal() {
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && closeHelp()}>
-            <DialogContent className="max-w-6xl h-[90vh] p-0 gap-0 overflow-hidden bg-[#0a0a0f]/95 backdrop-blur-2xl border-white/[0.08] shadow-[0_0_80px_rgba(0,0,0,0.8)]">
+            <DialogContent hideCloseButton className="max-w-6xl h-[90vh] p-0 gap-0 overflow-hidden bg-[#0a0a0f]/95 backdrop-blur-2xl border-white/[0.08] shadow-[0_0_80px_rgba(0,0,0,0.8)]">
                 <DialogTitle className="sr-only">Help Center</DialogTitle>
                 <DialogDescription className="sr-only">Browse help articles and documentation.</DialogDescription>
 
