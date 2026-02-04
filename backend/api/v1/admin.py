@@ -129,12 +129,12 @@ async def get_audit_logs(
         user_profiles: dict = {}
         if user_ids:
             try:
-                profiles_response = supabase.table("profiles")\
-                    .select("id, email, first_name, last_name")\
-                    .in_("id", user_ids)\
+                profiles_response = supabase.table("user_profiles")\
+                    .select("user_id, email, first_name, last_name")\
+                    .in_("user_id", user_ids)\
                     .execute()
                 for profile in (profiles_response.data or []):
-                    user_profiles[profile["id"]] = {
+                    user_profiles[profile["user_id"]] = {
                         "email": profile.get("email"),
                         "name": " ".join(filter(None, [
                             profile.get("first_name"),

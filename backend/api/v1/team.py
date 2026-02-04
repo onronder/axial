@@ -169,7 +169,7 @@ async def get_pending_invites(
     
     try:
         # Get current user's email
-        user_response = supabase.table("profiles").select("email").eq("id", user_id).single().execute()
+        user_response = supabase.table("user_profiles").select("email").eq("user_id", user_id).single().execute()
         
         if not user_response.data or not user_response.data.get("email"):
             return PendingInvitesResponse(invites=[], count=0)
