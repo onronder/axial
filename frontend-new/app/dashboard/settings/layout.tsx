@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useMemo } from "react";
 import {
     User,
     Database,
@@ -17,19 +18,10 @@ import {
     Briefcase,
     Shield,
     Lock,
-    Menu
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUsage } from "@/hooks/useUsage";
 import { useProfile } from "@/hooks/useProfile";
-import { Button } from "@/components/ui/button";
-import {
-    Sheet,
-    SheetContent,
-    SheetHeader,
-    SheetTitle,
-    SheetTrigger,
-} from "@/components/ui/sheet";
 
 type SettingsGroup = 'account' | 'data' | 'team' | 'admin';
 
@@ -63,6 +55,37 @@ const settingsNav: NavItem[] = [
     { name: "Security Log", path: "/dashboard/settings/security-log", icon: Lock, group: 'admin', adminOnly: true },
     { name: "Consent", path: "/dashboard/settings/consent", icon: Shield, group: 'admin', adminOnly: true },
 ];
+
+// Skeleton for mobile header while Sheet component loads
+function MobileHeaderSkeleton() {
+    return (
+        <div className="lg:hidden border-b border-white/10 bg-background/70 backdrop-blur-xl">
+            <div className="flex items-center gap-3 p-4">
+                <div className="h-10 w-10 rounded-lg bg-muted/50 animate-pulse" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-glow">
+                    <Settings className="h-5 w-5" />
+                </div>
+                <div>
+                    <h1 className="font-display text-lg font-bold text-foreground">
+                        Settings
+                    </h1>
+                    <p className="text-xs text-muted-foreground">
+                        Manage your account
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Lazy load mobile Sheet navigation
+const MobileSettingsSheet = dynamic(
+    () => import("./_components/MobileSettingsSheet"),
+    {
+        ssr: false,
+        loading: () => <MobileHeaderSkeleton />
+    }
+);
 
 interface SidebarNavProps {
     items: NavItem[];
@@ -140,7 +163,6 @@ export default function SettingsLayout({
     const pathname = usePathname();
     const { plan } = useUsage();
     const { profile } = useProfile();
-    const [sheetOpen, setSheetOpen] = useState(false);
 
     const isFreePlan = plan === "free" || plan === "none";
     const isAdmin = profile?.role === "admin";
@@ -195,50 +217,8 @@ export default function SettingsLayout({
 
                 {/* Mobile Header + Sheet */}
                 <div className="flex flex-1 flex-col min-h-full">
-                    {/* Mobile Header */}
-                    <div className="lg:hidden border-b border-white/10 bg-background/70 backdrop-blur-xl">
-                        <div className="flex items-center gap-3 p-4">
-                            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-                                <SheetTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="shrink-0">
-                                        <Menu className="h-5 w-5" />
-                                        <span className="sr-only">Toggle settings menu</span>
-                                    </Button>
-                                </SheetTrigger>
-                                <SheetContent side="left" className="w-72 p-0 bg-card/95 backdrop-blur-xl">
-                                    <SheetHeader className="p-6 border-b border-white/10">
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-glow">
-                                                <Settings className="h-5 w-5" />
-                                            </div>
-                                            <SheetTitle className="font-display text-lg font-bold">
-                                                Settings
-                                            </SheetTitle>
-                                        </div>
-                                    </SheetHeader>
-                                    <div className="overflow-y-auto max-h-[calc(100vh-120px)]">
-                                        <SidebarNav
-                                            items={visibleNav}
-                                            pathname={pathname}
-                                            onNavigate={() => setSheetOpen(false)}
-                                        />
-                                    </div>
-                                </SheetContent>
-                            </Sheet>
-
-                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-glow">
-                                <Settings className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h1 className="font-display text-lg font-bold text-foreground">
-                                    Settings
-                                </h1>
-                                <p className="text-xs text-muted-foreground">
-                                    Manage your account
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+                    {/* Mobile Header - Lazy loaded */}
+                    <MobileSettingsSheet items={visibleNav} pathname={pathname} />
 
                     {/* Main Content */}
                     <main className="flex-1 overflow-y-auto p-4 lg:p-8">
