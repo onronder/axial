@@ -17,6 +17,7 @@ import { InheritanceTree } from './InheritanceTree';
 import { AgentAccessPanel } from './AgentAccessPanel';
 import { ComplianceScoreWidget } from './ComplianceScoreWidget';
 import { ConsentAuditPanel } from './ConsentAuditPanel';
+import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader';
 import { useConsent, type AgentAction, type ScopeConsent } from '@/hooks/useConsent';
 import { useToast } from '@/hooks/use-toast';
 
@@ -299,21 +300,13 @@ export function ConsentDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-cyan-500/10">
-            <Shield className="h-6 w-6 text-cyan-400" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Data Consent Management</h1>
-            <p className="text-sm text-muted-foreground">
-              KVKK 2026 Compliant Granular Controls
-            </p>
-          </div>
-        </div>
-        <ComplianceScoreWidget score={complianceReport?.complianceScore || 0} />
-      </div>
+      <SettingsPageHeader
+        icon={Shield}
+        title="Consent"
+        description="KVKK 2026 compliant granular controls"
+        badge={<ComplianceScoreWidget score={complianceReport?.complianceScore || 0} />}
+        autoSaveNote
+      />
 
       {/* Organization Defaults */}
       <Card className="border-cyan-500/20">

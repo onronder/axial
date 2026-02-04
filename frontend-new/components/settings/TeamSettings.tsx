@@ -4,12 +4,17 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { UserPlus, Upload, MoreHorizontal, Users, Clock, Mail, UserCog, UserX, Send, Search, Filter, ChevronLeft, ChevronRight, Download, Lock, Sparkles } from "lucide-react";
+import { UserPlus, Upload, MoreHorizontal, Users, Clock, Mail, UserCog, UserX, Send, Filter, Download, Lock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsToolbar } from "@/components/settings/SettingsToolbar";
+import { SettingsStatCard } from "@/components/settings/SettingsStatCard";
+import { SettingsEmptyState } from "@/components/settings/SettingsEmptyState";
+import { SettingsPagination } from "@/components/settings/SettingsPagination";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Dialog,
@@ -311,13 +316,163 @@ export function TeamSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="font-display text-2xl font-bold text-foreground">Team Management</h1>
-        <p className="mt-1 text-muted-foreground">
-          Manage access and roles for your organization
-        </p>
-      </div>
+      <SettingsPageHeader
+        icon={Users}
+        title="Team Members"
+        description="Manage access and roles for your organization"
+        actions={
+          <div className="flex flex-wrap gap-3">
+            <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  className="gap-2"
+                  disabled={!canManageMembers}
+                  title={!canManageMembers ? managementLockedReason ?? "Team management locked" : undefined}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Invite Member
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Invite Team Member</DialogTitle>
+                  <DialogDescription>
+                    Send an invitation to join your organization
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-email">Email Address</Label>
+                    <Input
+                      id="invite-email"
+                      type="email"
+                      placeholder="colleague@company.com"
+                      value={inviteEmail}
+                      onChange={(e) => handleEmailChange(e.target.value)}
+                      className={cn(emailError && "border-destructive")}
+                    />
+                    {emailError && (
+                      <p className="text-xs text-destructive">{emailError}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-role">Role</Label>
+                    <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as Role)}>
+                      <SelectTrigger id="invite-role">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        <SelectItem value="editor">Editor</SelectItem>
+                        <SelectItem value="viewer">Viewer</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleInvite}
+                    className="gap-2"
+                    disabled={isInviting || !inviteEmail.trim() || !isEmailValid || !canManageMembers}
+                  >
+                    {isInviting ? (
+                      <Spinner className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    Send Invitation
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+              <DialogTrigger asChild>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="gap-2"
+                        disabled={!canManageMembers}
+                        title={!canManageMembers ? managementLockedReason ?? "Team management locked" : undefined}
+                      >
+                        <Upload className="h-4 w-4" />
+                        Bulk Import
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{canManageMembers ? "Upload a CSV list for large teams" : managementLockedReason || "Team management locked"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Bulk Import Team Members</DialogTitle>
+                  <DialogDescription>
+                    Upload a CSV file to invite multiple members at once
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="csv-file">CSV File</Label>
+                    <Input
+                      id="csv-file"
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFileChange}
+                      className="cursor-pointer"
+                      disabled={!canManageMembers}
+                    />
+                    {bulkFile && (
+                      <p className="text-sm text-muted-foreground">
+                        Selected: {bulkFile.name}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <p className="mb-2">Expected format:</p>
+                    <code className="block bg-muted p-2 rounded text-xs">
+                      email,role,name<br />
+                      alice@example.com,editor,Alice<br />
+                      bob@example.com,viewer,Bob
+                    </code>
+                  </div>
+                  <a
+                    href={CSV_TEMPLATE}
+                    download="team_invite_template.csv"
+                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                  >
+                    <Download className="h-3 w-3" />
+                    Download CSV Template
+                  </a>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleBulkImport}
+                    className="gap-2"
+                    disabled={!bulkFile || isBulkImporting || !canManageMembers}
+                  >
+                    {isBulkImporting ? (
+                      <Spinner className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    Import Members
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        }
+      />
 
       {/* Enterprise Upgrade Banner - shows when team features are disabled */}
       {!teamEnabled && (
@@ -360,211 +515,36 @@ export function TeamSettings() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <Users className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Total Seats</p>
-              <p className="text-2xl font-semibold">
-                {stats.active_members + stats.pending_invites}
-                <span className="text-muted-foreground text-lg">/{stats.total_seats}</span>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning/10">
-              <Mail className="h-5 w-5 text-warning" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Pending Invites</p>
-              <p className="text-2xl font-semibold">{stats.pending_invites}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success/10">
-              <Clock className="h-5 w-5 text-success" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Active Members</p>
-              <p className="text-2xl font-semibold">{stats.active_members}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Action Area */}
-      <div className="flex flex-wrap gap-3">
-        <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              className="gap-2"
-              disabled={!canManageMembers}
-              title={!canManageMembers ? managementLockedReason ?? "Team management locked" : undefined}
-            >
-              <UserPlus className="h-4 w-4" />
-              Invite Member
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Invite Team Member</DialogTitle>
-              <DialogDescription>
-                Send an invitation to join your organization
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="invite-email">Email Address</Label>
-                <Input
-                  id="invite-email"
-                  type="email"
-                  placeholder="colleague@company.com"
-                  value={inviteEmail}
-                  onChange={(e) => handleEmailChange(e.target.value)}
-                  className={cn(emailError && "border-destructive")}
-                />
-                {emailError && (
-                  <p className="text-xs text-destructive">{emailError}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="invite-role">Role</Label>
-                <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as Role)}>
-                  <SelectTrigger id="invite-role">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="editor">Editor</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleInvite}
-                className="gap-2"
-                disabled={isInviting || !inviteEmail.trim() || !isEmailValid || !canManageMembers}
-              >
-                {isInviting ? (
-                  <Spinner className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-                Send Invitation
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Bulk Import Dialog */}
-        <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
-          <DialogTrigger asChild>
-            <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  disabled={!canManageMembers}
-                  title={!canManageMembers ? managementLockedReason ?? "Team management locked" : undefined}
-                >
-                  <Upload className="h-4 w-4" />
-                  Bulk Import (.csv)
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                  <p>{canManageMembers ? "Upload a CSV list for large teams" : managementLockedReason || "Team management locked"}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Bulk Import Team Members</DialogTitle>
-              <DialogDescription>
-                Upload a CSV file to invite multiple members at once
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="csv-file">CSV File</Label>
-                <Input
-                  id="csv-file"
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                  className="cursor-pointer"
-                  disabled={!canManageMembers}
-                />
-                {bulkFile && (
-                  <p className="text-sm text-muted-foreground">
-                    Selected: {bulkFile.name}
-                  </p>
-                )}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                <p className="mb-2">Expected format:</p>
-                <code className="block bg-muted p-2 rounded text-xs">
-                  email,role,name<br />
-                  alice@example.com,editor,Alice<br />
-                  bob@example.com,viewer,Bob
-                </code>
-              </div>
-              <a
-                href={CSV_TEMPLATE}
-                download="team_invite_template.csv"
-                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-              >
-                <Download className="h-3 w-3" />
-                Download CSV Template
-              </a>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleBulkImport}
-                className="gap-2"
-                disabled={!bulkFile || isBulkImporting || !canManageMembers}
-              >
-                {isBulkImporting ? (
-                  <Spinner className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-                Import Members
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
+        <SettingsStatCard
+          icon={Users}
+          iconColorClass="text-primary"
+          iconBgClass="bg-primary/10"
+          label="Total Seats"
+          value={<>{stats.active_members + stats.pending_invites}<span className="text-muted-foreground text-lg">/{stats.total_seats}</span></>}
+        />
+        <SettingsStatCard
+          icon={Mail}
+          iconColorClass="text-warning"
+          iconBgClass="bg-warning/10"
+          label="Pending Invites"
+          value={stats.pending_invites}
+        />
+        <SettingsStatCard
+          icon={Clock}
+          iconColorClass="text-success"
+          iconBgClass="bg-success/10"
+          label="Active Members"
+          value={stats.active_members}
+        />
       </div>
 
       {/* Search and Filter */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search by name or email..."
-            value={searchQuery}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+      <SettingsToolbar
+        searchPlaceholder="Search by name or email..."
+        searchValue={searchQuery}
+        onSearchChange={handleSearchChange}
+      >
         <div className="flex gap-2">
           <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
             <SelectTrigger className="w-[130px]">
@@ -595,7 +575,7 @@ export function TeamSettings() {
             </Button>
           )}
         </div>
-      </div>
+      </SettingsToolbar>
 
       {/* Members Table */}
       <div className="rounded-lg border border-border">
@@ -613,24 +593,23 @@ export function TeamSettings() {
             {paginatedMembers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-40 text-center">
-                  <div className="space-y-2">
-                    <Users className="mx-auto h-10 w-10 text-muted-foreground/40" />
-                    <p className="font-medium text-foreground">
-                      {members.length === 0
-                        ? "No team members yet"
-                        : "No members match your filters"}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {members.length === 0
+                  <SettingsEmptyState
+                    icon={Users}
+                    title={members.length === 0 ? "No team members yet" : "No members match your filters"}
+                    description={
+                      members.length === 0
                         ? "You haven't invited anyone yet. Start collaborating by adding your team."
-                        : "Try adjusting your search or filter criteria."}
-                    </p>
-                    {hasActiveFilters && (
-                      <Button variant="outline" size="sm" onClick={clearFilters}>
-                        Clear Filters
-                      </Button>
-                    )}
-                  </div>
+                        : "Try adjusting your search or filter criteria."
+                    }
+                    action={
+                      hasActiveFilters ? (
+                        <Button variant="outline" size="sm" onClick={clearFilters}>
+                          Clear Filters
+                        </Button>
+                      ) : undefined
+                    }
+                    className="py-4"
+                  />
                 </TableCell>
               </TableRow>
             ) : (
@@ -744,80 +723,19 @@ export function TeamSettings() {
 
       {/* Pagination */}
       {filteredMembers.length > 0 && (
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Showing</span>
-            <Select
-              value={pageSize.toString()}
-              onValueChange={(value) => {
-                setPageSize(Number(value));
-                setCurrentPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[70px] h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <SelectItem key={size} value={size.toString()}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span>
-              of {filteredMembers.length} member{filteredMembers.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                  let page: number;
-                  if (totalPages <= 5) {
-                    page = i + 1;
-                  } else if (currentPage <= 3) {
-                    page = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    page = totalPages - 4 + i;
-                  } else {
-                    page = currentPage - 2 + i;
-                  }
-                  return (
-                    <Button
-                      key={page}
-                      variant={currentPage === page ? "default" : "outline"}
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setCurrentPage(page)}
-                    >
-                      {page}
-                    </Button>
-                  );
-                })}
-              </div>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </div>
+        <SettingsPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredMembers.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          itemLabel="member"
+        />
       )}
 
       {/* Edit Role Dialog */}

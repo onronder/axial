@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useNotificationSettings, NotificationSetting } from "@/hooks/useNotificationSettings";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 
 export function NotificationSettings() {
   const { emailSettings, systemSettings, isLoading, isResetting, toggleSetting, resetToDefaults } = useNotificationSettings();
@@ -55,81 +56,66 @@ export function NotificationSettings() {
     );
   }
 
-  return (
-    <div className="space-y-8 relative">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-10 top-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
-        <div className="absolute right-0 top-10 h-56 w-56 rounded-full bg-accent/15 blur-3xl" />
-      </div>
+  const resetButton = (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={isResetting}
+        onClick={async () => {
+          if (!confirming) {
+            setConfirming(true);
+            confirmTimeoutRef.current = setTimeout(() => {
+              setConfirming(false);
+            }, 5000);
+            return;
+          }
+          if (confirmTimeoutRef.current) {
+            clearTimeout(confirmTimeoutRef.current);
+            confirmTimeoutRef.current = null;
+          }
+          const ok = await resetToDefaults();
+          if (ok) {
+            setConfirming(false);
+          }
+        }}
+      >
+        {isResetting ? (
+          <Spinner className="h-4 w-4 animate-spin" />
+        ) : confirming ? (
+          "Click again to confirm"
+        ) : (
+          "Reset to defaults"
+        )}
+      </Button>
+      {confirming && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive hover:text-destructive"
+          onClick={() => {
+            if (confirmTimeoutRef.current) {
+              clearTimeout(confirmTimeoutRef.current);
+              confirmTimeoutRef.current = null;
+            }
+            setConfirming(false);
+          }}
+        >
+          Cancel
+        </Button>
+      )}
+    </div>
+  );
 
-      <div className="relative">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-glow">
-              <Bell className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="font-display text-2xl font-bold text-foreground">Notifications</h1>
-              <p className="mt-1 text-muted-foreground">
-                Manage how Axio Hub communicates with you
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-white/20 bg-white/5 hover:bg-white/10"
-              disabled={isResetting}
-              onClick={async () => {
-                if (!confirming) {
-                  setConfirming(true);
-                  // Auto-cancel confirmation after 5 seconds
-                  confirmTimeoutRef.current = setTimeout(() => {
-                    setConfirming(false);
-                  }, 5000);
-                  return;
-                }
-                
-                // Clear timeout on actual reset
-                if (confirmTimeoutRef.current) {
-                  clearTimeout(confirmTimeoutRef.current);
-                  confirmTimeoutRef.current = null;
-                }
-                
-                const ok = await resetToDefaults();
-                if (ok) {
-                  setConfirming(false);
-                }
-              }}
-            >
-              {isResetting ? (
-                <Spinner className="h-4 w-4 animate-spin" />
-              ) : confirming ? (
-                "Click again to confirm"
-              ) : (
-                "Reset to defaults"
-              )}
-            </Button>
-            {confirming && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                onClick={() => {
-                  if (confirmTimeoutRef.current) {
-                    clearTimeout(confirmTimeoutRef.current);
-                    confirmTimeoutRef.current = null;
-                  }
-                  setConfirming(false);
-                }}
-              >
-                Cancel
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+  return (
+    <div className="space-y-8">
+      <SettingsPageHeader
+        icon={Bell}
+        title="Notifications"
+        description="Manage how Axio Hub communicates with you"
+        actions={resetButton}
+        autoSaveNote
+      />
 
       {/* Email Notifications */}
       <Card className="relative overflow-hidden glass-card border-white/10 shadow-glow">

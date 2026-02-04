@@ -2,12 +2,16 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, RefreshCw, Clock, CheckCircle, XCircle, Filter, RotateCcw, Search } from "lucide-react";
+import { AlertTriangle, RefreshCw, Clock, CheckCircle, XCircle, Filter, RotateCcw } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsToolbar } from "@/components/settings/SettingsToolbar";
+import { SettingsStatCard } from "@/components/settings/SettingsStatCard";
+import { SettingsEmptyState } from "@/components/settings/SettingsEmptyState";
 import { Badge } from '@/components/ui/badge';
 import {
     Table,
@@ -323,19 +327,17 @@ export function DLQDashboard() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold">Dead Letter Queue</h1>
-                    <p className="text-muted-foreground">
-                        Monitor and manage failed background tasks
-                    </p>
-                </div>
-                <Button onClick={fetchData} variant="outline" className="gap-2">
-                    <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-                    Refresh
-                </Button>
-            </div>
+            <SettingsPageHeader
+                icon={AlertTriangle}
+                title="Failed Tasks"
+                description="Dead Letter Queue (DLQ) — Monitor and manage failed background tasks"
+                actions={
+                    <Button onClick={fetchData} variant="outline" size="sm" className="gap-2">
+                        <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+                        Refresh
+                    </Button>
+                }
+            />
 
             {actionLockedReason && (
                 <Alert className="border-amber-400/40 bg-amber-500/5">
@@ -350,44 +352,51 @@ export function DLQDashboard() {
             )}
 
             {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>Total Failed</CardDescription>
-                        <CardTitle className="text-2xl">{stats?.total ?? 0}</CardTitle>
-                    </CardHeader>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>Pending Retry</CardDescription>
-                        <CardTitle className="text-2xl text-yellow-500">{stats?.pending_retry ?? 0}</CardTitle>
-                    </CardHeader>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>Permanently Failed</CardDescription>
-                        <CardTitle className="text-2xl text-destructive">{stats?.permanently_failed ?? 0}</CardTitle>
-                    </CardHeader>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>Resolved Today</CardDescription>
-                        <CardTitle className="text-2xl text-green-500">{stats?.resolved_today ?? 0}</CardTitle>
-                    </CardHeader>
-                </Card>
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                <SettingsStatCard
+                    icon={AlertTriangle}
+                    iconColorClass="text-foreground"
+                    iconBgClass="bg-muted/30"
+                    label="Total Failed"
+                    value={stats?.total ?? 0}
+                />
+                <SettingsStatCard
+                    icon={Clock}
+                    iconColorClass="text-yellow-500"
+                    iconBgClass="bg-yellow-500/10"
+                    label="Pending Retry"
+                    value={stats?.pending_retry ?? 0}
+                />
+                <SettingsStatCard
+                    icon={XCircle}
+                    iconColorClass="text-destructive"
+                    iconBgClass="bg-destructive/10"
+                    label="Permanently Failed"
+                    value={stats?.permanently_failed ?? 0}
+                />
+                <SettingsStatCard
+                    icon={CheckCircle}
+                    iconColorClass="text-green-500"
+                    iconBgClass="bg-green-500/10"
+                    label="Resolved Today"
+                    value={stats?.resolved_today ?? 0}
+                />
             </div>
 
             {/* Filters */}
-            <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search tasks..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-8"
-                    />
-                </div>
+            <SettingsToolbar
+                searchPlaceholder="Search tasks..."
+                searchValue={searchQuery}
+                onSearchChange={setSearchQuery}
+                actions={
+                    selectedTasks.size > 0 && !isReadOnly ? (
+                        <Button onClick={retrySelected} className="gap-2">
+                            <RotateCcw className="h-4 w-4" />
+                            Retry {selectedTasks.size} Selected
+                        </Button>
+                    ) : undefined
+                }
+            >
                 <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as FailedTaskStatus | 'all')}>
                     <SelectTrigger className="w-[180px]">
                         <Filter className="h-4 w-4 mr-2" />
@@ -402,13 +411,7 @@ export function DLQDashboard() {
                         <SelectItem value="resolved">Resolved</SelectItem>
                     </SelectContent>
                 </Select>
-                {selectedTasks.size > 0 && !isReadOnly && (
-                    <Button onClick={retrySelected} className="gap-2">
-                        <RotateCcw className="h-4 w-4" />
-                        Retry {selectedTasks.size} Selected
-                    </Button>
-                )}
-            </div>
+            </SettingsToolbar>
 
             {/* Tasks Table */}
             <Card>
@@ -435,22 +438,26 @@ export function DLQDashboard() {
                                 </TableRow>
                             ) : filteredTasks.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
-                                        {searchQuery || statusFilter !== 'all'
-                                            ? 'No matching tasks found'
-                                            : 'No failed tasks - everything is healthy! 🎉'}
+                                    <TableCell colSpan={8}>
+                                        <SettingsEmptyState
+                                            icon={searchQuery || statusFilter !== 'all' ? AlertTriangle : CheckCircle}
+                                            title={searchQuery || statusFilter !== 'all' ? "No matching tasks found" : "No failed tasks"}
+                                            description={searchQuery || statusFilter !== 'all'
+                                                ? "Try adjusting your search or filter criteria."
+                                                : "Background processing is running normally."}
+                                            className="py-8"
+                                        />
                                     </TableCell>
                                 </TableRow>
                             ) : (
                                 filteredTasks.map((task) => (
                                     <TableRow key={task.id}>
                                         <TableCell>
-                                            <input
-                                                type="checkbox"
+                                            <Checkbox
                                                 checked={selectedTasks.has(task.id)}
-                                                onChange={() => toggleSelection(task.id)}
-                                                className="h-4 w-4"
+                                                onCheckedChange={() => toggleSelection(task.id)}
                                                 disabled={isReadOnly}
+                                                aria-label={`Select task ${task.task_name}`}
                                             />
                                         </TableCell>
                                         <TableCell>
@@ -495,6 +502,7 @@ export function DLQDashboard() {
                                                         variant="ghost"
                                                         onClick={() => retryTask(task.id)}
                                                         disabled={isRetrying === task.id || isReadOnly}
+                                                        aria-label="Retry task"
                                                     >
                                                         {isRetrying === task.id ? (
                                                             <Spinner className="h-4 w-4 animate-spin" />
@@ -509,6 +517,7 @@ export function DLQDashboard() {
                                                         variant="ghost"
                                                         onClick={() => resolveTask(task.id)}
                                                         disabled={isReadOnly}
+                                                        aria-label="Resolve task"
                                                     >
                                                         <CheckCircle className="h-4 w-4" />
                                                     </Button>

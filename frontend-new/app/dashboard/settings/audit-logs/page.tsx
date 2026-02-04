@@ -4,11 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { format, parseISO, subDays } from "date-fns";
 import {
   ScrollText,
-  Search,
   Filter,
   RefreshCw,
-  ChevronLeft,
-  ChevronRight,
   Calendar,
   User,
   FileText,
@@ -20,8 +17,12 @@ import {
   Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsToolbar } from "@/components/settings/SettingsToolbar";
+import { SettingsStatCard } from "@/components/settings/SettingsStatCard";
+import { SettingsEmptyState } from "@/components/settings/SettingsEmptyState";
+import { SettingsPagination } from "@/components/settings/SettingsPagination";
 import {
   Select,
   SelectContent,
@@ -264,112 +265,97 @@ export default function AuditLogsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header Card */}
-      <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
-        <CardHeader className="border-b border-border/50 bg-muted/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-lg shadow-primary/20">
-                <ScrollText className="h-5 w-5" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Audit Logs</CardTitle>
-                <CardDescription>
-                  Track all actions and changes in your workspace
-                </CardDescription>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={exportLogs}
-                disabled={filteredLogs.length === 0}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export CSV
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fetchLogs(true)}
-                disabled={isRefreshing}
-              >
-                <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
-                Refresh
-              </Button>
-            </div>
+      <SettingsPageHeader
+        icon={ScrollText}
+        title="Audit Logs"
+        description="Track all actions and changes in your workspace"
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportLogs}
+              disabled={filteredLogs.length === 0}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchLogs(true)}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
+              Refresh
+            </Button>
           </div>
-        </CardHeader>
-        <CardContent className="p-6">
-          {/* Filters */}
-          <div className="flex flex-col md:flex-row gap-4 mb-6">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search logs..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Select value={actionFilter} onValueChange={setActionFilter}>
-                <SelectTrigger className="w-[160px]">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Action" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableActions.map((action) => (
-                    <SelectItem key={action.value} value={action.value}>
-                      {action.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={resourceFilter} onValueChange={setResourceFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Resource" />
-                </SelectTrigger>
-                <SelectContent>
-                  {resourceTypes.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={dateRange} onValueChange={setDateRange}>
-                <SelectTrigger className="w-[140px]">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Date range" />
-                </SelectTrigger>
-                <SelectContent>
-                  {dateRanges.map((range) => (
-                    <SelectItem key={range.value} value={range.value}>
-                      {range.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        }
+      />
 
-          {/* Logs Table */}
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Spinner className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : filteredLogs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <ScrollText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <h3 className="text-lg font-semibold">No audit logs found</h3>
-              <p className="text-sm text-muted-foreground max-w-md mt-1">
-                {searchQuery || actionFilter !== "all" || resourceFilter !== "all"
-                  ? "Try adjusting your filters to see more results."
-                  : "Audit logs will appear here as you use the platform."}
-              </p>
-            </div>
+      {/* Filters */}
+      <SettingsToolbar
+        searchPlaceholder="Search logs..."
+        searchValue={searchQuery}
+        onSearchChange={(v) => setSearchQuery(v)}
+      >
+        <div className="flex flex-wrap gap-2">
+          <Select value={actionFilter} onValueChange={setActionFilter}>
+            <SelectTrigger className="w-[160px]">
+              <Filter className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Action" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableActions.map((action) => (
+                <SelectItem key={action.value} value={action.value}>
+                  {action.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={resourceFilter} onValueChange={setResourceFilter}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Resource" />
+            </SelectTrigger>
+            <SelectContent>
+              {resourceTypes.map((type) => (
+                <SelectItem key={type.value} value={type.value}>
+                  {type.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={dateRange} onValueChange={setDateRange}>
+            <SelectTrigger className="w-[140px]">
+              <Calendar className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Date range" />
+            </SelectTrigger>
+            <SelectContent>
+              {dateRanges.map((range) => (
+                <SelectItem key={range.value} value={range.value}>
+                  {range.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </SettingsToolbar>
+
+      {/* Logs Table */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Spinner className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : filteredLogs.length === 0 ? (
+        <SettingsEmptyState
+          icon={ScrollText}
+          title="No audit logs found"
+          description={
+            searchQuery || actionFilter !== "all" || resourceFilter !== "all"
+              ? "Try adjusting your filters to see more results."
+              : "Audit logs will appear here as you use the platform."
+          }
+        />
           ) : (
             <>
               <div className="rounded-lg border">
@@ -462,68 +448,48 @@ export default function AuditLogsPage() {
               </div>
 
               {/* Pagination */}
-              <div className="flex items-center justify-between mt-4">
-                <p className="text-sm text-muted-foreground">
-                  Showing {page * PAGE_SIZE + 1} - {Math.min((page + 1) * PAGE_SIZE, total)} of {total} logs
-                </p>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.max(0, p - 1))}
-                    disabled={page === 0}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={!hasMore}
-                  >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+              <SettingsPagination
+                currentPage={page + 1}
+                totalPages={Math.max(1, Math.ceil(total / PAGE_SIZE))}
+                pageSize={PAGE_SIZE}
+                totalItems={total}
+                onPageChange={(p) => setPage(p - 1)}
+                itemLabel="log"
+              />
             </>
           )}
-        </CardContent>
-      </Card>
 
       {/* Summary Stats Card */}
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/50 bg-muted/30">
-          <CardTitle className="text-base">Quick Stats</CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-1">
-              <p className="text-2xl font-bold text-primary">{total}</p>
-              <p className="text-sm text-muted-foreground">Total Logs</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-2xl font-bold text-green-600">
-                {logs.filter((l) => l.action.includes("success")).length}
-              </p>
-              <p className="text-sm text-muted-foreground">Successful Actions</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-2xl font-bold text-red-600">
-                {logs.filter((l) => l.action.includes("fail") || l.action.includes("delete")).length}
-              </p>
-              <p className="text-sm text-muted-foreground">Failed/Deletions</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-2xl font-bold text-amber-600">
-                {logs.filter((l) => l.action.includes("gdpr")).length}
-              </p>
-              <p className="text-sm text-muted-foreground">GDPR Requests</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+        <SettingsStatCard
+          icon={ScrollText}
+          iconColorClass="text-primary"
+          iconBgClass="bg-primary/10"
+          label="Total Logs"
+          value={total}
+        />
+        <SettingsStatCard
+          icon={Shield}
+          iconColorClass="text-green-600"
+          iconBgClass="bg-green-500/10"
+          label="Successful Actions"
+          value={logs.filter((l) => l.action.includes("success")).length}
+        />
+        <SettingsStatCard
+          icon={FileText}
+          iconColorClass="text-red-600"
+          iconBgClass="bg-red-500/10"
+          label="Failed/Deletions"
+          value={logs.filter((l) => l.action.includes("fail") || l.action.includes("delete")).length}
+        />
+        <SettingsStatCard
+          icon={Shield}
+          iconColorClass="text-amber-600"
+          iconBgClass="bg-amber-500/10"
+          label="GDPR Requests"
+          value={logs.filter((l) => l.action.includes("gdpr")).length}
+        />
+      </div>
     </div>
   );
 }

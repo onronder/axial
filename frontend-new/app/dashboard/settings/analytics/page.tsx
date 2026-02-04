@@ -16,11 +16,11 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { 
-    BarChart3, 
-    ThumbsUp, 
-    ThumbsDown, 
-    FileText, 
+import {
+    BarChart3,
+    ThumbsUp,
+    ThumbsDown,
+    FileText,
     RefreshCw,
     TrendingDown,
     AlertTriangle,
@@ -28,6 +28,9 @@ import {
     ShieldAlert,
     Calendar,
 } from 'lucide-react';
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsStatCard } from "@/components/settings/SettingsStatCard";
+import { SettingsEmptyState } from "@/components/settings/SettingsEmptyState";
 import { subDays, format, startOfDay, endOfDay } from 'date-fns';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -250,41 +253,38 @@ export default function FeedbackAnalyticsPage() {
     const summary = feedbackData?.summary;
     
     return (
-        <div className="container max-w-6xl py-8 space-y-8">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Feedback Analytics</h1>
-                    <p className="text-muted-foreground mt-1">
-                        Monitor AI response quality based on user feedback
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    {/* Date Range Selector */}
-                    <Select value={dateRangePreset} onValueChange={handleDateRangeChange}>
-                        <SelectTrigger className="w-[150px]">
-                            <Calendar className="h-4 w-4 mr-2" />
-                            <SelectValue placeholder="Date range" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {DATE_RANGE_PRESETS.map((preset) => (
-                                <SelectItem key={preset.value} value={preset.value}>
-                                    {preset.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={handleRefresh}
-                        className="gap-2"
-                    >
-                        <RefreshCw className="h-4 w-4" />
-                        Refresh
-                    </Button>
-                </div>
-            </div>
+        <div className="space-y-8">
+            <SettingsPageHeader
+                icon={BarChart3}
+                title="Analytics"
+                description="Monitor AI response quality based on user feedback"
+                actions={
+                    <div className="flex items-center gap-2">
+                        <Select value={dateRangePreset} onValueChange={handleDateRangeChange}>
+                            <SelectTrigger className="w-[150px]">
+                                <Calendar className="h-4 w-4 mr-2" />
+                                <SelectValue placeholder="Date range" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {DATE_RANGE_PRESETS.map((preset) => (
+                                    <SelectItem key={preset.value} value={preset.value}>
+                                        {preset.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRefresh}
+                            className="gap-2"
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                            Refresh
+                        </Button>
+                    </div>
+                }
+            />
             
             {/* Date Range Display */}
             {dateRange.from && dateRange.to && (
@@ -294,35 +294,39 @@ export default function FeedbackAnalyticsPage() {
             )}
             
             {/* Summary Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
-                <SummaryCard
-                    title="Total Feedback"
-                    value={summary?.total_count ?? 0}
-                    icon={<MessageSquare className="h-4 w-4" />}
-                    loading={feedbackLoading}
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                <SettingsStatCard
+                    icon={MessageSquare}
+                    iconColorClass="text-primary"
+                    iconBgClass="bg-primary/10"
+                    label="Total Feedback"
+                    value={feedbackLoading ? "..." : summary?.total_count ?? 0}
                 />
-                <SummaryCard
-                    title="Positive"
-                    value={summary?.positive_count ?? 0}
-                    icon={<ThumbsUp className="h-4 w-4 text-green-500" />}
-                    loading={feedbackLoading}
+                <SettingsStatCard
+                    icon={ThumbsUp}
+                    iconColorClass="text-green-500"
+                    iconBgClass="bg-green-500/10"
+                    label="Positive"
+                    value={feedbackLoading ? "..." : summary?.positive_count ?? 0}
                     className="border-green-200 dark:border-green-900"
                 />
-                <SummaryCard
-                    title="Negative"
-                    value={summary?.negative_count ?? 0}
-                    icon={<ThumbsDown className="h-4 w-4 text-red-500" />}
-                    loading={feedbackLoading}
+                <SettingsStatCard
+                    icon={ThumbsDown}
+                    iconColorClass="text-red-500"
+                    iconBgClass="bg-red-500/10"
+                    label="Negative"
+                    value={feedbackLoading ? "..." : summary?.negative_count ?? 0}
                     className="border-red-200 dark:border-red-900"
                 />
-                <SummaryCard
-                    title="Negative Rate"
-                    value={`${summary?.negative_rate_pct ?? 0}%`}
-                    icon={<TrendingDown className="h-4 w-4 text-amber-500" />}
-                    loading={feedbackLoading}
+                <SettingsStatCard
+                    icon={TrendingDown}
+                    iconColorClass="text-amber-500"
+                    iconBgClass="bg-amber-500/10"
+                    label="Negative Rate"
+                    value={feedbackLoading ? "..." : `${summary?.negative_rate_pct ?? 0}%`}
                     description={
-                        (summary?.negative_rate_pct ?? 0) > 20 
-                            ? "Above average" 
+                        (summary?.negative_rate_pct ?? 0) > 20
+                            ? "Above average"
                             : "Looking good"
                     }
                 />
@@ -347,11 +351,11 @@ export default function FeedbackAnalyticsPage() {
                             ))}
                         </div>
                     ) : sourceMetrics?.items.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                            <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                            <p>No problem sources identified yet</p>
-                            <p className="text-sm">Sources with 3+ feedback ratings will appear here</p>
-                        </div>
+                        <SettingsEmptyState
+                            icon={FileText}
+                            title="No problem sources identified yet"
+                            description="Sources with 3+ feedback ratings will appear here"
+                        />
                     ) : (
                         <Table>
                             <TableHeader>
@@ -435,11 +439,11 @@ export default function FeedbackAnalyticsPage() {
                             <p>Failed to load feedback. You may not have admin access.</p>
                         </div>
                     ) : feedbackData?.items.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                            <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                            <p>No feedback collected yet</p>
-                            <p className="text-sm">User ratings on AI responses will appear here</p>
-                        </div>
+                        <SettingsEmptyState
+                            icon={MessageSquare}
+                            title="No feedback collected yet"
+                            description="User ratings on AI responses will appear here"
+                        />
                     ) : (
                         <div className="space-y-4">
                             {feedbackData?.items.map((item) => (

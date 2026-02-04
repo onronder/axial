@@ -1,8 +1,9 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Moon, Sun, Monitor, User, Palette, Check, AlertTriangle, Trash2, Shield, UserX } from "lucide-react";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,8 +126,18 @@ export function GeneralSettings() {
     );
   }
 
+  const isDirty =
+    (profile?.first_name || "") !== firstName ||
+    (profile?.last_name || "") !== lastName;
+
   return (
     <div className="space-y-6 animate-fade-in">
+      <SettingsPageHeader
+        icon={User}
+        title="General"
+        description="Manage your profile, appearance, and data privacy"
+      />
+
       {/* Personal Information Card */}
       <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
         <CardHeader className="border-b border-border/50 bg-muted/30">
@@ -199,7 +210,7 @@ export function GeneralSettings() {
             <Button
               variant="gradient"
               onClick={handleSaveProfile}
-              disabled={isSaving}
+              disabled={isSaving || !isDirty}
               className="w-full sm:w-auto"
             >
               {isSaving ? (

@@ -2,8 +2,10 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Filter, RefreshCw } from "lucide-react";
+import { Search, Filter, RefreshCw, Database } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsToolbar } from "@/components/settings/SettingsToolbar";
 import {
   Select,
   SelectContent,
@@ -219,18 +221,17 @@ export function DataSourcesGrid() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-foreground">Data Sources</h1>
-          <p className="mt-1 text-muted-foreground">
-            Connect your data to enhance AI knowledge
-          </p>
-        </div>
-        <Button onClick={refresh} variant="ghost" size="icon">
-          <RefreshCw className="h-4 w-4" />
-        </Button>
-      </div>
+      <SettingsPageHeader
+        icon={Database}
+        title="Data Sources"
+        description="Connect your data to enhance AI knowledge"
+        actions={
+          <Button onClick={refresh} variant="outline" size="sm" aria-label="Refresh data sources">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        }
+      />
 
       {isViewer && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -239,16 +240,11 @@ export function DataSourcesGrid() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search sources..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+      <SettingsToolbar
+        searchPlaceholder="Search sources..."
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+      >
         <div className="flex items-center gap-3">
           <Select
             value={categoryFilter}
@@ -271,7 +267,7 @@ export function DataSourcesGrid() {
             {connectedCount} Connected
           </Badge>
         </div>
-      </div>
+      </SettingsToolbar>
 
       {/* Grid by Category */}
       <div className="space-y-8">

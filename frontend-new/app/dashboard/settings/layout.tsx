@@ -138,7 +138,7 @@ function SidebarNav({ items, pathname, onNavigate }: SidebarNavProps) {
                                     "flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 rounded-lg mx-2",
                                     isActive
                                         ? "bg-primary/10 text-primary border-l-2 border-primary -ml-0.5 pl-[14px]"
-                                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                                        : "text-muted-foreground hover:bg-muted/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                                 )}
                             >
                                 <Icon className={cn(

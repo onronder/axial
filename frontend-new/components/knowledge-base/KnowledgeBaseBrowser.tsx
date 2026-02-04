@@ -9,7 +9,6 @@ import {
   Folder,
   FolderOpen,
   ChevronRight,
-  ChevronLeft,
   MoreVertical,
   Download,
   ExternalLink,
@@ -18,6 +17,8 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsPagination } from "@/components/settings/SettingsPagination";
 import {
   Select,
   SelectContent,
@@ -412,12 +413,11 @@ export function KnowledgeBaseBrowser() {
     <div className="space-y-8">
       {/* Header Area */}
       <div className="space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-gradient">Knowledge Base</h1>
-          <p className="text-muted-foreground text-lg">
-            Browse and manage your ingested documents by folder.
-          </p>
-        </div>
+        <SettingsPageHeader
+          icon={FileText}
+          title="Knowledge Base"
+          description="Browse and manage your ingested documents"
+        />
 
         {/* Storage Meter Banner */}
         <div className="w-full">
@@ -773,57 +773,20 @@ export function KnowledgeBaseBrowser() {
         </div>
 
         {/* Footer / Pagination */}
-        <div className="p-4 border-t border-white/10 bg-white/5 backdrop-blur-sm flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Rows per page</span>
-            <Select
-              value={pageSize.toString()}
-              onValueChange={(value) => {
-                setPageSize(Number(value));
-                setCurrentPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[70px] h-8 bg-background/60 border-white/10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <SelectItem key={size} value={size.toString()}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>
-              {totalItems > 0
-                ? `${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalItems)} of ${totalItems}`
-                : "0 items"
-              }
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 bg-background/60 border-white/10"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 bg-background/60 border-white/10"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+        <div className="p-4 border-t border-white/10 bg-white/5 backdrop-blur-sm">
+          <SettingsPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={totalItems}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            itemLabel="item"
+          />
         </div>
       </div>
 

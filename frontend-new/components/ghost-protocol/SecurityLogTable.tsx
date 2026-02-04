@@ -30,7 +30,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -44,15 +43,12 @@ import {
   Folder,
   Database,
   Download,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Loader2,
 } from 'lucide-react';
 import { WipeVerificationBadge } from './WipeVerificationBadge';
 import { useSecurityLog, SecurityEvent } from '@/hooks/useSecurityLog';
+import { SettingsToolbar } from '@/components/settings/SettingsToolbar';
+import { SettingsPagination } from '@/components/settings/SettingsPagination';
 
 // =============================================================================
 // Constants
@@ -193,26 +189,11 @@ export function SecurityLogTable() {
     setPage(0);
   }, []);
 
-  /**
-   * Handle page size changes.
-   * Resets pagination to first page when page size changes.
-   * 
-   * @param value - New page size as string
-   */
-  const handlePageSizeChange = useCallback((value: string) => {
-    const newPageSize = parseInt(value, 10);
-    setPageSize(newPageSize);
-    setPage(0);
-  }, []);
-
   const {
     data: events,
     total,
     isLoading,
-    isFetching,
     totalPages,
-    hasNextPage,
-    hasPreviousPage,
   } = useSecurityLog({
     search: deferredSearch, // Use deferred value for smoother API transitions
     eventType: eventTypeFilter !== 'all' ? eventTypeFilter : undefined,
@@ -245,56 +226,27 @@ export function SecurityLogTable() {
     URL.revokeObjectURL(url);
   };
 
-  // Pagination handlers
-  const goToFirstPage = () => setPage(0);
-  const goToPreviousPage = () => setPage((prev) => Math.max(0, prev - 1));
-  const goToNextPage = () => setPage((prev) => Math.min(totalPages - 1, prev + 1));
-  const goToLastPage = () => setPage(totalPages - 1);
-
-  const startItem = page * pageSize + 1;
-  const endItem = Math.min((page + 1) * pageSize, total);
-
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Shield className="h-5 w-5 text-cyan-400" />
-          <h2 className="text-lg font-semibold">Security Log</h2>
-          {total > 0 && (
-            <span className="text-sm text-muted-foreground">
-              ({total.toLocaleString()} events)
-            </span>
-          )}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExport}
-          className="gap-2"
-          disabled={!events || events.length === 0}
-        >
-          <Download className="h-4 w-4" />
-          Export CSV
-        </Button>
-      </div>
-
       {/* Filters */}
-      <div className="flex gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by resource name..."
-            value={searchInput}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-9 pr-8"
-            aria-label="Search security events"
-          />
-          {/* Show subtle loading indicator while search is pending */}
-          {isSearchPending && (
-            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-          )}
-        </div>
+      <SettingsToolbar
+        searchPlaceholder="Search by resource name..."
+        searchValue={searchInput}
+        onSearchChange={handleSearchChange}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            className="gap-2"
+            disabled={!events || events.length === 0}
+            aria-label="Export CSV"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </Button>
+        }
+      >
         <Select value={eventTypeFilter} onValueChange={handleEventTypeChange}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Event type" />
@@ -307,7 +259,15 @@ export function SecurityLogTable() {
             <SelectItem value="organization_purged">Organization Purged</SelectItem>
           </SelectContent>
         </Select>
-      </div>
+      </SettingsToolbar>
+
+      {/* Search pending indicator */}
+      {isSearchPending && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Searching...</span>
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-lg border border-border/50 overflow-hidden">
@@ -383,92 +343,21 @@ export function SecurityLogTable() {
         </Table>
       </div>
 
-      {/* Pagination Controls */}
+      {/* Pagination */}
       {total > 0 && (
-        <div className="flex items-center justify-between px-2">
-          {/* Page size selector */}
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Rows per page:</span>
-            <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
-              <SelectTrigger className="w-16 h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <SelectItem key={size} value={size.toString()}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Page info and navigation */}
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">
-              {total > 0 ? (
-                <>
-                  {startItem}-{endItem} of {total.toLocaleString()}
-                </>
-              ) : (
-                '0 results'
-              )}
-            </span>
-
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={goToFirstPage}
-                disabled={!hasPreviousPage || isFetching}
-                aria-label="First page"
-              >
-                <ChevronsLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={goToPreviousPage}
-                disabled={!hasPreviousPage || isFetching}
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-
-              <span className="mx-2 text-sm">
-                Page {page + 1} of {totalPages || 1}
-              </span>
-
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={goToNextPage}
-                disabled={!hasNextPage || isFetching}
-                aria-label="Next page"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={goToLastPage}
-                disabled={!hasNextPage || isFetching}
-                aria-label="Last page"
-              >
-                <ChevronsRight className="h-4 w-4" />
-              </Button>
-            </div>
-
-            {/* Loading indicator during pagination */}
-            {isFetching && !isLoading && (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            )}
-          </div>
-        </div>
+        <SettingsPagination
+          currentPage={page + 1}
+          totalPages={totalPages || 1}
+          pageSize={pageSize}
+          totalItems={total}
+          onPageChange={(p) => setPage(p - 1)}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(0);
+          }}
+          pageSizeOptions={[10, 20, 50, 100]}
+          itemLabel="event"
+        />
       )}
     </div>
   );

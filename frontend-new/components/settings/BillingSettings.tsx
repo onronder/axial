@@ -3,6 +3,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Check, CreditCard, Sparkles, Users, Zap, Building2, ExternalLink, Receipt, Calendar, AlertTriangle, RefreshCw, Download } from "lucide-react";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -320,14 +321,11 @@ export function BillingSettings() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-foreground">
-          Billing & Plans
-        </h1>
-        <p className="mt-1 text-muted-foreground">
-          Manage your subscription and upgrade your plan
-        </p>
-      </div>
+      <SettingsPageHeader
+        icon={CreditCard}
+        title="Billing"
+        description="Manage your subscription and billing"
+      />
 
       {/* Current Plan Card */}
       <Card className="relative overflow-hidden">

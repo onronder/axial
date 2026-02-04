@@ -53,7 +53,7 @@ export function ConsentToggle({
   return (
     <div className={cn(
       'p-4 rounded-lg border transition-colors duration-200',
-      enabled ? 'border-cyan-500/30 bg-cyan-500/5' : 'border-border bg-muted/5'
+      enabled ? 'border-primary/30 bg-primary/5' : 'border-border bg-muted/5'
     )}>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1 flex-1">
@@ -62,7 +62,7 @@ export function ConsentToggle({
               htmlFor={`consent-${label}`}
               className={cn(
                 'font-medium cursor-pointer',
-                enabled ? 'text-cyan-400' : 'text-foreground'
+                enabled ? 'text-primary' : 'text-foreground'
               )}
             >
               {label}
@@ -93,9 +93,6 @@ export function ConsentToggle({
           checked={enabled}
           onCheckedChange={onChange}
           disabled={disabled}
-          className={cn(
-            enabled && 'data-[state=checked]:bg-cyan-500'
-          )}
         />
       </div>
     </div>

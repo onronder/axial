@@ -37,6 +37,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { SettingsToolbar } from "@/components/settings/SettingsToolbar";
+import { SettingsStatCard } from "@/components/settings/SettingsStatCard";
+import { SettingsEmptyState } from "@/components/settings/SettingsEmptyState";
 import {
   Select,
   SelectContent,
@@ -439,125 +443,124 @@ export function JobsDashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header Card */}
-      <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
-        <CardHeader className="border-b border-border/50 bg-muted/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-lg shadow-primary/20">
-                <Briefcase className="h-5 w-5" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Ingestion Jobs</CardTitle>
-                <CardDescription>
-                  Monitor and manage your data ingestion tasks
-                </CardDescription>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-            >
-              <RefreshCw
-                className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")}
-              />
-              Refresh
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-6">
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
-              <p className="text-2xl font-bold">{stats.total}</p>
-              <p className="text-xs text-muted-foreground">Total Jobs</p>
-            </div>
-            <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {stats.active}
-              </p>
-              <p className="text-xs text-muted-foreground">Active</p>
-            </div>
-            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-              <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                {stats.completed}
-              </p>
-              <p className="text-xs text-muted-foreground">Completed</p>
-            </div>
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-              <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                {stats.failed}
-              </p>
-              <p className="text-xs text-muted-foreground">Failed</p>
-            </div>
-            <div className="p-3 rounded-lg bg-gray-500/10 border border-gray-500/20">
-              <p className="text-2xl font-bold text-gray-600 dark:text-gray-400">
-                {stats.cancelled}
-              </p>
-              <p className="text-xs text-muted-foreground">Cancelled</p>
-            </div>
-          </div>
+      <SettingsPageHeader
+        icon={Briefcase}
+        title="Jobs"
+        description="Monitor and manage your data ingestion tasks"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw
+              className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")}
+            />
+            Refresh
+          </Button>
+        }
+      />
 
-          {/* Filter */}
-          <div className="flex items-center gap-2 mb-4">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="processing">Processing</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <SettingsStatCard
+          icon={Briefcase}
+          iconColorClass="text-foreground"
+          iconBgClass="bg-muted/30"
+          label="Total Jobs"
+          value={stats.total}
+        />
+        <SettingsStatCard
+          icon={Loader2}
+          iconColorClass="text-blue-600 dark:text-blue-400"
+          iconBgClass="bg-blue-500/10"
+          label="Active"
+          value={stats.active}
+        />
+        <SettingsStatCard
+          icon={CheckCircle}
+          iconColorClass="text-green-600 dark:text-green-400"
+          iconBgClass="bg-green-500/10"
+          label="Completed"
+          value={stats.completed}
+        />
+        <SettingsStatCard
+          icon={AlertCircle}
+          iconColorClass="text-red-600 dark:text-red-400"
+          iconBgClass="bg-red-500/10"
+          label="Failed"
+          value={stats.failed}
+        />
+        <SettingsStatCard
+          icon={Ban}
+          iconColorClass="text-gray-600 dark:text-gray-400"
+          iconBgClass="bg-gray-500/10"
+          label="Cancelled"
+          value={stats.cancelled}
+        />
+      </div>
 
-          {/* Jobs Table */}
-          {filteredJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Briefcase className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <h3 className="text-lg font-semibold">No jobs found</h3>
-              <p className="text-sm text-muted-foreground max-w-md mt-1">
-                {statusFilter !== "all"
-                  ? "Try changing the status filter to see more jobs."
-                  : "Jobs will appear here when you start ingesting data."}
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    <TableHead className="w-12" />
-                    <TableHead className="w-[20%]">Source</TableHead>
-                    <TableHead className="w-[15%]">Status</TableHead>
-                    <TableHead className="w-[25%]">Progress</TableHead>
-                    <TableHead className="w-[15%]">Started</TableHead>
-                    <TableHead className="w-[15%]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredJobs.map((job) => (
-                    <JobRow
-                      key={job.id}
-                      job={job}
-                      onCancel={cancelJob}
-                      onRetry={retryJob}
-                      getJobFiles={getJobFiles}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Filter */}
+      <SettingsToolbar
+        searchPlaceholder="Filter jobs..."
+        searchValue={statusFilter === "all" ? "" : statusFilter}
+        onSearchChange={() => {}}
+      >
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[160px]">
+            <Filter className="h-4 w-4 mr-2" />
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="processing">Processing</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingsToolbar>
+
+      {/* Jobs Table */}
+      {filteredJobs.length === 0 ? (
+        <SettingsEmptyState
+          icon={Briefcase}
+          title="No jobs found"
+          description={
+            statusFilter !== "all"
+              ? "Try changing the status filter to see more jobs."
+              : "Jobs will appear here when you start ingesting data."
+          }
+        />
+      ) : (
+        <div className="rounded-lg border overflow-hidden">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead className="w-12" />
+                <TableHead className="w-[20%]">Source</TableHead>
+                <TableHead className="w-[15%]">Status</TableHead>
+                <TableHead className="w-[25%]">Progress</TableHead>
+                <TableHead className="w-[15%]">Started</TableHead>
+                <TableHead className="w-[15%]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredJobs.map((job) => (
+                <JobRow
+                  key={job.id}
+                  job={job}
+                  onCancel={cancelJob}
+                  onRetry={retryJob}
+                  getJobFiles={getJobFiles}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
 }
