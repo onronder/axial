@@ -16,12 +16,12 @@ import {
     X,
     Search,
     BookOpen,
-    Zap,
     Users,
     CreditCard,
     HelpCircle,
     ChevronDown,
     ChevronRight,
+    ChevronLeft,
     Clock,
     ArrowUp,
     Plug,
@@ -33,7 +33,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useHelpStore } from '@/store/useHelpStore';
-import { HELP_ARTICLES, getCategories, type HelpArticle } from '@/data/helpArticles';
+import { HELP_ARTICLES, type HelpArticle } from '@/data/helpArticles';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -125,9 +125,29 @@ export function HelpModal() {
     const [showBackToTop, setShowBackToTop] = useState(false);
     const [focusedIndex, setFocusedIndex] = useState(-1);
     const [showKeyboardHints, setShowKeyboardHints] = useState(false);
+    const [showTypeahead, setShowTypeahead] = useState(false);
+    const [typeaheadFocusedIndex, setTypeaheadFocusedIndex] = useState(-1);
+    const [isMobile, setIsMobile] = useState(false);
+    const [showMobileSidebar, setShowMobileSidebar] = useState(true);
 
     const contentRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const typeaheadRef = useRef<HTMLDivElement>(null);
+
+    // Responsive width detection
+    useEffect(() => {
+        const checkMobile = () => {
+            const mobile = window.innerWidth < 900;
+            setIsMobile(mobile);
+            // On mobile, show sidebar by default when no article is selected
+            if (mobile && !selectedArticle) {
+                setShowMobileSidebar(true);
+            }
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, [selectedArticle]);
 
     const filteredArticles = useMemo(() => {
         let articles = HELP_ARTICLES;
@@ -156,7 +176,18 @@ export function HelpModal() {
         return groups;
     }, [filteredArticles]);
 
-    const categories = ['All', ...getCategories()] as const;
+    // Typeahead search results (limited to 8 for dropdown)
+    const typeaheadResults = useMemo(() => {
+        if (!searchQuery.trim()) return [];
+        const query = searchQuery.toLowerCase();
+        return HELP_ARTICLES
+            .filter(a =>
+                a.title.toLowerCase().includes(query) ||
+                a.content.toLowerCase().includes(query) ||
+                a.keywords?.some(k => k.toLowerCase().includes(query))
+            )
+            .slice(0, 8);
+    }, [searchQuery]);
 
     const toggleCategory = useCallback((category: string) => {
         setExpandedCategories(prev => {
@@ -206,13 +237,39 @@ export function HelpModal() {
     useEffect(() => {
         if (!isOpen) return;
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') { closeHelp(); return; }
+            if (e.key === 'Escape') {
+                if (showTypeahead) {
+                    setShowTypeahead(false);
+                    setTypeaheadFocusedIndex(-1);
+                } else {
+                    closeHelp();
+                }
+                return;
+            }
             if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
                 e.preventDefault();
                 searchInputRef.current?.focus();
+                setShowTypeahead(true);
                 return;
             }
-            if (document.activeElement === searchInputRef.current && filteredArticles.length > 0) {
+            // Typeahead navigation when search is focused and has query
+            if (document.activeElement === searchInputRef.current && showTypeahead && typeaheadResults.length > 0) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setTypeaheadFocusedIndex(prev => Math.min(prev + 1, typeaheadResults.length - 1));
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setTypeaheadFocusedIndex(prev => Math.max(prev - 1, 0));
+                } else if (e.key === 'Enter' && typeaheadFocusedIndex >= 0) {
+                    e.preventDefault();
+                    setSelectedArticle(typeaheadResults[typeaheadFocusedIndex]);
+                    setShowTypeahead(false);
+                    setTypeaheadFocusedIndex(-1);
+                    setSearchQuery('');
+                }
+            }
+            // Legacy navigation in article list (when not using typeahead)
+            if (document.activeElement === searchInputRef.current && !showTypeahead && filteredArticles.length > 0) {
                 if (e.key === 'ArrowDown') {
                     e.preventDefault();
                     setFocusedIndex(prev => Math.min(prev + 1, filteredArticles.length - 1));
@@ -231,9 +288,44 @@ export function HelpModal() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, closeHelp, filteredArticles, focusedIndex, setSelectedArticle]);
+    }, [isOpen, closeHelp, filteredArticles, focusedIndex, setSelectedArticle, showTypeahead, typeaheadResults, typeaheadFocusedIndex, setSearchQuery]);
 
     useEffect(() => { setFocusedIndex(-1); }, [searchQuery]);
+
+    // Reset typeahead focus when query changes
+    useEffect(() => {
+        setTypeaheadFocusedIndex(-1);
+        if (searchQuery.trim()) {
+            setShowTypeahead(true);
+        }
+    }, [searchQuery]);
+
+    // Handle click outside typeahead to close it
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                typeaheadRef.current &&
+                !typeaheadRef.current.contains(e.target as Node) &&
+                searchInputRef.current &&
+                !searchInputRef.current.contains(e.target as Node)
+            ) {
+                setShowTypeahead(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Auto-focus search input when modal opens
+    useEffect(() => {
+        if (isOpen) {
+            // Small delay to ensure the modal is fully rendered
+            const timer = setTimeout(() => {
+                searchInputRef.current?.focus();
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [isOpen]);
 
     const relatedArticles = useMemo(() => {
         if (!selectedArticle) return [];
@@ -261,8 +353,15 @@ export function HelpModal() {
                 )}
 
                 <div className="flex h-full min-h-0">
-                    {/* Premium Sidebar */}
-                    <div className="w-80 border-r border-white/[0.06] bg-gradient-to-b from-white/[0.02] to-transparent flex flex-col min-h-0">
+                    {/* Premium Sidebar - Hidden on mobile when article is selected */}
+                    <div className={cn(
+                        "border-r border-white/[0.06] bg-gradient-to-b from-white/[0.02] to-transparent flex flex-col min-h-0 transition-all",
+                        isMobile
+                            ? showMobileSidebar
+                                ? "w-full absolute inset-0 z-20 bg-[#0a0a0f]"
+                                : "hidden"
+                            : "w-80"
+                    )}>
                         {/* Header with Glass Effect */}
                         <div className="p-5 border-b border-white/[0.06]">
                             <div className="flex items-center justify-between mb-5">
@@ -280,15 +379,26 @@ export function HelpModal() {
                                         </p>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => setShowKeyboardHints(prev => !prev)}
-                                    className="h-9 w-9 flex items-center justify-center rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-white/40 hover:text-white/60 transition-all cursor-pointer"
-                                >
-                                    <Keyboard className="h-4 w-4" />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setShowKeyboardHints(prev => !prev)}
+                                        className="h-9 w-9 flex items-center justify-center rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-white/40 hover:text-white/60 transition-all cursor-pointer"
+                                        title="Keyboard shortcuts"
+                                    >
+                                        <Keyboard className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                        onClick={closeHelp}
+                                        className="h-9 w-9 flex items-center justify-center rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-white/40 hover:text-white/60 transition-all cursor-pointer"
+                                        aria-label="Close help center"
+                                        title="Close (Esc)"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </div>
                             </div>
 
-                            {/* Premium Search Input */}
+                            {/* Premium Search Input with Typeahead */}
                             <div className="relative group">
                                 <div className="absolute inset-0 bg-gradient-to-r from-violet-500/20 to-purple-500/20 rounded-xl blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity" />
                                 <div className="relative">
@@ -298,12 +408,93 @@ export function HelpModal() {
                                         placeholder="Search articles..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
+                                        onFocus={() => searchQuery.trim() && setShowTypeahead(true)}
                                         className="pl-10 pr-12 h-11 bg-white/[0.03] border-white/[0.08] text-white placeholder:text-white/30 focus:border-violet-500/50 focus:ring-violet-500/20 rounded-xl"
+                                        aria-expanded={showTypeahead && typeaheadResults.length > 0}
+                                        aria-haspopup="listbox"
+                                        aria-controls="search-typeahead"
+                                        role="combobox"
+                                        autoComplete="off"
                                     />
                                     <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-white/20 font-mono bg-white/[0.05] px-1.5 py-0.5 rounded border border-white/[0.08]">
                                         ⌘K
                                     </kbd>
                                 </div>
+
+                                {/* Typeahead Dropdown */}
+                                {showTypeahead && searchQuery.trim() && (
+                                    <div
+                                        ref={typeaheadRef}
+                                        id="search-typeahead"
+                                        role="listbox"
+                                        className="absolute top-full left-0 right-0 mt-2 bg-[#0c0c14] border border-white/[0.08] rounded-xl shadow-[0_4px_30px_rgba(0,0,0,0.5)] overflow-hidden z-50"
+                                    >
+                                        {typeaheadResults.length > 0 ? (
+                                            <>
+                                                <div className="px-3 py-2 border-b border-white/[0.06]">
+                                                    <p className="text-[10px] text-white/40 uppercase tracking-wide font-medium">
+                                                        {typeaheadResults.length} result{typeaheadResults.length !== 1 ? 's' : ''}
+                                                    </p>
+                                                </div>
+                                                <div className="max-h-80 overflow-y-auto">
+                                                    {typeaheadResults.map((article, index) => {
+                                                        const config = categoryConfig[article.category];
+                                                        const isHighlighted = typeaheadFocusedIndex === index;
+                                                        return (
+                                                            <button
+                                                                key={article.id}
+                                                                role="option"
+                                                                aria-selected={isHighlighted}
+                                                                onClick={() => {
+                                                                    setSelectedArticle(article);
+                                                                    setShowTypeahead(false);
+                                                                    setSearchQuery('');
+                                                                }}
+                                                                className={cn(
+                                                                    "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors cursor-pointer",
+                                                                    isHighlighted
+                                                                        ? "bg-violet-500/10 border-l-2 border-l-violet-500"
+                                                                        : "hover:bg-white/[0.03] border-l-2 border-l-transparent"
+                                                                )}
+                                                            >
+                                                                <div className={cn("p-1.5 rounded-lg shrink-0", config?.iconBg)}>
+                                                                    <span className={cn("scale-75", config?.textColor)}>{config?.icon}</span>
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className={cn("text-sm font-medium truncate", isHighlighted ? "text-white" : "text-white/70")}>
+                                                                        {highlightMatches(article.title, searchQuery)}
+                                                                    </p>
+                                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                                        <span className="text-[10px] text-white/30">{article.category}</span>
+                                                                        <span className="text-[10px] text-white/20 flex items-center gap-0.5">
+                                                                            <Clock className="h-2.5 w-2.5" />
+                                                                            {getReadingTime(article.content)}m
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                <ChevronRight className="h-3.5 w-3.5 text-white/20 shrink-0" />
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="px-3 py-2 border-t border-white/[0.06] bg-white/[0.01]">
+                                                    <p className="text-[10px] text-white/30 text-center">
+                                                        <kbd className="px-1 py-0.5 rounded bg-white/[0.05] font-mono">↑↓</kbd> navigate
+                                                        <span className="mx-2">·</span>
+                                                        <kbd className="px-1 py-0.5 rounded bg-white/[0.05] font-mono">↵</kbd> select
+                                                        <span className="mx-2">·</span>
+                                                        <kbd className="px-1 py-0.5 rounded bg-white/[0.05] font-mono">esc</kbd> close
+                                                    </p>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="p-4 text-center">
+                                                <p className="text-sm text-white/50">No articles found</p>
+                                                <p className="text-xs text-white/30 mt-1">Try different keywords</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Keyboard Hints Panel */}
@@ -324,42 +515,6 @@ export function HelpModal() {
                             )}
                         </div>
 
-                        {/* Premium Category Pills */}
-                        <div className="px-4 py-3 border-b border-white/[0.06] flex flex-wrap gap-2">
-                            {categories.map((category) => {
-                                const config = category !== 'All' ? categoryConfig[category] : null;
-                                const count = category === 'All'
-                                    ? HELP_ARTICLES.length
-                                    : HELP_ARTICLES.filter(a => a.category === category).length;
-                                const isActive = selectedCategory === category;
-
-                                return (
-                                    <button
-                                        key={category}
-                                        onClick={() => {
-                                            setSelectedCategory(category as HelpArticle['category'] | 'All');
-                                            setSelectedArticle(null);
-                                        }}
-                                        className={cn(
-                                            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer",
-                                            isActive
-                                                ? "bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-300 border border-violet-500/30 shadow-[0_0_20px_rgba(139,92,246,0.15)]"
-                                                : "bg-white/[0.03] text-white/50 border border-white/[0.06] hover:bg-white/[0.06] hover:text-white/70"
-                                        )}
-                                    >
-                                        {config?.icon && <span className={isActive ? config.textColor : ''}>{config.icon}</span>}
-                                        {category === 'All' ? 'All' : category.split(' ')[0]}
-                                        <span className={cn(
-                                            "text-[10px] px-1.5 py-0.5 rounded-md font-semibold",
-                                            isActive ? "bg-violet-500/20 text-violet-300" : "bg-white/[0.05] text-white/40"
-                                        )}>
-                                            {count}
-                                        </span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-
                         {/* Article List */}
                         <ScrollArea className="flex-1">
                             <div className="p-3 space-y-2">
@@ -374,7 +529,10 @@ export function HelpModal() {
                                             return (
                                                 <button
                                                     key={article.id}
-                                                    onClick={() => setSelectedArticle(article)}
+                                                    onClick={() => {
+                                                        setSelectedArticle(article);
+                                                        if (isMobile) setShowMobileSidebar(false);
+                                                    }}
                                                     className={cn(
                                                         "w-full text-left p-3 rounded-xl transition-all cursor-pointer",
                                                         isActive
@@ -450,7 +608,10 @@ export function HelpModal() {
                                                             return (
                                                                 <button
                                                                     key={article.id}
-                                                                    onClick={() => setSelectedArticle(article)}
+                                                                    onClick={() => {
+                                                                        setSelectedArticle(article);
+                                                                        if (isMobile) setShowMobileSidebar(false);
+                                                                    }}
                                                                     className={cn(
                                                                         "w-full text-left px-4 py-2.5 transition-all cursor-pointer flex items-center gap-2 border-l-2",
                                                                         isActive
@@ -483,17 +644,26 @@ export function HelpModal() {
                                         <p className="text-xs text-white/30 mt-1.5">
                                             Try different keywords or browse categories
                                         </p>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => {
-                                                setSearchQuery('');
-                                                setSelectedCategory('All');
-                                            }}
-                                            className="mt-4 text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
-                                        >
-                                            Clear filters
-                                        </Button>
+                                        <div className="flex flex-col gap-2 mt-4">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    setSearchQuery('');
+                                                    setSelectedCategory('All');
+                                                }}
+                                                className="text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
+                                            >
+                                                Clear filters
+                                            </Button>
+                                            <a
+                                                href="mailto:support@axiohub.io"
+                                                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium text-white/50 hover:text-white/70 hover:bg-white/[0.03] transition-colors"
+                                            >
+                                                <HelpCircle className="h-3.5 w-3.5" />
+                                                Contact Support
+                                            </a>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -512,12 +682,25 @@ export function HelpModal() {
                         </div>
                     </div>
 
-                    {/* Content Area */}
-                    <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#08080c]">
+                    {/* Content Area - Hidden on mobile when sidebar is showing */}
+                    <div className={cn(
+                        "flex-1 flex flex-col min-w-0 min-h-0 bg-[#08080c]",
+                        isMobile && showMobileSidebar && "hidden"
+                    )}>
                         {/* Breadcrumb Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06] bg-white/[0.01]">
+                        <div className="flex items-center px-6 py-4 border-b border-white/[0.06] bg-white/[0.01]">
+                            {/* Mobile Back Button */}
+                            {isMobile && selectedArticle && (
+                                <button
+                                    onClick={() => setShowMobileSidebar(true)}
+                                    className="flex items-center gap-2 text-sm text-white/60 hover:text-white/80 transition-colors cursor-pointer mr-4"
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                    <span>Back</span>
+                                </button>
+                            )}
                             {selectedArticle ? (
-                                <nav className="flex items-center gap-2 text-sm">
+                                <nav className={cn("flex items-center gap-2 text-sm", isMobile && "hidden sm:flex")}>
                                     <button onClick={() => setSelectedCategory('All')} className="text-white/40 hover:text-white/70 transition-colors cursor-pointer">
                                         Help Center
                                     </button>
@@ -532,14 +715,8 @@ export function HelpModal() {
                                     <span className="text-white font-medium truncate max-w-[300px]">{selectedArticle.title}</span>
                                 </nav>
                             ) : (
-                                <div />
+                                <span className="text-white/60 font-medium">Browse articles</span>
                             )}
-                            <button
-                                onClick={closeHelp}
-                                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-white/40 hover:text-white/70 transition-all cursor-pointer"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
                         </div>
 
                         {/* Article Content */}
@@ -563,7 +740,7 @@ export function HelpModal() {
                                                 {getReadingTime(selectedArticle.content)} min read
                                             </div>
                                         </div>
-                                        <h1 className="text-4xl font-bold tracking-tight text-white leading-tight">
+                                        <h1 className="text-2xl font-semibold tracking-tight text-white leading-snug">
                                             {selectedArticle.title}
                                         </h1>
                                     </header>
@@ -578,17 +755,39 @@ export function HelpModal() {
                                         prose-strong:text-white prose-strong:font-semibold
                                         prose-code:text-violet-300 prose-code:bg-violet-500/10 prose-code:px-2 prose-code:py-1 prose-code:rounded-md prose-code:text-sm prose-code:before:content-[''] prose-code:after:content-[''] prose-code:border prose-code:border-violet-500/20
                                         prose-pre:bg-[#0c0c14] prose-pre:border prose-pre:border-white/[0.06] prose-pre:rounded-xl
-                                        prose-table:text-sm
-                                        prose-th:text-left prose-th:px-5 prose-th:py-4 prose-th:bg-white/[0.03] prose-th:font-semibold prose-th:text-white/70 prose-th:border-b prose-th:border-white/[0.08]
-                                        prose-td:px-5 prose-td:py-4 prose-td:border-b prose-td:border-white/[0.04] prose-td:text-white/50
+                                        prose-table:text-sm prose-table:border-collapse prose-table:w-full prose-table:rounded-lg prose-table:overflow-hidden
+                                        prose-thead:bg-white/[0.02]
+                                        prose-th:text-left prose-th:px-4 prose-th:py-3 prose-th:bg-white/[0.02] prose-th:font-semibold prose-th:text-white/70 prose-th:border-b prose-th:border-white/[0.06]
+                                        prose-tr:transition-colors prose-tr:even:bg-white/[0.01] prose-tr:hover:bg-white/[0.03]
+                                        prose-td:px-4 prose-td:py-3 prose-td:border-b prose-td:border-white/[0.04] prose-td:text-white/50
                                         prose-blockquote:border-l-violet-500 prose-blockquote:bg-violet-500/5 prose-blockquote:py-2 prose-blockquote:px-6 prose-blockquote:rounded-r-xl prose-blockquote:not-italic prose-blockquote:text-white/60
                                         prose-a:text-violet-400 prose-a:no-underline hover:prose-a:text-violet-300 hover:prose-a:underline
                                         prose-img:rounded-xl prose-img:border prose-img:border-white/[0.06]"
                                     >
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        <ReactMarkdown
+                                            remarkPlugins={[remarkGfm]}
+                                            components={{
+                                                // Add IDs to headings for TOC navigation
+                                                h2: ({ children, ...props }) => {
+                                                    const text = typeof children === 'string' ? children :
+                                                        Array.isArray(children) ? children.join('') : '';
+                                                    const id = text.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+                                                    return <h2 id={id} {...props}>{children}</h2>;
+                                                },
+                                                h3: ({ children, ...props }) => {
+                                                    const text = typeof children === 'string' ? children :
+                                                        Array.isArray(children) ? children.join('') : '';
+                                                    const id = text.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+                                                    return <h3 id={id} {...props}>{children}</h3>;
+                                                },
+                                            }}
+                                        >
                                             {selectedArticle.content}
                                         </ReactMarkdown>
                                     </div>
+
+                                    {/* Table of Contents */}
+                                    <ArticleTOC content={selectedArticle.content} contentRef={contentRef} />
 
                                     {/* Article Feedback */}
                                     <div className="mt-16 pt-10 border-t border-white/[0.06]">
@@ -728,5 +927,103 @@ function ArticleFeedback({ articleId }: { articleId: string }) {
                 </button>
             </div>
         </div>
+    );
+}
+
+// TOC Item interface
+interface TOCItem {
+    id: string;
+    text: string;
+    level: number;
+}
+
+// Table of Contents Component
+function ArticleTOC({ content, contentRef }: { content: string; contentRef: React.RefObject<HTMLDivElement | null> }) {
+    const [tocItems, setTocItems] = useState<TOCItem[]>([]);
+    const [activeId, setActiveId] = useState<string | null>(null);
+
+    // Extract headings from markdown content
+    useEffect(() => {
+        const headingRegex = /^(#{2,3})\s+(.+)$/gm;
+        const items: TOCItem[] = [];
+        let match;
+        while ((match = headingRegex.exec(content)) !== null) {
+            const level = match[1].length;
+            const text = match[2].trim();
+            // Create a slug from the heading text
+            const id = text
+                .toLowerCase()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .replace(/\s+/g, '-');
+            items.push({ id, text, level });
+        }
+        setTocItems(items);
+    }, [content]);
+
+    // Scroll spy with IntersectionObserver
+    useEffect(() => {
+        if (tocItems.length === 0 || !contentRef.current) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        setActiveId(entry.target.id);
+                    }
+                });
+            },
+            {
+                root: contentRef.current,
+                rootMargin: '-20% 0px -80% 0px',
+                threshold: 0
+            }
+        );
+
+        // Small delay to ensure headings are rendered
+        const timer = setTimeout(() => {
+            tocItems.forEach(item => {
+                const el = contentRef.current?.querySelector(`#${CSS.escape(item.id)}`);
+                if (el) observer.observe(el);
+            });
+        }, 100);
+
+        return () => {
+            clearTimeout(timer);
+            observer.disconnect();
+        };
+    }, [tocItems, contentRef]);
+
+    const handleClick = (id: string) => {
+        const el = contentRef.current?.querySelector(`#${CSS.escape(id)}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setActiveId(id);
+        }
+    };
+
+    if (tocItems.length === 0) return null;
+
+    return (
+        <nav className="mt-6 pt-6 border-t border-white/[0.06]" aria-label="Table of contents">
+            <p className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-3">On this page</p>
+            <ul className="space-y-1">
+                {tocItems.map((item) => (
+                    <li key={item.id}>
+                        <button
+                            onClick={() => handleClick(item.id)}
+                            className={cn(
+                                "block w-full text-left text-sm py-1.5 transition-colors cursor-pointer",
+                                item.level === 3 && "pl-4",
+                                activeId === item.id
+                                    ? "text-violet-400 font-medium"
+                                    : "text-white/40 hover:text-white/70"
+                            )}
+                        >
+                            {item.text}
+                        </button>
+                    </li>
+                ))}
+            </ul>
+        </nav>
     );
 }
