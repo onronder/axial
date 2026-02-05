@@ -96,7 +96,7 @@ export function ComplianceScoreWidget({
               </div>
 
               <p className="text-xs text-muted-foreground text-center">
-                KVKK 2026 Compliant
+                GDPR / CCPA / KVKK Compliant
               </p>
 
               {onViewReport && (

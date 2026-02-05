@@ -26,18 +26,16 @@ export function SettingsPageHeader({
           <Icon className="h-5 w-5" />
         </div>
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="font-display text-2xl font-bold text-foreground">
-              {title}
-            </h1>
-            {badge}
-          </div>
+          <h1 className="font-display text-2xl font-bold text-foreground">
+            {title}
+          </h1>
           <p className="mt-1 text-muted-foreground">{description}</p>
           {autoSaveNote && (
             <p className="mt-0.5 text-xs text-muted-foreground/70">
               Changes are saved automatically
             </p>
           )}
+          {badge && <div className="mt-2">{badge}</div>}
         </div>
       </div>
       {actions && (

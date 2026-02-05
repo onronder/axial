@@ -303,7 +303,7 @@ export function ConsentDashboard() {
       <SettingsPageHeader
         icon={Shield}
         title="Consent"
-        description="KVKK 2026 compliant granular controls"
+        description="GDPR, CCPA & KVKK compliant data consent controls"
         badge={<ComplianceScoreWidget score={complianceReport?.complianceScore || 0} />}
         autoSaveNote
       />
