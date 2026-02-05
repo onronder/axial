@@ -475,40 +475,6 @@ export default function FeedbackAnalyticsPage() {
 // Sub-components
 // =============================================================================
 
-interface SummaryCardProps {
-    title: string;
-    value: number | string;
-    icon: React.ReactNode;
-    loading?: boolean;
-    description?: string;
-    className?: string;
-}
-
-function SummaryCard({ title, value, icon, loading, description, className }: SummaryCardProps) {
-    return (
-        <Card className={cn("", className)}>
-            <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <p className="text-sm font-medium text-muted-foreground">{title}</p>
-                        {loading ? (
-                            <Skeleton className="h-8 w-16 mt-1" />
-                        ) : (
-                            <p className="text-2xl font-bold">{value}</p>
-                        )}
-                        {description && (
-                            <p className="text-xs text-muted-foreground mt-1">{description}</p>
-                        )}
-                    </div>
-                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                        {icon}
-                    </div>
-                </div>
-            </CardContent>
-        </Card>
-    );
-}
-
 interface FeedbackCardProps {
     feedback: FeedbackItem;
 }
