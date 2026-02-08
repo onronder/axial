@@ -12,10 +12,11 @@ import logging
 import json
 import redis.asyncio as redis
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from typing import Optional
 from core.config import settings
 from core.db import get_supabase
+from core.rate_limit import limiter
 from services.subscription import subscription_service
 from api.v1.dependencies import require_admin
 
@@ -318,21 +319,22 @@ async def polar_webhook(request: Request):
         if redis_client:
             try:
                 await redis_client.aclose()
-            except Exception:
-                pass
+            except Exception as cleanup_err:
+                logger.debug(f"[Webhooks] Failed to close Redis client: {cleanup_err}")
         raise
     except Exception as e:
         if redis_client:
             try:
                 await redis_client.aclose()
-            except Exception:
-                pass
+            except Exception as cleanup_err:
+                logger.debug(f"[Webhooks] Failed to close Redis client: {cleanup_err}")
         logger.error(f"[Webhooks] Unexpected error processing Polar webhook: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @router.post("/webhooks/dlq/retry")
-async def retry_dlq_events(max_events: int = 10, _: str = Depends(require_admin)):
+@limiter.limit("5/minute")
+async def retry_dlq_events(request: Request, max_events: int = Query(default=10, ge=1, le=100), _: str = Depends(require_admin)):
     """
     Manually trigger DLQ retry for failed webhook events.
 

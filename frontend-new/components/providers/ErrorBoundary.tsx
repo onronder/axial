@@ -50,7 +50,9 @@ export function AppErrorBoundary({ children, name }: AppErrorBoundaryProps) {
         <ErrorBoundary
             FallbackComponent={ErrorFallback}
             onError={(error, info) => {
-                console.error(`[ErrorBoundary${name ? `:${name}` : ""}]`, error, info);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error(`[ErrorBoundary${name ? `:${name}` : ""}]`, error, info);
+                }
                 // Send to Sentry
                 Sentry.captureException(error, {
                     extra: {

@@ -70,7 +70,9 @@ export default function AcceptInvitePage() {
                     setState("error");
                 }
             } catch (error: unknown) {
-                console.error("Failed to accept invite:", error);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error("Failed to accept invite:", error);
+                }
                 const apiError = error as ApiError;
                 const message = apiError.response?.data?.detail || "Invalid or expired invite link";
                 setErrorMessage(message);

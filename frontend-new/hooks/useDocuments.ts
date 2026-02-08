@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { Document } from "@/types";
 import { formatSourceTypeLabel, normalizeSourceType } from "@/lib/sourceType";
 import { useToast } from "@/hooks/use-toast";
+import { extractErrorMessage } from "@/lib/error-handling";
 
 // Stable fallback to avoid new array instances while queries are still loading
 const EMPTY_DOCS: Document[] = [];
@@ -211,7 +212,9 @@ export const useDocuments = (
                     queryClient.setQueryData(key, data);
                 });
             }
-            console.error("Failed to delete document", err.message);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to delete document", extractErrorMessage(err));
+            }
             toast({
                 title: "Error",
                 description: "Failed to delete document.",
@@ -234,8 +237,10 @@ export const useDocuments = (
             });
             queryClient.invalidateQueries({ queryKey: DOCUMENTS_KEY });
         },
-        onError: (err: Error) => {
-            console.error("Failed to bulk delete documents", err.message);
+        onError: (err: unknown) => {
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to bulk delete documents", extractErrorMessage(err));
+            }
             toast({
                 title: "Error",
                 description: "Failed to delete documents.",
@@ -256,7 +261,9 @@ export const useDocuments = (
             queryClient.invalidateQueries({ queryKey: DOCUMENTS_KEY });
         },
         onError: (err: unknown) => {
-            console.error("Failed to update document", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to update document", err);
+            }
             toast({
                 title: "Error",
                 description: "Failed to update document.",

@@ -74,7 +74,9 @@ export function EnterpriseContactModal({ open, onOpenChange }: EnterpriseContact
             });
 
         } catch (error) {
-            console.error("[EnterpriseContact] Submit error:", error);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("[EnterpriseContact] Submit error:", error);
+            }
             toast.error("Failed to submit inquiry. Please try again.");
         } finally {
             setIsSubmitting(false);

@@ -269,8 +269,8 @@ class OAuthTokenManager:
                         )
                 except TokenRefreshError:
                     raise
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[OAuth] Failed to mark Microsoft integration as expired: {e}")
                 raise TokenRefreshError(f"Token refresh failed: {response.text}")
 
             payload = response.json()
@@ -378,8 +378,8 @@ class OAuthTokenManager:
                         )
                 except TokenRefreshError:
                     raise
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[OAuth] Failed to mark Dropbox integration as expired: {e}")
 
                 raise TokenRefreshError(f"Dropbox token refresh failed: {error_detail}")
 
@@ -466,8 +466,8 @@ class OAuthTokenManager:
                         "status_message": "Your GitHub token has been revoked. Please reconnect.",
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     }).eq("id", integration_id).execute()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[OAuth] Failed to mark GitHub integration as revoked: {e}")
                 raise TokenRefreshError("GitHub token has been revoked or is invalid")
 
             if response.status_code == 403:
@@ -686,9 +686,9 @@ class OAuthTokenManager:
                             )
                     except TokenRefreshError:
                         raise
-                    except Exception:
-                        pass
-                        
+                    except Exception as e:
+                        logger.warning(f"[OAuth] Failed to mark Box integration as expired: {e}")
+
                     raise TokenRefreshError(f"Box token refresh failed: {error_detail}")
 
                 payload = response.json()

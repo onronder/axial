@@ -121,6 +121,8 @@ export function DocumentsTable() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [clearSource, setClearSource] = useState<string>("");
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [showClearSourceDialog, setShowClearSourceDialog] = useState(false);
   const tableBodyRef = useRef<HTMLTableSectionElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
 
@@ -259,27 +261,35 @@ export function DocumentsTable() {
 
   const handleBulkDeleteSelected = async () => {
     if (isViewer || selectedIds.size === 0) return;
-    const confirmed = confirm(`Delete ${selectedIds.size} selected item(s)? This removes indexed data but keeps connectors linked.`);
-    if (!confirmed) return;
+    setShowBulkDeleteDialog(true);
+  };
+
+  const executeBulkDelete = async () => {
     try {
       await bulkDeleteDocuments({ documentIds: Array.from(selectedIds) });
       setSelectedIds(new Set());
-      refreshUsage(true); // Refresh storage stats
+      refreshUsage(true);
     } catch {
       // toast handled in hook
+    } finally {
+      setShowBulkDeleteDialog(false);
     }
   };
 
   const handleClearBySource = async () => {
     if (!clearSource || isViewer) return;
-    const confirmed = confirm(`Clear all indexed items from ${clearSource.replace('_', ' ')}? Connectors remain connected.`);
-    if (!confirmed) return;
+    setShowClearSourceDialog(true);
+  };
+
+  const executeClearBySource = async () => {
     try {
       await bulkDeleteDocuments({ sourceType: clearSource });
       setSelectedIds(new Set());
-      refreshUsage(true); // Refresh storage stats
+      refreshUsage(true);
     } catch {
       // toast handled in hook
+    } finally {
+      setShowClearSourceDialog(false);
     }
   };
 
@@ -672,6 +682,46 @@ export function DocumentsTable() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} selected item(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes indexed data but keeps connectors linked. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={executeBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showClearSourceDialog} onOpenChange={setShowClearSourceDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all items from {clearSource.replace('_', ' ')}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes all indexed items from this source. Connectors remain connected. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={executeClearBySource}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Clear
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

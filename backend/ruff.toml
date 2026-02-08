@@ -1,0 +1,26 @@
+# Ruff linter configuration for Axial backend
+# Run: ruff check backend/
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort (import ordering)
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # Line length — handled by formatter
+    "E402",  # Module level import not at top — FastAPI patterns
+    "B008",  # Do not perform function call in argument defaults — Depends()
+    "B904",  # raise-without-from — too noisy for existing codebase
+]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Unused imports in __init__ are re-exports
+"worker/tasks.py" = ["E722"]  # Bare except in legacy code (to be migrated)
+
+[lint.isort]
+known-first-party = ["core", "api", "services", "connectors", "worker"]

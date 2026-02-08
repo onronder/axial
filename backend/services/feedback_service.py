@@ -493,8 +493,8 @@ class FeedbackService:
             user = supabase.auth.admin.get_user_by_id(user_id)
             if user and user.user:
                 return user.user.email or "unknown"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Feedback] Failed to fetch user email from auth: {e}")
         
         # Fallback: try user_profiles
         try:
@@ -505,8 +505,8 @@ class FeedbackService:
                 .execute()
             if profile.data:
                 return f"user-{user_id[:8]}..."
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Feedback] Failed to fetch user profile: {e}")
         
         return "unknown"
     
@@ -520,8 +520,8 @@ class FeedbackService:
                 .execute()
             if team.data:
                 return team.data["name"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Feedback] Failed to fetch organization name: {e}")
         
         return f"org-{organization_id[:8]}..."
 

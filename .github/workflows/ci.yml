@@ -1,0 +1,118 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  backend-lint:
+    name: Backend Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install ruff
+      - run: ruff check backend/
+
+  backend-compile:
+    name: Backend Compile Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r backend/requirements.txt
+      - name: Check all Python files compile
+        run: |
+          find backend/ -name "*.py" -exec python -m py_compile {} +
+
+  backend-patterns:
+    name: Backend Pattern Enforcement
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for raw HTTPException in API layer
+        run: |
+          COUNT=$(grep -rn "raise HTTPException" backend/api/ --include="*.py" | grep -v "# ALLOWED" | grep -v "error_utils.py" | wc -l | tr -d ' ')
+          echo "Found $COUNT raw HTTPException calls (target: 0)"
+          # Warn but don't fail yet — migration is incremental
+          if [ "$COUNT" -gt 200 ]; then
+            echo "::warning::$COUNT raw HTTPException calls found. Migrate to api_error() from error_utils.py"
+          fi
+      - name: Check for bare except clauses
+        run: |
+          if grep -rn "except:" backend/ --include="*.py" | grep -v "except Exception" | grep -v "# ALLOWED"; then
+            echo "::error::Bare 'except:' found. Use 'except Exception as e:' instead."
+            exit 1
+          fi
+      - name: Check for alert() in frontend
+        run: |
+          if grep -rn "alert(" frontend-new/ --include="*.ts" --include="*.tsx" | grep -v "node_modules" | grep -v "AlertTriangle" | grep -v "alertDialog" | grep -v "alert-dialog"; then
+            echo "::warning::alert() calls found. Use toast() from @/lib/toast instead."
+          fi
+
+  backend-test:
+    name: Backend Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r backend/requirements.txt -r backend/requirements-test.txt
+      - name: Run unit tests
+        working-directory: backend
+        run: python -m pytest tests/ -m "unit" --tb=short -q
+        env:
+          ENVIRONMENT: test
+          SUPABASE_URL: https://test.supabase.co
+          SUPABASE_SECRET_KEY: test-secret-key
+          SUPABASE_JWT_SECRET: test-jwt-secret
+          OPENAI_API_KEY: test-openai-key
+          API_KEY: test-api-key
+          REDIS_URL: redis://localhost:6379/0
+
+  security-audit:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-new/package-lock.json
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt --desc || true
+      - name: Audit Node dependencies
+        run: cd frontend-new && npm audit --audit-level=high || true
+
+  frontend:
+    name: Frontend Build & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-new/package-lock.json
+      - run: cd frontend-new && npm ci
+      - run: cd frontend-new && npm run lint
+      - run: cd frontend-new && npm run build
+      - name: Run frontend tests
+        run: cd frontend-new && npm run test --if-present

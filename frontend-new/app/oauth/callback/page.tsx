@@ -111,16 +111,15 @@ function devLog(...args: unknown[]): void {
  */
 function isValidState(stateParam: string | null): boolean {
     if (!stateParam) {
-        // No state is valid for some OAuth flows (e.g., direct Google callback)
-        // However, our implementation always sends state, so missing state is suspicious
-        devLog("🔐 [OAuth] Warning: No state parameter received");
-        return true; // Allow for backwards compatibility
+        // Our implementation always sends state — missing state indicates a CSRF attack
+        if (IS_DEV) console.error("[OAuth] CSRF: No state parameter received — rejecting callback");
+        return false;
     }
     
     const isValid = VALID_PROVIDERS.includes(stateParam as typeof VALID_PROVIDERS[number]);
     
     if (!isValid) {
-        console.error("🔐 [OAuth] Invalid state parameter received");
+        if (IS_DEV) console.error("[OAuth] Invalid state parameter received");
     }
     
     return isValid;
@@ -178,7 +177,7 @@ function OAuthCallbackContent() {
         const config = detectProvider(stateParam);
         
         if (!config) {
-            console.error("🔐 [OAuth Callback] Invalid state parameter - possible CSRF attack");
+            if (IS_DEV) console.error("[OAuth Callback] Invalid state parameter - possible CSRF attack");
             setStatus("invalid_state");
             setError("Invalid OAuth state. This may be a security issue. Please restart the connection process.");
             return;
@@ -207,7 +206,7 @@ function OAuthCallbackContent() {
 
         // Handle OAuth error from provider
         if (errorParam) {
-            console.error("🔐 [OAuth Callback] Error from provider:", errorParam);
+            if (IS_DEV) console.error("[OAuth Callback] Error from provider:", errorParam);
             setStatus("error");
             const friendly = errorParam === "access_denied"
                 ? "Access was denied. You may have cancelled the connection."
@@ -271,7 +270,7 @@ function OAuthCallbackContent() {
 
             } catch (err: unknown) {
                 const apiError = err as ApiError;
-                console.error("🔐 [OAuth Callback] ❌ Token exchange failed");
+                if (IS_DEV) console.error("[OAuth Callback] Token exchange failed");
                 setStatus("error");
                 setError(apiError.response?.data?.detail || `Failed to connect ${config.name}. Please try again.`);
             }

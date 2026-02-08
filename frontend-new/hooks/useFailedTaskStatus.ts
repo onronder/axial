@@ -54,7 +54,9 @@ export function useFailedTaskStatus(jobId: string | null) {
                 setFailedTask(data);
                 setLoading(false);
             } catch (err) {
-                console.error('Error fetching failed task:', err);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error('Error fetching failed task:', err);
+                }
                 setError(err as Error);
                 setLoading(false);
             }

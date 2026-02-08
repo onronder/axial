@@ -152,8 +152,8 @@ def _emergency_cleanup(trigger: str = "atexit") -> None:
                 try:
                     if os.path.exists(path):
                         os.unlink(path)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[GhostProtocol] Fallback unlink also failed for {path}: {e}")
 
 
 def _signal_handler(signum: int, frame) -> None:
@@ -433,8 +433,8 @@ def secure_wipe(
             if os.path.exists(path):
                 os.unlink(path)
             _unregister_temp_file(path)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[SecureCleanup] Fallback delete failed for {path}: {e}")
         if not _skip_metrics:
             secure_wipe_total.labels(result="failure").inc()
         return False

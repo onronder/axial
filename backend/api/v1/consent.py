@@ -21,6 +21,7 @@ from api.v1.dependencies import (
     validate_team_access,
 )
 from core.rate_limit import limiter
+from api.v1.error_utils import api_error, ApiErrorCode
 from services.consent import (
     ConsentManager,
     ConsentType,
@@ -335,11 +336,7 @@ async def update_org_consent(
         }
 
     except Exception as e:
-        logger.error(f"[Consent] Update failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "update_consent")
 
 
 async def _trigger_gdpr_ai_learning_wipe(
@@ -511,11 +508,7 @@ async def update_scope_consent(
         }
 
     except Exception as e:
-        logger.error(f"[Consent] Scope update failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "update_scope_consent")
 
 
 @router.post("/consent/scope/bulk", response_model=BulkScopeConsentResponse)
@@ -685,11 +678,7 @@ async def update_document_consent(
         }
 
     except Exception as e:
-        logger.error(f"[Consent] Document update failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "update_document_consent")
 
 
 # =============================================================================
@@ -837,11 +826,7 @@ async def update_scope_agent_access(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Consent] Scope agent update failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "update_scope_agent_access")
 
 
 @router.patch("/consent/document/{document_id}/agents")
@@ -993,11 +978,7 @@ async def update_document_agent_access(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Consent] Document agent update failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "update_document_agent_access")
 
 
 # =============================================================================
@@ -1093,11 +1074,7 @@ async def delete_scope_consent(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Consent] Scope delete failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "delete_scope_consent")
 
 
 @router.delete("/consent/document/{document_id}")
@@ -1189,11 +1166,7 @@ async def delete_document_consent(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Consent] Document delete failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "delete_document_consent")
 
 
 # =============================================================================
@@ -1204,14 +1177,15 @@ async def delete_document_consent(
 @limiter.limit("10/minute")
 async def get_consent_audit(
     request: Request,
-    limit: int = 100,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user_id: str = Depends(require_admin),
     organization_id: str = Depends(get_user_organization_id),
 ):
     """
-    Get consent change audit log.
+    Get consent change audit log with pagination.
 
-    Returns history of all consent changes for the organization.
+    Returns history of consent changes for the organization.
     Only admins can access the audit log.
     """
     manager = ConsentManager()
@@ -1219,7 +1193,8 @@ async def get_consent_audit(
     try:
         entries = await manager.get_consent_audit_log(
             organization_id=organization_id,
-            limit=min(limit, 500),
+            limit=limit,
+            offset=offset,
         )
 
         return [
@@ -1238,11 +1213,7 @@ async def get_consent_audit(
         ]
 
     except Exception as e:
-        logger.error(f"[Consent] Audit fetch failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_consent_audit")
 
 
 @router.get("/consent/report", response_model=ComplianceReport)
@@ -1265,8 +1236,4 @@ async def get_compliance_report(
         return ComplianceReport(**report)
 
     except Exception as e:
-        logger.error(f"[Consent] Report generation failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "generate_compliance_report")

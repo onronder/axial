@@ -16,7 +16,7 @@ from connectors.base import (
     RemoteFile,
 )
 from core.db import get_supabase
-from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync
+from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync, notion_breaker
 from core.scopes import build_scope_uri
 from connectors.limits import connector_fetch_limit
 import requests
@@ -112,7 +112,7 @@ class NotionConnector(EnhancedConnector, BaseConnector):
         """Make a request to the Notion API with retry logic."""
         url = f"{self.BASE_URL}/{endpoint}"
         headers = self._get_headers(access_token)
-        with connector_fetch_limit("notion"):
+        with notion_breaker, connector_fetch_limit("notion"):
             response = requests.request(
                 method=method,
                 url=url,
@@ -127,8 +127,8 @@ class NotionConnector(EnhancedConnector, BaseConnector):
                 try:
                     from core.metrics import retry_total
                     retry_total.labels("notion", "rate_limit").inc()
-                except Exception:
-                    pass
+                except ImportError:
+                    pass  # Metrics not available
         if response.status_code == 401:
             raise ConnectorAuthError("Notion auth failed")
         if response.status_code in RATE_LIMIT_STATUS_CODES:

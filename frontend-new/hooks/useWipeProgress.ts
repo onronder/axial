@@ -219,7 +219,9 @@ export function useWipeProgress({
     } catch (err) {
       // Check if it's a 404 (endpoint doesn't exist - fall back to simulation)
       if ((err as { response?: { status?: number } })?.response?.status === 404) {
-        console.warn('Wipe endpoint not found, using simulation');
+        if (process.env.NODE_ENV !== 'production') {
+            console.warn('Wipe endpoint not found, using simulation');
+        }
         simulateWipe();
         return;
       }

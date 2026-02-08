@@ -623,8 +623,8 @@ class PDFProcessor(BaseProcessor):
             # Always cleanup temp file
             try:
                 os.remove(tf_path)
-            except:
-                pass
+            except OSError as e:
+                logger.debug(f"[Parser] Failed to remove temp PDF file: {e}")
         
         # Chunk the extracted text (use MarkdownProcessor for markdown output)
         splitter = RecursiveCharacterTextSplitter(
@@ -1396,8 +1396,8 @@ class ExcelProcessor(BaseProcessor):
         finally:
             try:
                 workbook.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[ExcelProcessor] Failed to close workbook: {e}")
 
         logger.info(f"[ExcelProcessor] {safe_file_ref(filename=filename)}: {len(chunks)} chunks, {total_tokens} tokens")
         return ProcessedDocument(chunks=chunks, file_type="xlsx", total_tokens=total_tokens)
@@ -1527,8 +1527,8 @@ class EmailProcessor(BaseProcessor):
             finally:
                 try:
                     os.remove(tmp_path)
-                except Exception:
-                    pass
+                except OSError as e:
+                    logger.debug(f"[EmailProcessor] Failed to remove temp file: {e}")
         else:
             return ProcessedDocument(chunks=[], file_type="email")
 
@@ -1658,8 +1658,8 @@ class LlamaParseProcessor(BaseProcessor):
         finally:
             try:
                 os.remove(tf_path)
-            except Exception:
-                pass
+            except OSError as e:
+                logger.debug(f"[Parser] Failed to remove temp file: {e}")
 
         if not documents:
             return ProcessedDocument(chunks=[], file_type=self.file_type)

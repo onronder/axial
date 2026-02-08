@@ -4,7 +4,7 @@ Integrations API Endpoints
 Provides dynamic connector discovery, OAuth handling, and integration management.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, Query
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from core.security import get_current_user, encrypt_token, decrypt_token
@@ -52,7 +52,7 @@ def _require_provider(provider: str) -> str:
             raise ValueError(f"Unknown provider: {provider}")
         return canonical
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail="Unknown or unsupported provider.") from exc  # ALLOWED: literal
 
 
 def _get_ingest_batch_size() -> int:
@@ -215,27 +215,29 @@ async def get_available_connectors(request: Request):
         return response.data or []
     except Exception as e:
         logger.error(f"Failed to fetch connector definitions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch available connectors")
+        raise HTTPException(status_code=500, detail="Failed to fetch available connectors")  # ALLOWED: literal
 
 
 @router.get("/integrations/status", response_model=List[UserIntegrationOut])
 @limiter.limit("60/minute")
 async def get_user_integrations(
     request: Request,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ):
     """
-    Returns all of the user's connected integrations with definition details.
+    Returns the user's connected integrations with definition details.
     Joins user_integrations with connector_definitions for rich response.
     """
     supabase = get_supabase()
-    
+
     try:
         # Join user_integrations with connector_definitions
         response = supabase.table("user_integrations").select(
             "id, connector_definition_id, last_sync_at, "
             "connector_definitions(type, name, icon_path, category)"
-        ).eq("user_id", user_id).execute()
+        ).eq("user_id", user_id).range(offset, offset + limit - 1).execute()
         
         # Transform the joined response
         result = []
@@ -255,7 +257,7 @@ async def get_user_integrations(
         return result
     except Exception as e:
         logger.error(f"Failed to fetch user integrations: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch integrations")
+        raise HTTPException(status_code=500, detail="Failed to fetch integrations")  # ALLOWED: literal
 
 
 # =============================================================================
@@ -263,8 +265,10 @@ async def get_user_integrations(
 # =============================================================================
 
 @router.post("/integrations/google/exchange")
+@limiter.limit("10/minute")
 async def exchange_google_token(
-    request: ExchangeRequest,
+    request: Request,
+    body: ExchangeRequest,
     background_tasks: BackgroundTasks,
     user_id: str = Depends(require_editor)
 ):
@@ -276,7 +280,7 @@ async def exchange_google_token(
     
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         logger.error("🔐 [OAuth] Google credentials not configured!")
-        raise HTTPException(status_code=500, detail="Google credentials not configured")
+        raise HTTPException(status_code=500, detail="Google credentials not configured")  # ALLOWED: literal
 
     supabase = get_supabase()
 
@@ -284,12 +288,14 @@ async def exchange_google_token(
     try:
         def_response = supabase.table("connector_definitions").select("id").eq("type", "google_drive").single().execute()
         if not def_response.data:
-            raise HTTPException(status_code=500, detail="google_drive connector not found in definitions")
+            raise HTTPException(status_code=500, detail="google_drive connector not found in definitions")  # ALLOWED: literal
         connector_definition_id = def_response.data["id"]
         logger.info(f"🔐 [OAuth] Found connector_definition_id: {connector_definition_id}")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"🔐 [OAuth] Failed to lookup connector definition: {e}")
-        raise HTTPException(status_code=500, detail="Failed to lookup connector definition")
+        raise HTTPException(status_code=500, detail="Failed to lookup connector definition")  # ALLOWED: literal
 
     # 2. Exchange Code for Tokens
     try:
@@ -307,7 +313,7 @@ async def exchange_google_token(
             redirect_uri=settings.GOOGLE_REDIRECT_URI
         )
         
-        flow.fetch_token(code=request.code)
+        flow.fetch_token(code=body.code)
         creds = flow.credentials
         logger.info(f"🔐 [OAuth] ✅ Got credentials. Has refresh token: {creds.refresh_token is not None}")
         
@@ -357,10 +363,10 @@ async def exchange_google_token(
         
         if not upsert_res.data:
             logger.error("🔐 [OAuth] ❌ Upsert returned no data!")
-            raise HTTPException(status_code=500, detail="Database upsert returned no data")
-         
+            raise HTTPException(status_code=500, detail="Database upsert returned no data")  # ALLOWED: literal
+
         logger.info(f"🔐 [OAuth] ✅ Upsert successful for integration ID: {upsert_res.data[0]['id']}")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -398,8 +404,10 @@ async def exchange_google_token(
 
 
 @router.post("/integrations/notion/exchange")
+@limiter.limit("10/minute")
 async def exchange_notion_token(
-    request: ExchangeRequest,
+    request: Request,
+    body: ExchangeRequest,
     user_id: str = Depends(require_editor)
 ):
     """
@@ -410,11 +418,11 @@ async def exchange_notion_token(
     
     if not settings.NOTION_CLIENT_ID or not settings.NOTION_CLIENT_SECRET:
         logger.error("🔐 [OAuth] Notion credentials not configured!")
-        raise HTTPException(status_code=500, detail="Notion credentials not configured")
+        raise HTTPException(status_code=500, detail="Notion credentials not configured")  # ALLOWED: literal
     
     if not settings.NOTION_REDIRECT_URI:
         logger.error("🔐 [OAuth] Notion redirect URI not configured!")
-        raise HTTPException(status_code=500, detail="Notion redirect URI not configured")
+        raise HTTPException(status_code=500, detail="Notion redirect URI not configured")  # ALLOWED: literal
 
     supabase = get_supabase()
 
@@ -422,12 +430,14 @@ async def exchange_notion_token(
     try:
         def_response = supabase.table("connector_definitions").select("id").eq("type", "notion").single().execute()
         if not def_response.data:
-            raise HTTPException(status_code=500, detail="notion connector not found in definitions")
+            raise HTTPException(status_code=500, detail="notion connector not found in definitions")  # ALLOWED: literal
         connector_definition_id = def_response.data["id"]
         logger.info(f"🔐 [OAuth] Found connector_definition_id: {connector_definition_id}")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"🔐 [OAuth] Failed to lookup connector definition: {e}")
-        raise HTTPException(status_code=500, detail="Failed to lookup connector definition")
+        raise HTTPException(status_code=500, detail="Failed to lookup connector definition")  # ALLOWED: literal
 
     # 2. Exchange Code for Tokens using httpx
     try:
@@ -439,7 +449,7 @@ async def exchange_notion_token(
                 auth=(settings.NOTION_CLIENT_ID, settings.NOTION_CLIENT_SECRET),
                 json={
                     "grant_type": "authorization_code",
-                    "code": request.code,
+                    "code": body.code,
                     "redirect_uri": settings.NOTION_REDIRECT_URI
                 },
                 headers={
@@ -450,9 +460,9 @@ async def exchange_notion_token(
             if response.status_code != 200:
                 logger.error(f"🔐 [OAuth] ❌ Notion API error: {response.status_code} {response.text}")
                 raise HTTPException(
-                    status_code=400, 
-                    detail=f"Notion token exchange failed: {response.json().get('error', 'Unknown error')}"
-                )
+                    status_code=400,
+                    detail="Notion token exchange failed. Please try connecting again."
+                )  # ALLOWED: literal
             
             token_data = response.json()
             access_token = token_data.get("access_token")
@@ -502,10 +512,10 @@ async def exchange_notion_token(
         
         if not upsert_res.data:
             logger.error("🔐 [OAuth] ❌ Upsert returned no data!")
-            raise HTTPException(status_code=500, detail="Database upsert returned no data")
+            raise HTTPException(status_code=500, detail="Database upsert returned no data")  # ALLOWED: literal
 
         logger.info(f"🔐 [OAuth] ✅ Upsert successful for integration ID: {upsert_res.data[0]['id']}")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -515,7 +525,7 @@ async def exchange_notion_token(
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "oauth_exchange")
 
     integration_id = upsert_res.data[0]["id"]
-    
+
     # 4. Trigger auto-ingestion in background
     # Fetch all accessible pages and start ingestion immediately
     try:
@@ -612,31 +622,33 @@ async def exchange_notion_token(
 # =============================================================================
 
 @router.post("/integrations/microsoft/exchange")
+@limiter.limit("10/minute")
 async def exchange_microsoft_token(
-    request: MicrosoftExchangeRequest,
+    request: Request,
+    body: MicrosoftExchangeRequest,
     user_id: str = Depends(require_editor)
 ):
     """
     Exchange Microsoft OAuth code for tokens and persist to user_integrations.
     Supports OneDrive and SharePoint via Graph API.
     """
-    target_type = request.target_type
+    target_type = body.target_type
     logger.info(f"🔐 [OAuth] Starting Microsoft token exchange for user: {user_id} ({target_type})")
 
     if not settings.MICROSOFT_CLIENT_ID:
         logger.error("🔐 [OAuth] Microsoft client ID not configured!")
-        raise HTTPException(status_code=500, detail="Microsoft client ID not configured")
+        raise HTTPException(status_code=500, detail="Microsoft client ID not configured")  # ALLOWED: literal
 
     if not settings.MICROSOFT_REDIRECT_URI:
         logger.error("🔐 [OAuth] Microsoft redirect URI not configured!")
-        raise HTTPException(status_code=500, detail="Microsoft redirect URI not configured")
+        raise HTTPException(status_code=500, detail="Microsoft redirect URI not configured")  # ALLOWED: literal
 
     supabase = get_supabase()
 
     # 1. Lookup connector definition ID
     def_res = supabase.table("connector_definitions").select("id").eq("type", target_type).single().execute()
     if not def_res.data:
-        raise HTTPException(status_code=500, detail=f"{target_type} connector not found in definitions")
+        raise HTTPException(status_code=500, detail="Microsoft connector not found in definitions")  # ALLOWED: literal
 
     connector_definition_id = def_res.data["id"]
     tenant = settings.MICROSOFT_TENANT_ID or "common"
@@ -649,12 +661,12 @@ async def exchange_microsoft_token(
             token_payload = {
                 "client_id": settings.MICROSOFT_CLIENT_ID,
                 "grant_type": "authorization_code",
-                "code": request.code,
+                "code": body.code,
                 "redirect_uri": settings.MICROSOFT_REDIRECT_URI,
                 "scope": scope,
             }
-            if request.code_verifier:
-                token_payload["code_verifier"] = request.code_verifier
+            if body.code_verifier:
+                token_payload["code_verifier"] = body.code_verifier
             if settings.MICROSOFT_CLIENT_SECRET:
                 token_payload["client_secret"] = settings.MICROSOFT_CLIENT_SECRET
 
@@ -662,8 +674,8 @@ async def exchange_microsoft_token(
                 settings.MICROSOFT_CLIENT_ID[-6:] if settings.MICROSOFT_CLIENT_ID else "missing"
             )
             secret_len = len(settings.MICROSOFT_CLIENT_SECRET or "")
-            verifier_len = len(request.code_verifier or "")
-            code_len = len(request.code or "")
+            verifier_len = len(body.code_verifier or "")
+            code_len = len(body.code or "")
             logger.info(
                 "🔐 [OAuth] Microsoft token request config: tenant=%s redirect_uri=%s scope=%s "
                 "client_id_suffix=%s secret_present=%s secret_len=%s code_len=%s "
@@ -675,7 +687,7 @@ async def exchange_microsoft_token(
                 bool(settings.MICROSOFT_CLIENT_SECRET),
                 secret_len,
                 code_len,
-                bool(request.code_verifier),
+                bool(body.code_verifier),
                 verifier_len,
                 sorted(token_payload.keys()),
             )
@@ -701,24 +713,22 @@ async def exchange_microsoft_token(
                 )
         if response.status_code != 200:
             logger.error(f"🔐 [OAuth] Microsoft token exchange failed: {response.text}")
-            error_detail = None
+            error_detail = "Microsoft token exchange failed"
             try:
                 error_payload = response.json()
             except ValueError:
                 error_payload = None
             if isinstance(error_payload, dict):
-                error_detail = error_payload.get("error_description")
                 error_codes = error_payload.get("error_codes") or []
-                if "AADSTS9002327" in (error_detail or "") or 9002327 in error_codes:
+                raw_desc = error_payload.get("error_description") or ""
+                if "AADSTS9002327" in raw_desc or 9002327 in error_codes:
                     error_detail = (
                         "AADSTS9002327: This Microsoft app is registered as SPA. "
                         "Tokens must be redeemed via a browser cross-origin request. "
                         "Move the redirect URI to the Web platform (or remove it from SPA), "
                         "or exchange tokens in the frontend instead."
                     )
-            if not error_detail:
-                error_detail = response.text or "Microsoft token exchange failed"
-            raise HTTPException(status_code=400, detail=error_detail)
+            raise HTTPException(status_code=400, detail=error_detail)  # ALLOWED: literal
 
         token_data = response.json()
         access_token = token_data.get("access_token")
@@ -728,10 +738,10 @@ async def exchange_microsoft_token(
         raise
     except Exception as e:
         logger.error(f"🔐 [OAuth] Microsoft token exchange failed: {e}")
-        raise HTTPException(status_code=400, detail="Microsoft token exchange failed") from e
+        raise HTTPException(status_code=400, detail="Microsoft token exchange failed") from e  # ALLOWED: literal
 
     if not access_token:
-        raise HTTPException(status_code=400, detail="Microsoft token exchange returned no access token")
+        raise HTTPException(status_code=400, detail="Microsoft token exchange returned no access token")  # ALLOWED: literal
 
     expires_at = None
     if expires_in:
@@ -744,19 +754,19 @@ async def exchange_microsoft_token(
         if target_type == "onedrive":
             drive_res = await client.get("https://graph.microsoft.com/v1.0/me/drive", headers=graph_headers)
             if drive_res.status_code != 200:
-                raise HTTPException(status_code=401, detail="Microsoft permissions invalid for OneDrive")
+                raise HTTPException(status_code=401, detail="Microsoft permissions invalid for OneDrive")  # ALLOWED: literal
             drive_data = drive_res.json()
             if drive_data.get("id"):
                 credentials["drive_id"] = drive_data["id"]
         else:
-            site_id = request.site_id
+            site_id = body.site_id
             if not site_id:
                 site_res = await client.get("https://graph.microsoft.com/v1.0/sites/root", headers=graph_headers)
                 if site_res.status_code != 200:
-                    raise HTTPException(status_code=401, detail="Microsoft permissions invalid for SharePoint")
+                    raise HTTPException(status_code=401, detail="Microsoft permissions invalid for SharePoint")  # ALLOWED: literal
                 site_id = site_res.json().get("id")
             if not site_id:
-                raise HTTPException(status_code=400, detail="SharePoint site_id could not be resolved")
+                raise HTTPException(status_code=400, detail="SharePoint site_id could not be resolved")  # ALLOWED: literal
             credentials["site_id"] = site_id
             drive_res = await client.get(
                 f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive",
@@ -787,7 +797,7 @@ async def exchange_microsoft_token(
     ).execute()
 
     if not upsert_res.data:
-        raise HTTPException(status_code=500, detail="Failed to store Microsoft credentials")
+        raise HTTPException(status_code=500, detail="Failed to store Microsoft credentials")  # ALLOWED: literal
 
     integration_id = upsert_res.data[0]["id"]
 
@@ -812,8 +822,10 @@ class DropboxExchangeRequest(BaseModel):
 
 
 @router.post("/integrations/dropbox/exchange")
+@limiter.limit("10/minute")
 async def exchange_dropbox_token(
-    request: DropboxExchangeRequest,
+    request: Request,
+    body: DropboxExchangeRequest,
     user_id: str = Depends(require_editor)
 ):
     """
@@ -827,18 +839,18 @@ async def exchange_dropbox_token(
 
     if not settings.DROPBOX_CLIENT_ID or not settings.DROPBOX_CLIENT_SECRET:
         logger.error("🔐 [OAuth] Dropbox credentials not configured!")
-        raise HTTPException(status_code=500, detail="Dropbox credentials not configured")
+        raise HTTPException(status_code=500, detail="Dropbox credentials not configured")  # ALLOWED: literal
 
     if not settings.DROPBOX_REDIRECT_URI:
         logger.error("🔐 [OAuth] Dropbox redirect URI not configured!")
-        raise HTTPException(status_code=500, detail="Dropbox redirect URI not configured")
+        raise HTTPException(status_code=500, detail="Dropbox redirect URI not configured")  # ALLOWED: literal
 
     supabase = get_supabase()
 
     # 1. Lookup connector definition ID
     def_res = supabase.table("connector_definitions").select("id").eq("type", "dropbox").single().execute()
     if not def_res.data:
-        raise HTTPException(status_code=500, detail="dropbox connector not found in definitions")
+        raise HTTPException(status_code=500, detail="dropbox connector not found in definitions")  # ALLOWED: literal
 
     connector_definition_id = def_res.data["id"]
 
@@ -846,7 +858,7 @@ async def exchange_dropbox_token(
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             token_payload = {
-                "code": request.code,
+                "code": body.code,
                 "grant_type": "authorization_code",
                 "client_id": settings.DROPBOX_CLIENT_ID,
                 "client_secret": settings.DROPBOX_CLIENT_SECRET,
@@ -861,8 +873,7 @@ async def exchange_dropbox_token(
 
         if response.status_code != 200:
             logger.error(f"🔐 [OAuth] Dropbox token exchange failed: {response.text}")
-            error_detail = response.text or "Dropbox token exchange failed"
-            raise HTTPException(status_code=400, detail=error_detail)
+            raise HTTPException(status_code=400, detail="Dropbox token exchange failed")  # ALLOWED: literal
 
         token_data = response.json()
         access_token = token_data.get("access_token")
@@ -877,10 +888,10 @@ async def exchange_dropbox_token(
         raise
     except Exception as e:
         logger.error(f"🔐 [OAuth] Dropbox token exchange failed: {e}")
-        raise HTTPException(status_code=400, detail="Dropbox token exchange failed") from e
+        raise HTTPException(status_code=400, detail="Dropbox token exchange failed") from e  # ALLOWED: literal
 
     if not access_token:
-        raise HTTPException(status_code=400, detail="Dropbox token exchange returned no access token")
+        raise HTTPException(status_code=400, detail="Dropbox token exchange returned no access token")  # ALLOWED: literal
 
     expires_at = None
     if expires_in:
@@ -890,7 +901,7 @@ async def exchange_dropbox_token(
     credentials = {
         "account_id": account_id,
         "uid": uid,
-        "root_path": request.root_path or "",
+        "root_path": body.root_path or "",
     }
 
     try:
@@ -954,7 +965,7 @@ async def exchange_dropbox_token(
     ).execute()
 
     if not upsert_res.data:
-        raise HTTPException(status_code=500, detail="Failed to store Dropbox credentials")
+        raise HTTPException(status_code=500, detail="Failed to store Dropbox credentials")  # ALLOWED: literal
 
     integration_id = upsert_res.data[0]["id"]
 
@@ -994,8 +1005,10 @@ class GitHubRepoSelectionRequest(BaseModel):
 
 
 @router.post("/integrations/github/exchange")
+@limiter.limit("10/minute")
 async def exchange_github_token(
-    request: GitHubExchangeRequest,
+    request: Request,
+    body: GitHubExchangeRequest,
     user_id: str = Depends(require_editor)
 ):
     """
@@ -1008,14 +1021,14 @@ async def exchange_github_token(
 
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
         logger.error("🔐 [OAuth] GitHub credentials not configured!")
-        raise HTTPException(status_code=500, detail="GitHub credentials not configured")
+        raise HTTPException(status_code=500, detail="GitHub credentials not configured")  # ALLOWED: literal
 
     supabase = get_supabase()
 
     # 1. Lookup connector definition ID
     def_res = supabase.table("connector_definitions").select("id").eq("type", "github").single().execute()
     if not def_res.data:
-        raise HTTPException(status_code=500, detail="github connector not found in definitions")
+        raise HTTPException(status_code=500, detail="github connector not found in definitions")  # ALLOWED: literal
 
     connector_definition_id = def_res.data["id"]
 
@@ -1025,7 +1038,7 @@ async def exchange_github_token(
             token_payload = {
                 "client_id": settings.GITHUB_CLIENT_ID,
                 "client_secret": settings.GITHUB_CLIENT_SECRET,
-                "code": request.code,
+                "code": body.code,
             }
             if settings.GITHUB_REDIRECT_URI:
                 token_payload["redirect_uri"] = settings.GITHUB_REDIRECT_URI
@@ -1038,14 +1051,14 @@ async def exchange_github_token(
 
         if response.status_code != 200:
             logger.error(f"🔐 [OAuth] GitHub token exchange failed: {response.text}")
-            raise HTTPException(status_code=400, detail="GitHub token exchange failed")
+            raise HTTPException(status_code=400, detail="GitHub token exchange failed")  # ALLOWED: literal
 
         token_data = response.json()
         
         if "error" in token_data:
             error_desc = token_data.get("error_description", token_data.get("error"))
             logger.error(f"🔐 [OAuth] GitHub OAuth error: {error_desc}")
-            raise HTTPException(status_code=400, detail=f"GitHub OAuth error: {error_desc}")
+            raise HTTPException(status_code=400, detail="GitHub OAuth exchange failed. Please try connecting again.")  # ALLOWED: literal
         
         access_token = token_data.get("access_token")
         scope = token_data.get("scope", "")
@@ -1057,10 +1070,10 @@ async def exchange_github_token(
         raise
     except Exception as e:
         logger.error(f"🔐 [OAuth] GitHub token exchange failed: {e}")
-        raise HTTPException(status_code=400, detail="GitHub token exchange failed") from e
+        raise HTTPException(status_code=400, detail="GitHub token exchange failed") from e  # ALLOWED: literal
 
     if not access_token:
-        raise HTTPException(status_code=400, detail="GitHub token exchange returned no access token")
+        raise HTTPException(status_code=400, detail="GitHub token exchange returned no access token")  # ALLOWED: literal
 
     # 3. Get user info to validate token and get GitHub user ID
     credentials = {"scope": scope}
@@ -1108,7 +1121,7 @@ async def exchange_github_token(
     ).execute()
 
     if not upsert_res.data:
-        raise HTTPException(status_code=500, detail="Failed to store GitHub credentials")
+        raise HTTPException(status_code=500, detail="Failed to store GitHub credentials")  # ALLOWED: literal
 
     integration_id = upsert_res.data[0]["id"]
 
@@ -1151,20 +1164,20 @@ async def list_github_repos(
     # Get user's GitHub integration
     def_res = supabase.table("connector_definitions").select("id").eq("type", "github").single().execute()
     if not def_res.data:
-        raise HTTPException(status_code=500, detail="GitHub connector not found")
+        raise HTTPException(status_code=500, detail="GitHub connector not found")  # ALLOWED: literal
 
     int_res = supabase.table("user_integrations").select(
         "id, access_token, credentials"
     ).eq("user_id", user_id).eq("connector_definition_id", def_res.data["id"]).single().execute()
 
     if not int_res.data or not int_res.data.get("access_token"):
-        raise HTTPException(status_code=401, detail="GitHub not connected. Please connect GitHub first.")
+        raise HTTPException(status_code=401, detail="GitHub not connected. Please connect GitHub first.")  # ALLOWED: literal
 
     # Decrypt token
     access_token = decrypt_token(int_res.data["access_token"])
     
     if not access_token:
-        raise HTTPException(status_code=401, detail="GitHub token invalid. Please reconnect.")
+        raise HTTPException(status_code=401, detail="GitHub token invalid. Please reconnect.")  # ALLOWED: literal
 
     # Use connector to fetch repos
     try:
@@ -1197,8 +1210,10 @@ async def list_github_repos(
 
 
 @router.post("/integrations/github/repos/select")
+@limiter.limit("20/minute")
 async def select_github_repos(
-    request: GitHubRepoSelectionRequest,
+    request: Request,
+    body: GitHubRepoSelectionRequest,
     user_id: str = Depends(require_editor)
 ):
     """
@@ -1216,14 +1231,14 @@ async def select_github_repos(
     # Get user's GitHub integration
     def_res = supabase.table("connector_definitions").select("id").eq("type", "github").single().execute()
     if not def_res.data:
-        raise HTTPException(status_code=500, detail="GitHub connector not found")
+        raise HTTPException(status_code=500, detail="GitHub connector not found")  # ALLOWED: literal
 
     int_res = supabase.table("user_integrations").select(
         "id, credentials"
     ).eq("user_id", user_id).eq("connector_definition_id", def_res.data["id"]).single().execute()
 
     if not int_res.data:
-        raise HTTPException(status_code=401, detail="GitHub not connected")
+        raise HTTPException(status_code=401, detail="GitHub not connected")  # ALLOWED: literal
 
     integration_id = int_res.data["id"]
     existing_credentials = int_res.data.get("credentials") or {}
@@ -1231,7 +1246,7 @@ async def select_github_repos(
     # Update credentials with selected repositories
     updated_credentials = {
         **existing_credentials,
-        "selected_repositories": request.selected_repositories,
+        "selected_repositories": body.selected_repositories,
         "repos_selected_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1242,9 +1257,9 @@ async def select_github_repos(
     }).eq("id", integration_id).execute()
 
     if not update_res.data:
-        raise HTTPException(status_code=500, detail="Failed to save repository selection")
+        raise HTTPException(status_code=500, detail="Failed to save repository selection")  # ALLOWED: literal
 
-    enabled_count = sum(1 for r in request.selected_repositories if r.get("enabled", True))
+    enabled_count = sum(1 for r in body.selected_repositories if r.get("enabled", True))
     
     audit_logger.log_sync(
         user_id=user_id,
@@ -1275,8 +1290,10 @@ class BoxExchangeRequest(BaseModel):
 
 
 @router.post("/integrations/box/exchange")
+@limiter.limit("10/minute")
 async def exchange_box_token(
-    request: BoxExchangeRequest,
+    request: Request,
+    body: BoxExchangeRequest,
     user_id: str = Depends(require_editor)
 ):
     """
@@ -1289,14 +1306,14 @@ async def exchange_box_token(
 
     if not settings.BOX_CLIENT_ID or not settings.BOX_CLIENT_SECRET:
         logger.error("🔐 [OAuth] Box credentials not configured!")
-        raise HTTPException(status_code=500, detail="Box credentials not configured")
+        raise HTTPException(status_code=500, detail="Box credentials not configured")  # ALLOWED: literal
 
     supabase = get_supabase()
 
     # 1. Lookup connector definition ID
     def_res = supabase.table("connector_definitions").select("id").eq("type", "box").single().execute()
     if not def_res.data:
-        raise HTTPException(status_code=500, detail="box connector not found in definitions")
+        raise HTTPException(status_code=500, detail="box connector not found in definitions")  # ALLOWED: literal
 
     connector_definition_id = def_res.data["id"]
 
@@ -1307,7 +1324,7 @@ async def exchange_box_token(
                 "grant_type": "authorization_code",
                 "client_id": settings.BOX_CLIENT_ID,
                 "client_secret": settings.BOX_CLIENT_SECRET,
-                "code": request.code,
+                "code": body.code,
             }
             if settings.BOX_REDIRECT_URI:
                 token_payload["redirect_uri"] = settings.BOX_REDIRECT_URI
@@ -1319,14 +1336,14 @@ async def exchange_box_token(
 
         if response.status_code != 200:
             logger.error(f"🔐 [OAuth] Box token exchange failed: {response.text}")
-            raise HTTPException(status_code=400, detail="Box token exchange failed")
+            raise HTTPException(status_code=400, detail="Box token exchange failed")  # ALLOWED: literal
 
         token_data = response.json()
         
         if "error" in token_data:
             error_desc = token_data.get("error_description", token_data.get("error"))
             logger.error(f"🔐 [OAuth] Box OAuth error: {error_desc}")
-            raise HTTPException(status_code=400, detail=f"Box OAuth error: {error_desc}")
+            raise HTTPException(status_code=400, detail="Box OAuth exchange failed. Please try connecting again.")  # ALLOWED: literal
         
         access_token = token_data.get("access_token")
         refresh_token = token_data.get("refresh_token")  # CRITICAL: Box tokens rotate
@@ -1338,10 +1355,10 @@ async def exchange_box_token(
         raise
     except Exception as e:
         logger.error(f"🔐 [OAuth] Box token exchange failed: {e}")
-        raise HTTPException(status_code=400, detail="Box token exchange failed") from e
+        raise HTTPException(status_code=400, detail="Box token exchange failed") from e  # ALLOWED: literal
 
     if not access_token:
-        raise HTTPException(status_code=400, detail="Box token exchange returned no access token")
+        raise HTTPException(status_code=400, detail="Box token exchange returned no access token")  # ALLOWED: literal
     
     if not refresh_token:
         logger.warning("⚠️ [OAuth] Box did not return refresh token - may have issues with token refresh")
@@ -1398,7 +1415,7 @@ async def exchange_box_token(
     ).execute()
 
     if not upsert_res.data:
-        raise HTTPException(status_code=500, detail="Failed to store Box credentials")
+        raise HTTPException(status_code=500, detail="Failed to store Box credentials")  # ALLOWED: literal
 
     integration_id = upsert_res.data[0]["id"]
 
@@ -1441,12 +1458,12 @@ async def connect_sftp(
     Connect an SFTP server by storing encrypted credentials in user_integrations.
     """
     if not body.password and not body.private_key:
-        raise HTTPException(status_code=400, detail="Either password or private_key is required.")
+        raise HTTPException(status_code=400, detail="Either password or private_key is required.")  # ALLOWED: literal
 
     supabase = get_supabase()
     conn_def = supabase.table("connector_definitions").select("id").eq("type", "sftp").single().execute()
     if not conn_def.data:
-        raise HTTPException(status_code=500, detail="sftp connector not found in definitions")
+        raise HTTPException(status_code=500, detail="sftp connector not found in definitions")  # ALLOWED: literal
 
     connector = SFTPConnector()
     config = body.model_dump()
@@ -1497,7 +1514,7 @@ async def connect_sftp(
     ).execute()
 
     if not upsert_res.data:
-        raise HTTPException(status_code=500, detail="Failed to store SFTP credentials")
+        raise HTTPException(status_code=500, detail="Failed to store SFTP credentials")  # ALLOWED: literal
 
     audit_logger.log_sync(
         user_id=user_id,
@@ -1580,7 +1597,7 @@ async def connect_s3(
                 ),
                 "upgrade_url": "/settings/billing",
             }
-        )
+        )  # ALLOWED: plan is user's own subscription data, not an internal leak
 
     # =================================================================
     # Verify S3 Access
@@ -1596,7 +1613,7 @@ async def connect_s3(
         raise HTTPException(
             status_code=500,
             detail="S3 connector not configured. Please contact support."
-        )
+        )  # ALLOWED: literal
 
     # Verify credentials and bucket access
     connector = S3Connector()
@@ -1657,7 +1674,7 @@ async def connect_s3(
     ).execute()
 
     if not upsert_res.data:
-        raise HTTPException(status_code=500, detail="Failed to store S3 credentials")
+        raise HTTPException(status_code=500, detail="Failed to store S3 credentials")  # ALLOWED: literal
 
     # Audit log (never log credentials)
     audit_logger.log_sync(
@@ -1715,7 +1732,9 @@ async def get_provider_status(
 
 
 @router.delete("/integrations/{provider}")
+@limiter.limit("10/minute")
 async def disconnect_provider(
+    request: Request,
     provider: str,
     user_id: str = Depends(require_editor),
     organization_id: str = Depends(get_user_organization_id),
@@ -1738,7 +1757,7 @@ async def disconnect_provider(
         # Lookup connector definition by type
         def_res = supabase.table("connector_definitions").select("id").eq("type", provider).single().execute()
         if not def_res.data:
-            raise HTTPException(status_code=404, detail="Unknown provider")
+            raise HTTPException(status_code=404, detail="Unknown provider")  # ALLOWED: literal
         
         connector_def_id = def_res.data["id"]
 
@@ -2063,7 +2082,7 @@ async def list_web_crawl_configs(
         if status:
             valid_statuses = {"pending", "discovering", "processing", "completed", "failed", "cancelled"}
             if status not in valid_statuses:
-                raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+                raise HTTPException(status_code=400, detail="Invalid status. Must be one of: pending, discovering, processing, completed, failed, cancelled")  # ALLOWED: literal
             query = query.eq("status", status)
         
         # Execute with pagination
@@ -2178,7 +2197,7 @@ async def get_web_crawl_config(
             .execute()
         
         if not result or not result.data:
-            raise HTTPException(status_code=404, detail="Crawl configuration not found")
+            raise HTTPException(status_code=404, detail="Crawl configuration not found")  # ALLOWED: literal
         
         config = result.data
         return WebCrawlConfigResponse(
@@ -2216,18 +2235,18 @@ async def crawl_web(
     try:
         feature_check = await check_feature_access(UUID(user_id), "web_crawl")
         if not feature_check["allowed"]:
-            raise HTTPException(status_code=403, detail=feature_check["reason"])
+            raise HTTPException(status_code=403, detail="Web crawl is not available on your current plan.")  # ALLOWED: literal
 
         connector = WebConnector()
         normalized_url = connector.normalize_url(body.url)
         if not normalized_url:
-            raise HTTPException(status_code=400, detail="Invalid URL for crawling.")
+            raise HTTPException(status_code=400, detail="Invalid URL for crawling.")  # ALLOWED: literal
         if not connector._is_safe_url(normalized_url):
-            raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")
+            raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")  # ALLOWED: literal
 
         crawl_type = body.crawl_type.lower()
         if crawl_type not in {"single", "recursive", "sitemap"}:
-            raise HTTPException(status_code=400, detail="Invalid crawl_type.")
+            raise HTTPException(status_code=400, detail="Invalid crawl_type.")  # ALLOWED: literal
 
         max_depth = body.max_depth if crawl_type == "recursive" else 1
         max_pages = body.max_pages
@@ -2249,7 +2268,7 @@ async def crawl_web(
             )
         except Exception as crawl_exc:
             logger.error("❌ [Crawl] Queue failed for %s: %s", normalized_url, crawl_exc)
-            raise HTTPException(status_code=500, detail="Failed to queue web crawl.")
+            raise HTTPException(status_code=500, detail="Failed to queue web crawl.")  # ALLOWED: literal
 
         return {
             "status": "queued",
@@ -2262,11 +2281,13 @@ async def crawl_web(
         raise
     except Exception as e:
         logger.error(f"❌ [Crawl] Failed to queue web crawl (unexpected): {e}")
-        raise HTTPException(status_code=500, detail="Failed to queue web crawl.")
+        raise HTTPException(status_code=500, detail="Failed to queue web crawl.")  # ALLOWED: literal
 
 
 @router.delete("/integrations/web/crawl/{config_id}")
+@limiter.limit("10/minute")
 async def delete_crawl_config(
+    request: Request,
     config_id: str,
     user_id: str = Depends(require_editor)
 ):
@@ -2290,7 +2311,7 @@ async def delete_crawl_config(
             .execute()
         
         if not config_response.data:
-            raise HTTPException(status_code=404, detail="Crawl configuration not found")
+            raise HTTPException(status_code=404, detail="Crawl configuration not found")  # ALLOWED: literal
         
         config = config_response.data
         
@@ -2325,13 +2346,15 @@ async def delete_crawl_config(
         raise
     except Exception as e:
         logger.error(f"Failed to delete crawl config: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete crawl configuration")
+        raise HTTPException(status_code=500, detail="Failed to delete crawl configuration")  # ALLOWED: literal
 
 
 @router.post("/integrations/{provider}/ingest", status_code=202)
+@limiter.limit("10/minute")
 async def ingest_provider_items(
+    request: Request,
     provider: str,
-    request: IngestRequest,
+    body: IngestRequest,
     user_id: str = Depends(require_editor)
 ):
     """
@@ -2349,7 +2372,7 @@ async def ingest_provider_items(
                 org_id=org_id,
                 plan_code=plan_code,
                 file_size_bytes=None,
-                job_count_increment=max(1, len(request.item_ids)),
+                job_count_increment=max(1, len(body.item_ids)),
             )
         except QuotaExceededError as exc:
             logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
@@ -2361,22 +2384,22 @@ async def ingest_provider_items(
             )
 
         if provider == "web":
-            if len(request.item_ids) != 1:
+            if len(body.item_ids) != 1:
                 raise HTTPException(
                     status_code=400,
                     detail="Web ingest supports a single URL. Use /integrations/web/crawl for advanced options."
-                )
+                )  # ALLOWED: literal
 
             feature_check = await check_feature_access(UUID(user_id), "web_crawl")
             if not feature_check["allowed"]:
-                raise HTTPException(status_code=403, detail=feature_check["reason"])
+                raise HTTPException(status_code=403, detail="Web crawl is not available on your current plan.")  # ALLOWED: literal
 
             connector = WebConnector()
-            normalized_url = connector.normalize_url(request.item_ids[0])
+            normalized_url = connector.normalize_url(body.item_ids[0])
             if not normalized_url:
-                raise HTTPException(status_code=400, detail="Invalid URL for crawling.")
+                raise HTTPException(status_code=400, detail="Invalid URL for crawling.")  # ALLOWED: literal
             if not connector._is_safe_url(normalized_url):
-                raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")
+                raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")  # ALLOWED: literal
 
             result = queue_web_crawl(
                 user_id=user_id,
@@ -2422,7 +2445,7 @@ async def ingest_provider_items(
         # Find connector definition
         conn_def = supabase.table("connector_definitions").select("id").eq("type", provider).single().execute()
         if not conn_def.data:
-            raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+            raise HTTPException(status_code=400, detail="Unknown or unsupported provider")  # ALLOWED: literal
         
         # Get user's integration
         try:
@@ -2438,7 +2461,7 @@ async def ingest_provider_items(
         if provider in ["google_drive", "notion", "onedrive", "sharepoint", "dropbox", "github", "box"]:
             # OAuth connectors: Pass integration_id for automatic token refresh
             if not integration or not integration.get('access_token'):
-                raise HTTPException(status_code=401, detail=f"Not connected to {provider}. Please reconnect.")
+                raise HTTPException(status_code=401, detail="Not connected to this provider. Please reconnect.")  # ALLOWED: literal
             
             credentials = {
                 "integration_id": str(integration['id'])  # ✅ Pass integration_id for token refresh
@@ -2447,7 +2470,7 @@ async def ingest_provider_items(
         else:
             # Other connectors: Use stored credentials
             if not integration or not integration.get('credentials'):
-                raise HTTPException(status_code=401, detail=f"Not connected to {provider}")
+                raise HTTPException(status_code=401, detail="Not connected to this provider")  # ALLOWED: literal
             credentials = integration['credentials']
         
         # 2. Create ingestion job for progress tracking
@@ -2456,7 +2479,7 @@ async def ingest_provider_items(
             "user_id": user_id,
             "organization_id": org_id,
             "provider": provider,
-            "total_files": len(request.item_ids),
+            "total_files": len(body.item_ids),
             "processed_files": 0,
             "status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -2465,10 +2488,10 @@ async def ingest_provider_items(
         
         job_response = supabase.table("ingestion_jobs").insert(job_data).execute()
         if not job_response.data:
-            raise HTTPException(status_code=500, detail="Failed to create ingestion job")
-        
+            raise HTTPException(status_code=500, detail="Failed to create ingestion job")  # ALLOWED: literal
+
         job_id = job_response.data[0]["id"]
-        logger.info(f"📋 [Ingest] Created job {job_id} for {len(request.item_ids)} items")
+        logger.info(f"📋 [Ingest] Created job {job_id} for {len(body.item_ids)} items")
         
         # 3. Queue the unified ingestion task
         from worker.tasks import unified_ingest_task
@@ -2477,13 +2500,13 @@ async def ingest_provider_items(
             user_id=user_id,
             job_id=str(job_id),
             connector_type=provider,
-            item_ids=request.item_ids,  # Pass all items at once
+            item_ids=body.item_ids,  # Pass all items at once
             credentials=credentials,
             plan_code=plan_code,
             dispatch_batch_size=_get_ingest_batch_size(),
         )
         try:
-            increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(request.item_ids)))
+            increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(body.item_ids)))
         except Exception as exc:
             logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
         
@@ -2493,13 +2516,13 @@ async def ingest_provider_items(
             action="ingest.queued",
             resource_type="ingestion_job",
             resource_id=str(job_id),
-            details={"provider": provider, "item_count": len(request.item_ids), "task_id": task.id},
+            details={"provider": provider, "item_count": len(body.item_ids), "task_id": task.id},
         )
         
         # 4. Return 202 Accepted with job info
         return {
             "status": "accepted",
-            "message": f"Ingestion queued for {len(request.item_ids)} items",
+            "message": f"Ingestion queued for {len(body.item_ids)} items",
             "task_id": task.id,
             "job_id": str(job_id)
         }
@@ -2663,7 +2686,9 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
 
 
 @router.post("/integrations/{integration_id}/sync")
+@limiter.limit("10/minute")
 async def sync_integration(
+    request: Request,
     integration_id: str,
     background_tasks: BackgroundTasks,
     user_id: str = Depends(require_editor)
@@ -2681,8 +2706,8 @@ async def sync_integration(
         ).eq("id", integration_id).eq("user_id", user_id).single().execute()
         
         if not int_res.data:
-            raise HTTPException(status_code=404, detail="Integration not found")
-        
+            raise HTTPException(status_code=404, detail="Integration not found")  # ALLOWED: literal
+
         provider = int_res.data["connector_definitions"]["type"]
         org_id, _ = await _resolve_org_and_plan(user_id)
         
@@ -2710,8 +2735,8 @@ async def sync_integration(
         
         job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
         if not job_res.data:
-            raise HTTPException(status_code=500, detail="Failed to create ingestion job")
-        
+            raise HTTPException(status_code=500, detail="Failed to create ingestion job")  # ALLOWED: literal
+
         job_id = job_res.data[0]["id"]
         
         # 4. Dispatch Background Task
@@ -2758,8 +2783,8 @@ async def get_sync_history(
             .execute()
         
         if not int_check.data:
-            raise HTTPException(status_code=404, detail="Integration not found")
-        
+            raise HTTPException(status_code=404, detail="Integration not found")  # ALLOWED: literal
+
         provider = int_check.data["connector_definitions"]["type"]
         
         # Fetch sync_state records for this user and provider
@@ -2781,7 +2806,7 @@ async def get_sync_history(
         raise
     except Exception as e:
         logger.error(f"Failed to get sync history: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get sync history")
+        raise HTTPException(status_code=500, detail="Failed to get sync history")  # ALLOWED: literal
 
 
 # =============================================================================

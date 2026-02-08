@@ -20,19 +20,27 @@ export async function GET(request: NextRequest) {
     const { searchParams, origin } = new URL(request.url)
     
     const code = searchParams.get('code')
-    const next = searchParams.get('next') ?? '/dashboard'
+    const nextRaw = searchParams.get('next') ?? '/dashboard'
+    // Validate redirect target to prevent open redirects (e.g. //evil.com, javascript:, etc.)
+    const next = (nextRaw.startsWith('/') && !nextRaw.startsWith('//') && !nextRaw.includes(':'))
+        ? nextRaw
+        : '/dashboard'
     const error = searchParams.get('error')
     const errorDescription = searchParams.get('error_description')
 
     // Handle OAuth error from provider
     if (error) {
-        console.error('🔐 [Auth Route] OAuth error:', error, errorDescription)
+        if (process.env.NODE_ENV !== 'production') {
+            console.error('[Auth Route] OAuth error:', error, errorDescription)
+        }
         return NextResponse.redirect(`${origin}/auth/auth-code-error?error=${encodeURIComponent(error)}`)
     }
 
     // If no code provided, redirect to error page
     if (!code) {
-        console.error('🔐 [Auth Route] No code provided in callback')
+        if (process.env.NODE_ENV !== 'production') {
+            console.error('[Auth Route] No code provided in callback')
+        }
         return NextResponse.redirect(`${origin}/auth/auth-code-error?error=no_code`)
     }
 
@@ -62,17 +70,23 @@ export async function GET(request: NextRequest) {
     )
 
     // Exchange the code for a session
-    console.log('🔐 [Auth Route] Exchanging code for session...')
+    if (process.env.NODE_ENV !== 'production') {
+        console.log('[Auth Route] Exchanging code for session...')
+    }
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
 
     if (exchangeError) {
-        console.error('🔐 [Auth Route] Code exchange failed:', exchangeError.message)
+        if (process.env.NODE_ENV !== 'production') {
+            console.error('[Auth Route] Code exchange failed:', exchangeError.message)
+        }
         return NextResponse.redirect(
             `${origin}/auth/auth-code-error?error=${encodeURIComponent(exchangeError.message)}`
         )
     }
 
-    console.log('🔐 [Auth Route] ✅ Session created, redirecting to:', next)
+    if (process.env.NODE_ENV !== 'production') {
+        console.log('[Auth Route] Session created, redirecting to:', next)
+    }
     
     // Successful authentication - redirect to destination
     // Use 303 See Other to ensure browser does a GET request

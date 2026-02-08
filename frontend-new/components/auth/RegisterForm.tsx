@@ -41,6 +41,42 @@ const registerSchema = z.object({
 
 type RegisterFormData = z.infer<typeof registerSchema>;
 
+function PasswordStrengthBar({ password }: { password: string }) {
+  if (!password) return null;
+
+  const checks = [
+    password.length >= 8,
+    /[A-Z]/.test(password),
+    /[a-z]/.test(password),
+    /[0-9]/.test(password),
+  ];
+  const strength = checks.filter(Boolean).length;
+  const labels = ["Weak", "Weak", "Fair", "Good", "Strong"];
+  const colors = [
+    "bg-muted",
+    "bg-destructive",
+    "bg-orange-500",
+    "bg-yellow-500",
+    "bg-emerald-500",
+  ];
+
+  return (
+    <div className="space-y-1">
+      <div className="flex gap-1">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className={`h-1 flex-1 rounded-full transition-colors ${
+              i < strength ? colors[strength] : "bg-muted"
+            }`}
+          />
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">{labels[strength]}</p>
+    </div>
+  );
+}
+
 export function RegisterForm() {
   const router = useRouter();
   const { register, signInWithOAuth } = useAuth();
@@ -211,6 +247,7 @@ export function RegisterForm() {
                     </button>
                   </div>
                 </FormControl>
+                <PasswordStrengthBar password={field.value} />
                 <FormMessage className="text-destructive text-xs" />
                 <p className="text-xs text-muted-foreground">
                   Must be 8+ characters with uppercase, lowercase, and number

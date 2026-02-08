@@ -21,6 +21,7 @@ const log = {
         console.log(`✅ ${response.status} ${response.config.url}`);
     },
     error: (error: AxiosError) => {
+        if (!DEBUG_MODE) return;
         console.error(`❌ ${error.response?.status || 'ERR'} ${error.config?.url}:`, error.message);
     }
 };
@@ -36,6 +37,7 @@ export const api = axios.create({
 // --- PERFORMANCE OPTIMIZATION: TOKEN CACHING ---
 let cachedToken: string | null = null;
 let tokenExpiryTime: number = 0; // Timestamp in ms
+let refreshPromise: Promise<string | null> | null = null;
 
 /**
  * Request interceptor with token caching
@@ -56,24 +58,34 @@ api.interceptors.request.use(
             return config;
         }
 
-        // Token missing or expiring soon: fetch fresh session
+        // Token missing or expiring soon: fetch fresh session (dedup'd)
         try {
-            const { data: { session } } = await supabase.auth.getSession();
+            if (!refreshPromise) {
+                refreshPromise = supabase.auth.getSession().then(({ data: { session } }) => {
+                    if (session?.access_token) {
+                        cachedToken = session.access_token;
+                        const expiresIn = session.expires_in || 3600;
+                        tokenExpiryTime = Date.now() + (expiresIn * 1000);
+                        if (DEBUG_MODE) {
+                            console.log('🔑 Token refreshed, expires in:', Math.round(expiresIn / 60), 'minutes');
+                        }
+                        return session.access_token;
+                    }
+                    return null;
+                }).finally(() => {
+                    refreshPromise = null;
+                });
+            }
 
-            if (session?.access_token) {
-                cachedToken = session.access_token;
-                // Set expiry based on session (default to 1 hour if missing)
-                const expiresIn = session.expires_in || 3600;
-                tokenExpiryTime = now + (expiresIn * 1000);
-
-                config.headers.Authorization = `Bearer ${session.access_token}`;
-
-                if (DEBUG_MODE) {
-                    console.log('🔑 Token refreshed, expires in:', Math.round(expiresIn / 60), 'minutes');
-                }
+            const token = await refreshPromise;
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
             }
         } catch (error) {
-            console.error('❌ Auth error:', error);
+            if (DEBUG_MODE) {
+                console.error('❌ Auth error:', error);
+            }
+            refreshPromise = null;
         }
 
         log.request(config);

@@ -287,12 +287,9 @@ async def submit_feedback(
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "submit_feedback",
+                        status_code=status.HTTP_400_BAD_REQUEST, log_level="warning")
     except Exception as e:
-        logger.error(f"[Feedback] Submit failed: {e}")
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "submit_feedback")
 
 

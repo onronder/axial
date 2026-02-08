@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { RealtimeChannel } from "@supabase/supabase-js";
+import { extractErrorMessage } from "@/lib/error-handling";
 
 /**
  * File status types matching backend status field
@@ -170,8 +171,10 @@ export function useFileStatus(jobId: string | null): UseFileStatusReturn {
             setFiles(data || []);
             setError(null);
         } catch (err) {
-            console.error("Failed to fetch file status:", err);
-            setError(err instanceof Error ? err.message : "Failed to fetch");
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to fetch file status:", extractErrorMessage(err));
+            }
+            setError(extractErrorMessage(err, "Failed to fetch"));
         } finally {
             setIsLoading(false);
         }
@@ -334,8 +337,10 @@ export function useAllActiveFiles(): UseFileStatusReturn {
             setFiles(data || []);
             setError(null);
         } catch (err) {
-            console.error("Failed to fetch active files:", err);
-            setError(err instanceof Error ? err.message : "Failed to fetch");
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to fetch active files:", extractErrorMessage(err));
+            }
+            setError(extractErrorMessage(err, "Failed to fetch"));
         } finally {
             setIsLoading(false);
         }

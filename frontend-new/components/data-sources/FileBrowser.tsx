@@ -17,6 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useDataSources } from "@/hooks/useDataSources";
 import { useToast } from "@/hooks/use-toast";
+import { extractErrorMessage } from "@/lib/error-handling";
 import { DataSourceIcon } from "./DataSourceIcon";
 import { DataSource } from "@/lib/mockData";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
@@ -127,7 +128,9 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
         setIngestedIds(ids);
       } catch {
         // Non-critical - just don't show badges
-        console.warn('Failed to fetch ingested file IDs');
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Failed to fetch ingested file IDs');
+        }
       }
     };
     fetchIngestedIds();
@@ -218,10 +221,9 @@ export function FileBrowser({ source, onBack, isViewer = false }: FileBrowserPro
       });
       setSelectedIds(new Set());
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Please try again.";
       toast({
         title: "Ingestion failed",
-        description: message,
+        description: extractErrorMessage(err, "Please try again."),
         variant: "destructive",
       });
     } finally {

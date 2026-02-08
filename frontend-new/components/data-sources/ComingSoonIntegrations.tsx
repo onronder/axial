@@ -11,6 +11,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import * as Sentry from "@sentry/nextjs";
 
 interface ComingSoonIntegration {
     id: string;
@@ -72,6 +73,16 @@ export function ComingSoonIntegrations() {
     const { toast } = useToast();
 
     const handleClick = (integration: ComingSoonIntegration) => {
+        // Track interest via Sentry so product can measure demand
+        Sentry.captureMessage(`Integration interest: ${integration.id}`, {
+            level: "info",
+            tags: {
+                integration_id: integration.id,
+                integration_name: integration.name,
+                category: integration.category,
+            },
+        });
+
         toast({
             title: `${integration.name} coming soon!`,
             description: "We've noted your interest. You'll be notified when it's available.",

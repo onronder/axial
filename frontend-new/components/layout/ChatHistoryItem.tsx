@@ -67,7 +67,9 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
         router.replace("/dashboard/chat/new");
       }
     } catch (error) {
-      console.error("Delete failed:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete failed:", error);
+      }
     } finally {
       setIsDeleting(false);
     }

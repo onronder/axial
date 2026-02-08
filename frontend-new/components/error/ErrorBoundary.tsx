@@ -8,6 +8,7 @@
 "use client";
 
 import React, { Component, ReactNode } from 'react';
+import * as Sentry from "@sentry/nextjs";
 
 interface ErrorBoundaryProps {
     children: ReactNode;
@@ -38,15 +39,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
         // Log error to console in development
-        console.error('Error caught by boundary:', error, errorInfo);
+        if (process.env.NODE_ENV !== 'production') {
+            console.error('Error caught by boundary:', error, errorInfo);
+        }
 
         // Call custom error handler if provided
         this.props.onError?.(error, errorInfo);
 
-        // TODO: Log to error tracking service (Sentry)
-        // if (typeof window !== 'undefined' && window.Sentry) {
-        //   window.Sentry.captureException(error, { contexts: { react: errorInfo } });
-        // }
+        // Report to Sentry with React component stack context
+        Sentry.captureException(error, {
+            contexts: {
+                react: { componentStack: errorInfo.componentStack },
+            },
+        });
     }
 
     handleReset = () => {
@@ -70,7 +75,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                         <div className="text-6xl">⚠️</div>
                         <h2 className="text-2xl font-bold text-foreground">Something went wrong</h2>
                         <p className="text-muted-foreground">
-                            {this.state.error?.message || 'An unexpected error occurred'}
+                            {process.env.NODE_ENV === 'development'
+                                ? this.state.error?.message || 'An unexpected error occurred'
+                                : 'An unexpected error occurred. Please try again or contact support.'}
                         </p>
                         <button
                             onClick={this.handleReset}

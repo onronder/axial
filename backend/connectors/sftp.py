@@ -343,8 +343,8 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
             finally:
                 try:
                     sftp.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[SFTP] Failed to close SFTP session: {e}")
         except paramiko.AuthenticationException as exc:
             raise ConnectorAuthError("SFTP authentication failed") from exc
         except paramiko.SSHException as exc:
@@ -354,8 +354,8 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
         finally:
             try:
                 client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[SFTP] Failed to close SSH client: {e}")
 
     def _listdir_safe(self, sftp: paramiko.SFTPClient, path: str) -> list[paramiko.SFTPAttributes]:
         try:
@@ -428,8 +428,8 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
             guessed, _ = mimetypes.guess_type(filename)
             if guessed:
                 mime_type = guessed
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[SFTP] Failed to guess MIME type for {filename}: {e}")
 
         return SourceDocument(
             content=content,

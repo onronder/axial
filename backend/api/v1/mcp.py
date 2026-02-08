@@ -15,9 +15,12 @@ from mcp.auth import (
     MCPApiKey,
     MCPApiKeyCreate,
     MCPApiKeyResponse,
+    MCPApiKeyRotateRequest,
+    MCPApiKeyRotateResponse,
     verify_mcp_api_key,
     create_mcp_api_key,
     revoke_mcp_api_key,
+    rotate_mcp_api_key,
     list_mcp_api_keys,
 )
 from mcp.zero_retention import MCPZeroRetention
@@ -202,6 +205,51 @@ async def get_api_key(
         expires_at=data.get("expires_at"),
         revoked_at=data.get("revoked_at"),
     )
+
+
+@router.post("/mcp/api-keys/{key_id}/rotate", response_model=MCPApiKeyRotateResponse)
+@limiter.limit("10/minute")
+async def rotate_api_key(
+    key_id: str,
+    request: Request,
+    payload: MCPApiKeyRotateRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(require_admin),
+    organization_id: str = Depends(get_user_organization_id),
+) -> MCPApiKeyRotateResponse:
+    """
+    Rotate an MCP API key.
+
+    Creates a new key with the same agent name and scopes, and sets the
+    old key to expire after a configurable grace period (default: 24 hours).
+    Both keys remain valid during the grace window.
+
+    Args:
+        key_id: ID of the key to rotate
+        payload: Rotation parameters (grace_period_hours)
+    """
+    from services.audit import audit_logger
+
+    result = await rotate_mcp_api_key(
+        key_id=key_id,
+        organization_id=organization_id,
+        grace_period_hours=payload.grace_period_hours,
+    )
+
+    audit_logger.log(
+        background_tasks,
+        user_id=user_id,
+        action="mcp.api_key.rotate",
+        resource_type="mcp_api_key",
+        resource_id=key_id,
+        details={
+            "new_key_id": result.new_key.id,
+            "grace_period_hours": payload.grace_period_hours,
+        },
+        request=request,
+    )
+
+    return result
 
 
 @router.delete("/mcp/api-keys/{key_id}")

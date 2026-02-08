@@ -151,7 +151,9 @@ export function YoutubeInput({
       setUrl("");
     } catch (error: unknown) {
       const apiError = error as ApiError;
-      console.error("[YoutubeInput] Ingestion failed:", apiError);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("[YoutubeInput] Ingestion failed:", apiError);
+      }
       
       // Extract error message
       const errorMessage = apiError.response?.data?.detail 

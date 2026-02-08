@@ -272,6 +272,88 @@ async def revoke_mcp_api_key(
     return False
 
 
+class MCPApiKeyRotateRequest(BaseModel):
+    """Request model for rotating an MCP API key."""
+    grace_period_hours: int = 24  # Keep old key valid for this long
+
+
+class MCPApiKeyRotateResponse(BaseModel):
+    """Response model for key rotation."""
+    new_key: MCPApiKeyResponse
+    old_key_id: str
+    old_key_expires_at: datetime
+
+
+async def rotate_mcp_api_key(
+    key_id: str,
+    organization_id: str,
+    grace_period_hours: int = 24,
+) -> MCPApiKeyRotateResponse:
+    """
+    Rotate an MCP API key with a grace period.
+
+    Creates a new key with the same agent name and scopes, then sets
+    the old key to expire after the grace period. Both keys are valid
+    during the transition window.
+
+    Args:
+        key_id: ID of the key to rotate
+        organization_id: Organization context
+        grace_period_hours: Hours to keep the old key valid (default 24)
+
+    Returns:
+        MCPApiKeyRotateResponse with new key and old key expiration
+    """
+    from core.db import get_supabase
+    from datetime import timedelta
+
+    supabase = get_supabase()
+
+    # Fetch the existing key
+    result = supabase.table("mcp_api_keys")\
+        .select("*")\
+        .eq("id", key_id)\
+        .eq("organization_id", organization_id)\
+        .is_("revoked_at", "null")\
+        .maybe_single()\
+        .execute()
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="API key not found or already revoked",
+        )
+
+    old_key = result.data
+
+    # Create new key with same agent name and scopes
+    new_key_response = await create_mcp_api_key(
+        organization_id=organization_id,
+        agent_name=old_key["agent_name"],
+        scopes=old_key.get("scopes", ["*"]),
+        expires_in_days=None,  # New key inherits no expiration (can be set separately)
+    )
+
+    # Set grace period expiration on old key
+    grace_expires = datetime.now(timezone.utc) + timedelta(hours=grace_period_hours)
+    supabase.table("mcp_api_keys")\
+        .update({"expires_at": grace_expires.isoformat()})\
+        .eq("id", key_id)\
+        .eq("organization_id", organization_id)\
+        .execute()
+
+    logger.info(
+        f"[MCP Auth] Rotated API key {key_id[:8]}... → {new_key_response.id[:8]}... "
+        f"(grace period: {grace_period_hours}h)"
+    )
+
+    return MCPApiKeyRotateResponse(
+        new_key=new_key_response,
+        old_key_id=key_id,
+        old_key_expires_at=grace_expires,
+    )
+
+
 async def list_mcp_api_keys(
     organization_id: str,
 ) -> List[MCPApiKey]:

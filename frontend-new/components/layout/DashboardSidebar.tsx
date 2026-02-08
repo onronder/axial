@@ -11,7 +11,8 @@ import { ChatHistoryList } from "@/components/layout/ChatHistoryList";
 import { NotificationCenter } from "@/components/layout/NotificationCenter";
 import { UsageIndicator } from "@/components/UsageIndicator";
 import { HelpTrigger } from "@/components/help/HelpTrigger";
-import { HelpModal } from "@/components/help/HelpModal";
+import { Suspense } from "react";
+import { LazyHelpModal } from "@/components/lazy";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { Button } from "@/components/ui/button";
 import { DeterministicAvatar } from "@/components/ui/DeterministicAvatar"; // New import
@@ -120,7 +121,9 @@ export function DashboardSidebar() {
             </div>
 
             {/* Help Modal */}
-            <HelpModal />
+            <Suspense fallback={null}>
+              <LazyHelpModal />
+            </Suspense>
 
             {/* User Menu */}
             <div className="pt-2 border-t border-sidebar-border">

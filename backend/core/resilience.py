@@ -106,8 +106,8 @@ def is_retryable_error(exception: BaseException) -> bool:
             return False
         if isinstance(exception, (RateLimitError, APIError, APITimeoutError, APIConnectionError)):
             return True
-    except Exception:
-        pass
+    except ImportError:
+        pass  # openai not installed
     
     return False
 
@@ -297,8 +297,8 @@ def with_google_retry(max_attempts: int = 3):
                         try:
                             from core.metrics import retry_total
                             retry_total.labels("google_drive", "rate_limit").inc()
-                        except Exception:
-                            pass
+                        except ImportError:
+                            pass  # Metrics not available
                     logger.warning(f"🔄 Google API error {status}, will retry: {exception}")
                     return True
         except ImportError:
@@ -379,7 +379,7 @@ class CircuitBreaker:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         import time
-        
+
         if exc_type is None:
             # Success - reset failures
             if self.state == "half_open":
@@ -390,12 +390,20 @@ class CircuitBreaker:
             # Failure - increment counter
             self.failures += 1
             self.last_failure_time = time.time()
-            
+
             if self.failures >= self.failure_threshold:
                 self.state = "open"
                 logger.error(f"⚡ Circuit breaker '{self.name}' OPENED after {self.failures} failures")
-            
+
         return False  # Don't suppress the exception
+
+    async def __aenter__(self):
+        """Async context manager entry — reuses sync logic."""
+        return self.__enter__()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit — reuses sync logic."""
+        return self.__exit__(exc_type, exc_val, exc_tb)
 
 
 # =============================================================================
@@ -423,7 +431,28 @@ supabase_breaker = CircuitBreaker(
     name="Supabase"
 )
 
-logger.info("🔌 Circuit breakers initialized for: OpenAI, LlamaParse, Supabase")
+# Circuit breaker for Google Drive API
+google_drive_breaker = CircuitBreaker(
+    failure_threshold=5,
+    recovery_timeout=60,
+    name="Google Drive API"
+)
+
+# Circuit breaker for Notion API
+notion_breaker = CircuitBreaker(
+    failure_threshold=5,
+    recovery_timeout=60,
+    name="Notion API"
+)
+
+# Circuit breaker for Dropbox API
+dropbox_breaker = CircuitBreaker(
+    failure_threshold=5,
+    recovery_timeout=60,
+    name="Dropbox API"
+)
+
+logger.info("🔌 Circuit breakers initialized for: OpenAI, LlamaParse, Supabase, Google Drive, Notion, Dropbox")
 
 
 # =============================================================================

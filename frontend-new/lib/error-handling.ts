@@ -115,3 +115,17 @@ export function isNetworkError(error: unknown): boolean {
     }
     return false;
 }
+
+/**
+ * Extract Retry-After seconds from a 429 response.
+ * Returns the number of seconds to wait, or null if not available.
+ */
+export function getRetryAfterSeconds(error: unknown): number | null {
+    if (!isAxiosError(error) || error.response?.status !== 429) {
+        return null;
+    }
+    const header = error.response.headers?.['retry-after'];
+    if (!header) return null;
+    const seconds = Number(header);
+    return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null;
+}

@@ -169,7 +169,9 @@ export function URLCrawlerInput({ source, disabled = false, disabledReason }: UR
       setDepth(1); // Reset depth
     } catch (error: unknown) {
       const apiError = error as ApiError;
-      console.error("Crawl failed:", apiError);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Crawl failed:", apiError);
+      }
       toast({
         title: "Crawl Failed",
         description: apiError.response?.data?.detail || "Could not crawl the URL. Please try again.",
@@ -200,7 +202,9 @@ export function URLCrawlerInput({ source, disabled = false, disabledReason }: UR
       setActiveCrawl(null);
     } catch (error: unknown) {
       const apiError = error as ApiError;
-      console.error("Cancel crawl failed:", apiError);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Cancel crawl failed:", apiError);
+      }
       toast({
         title: "Cancel Failed",
         description: apiError.response?.data?.detail || "Could not cancel the crawl. Please try again.",

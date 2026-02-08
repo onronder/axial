@@ -89,7 +89,9 @@ export const useAuth = () => {
                 const { data: { session }, error } = await supabase.auth.getSession();
 
                 if (error) {
-                    console.error("Session fetch error:", error.message);
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.error("Session fetch error:", error.message);
+                    }
                 }
 
                 if (mounted) {
@@ -97,7 +99,9 @@ export const useAuth = () => {
                     setLoading(false);
                 }
             } catch (error) {
-                console.error("Auth init error:", error);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error("Auth init error:", error);
+                }
                 if (mounted) {
                     setUser(null);
                     setLoading(false);
@@ -270,10 +274,14 @@ export const useAuth = () => {
         try {
             const { error } = await supabase.auth.signOut();
             if (error) {
-                console.error("Logout error:", error.message);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error("Logout error:", error.message);
+                }
             }
         } catch (error) {
-            console.error("Logout exception:", error);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Logout exception:", error);
+            }
         }
 
         // 4. Clear local user state last
@@ -286,7 +294,9 @@ export const useAuth = () => {
     const getSession = async () => {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
-            console.error("Get session error:", error.message);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Get session error:", error.message);
+            }
             return null;
         }
         return session;

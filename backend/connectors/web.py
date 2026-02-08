@@ -216,7 +216,15 @@ class WebConnector(EnhancedConnector, BaseConnector):
     def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update(self.DEFAULT_HEADERS)
-    
+
+    def close(self) -> None:
+        """Close the underlying HTTP session to release connections."""
+        if hasattr(self, "session") and self.session:
+            self.session.close()
+
+    def __del__(self) -> None:
+        self.close()
+
     async def authorize(self, user_id: str) -> bool:
         """Web connector is public/open, always authorized."""
         return True
@@ -871,20 +879,20 @@ class WebConnector(EnhancedConnector, BaseConnector):
         try:
             return transcript_list.find_manually_created_transcript(['en', 'en-US', 'en-GB'])
         except Exception:
-            pass
-        
+            pass  # Expected: manual EN transcript not available, try next
+
         # Try auto-generated English
         try:
             return transcript_list.find_generated_transcript(['en', 'en-US', 'en-GB'])
         except Exception:
-            pass
+            pass  # Expected: auto-generated EN transcript not available, try next
         
         # Fallback: any available language
         try:
             for transcript in transcript_list:
                 return transcript
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[YouTube] No transcripts available: {e}")
         
         return None
     
@@ -1155,7 +1163,8 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
     def _enforce_public_endpoint(self, url: str) -> None:
         """
-        Explicit SSRF guard: resolve hostname and block private/loopback/link-local targets.
+        Explicit SSRF guard: resolve hostname via getaddrinfo (all records)
+        and block any private/loopback/link-local/reserved/multicast targets.
         """
         parsed = urlparse(url)
         hostname = parsed.hostname
@@ -1163,12 +1172,14 @@ class WebConnector(EnhancedConnector, BaseConnector):
             raise ValueError("Security Violation: Access to private network denied.")
 
         try:
-            ip_str = socket.gethostbyname(hostname)
-            ip_obj = ipaddress.ip_address(ip_str)
+            infos = socket.getaddrinfo(hostname, None)
+            for info in infos:
+                ip_obj = ipaddress.ip_address(info[4][0])
+                if not self._is_public_ip(ip_obj):
+                    raise ValueError("Security Violation: Access to private network denied.")
+        except ValueError:
+            raise
         except Exception:
-            raise ValueError("Security Violation: Access to private network denied.")
-
-        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
             raise ValueError("Security Violation: Access to private network denied.")
 
     @lru_cache(maxsize=256)

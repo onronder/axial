@@ -1,11 +1,12 @@
 "use client";
 
-import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache, onlineManager } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useEffect, useState, ReactNode } from "react";
 import { toast } from "sonner"; // Using sonner as per package.json
-import { AxiosError } from "axios";
+import { AxiosError, isAxiosError } from "axios";
 import { setupCrossTabSync } from "@/lib/crossTabSync";
+import { getRetryAfterSeconds } from "@/lib/error-handling";
 
 interface QueryProviderProps {
     children: ReactNode;
@@ -15,8 +16,25 @@ interface QueryProviderProps {
  * Handle global API errors (e.g., 500 Internal Server Error)
  */
 function handleGlobalError(error: unknown) {
-    if (error instanceof AxiosError) {
-        if (error.response?.status === 500) {
+    if (isAxiosError(error)) {
+        const status = error.response?.status;
+
+        if (status === 429) {
+            const retryAfter = getRetryAfterSeconds(error);
+            if (retryAfter) {
+                toast.error("Too many requests", {
+                    description: `Please wait ${retryAfter} seconds before trying again.`,
+                    duration: retryAfter * 1000,
+                });
+            } else {
+                toast.error("Too many requests", {
+                    description: "Please wait a moment before trying again.",
+                });
+            }
+            return;
+        }
+
+        if (status === 500) {
             toast.error("Something went wrong on our end.", {
                 description: "Our team has been notified. Please try again later.",
             });
@@ -66,6 +84,21 @@ export function QueryProvider({ children }: QueryProviderProps) {
                 },
             })
     );
+
+    useEffect(() => {
+        // Sync React Query's online state with browser events so queries
+        // pause automatically when the network drops.
+        onlineManager.setEventListener((setOnline) => {
+            const onlineHandler = () => setOnline(true);
+            const offlineHandler = () => setOnline(false);
+            window.addEventListener("online", onlineHandler);
+            window.addEventListener("offline", offlineHandler);
+            return () => {
+                window.removeEventListener("online", onlineHandler);
+                window.removeEventListener("offline", offlineHandler);
+            };
+        });
+    }, []);
 
     useEffect(() => {
         const cleanup = setupCrossTabSync(queryClient);

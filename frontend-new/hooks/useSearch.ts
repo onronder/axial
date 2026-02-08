@@ -27,6 +27,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { dedupedRequest } from '@/lib/request-dedup';
+import { extractErrorMessage } from '@/lib/error-handling';
 
 // =============================================================================
 // Types
@@ -202,9 +203,10 @@ export const useSearch = (options: UseSearchOptions = {}): UseSearchReturn => {
                 return [];
             }
 
-            console.error('Search failed:', err);
-            const message = err instanceof Error ? err.message : 'Search failed';
-            const errorMessage = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || message;
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Search failed:', extractErrorMessage(err));
+            }
+            const errorMessage = extractErrorMessage(err, 'Search failed');
             setError(errorMessage);
             setResults([]);
             return [];

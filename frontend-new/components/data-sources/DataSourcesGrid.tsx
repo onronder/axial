@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { Search, Filter, RefreshCw, Database } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
@@ -21,8 +21,7 @@ import { URLCrawlerInput } from "./URLCrawlerInput";
 import { YoutubeInput } from "./YoutubeInput";
 import { FileUploadZone } from "./FileUploadZone";
 import { ComingSoonIntegrations } from "./ComingSoonIntegrations";
-import { SftpConnectModal } from "./SftpConnectModal";
-import { S3ConnectModal } from "./S3ConnectModal";
+import { LazySftpConnectModal, LazyS3ConnectModal } from "@/components/lazy";
 import { useDataSources } from "@/hooks/useDataSources";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
@@ -369,17 +368,21 @@ export function DataSourcesGrid() {
         )}
       </div>
 
-      <SftpConnectModal
-        open={sftpConnectOpen}
-        onOpenChange={setSftpConnectOpen}
-        onConnected={refresh}
-      />
+      <Suspense fallback={null}>
+        <LazySftpConnectModal
+          open={sftpConnectOpen}
+          onOpenChange={setSftpConnectOpen}
+          onConnected={refresh}
+        />
+      </Suspense>
 
-      <S3ConnectModal
-        open={s3ConnectOpen}
-        onOpenChange={setS3ConnectOpen}
-        onConnected={refresh}
-      />
+      <Suspense fallback={null}>
+        <LazyS3ConnectModal
+          open={s3ConnectOpen}
+          onOpenChange={setS3ConnectOpen}
+          onConnected={refresh}
+        />
+      </Suspense>
 
       {/* Coming Soon Section */}
       <ComingSoonIntegrations />

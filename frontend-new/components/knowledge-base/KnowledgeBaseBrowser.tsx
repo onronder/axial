@@ -151,6 +151,7 @@ export function KnowledgeBaseBrowser() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteFolderId, setDeleteFolderId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   
   // Refs for keyboard navigation
@@ -327,15 +328,18 @@ export function KnowledgeBaseBrowser() {
 
   const handleBulkDeleteSelected = async () => {
     // Note: Button is already disabled when no selections, so selectedIds.size > 0 here
-    const confirmed = confirm(`Delete ${selectedIds.size} selected item(s)? This cannot be undone.`);
-    if (!confirmed) return;
-    
+    setShowBulkDeleteDialog(true);
+  };
+
+  const executeBulkDelete = async () => {
     try {
       await bulkDeleteDocuments({ documentIds: Array.from(selectedIds) });
       setSelectedIds(new Set());
       refreshUsage(true);
     } catch {
       // Error handled by hook
+    } finally {
+      setShowBulkDeleteDialog(false);
     }
   };
 
@@ -829,6 +833,28 @@ export function KnowledgeBaseBrowser() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete All
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Dialog */}
+      <AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} selected item(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. All selected documents and their associated data
+              will be permanently removed from the knowledge base.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={executeBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

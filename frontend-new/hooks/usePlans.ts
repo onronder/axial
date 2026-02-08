@@ -69,7 +69,9 @@ export function usePlans() {
                     setError(null);
                 } else {
                     // Fallback if API returns empty array (e.g. Polar token issue)
-                    console.warn("[usePlans] API returned empty plans, using fallback.");
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.warn("[usePlans] API returned empty plans, using fallback.");
+                    }
                     throw new Error("Empty plans returned from API");
                 }
             } catch (err) {
@@ -78,7 +80,9 @@ export function usePlans() {
                     return;
                 }
 
-                console.error('[usePlans] Failed to fetch plans:', err);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error('[usePlans] Failed to fetch plans:', err);
+                }
                 setError(err instanceof Error ? err : new Error('Unknown error fetching plans'));
 
                 // Fallback static plans to ensure UI never looks broken

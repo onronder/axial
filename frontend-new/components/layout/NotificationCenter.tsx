@@ -120,6 +120,8 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
 
     return (
         <div
+            role="button"
+            tabIndex={0}
             className={cn(
                 "p-3 border-b border-border transition-colors cursor-pointer",
                 "hover:bg-muted/50",
@@ -127,6 +129,7 @@ function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps)
                 safeActionUrl && "hover:bg-primary/5"
             )}
             onClick={handleClick}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(); } }}
         >
             <div className="flex gap-3">
                 {/* Icon */}

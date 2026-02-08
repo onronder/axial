@@ -4,7 +4,7 @@ Chat API Endpoints
 Scope-aware conversational RAG with Dominance Guard for context disambiguation.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, AsyncGenerator
@@ -92,13 +92,17 @@ async def list_conversations(
     request: Request,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ):
-    """List all conversations for the organization (team-shared)."""
+    """List conversations for the organization (team-shared) with pagination."""
     supabase = get_supabase()
-    
+
     try:
         # Organization-wide conversation access for team collaboration
-        response = supabase.table("conversations").select("*").eq("organization_id", organization_id).order("updated_at", desc=True).execute()
+        response = supabase.table("conversations").select("*").eq(
+            "organization_id", organization_id
+        ).order("updated_at", desc=True).range(offset, offset + limit - 1).execute()
         return response.data
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_conversations")
@@ -250,7 +254,7 @@ class ChatRequest(BaseModel):
     """
     query: str = Field(..., min_length=1, max_length=20000)
     conversation_id: Optional[str] = Field(None, max_length=50)
-    history: Optional[List[Dict[str, str]]] = []
+    history: Optional[List[Dict[str, str]]] = Field(default=[], max_length=100)
     model: str = Field(default=settings.MODEL_ALIAS_FAST, max_length=50)
     stream: bool = Field(default=False)
     scope_id: Optional[str] = Field(
@@ -1238,7 +1242,7 @@ async def chat_endpoint(
         query_vector = embeddings_model.embed_query(search_query)
     except Exception as e:
         logger.error(f"ERROR: Embedding failed: {e}")
-        raise HTTPException(500, f"Embedding failed: {e}")
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "embed_query")
 
     # ========== STEP 8: HYBRID SEARCH (Scope-Aware) ==========
     # If explicit scope_id provided, use scoped search
@@ -1298,7 +1302,7 @@ async def chat_endpoint(
 
     except Exception as e:
         logger.error("ERROR: Retrieval failed: %s", e)
-        raise HTTPException(500, f"Retrieval failed: {e}")
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "retrieve_documents")
 
     # ========== STEP 9: DOMINANCE GUARD (Scope Analysis) ==========
     scope_context: Optional[ScopeContext] = None

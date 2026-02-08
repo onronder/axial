@@ -20,6 +20,7 @@ import { UsageWarningBanner } from "@/components/UsageWarningBanner";
 import { PaywallGuard } from "@/components/PaywallGuard";
 import { AppErrorBoundary, SidebarErrorBoundary } from "@/components/providers/ErrorBoundary";
 import { ConnectionStatusIndicator } from "@/components/layout/ConnectionStatusIndicator";
+import { OfflineBanner } from "@/components/layout/OfflineBanner";
 import { useQueryClient } from "@tanstack/react-query";
 import { prefetchDashboardData } from "@/lib/prefetch";
 import { Spinner } from "@/components/ui/spinner";
@@ -74,6 +75,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                             <IngestionProgressProvider>
                             <PaywallGuard>
                             <div className="min-h-screen bg-background">
+                                <OfflineBanner />
                                 {/* DESKTOP SIDEBAR - Isolated error boundary */}
                                 <aside
                                     className="fixed inset-y-0 left-0 z-40 hidden md:block border-r border-sidebar-border"

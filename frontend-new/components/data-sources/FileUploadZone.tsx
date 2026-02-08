@@ -87,7 +87,9 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
         hash = await calculateSHA256(file, (progress) => {
           setHashProgress(progress);
         });
-        console.log(`📊 [Upload] Hash for ${file.name}: ${hash.slice(0, 12)}...`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`📊 [Upload] Hash for ${file.name}: ${hash.slice(0, 12)}...`);
+        }
       }
 
       // Step 2: Check for duplicates (skip if forceOverwrite)
@@ -96,7 +98,9 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
         const dupCheck = await checkDuplicates(hash, file.name, file.size);
         
         if (dupCheck.is_duplicate && dupCheck.action_required === "confirm_overwrite") {
-          console.log(`⚠️ [Upload] Duplicate detected for ${file.name}`);
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`⚠️ [Upload] Duplicate detected for ${file.name}`);
+          }
           // Pause and show modal - user will decide
           setPendingDuplicate({
             file,
@@ -148,7 +152,9 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Upload failed";
-      console.error(`Failed to upload ${file.name}:`, message);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`Failed to upload ${file.name}:`, message);
+      }
       return false;
     }
   }, [disabled, registerJob, toast]);
@@ -215,7 +221,9 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
 
     if (action === "overwrite") {
       // User chose to overwrite - proceed with upload
-      console.log(`✅ [Upload] User confirmed overwrite for ${file.name}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`✅ [Upload] User confirmed overwrite for ${file.name}`);
+      }
       const success = await uploadFile(file, contentHash, true);
       
       if (success) {
@@ -226,7 +234,9 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
       }
     } else {
       // User cancelled - skip this file
-      console.log(`❌ [Upload] User cancelled upload for ${file.name}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`❌ [Upload] User cancelled upload for ${file.name}`);
+      }
       toast({
         title: "Upload Cancelled",
         description: `Skipped ${file.name} (duplicate).`,

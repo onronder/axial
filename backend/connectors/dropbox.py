@@ -39,6 +39,7 @@ from connectors.limits import connector_fetch_limit
 from connectors.utils import load_integration
 from core.config import settings
 from core.scopes import build_scope_uri
+from core.resilience import dropbox_breaker
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
@@ -313,14 +314,15 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
         
         while True:
             try:
-                response = requests.request(
-                    method,
-                    url,
-                    headers=headers,
-                    json=json_body if json_body else None,
-                    timeout=timeout,
-                    stream=stream,
-                )
+                with dropbox_breaker:
+                    response = requests.request(
+                        method,
+                        url,
+                        headers=headers,
+                        json=json_body if json_body else None,
+                        timeout=timeout,
+                        stream=stream,
+                    )
             except requests.RequestException as exc:
                 raise ConnectorTransientError(f"Dropbox network error: {exc}") from exc
             
@@ -661,8 +663,8 @@ class DropboxConnector(EnhancedConnector, BaseConnector):
                     if namespace_id:
                         resolved["namespace_id"] = namespace_id
                         logger.info(f"🏢 [Dropbox] Team account detected, namespace: {namespace_id}")
-                except Exception:
-                    pass  # Continue without namespace
+                except Exception as e:
+                    logger.debug(f"[Dropbox] Failed to resolve team namespace: {e}")
             return resolved
         
         # Load integration from database

@@ -883,7 +883,9 @@ function ArticleFeedback({ articleId }: { articleId: string }) {
     const handleFeedback = (type: 'helpful' | 'not-helpful') => {
         setFeedback(type);
         setShowThankYou(true);
-        console.log(`Article ${articleId} feedback: ${type}`);
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`Article ${articleId} feedback: ${type}`);
+        }
     };
 
     if (showThankYou) {

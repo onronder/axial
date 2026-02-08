@@ -125,7 +125,9 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
             setFeedbackState(data.feedback || {});
         } catch (err) {
             // Silently fail - feedback state is optional UI enhancement
-            console.debug('[useFeedback] Failed to fetch feedback state:', err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.debug('[useFeedback] Failed to fetch feedback state:', err);
+            }
         }
     }, [conversationId]);
     
@@ -194,10 +196,12 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
             }
             
             // Log for debugging
-            console.debug(
-                `[useFeedback] Submitted ${rating} feedback for message ${messageId.slice(0, 8)}...`,
-                data.is_update ? '(updated)' : '(new)'
-            );
+            if (process.env.NODE_ENV !== 'production') {
+                console.debug(
+                    `[useFeedback] Submitted ${rating} feedback for message ${messageId.slice(0, 8)}...`,
+                    data.is_update ? '(updated)' : '(new)'
+                );
+            }
             
         } catch (err) {
             const errorMessage = getErrorMessage(err);
@@ -210,7 +214,9 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
                 duration: 4000,
             });
             
-            console.error('[useFeedback] Submit failed:', err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('[useFeedback] Submit failed:', err);
+            }
         } finally {
             setIsSubmitting(false);
         }

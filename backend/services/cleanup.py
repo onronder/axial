@@ -661,8 +661,8 @@ class AccountCleanupService:
                     .eq("id", scope_id)\
                     .eq("organization_id", organization_id)\
                     .execute()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[Cleanup] Failed to delete scope record: {e}")
 
             # Ghost Protocol: Log scope deletion to security audit
             await self._log_security_event(

@@ -465,9 +465,11 @@ class ScopeGuardStateMachine:
     async def get_pending_approvals(
         self,
         organization_id: str,
+        limit: int = 50,
+        offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """
-        Get all pending approval requests for an organization.
+        Get pending approval requests for an organization with pagination.
         """
         from core.db import get_supabase
 
@@ -482,12 +484,13 @@ class ScopeGuardStateMachine:
             .lt("expires_at", now.isoformat())\
             .execute()
 
-        # Fetch pending
+        # Fetch pending with pagination
         result = supabase.table("action_approvals")\
             .select("*")\
             .eq("organization_id", organization_id)\
             .eq("status", ApprovalState.PENDING.value)\
             .order("requested_at", desc=True)\
+            .range(offset, offset + limit - 1)\
             .execute()
 
         return result.data or []

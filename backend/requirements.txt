@@ -44,6 +44,7 @@ python-multipart>=0.0.18  # CVE-2024-53981 DoS fix
 # --- REDIS & CELERY ---
 redis==5.0.1
 celery[redis]==5.3.6
+flower>=2.0.0
 
 # --- AI & LANGCHAIN ECOSYSTEM ---
 # CRITICAL: All langchain packages must be 0.3.x+ for langchain-core>=0.3.81

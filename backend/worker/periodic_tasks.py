@@ -23,13 +23,47 @@ from core.metrics import (
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="cleanup_old_jobs", ignore_result=True)
+def _acquire_periodic_lock(task_name: str, ttl: int = 300) -> bool:
+    """
+    Acquire a Redis-based distributed lock for a periodic task.
+    Prevents duplicate execution when multiple Celery Beat instances run.
+
+    Args:
+        task_name: Unique task identifier
+        ttl: Lock TTL in seconds (should exceed expected task duration)
+
+    Returns:
+        True if lock acquired, False if another worker holds it
+    """
+    try:
+        from core.config import settings
+        import redis as sync_redis
+        r = sync_redis.from_url(settings.REDIS_URL)
+        return bool(r.set(f"periodic_lock:{task_name}", "1", nx=True, ex=ttl))
+    except Exception as e:
+        logger.warning(f"⚠️ [Lock] Failed to acquire lock for {task_name}: {e}")
+        return True  # Fail-open: allow task to run if Redis is down
+
+
+@celery_app.task(
+    name="cleanup_old_jobs",
+    ignore_result=True,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    max_retries=2,
+    soft_time_limit=120,
+    time_limit=150,
+)
 def cleanup_old_jobs():
     """
     Clean up old completed ingestion jobs (older than 30 days).
-    
+
     Runs daily at 2 AM via Celery Beat.
     """
+    if not _acquire_periodic_lock("cleanup_old_jobs", ttl=3600):
+        logger.info("🔒 [Cleanup] cleanup_old_jobs: lock held, skipping")
+        return {"skipped": True}
+
     try:
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
@@ -51,7 +85,7 @@ def cleanup_old_jobs():
         return {"error": str(e)}
 
 
-@celery_app.task(name="update_memory_metrics", ignore_result=True)
+@celery_app.task(name="update_memory_metrics", ignore_result=True, soft_time_limit=30, time_limit=60)
 def update_memory_metrics():
     """
     Update Prometheus memory metrics.
@@ -83,13 +117,17 @@ def update_memory_metrics():
 
 
 # Register DLQ retry task
-@celery_app.task(name="worker.dlq_worker.retry_failed_tasks", ignore_result=True)
+@celery_app.task(name="worker.dlq_worker.retry_failed_tasks", ignore_result=True, soft_time_limit=300, time_limit=330)
 def retry_failed_tasks_task():
     """
     Wrapper task for DLQ retry function.
-    
+
     Runs every 5 minutes via Celery Beat.
     """
+    if not _acquire_periodic_lock("retry_failed_tasks", ttl=600):
+        logger.info("🔒 [DLQ] retry_failed_tasks: lock held, skipping")
+        return {"skipped": True}
+
     from worker.dlq_worker import retry_failed_tasks
     return retry_failed_tasks()
 
@@ -98,14 +136,26 @@ def retry_failed_tasks_task():
 # DATA HYGIENE CLEANUP TASKS
 # ============================================================
 
-@celery_app.task(name="cleanup_old_file_status", ignore_result=True)
+@celery_app.task(
+    name="cleanup_old_file_status",
+    ignore_result=True,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    max_retries=2,
+    soft_time_limit=120,
+    time_limit=150,
+)
 def cleanup_old_file_status():
     """
     Clean up old ingestion file status entries (older than 30 days).
-    
+
     File status records are transient - only needed during/after ingestion.
     Runs daily at 3 AM via Celery Beat.
     """
+    if not _acquire_periodic_lock("cleanup_old_file_status", ttl=3600):
+        logger.info("🔒 [Cleanup] cleanup_old_file_status: lock held, skipping")
+        return {"skipped": True}
+
     try:
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
@@ -127,14 +177,26 @@ def cleanup_old_file_status():
         return {"error": str(e)}
 
 
-@celery_app.task(name="cleanup_old_audit_logs", ignore_result=True)
+@celery_app.task(
+    name="cleanup_old_audit_logs",
+    ignore_result=True,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    max_retries=2,
+    soft_time_limit=120,
+    time_limit=150,
+)
 def cleanup_old_audit_logs():
     """
     Clean up old audit log entries (older than 90 days).
-    
+
     GDPR compliance: Retain audit logs for 90 days, then delete.
     Runs weekly on Sunday at 4 AM via Celery Beat.
     """
+    if not _acquire_periodic_lock("cleanup_old_audit_logs", ttl=3600):
+        logger.info("🔒 [Cleanup] cleanup_old_audit_logs: lock held, skipping")
+        return {"skipped": True}
+
     try:
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=90)
@@ -157,25 +219,37 @@ def cleanup_old_audit_logs():
 # RECONCILIATION TASKS
 # ============================================================
 
-@celery_app.task(name="cleanup_orphan_scope_placeholders", ignore_result=True)
+@celery_app.task(
+    name="cleanup_orphan_scope_placeholders",
+    ignore_result=True,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    max_retries=2,
+    soft_time_limit=120,
+    time_limit=150,
+)
 def cleanup_orphan_scope_placeholders():
     """
     Clean up orphan scope identity placeholders.
-    
+
     Placeholders are created before document ingestion to satisfy FK constraints.
     If ingestion fails or is cancelled, these placeholders can remain and:
     1. Count toward the user's scope quota
     2. Show "Generating identity..." in UI
     3. Clutter the database
-    
+
     Cleanup criteria:
     - status = 'placeholder'
     - is_placeholder = true in attributes
     - No associated documents exist
     - Created more than 72 hours ago (allows time for slow ingestions)
-    
+
     Runs daily at 5 AM via Celery Beat.
     """
+    if not _acquire_periodic_lock("cleanup_orphan_scope_placeholders", ttl=3600):
+        logger.info("🔒 [Cleanup] cleanup_orphan_scope_placeholders: lock held, skipping")
+        return {"skipped": True}
+
     try:
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(hours=72)
@@ -230,13 +304,25 @@ def cleanup_orphan_scope_placeholders():
         return {"error": str(e)}
 
 
-@celery_app.task(name="worker.periodic_tasks.reconcile_ingestion_jobs", ignore_result=True)
+@celery_app.task(
+    name="worker.periodic_tasks.reconcile_ingestion_jobs",
+    ignore_result=True,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    max_retries=2,
+    soft_time_limit=180,
+    time_limit=210,
+)
 def reconcile_ingestion_jobs():
     """
     Reconcile ingestion jobs when Redis counters are missing or delayed.
 
     Ensures jobs complete based on database file status counts.
     """
+    if not _acquire_periodic_lock("reconcile_ingestion_jobs", ttl=600):
+        logger.info("🔒 [Reconcile] reconcile_ingestion_jobs: lock held, skipping")
+        return {"skipped": True}
+
     try:
         supabase = get_supabase()
         jobs_res = supabase.table("ingestion_jobs").select("id,user_id,total_files,status").eq(

@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Query
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from core.security import get_current_user
 from core.db import get_supabase
 from core.rate_limit import limiter
@@ -110,9 +110,9 @@ class DocumentStatsDTO(BaseModel):
 
 class DocumentUpdate(BaseModel):
     """Request model for updating document metadata."""
-    title: Optional[str] = None
-    description: Optional[str] = None
-    tags: Optional[List[str]] = None
+    title: Optional[str] = Field(None, max_length=500)
+    description: Optional[str] = Field(None, max_length=2000)
+    tags: Optional[List[str]] = Field(None, max_length=50)
 
 
 class DocumentChunkDTO(BaseModel):
@@ -398,7 +398,7 @@ async def bulk_delete_documents(
                 .execute()
             doc_ids.extend([row["id"] for row in (source_docs.data or []) if row.get("id")])
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to resolve documents for source: {e}")
+            raise api_error(ApiErrorCode.DATABASE_ERROR, e, "resolve_documents_by_source")
 
         scope_prefixes = get_scope_prefixes(normalized_source)
         for scope_prefix in scope_prefixes:
@@ -446,10 +446,8 @@ async def bulk_delete_documents(
                     **execution_result.get("result", {}),
                 }
             except ValueError as e:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=str(e)
-                )
+                raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "execute_approval",
+                                status_code=status.HTTP_400_BAD_REQUEST, log_level="warning")
         else:
             # Request approval for bulk delete
             state_machine = ScopeGuardStateMachine()
@@ -497,11 +495,7 @@ async def bulk_delete_documents(
                     **approval_result,
                 }
             except Exception as e:
-                logger.error(f"[ScopeGuard] Failed to request approval: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to request approval: {str(e)}"
-                )
+                raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "request_approval")
 
     deleted: List[str] = []
     failed: List[Dict[str, str]] = []
@@ -546,8 +540,8 @@ async def bulk_delete_documents(
                 },
                 request=request
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Documents] Failed to log audit event: {e}")
 
     return {
         "status": "success",
@@ -724,11 +718,11 @@ async def get_document_chunks(
     request: Request,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
-    limit: int = 50,
-    offset: int = 0
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
 ):
     """
-    Get all chunks for a document.
+    Get chunks for a document with pagination.
     
     Org-scoped: Team members can view chunks of shared documents.
     
@@ -1046,8 +1040,8 @@ async def get_wipe_status(
                 .execute()
             if doc_response and doc_response.data:
                 doc_name = doc_response.data.get("title", "Document")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Documents] Failed to fetch document title for wipe status: {e}")
 
         # Map tombstone status to wipe status
         is_complete = False
@@ -1189,5 +1183,5 @@ async def _execute_secure_wipe(
                 .eq("request_id", wipe_id)\
                 .eq("organization_id", organization_id)\
                 .execute()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Documents] Failed to delete wipe request record: {e}")

@@ -37,7 +37,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                 setSession(session);
                 setUser(session?.user ?? null);
             } catch (error) {
-                console.error("Failed to get session:", error);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error("Failed to get session:", error);
+                }
             } finally {
                 setLoading(false);
             }

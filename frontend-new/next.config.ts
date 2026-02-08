@@ -1,6 +1,28 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
+// Build-time validation of required environment variables
+const requiredEnvVars = [
+  'NEXT_PUBLIC_SUPABASE_URL',
+  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+] as const;
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        `Missing required environment variable: ${envVar}. ` +
+        `Set it in your deployment environment.`
+      );
+    } else {
+      console.warn(
+        `⚠️  Missing environment variable: ${envVar}. ` +
+        `Build will continue but runtime features may not work.`
+      );
+    }
+  }
+}
+
 const nextConfig: NextConfig = {
   // Production optimizations
   compress: true, // Enable gzip/brotli compression
@@ -136,6 +158,11 @@ const nextConfig: NextConfig = {
             // Cross-Origin policies for modern security
             key: "Cross-Origin-Opener-Policy",
             value: "same-origin",
+          },
+          {
+            // HSTS: Enforce HTTPS for 1 year, include subdomains, preload-eligible
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains; preload",
           },
         ],
       },

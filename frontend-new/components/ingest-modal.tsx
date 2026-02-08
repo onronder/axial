@@ -206,7 +206,9 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
         } catch (err) {
             const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
-            console.error(message)
+            if (process.env.NODE_ENV !== 'production') {
+                console.error(message)
+            }
             toast({
                 title: "Ingestion Failed",
                 description: message,

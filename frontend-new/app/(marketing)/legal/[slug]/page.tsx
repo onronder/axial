@@ -27,7 +27,9 @@ async function getDocContent(slug: string) {
         const fileContent = await fs.readFile(filePath, "utf8");
         return fileContent;
     } catch (error) {
-        console.error(`Error reading legal doc ${slug}:`, error);
+        if (process.env.NODE_ENV !== 'production') {
+            console.error(`Error reading legal doc ${slug}:`, error);
+        }
         return null;
     }
 }

@@ -32,6 +32,27 @@ const stableKey = (key: unknown[]): string | null => {
   }
 };
 
+/**
+ * Only sync lightweight, cross-tab-relevant queries.
+ * Large payloads (documents, feedback, search results) are excluded
+ * to avoid expensive serialization and BroadcastChannel overhead.
+ */
+const SYNC_ALLOWLIST_PREFIXES = [
+  "user",
+  "profile",
+  "team",
+  "notifications",
+  "usage",
+  "quota",
+  "settings",
+] as const;
+
+function shouldSync(queryKey: unknown[]): boolean {
+  const first = queryKey[0];
+  if (typeof first !== "string") return false;
+  return SYNC_ALLOWLIST_PREFIXES.some((prefix) => first.startsWith(prefix));
+}
+
 export function setupCrossTabSync(queryClient: QueryClient) {
   if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
     return () => {};
@@ -65,6 +86,7 @@ export function setupCrossTabSync(queryClient: QueryClient) {
     if (event.type !== "updated") return;
 
     const query = event.query;
+    if (!shouldSync(query.queryKey)) return;
     const keyHash = stableKey(query.queryKey);
     if (!keyHash || suppressed.has(keyHash)) return;
 

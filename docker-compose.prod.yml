@@ -1,0 +1,80 @@
+# ==============================================================================
+# Axial — Production Docker Compose Override
+# ==============================================================================
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# This override file applies production-specific settings:
+#   - No exposed ports (internal Docker networking only)
+#   - Stricter resource limits
+#   - ClamAV malware scanning enabled
+#   - Network isolation between services
+#   - Secrets via environment (not plaintext .env where possible)
+# ==============================================================================
+
+services:
+  backend:
+    # No ports exposed — traffic reaches backend via reverse proxy (nginx/Caddy)
+    ports: !reset []
+    environment:
+      - ENVIRONMENT=production
+      - MALWARE_SCAN_FAIL_CLOSED=true
+      - STRICT_ENCRYPTION_MODE=true
+      - SECURE_WIPE_PASSES=3
+      - SKIP_FRESHCLAM=false
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4'
+        reservations:
+          memory: 1G
+          cpus: '1'
+    networks:
+      - backend-net
+      - redis-net
+
+  flower:
+    # Flower should NOT be publicly accessible in production.
+    # Access via SSH tunnel or internal network only.
+    ports: !reset []
+    environment:
+      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-changeme}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    networks:
+      - backend-net
+      - redis-net
+
+  redis:
+    # No ports exposed — only accessible within Docker network
+    ports: !reset []
+    command: redis-server --maxmemory 768mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis-data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    networks:
+      - redis-net
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  backend-net:
+    driver: bridge
+  redis-net:
+    driver: bridge
+    internal: true

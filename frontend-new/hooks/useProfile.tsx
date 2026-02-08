@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { api } from '@/lib/api';
+import { dedupedRequest } from '@/lib/request-dedup';
 import { useToast } from '@/hooks/use-toast';
 
 export interface UserProfile {
@@ -72,14 +73,16 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         setIsLoading(true);
         setError(null);
         try {
-            const { data } = await api.get('/settings/profile');
+            const { data } = await dedupedRequest('profile', () => api.get('/settings/profile'));
             if (process.env.NODE_ENV === 'development') {
                 console.log('📋 [useProfile] ✅ Profile fetched:', data?.first_name, data?.last_name);
             }
             setProfile(data);
         } catch (err: unknown) {
             const apiError = err as ApiError;
-            console.error('📋 [useProfile] ❌ Failed:', apiError.response?.status, apiError.message);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('📋 [useProfile] ❌ Failed:', apiError.response?.status, apiError.message);
+            }
             setError(getErrorMessage(err, 'Failed to fetch profile'));
         } finally {
             setIsLoading(false);
@@ -111,7 +114,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
             return true;
         } catch (err: unknown) {
             const apiError = err as ApiError;
-            console.error('📋 [useProfile] ❌ Update failed:', apiError.message);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('📋 [useProfile] ❌ Update failed:', apiError.message);
+            }
             toast({
                 title: 'Error',
                 description: getErrorMessage(err, 'Failed to update profile.'),
@@ -145,7 +150,9 @@ export const useProfile = (): ProfileContextType => {
     if (!context) {
         // Fallback for when used outside provider (e.g., in settings pages)
         // Return a minimal non-error state to prevent crashes
-        console.warn('[useProfile] Used outside ProfileProvider - returning default state');
+        if (process.env.NODE_ENV !== 'production') {
+            console.warn('[useProfile] Used outside ProfileProvider - returning default state');
+        }
         return {
             profile: null,
             isLoading: false,

@@ -142,7 +142,10 @@ def encrypt_token(token: str) -> str:
         return token
     
     if not HAS_ENCRYPTION or not cipher_suite:
-        logger.warning("[Security] ENCRYPTION_KEY not set, storing token in plain text")
+        if settings.ENVIRONMENT not in ("test", "development"):
+            logger.error("[Security] ENCRYPTION_KEY not set in non-dev environment — token stored in plain text!")
+        else:
+            logger.warning("[Security] ENCRYPTION_KEY not set, storing token in plain text (dev mode)")
         return token
     
     try:

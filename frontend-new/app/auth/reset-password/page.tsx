@@ -70,7 +70,9 @@ export default function ResetPasswordPage() {
                     router.push("/forgot-password");
                 }
             } catch (error) {
-                console.error("Error checking session:", error);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error("Error checking session:", error);
+                }
                 router.push("/forgot-password");
             } finally {
                 setIsCheckingSession(false);

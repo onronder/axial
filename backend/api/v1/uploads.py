@@ -16,7 +16,7 @@ from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
 from core.exceptions import QuotaExceededError
 from api.v1.dependencies import validate_team_access, require_editor, require_paid_access
-from api.v1.error_utils import raise_http_error
+from api.v1.error_utils import raise_http_error, api_error, ApiErrorCode
 from services.audit import audit_logger
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -46,8 +46,8 @@ def sanitize_filename(filename: str) -> str:
     try:
         from urllib.parse import unquote
         filename = unquote(filename)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[Upload] Failed to URL-decode filename: {e}")
     
     # Extract just the basename (remove any path components)
     filename = filename.split('/')[-1].split('\\')[-1]
@@ -61,6 +61,35 @@ def sanitize_filename(filename: str) -> str:
     
     # Limit length
     return clean_name[:255]
+
+
+def verify_mime_type(file_bytes: bytes, claimed_mime: str) -> bool:
+    """
+    Verify file content matches claimed MIME type using magic numbers.
+
+    Args:
+        file_bytes: First 2KB+ of file content
+        claimed_mime: Client-provided MIME type
+
+    Returns:
+        True if content matches claimed type or is in allowed list
+    """
+    try:
+        import magic
+        actual_mime = magic.from_buffer(file_bytes[:2048], mime=True)
+        if actual_mime == claimed_mime:
+            return True
+        # Allow common mismatches (e.g., "text/plain" detected for CSV which claims "text/csv")
+        if actual_mime in ALLOWED_MIME_TYPES:
+            return True
+        logger.warning(f"[Upload] MIME mismatch: claimed={claimed_mime}, actual={actual_mime}")
+        return False
+    except ImportError:
+        logger.warning("[Upload] python-magic not installed, skipping MIME verification")
+        return True  # Fail-open if library not available
+    except Exception as e:
+        logger.warning(f"[Upload] MIME verification failed: {e}")
+        return True  # Fail-open on errors
 
 
 def get_idempotency_key(request: Request) -> Optional[str]:
@@ -126,7 +155,7 @@ class UploadUrlRequest(BaseModel):
     """Request body for generating a presigned upload URL."""
     filename: str
     file_type: str  # MIME type
-    file_size: int  # Size in bytes for quota check
+    file_size: int = Field(..., gt=0, le=100 * 1024 * 1024)  # Max 100MB
     content_hash: Optional[str] = None  # SHA-256 hex for stable path & dedup
     force_overwrite: bool = False  # User confirmed overwrite of duplicate
 
@@ -142,7 +171,7 @@ class FileReferenceRequest(BaseModel):
     """Request body for ingesting an already-uploaded file."""
     storage_path: str
     filename: str
-    file_size: int
+    file_size: int = Field(..., gt=0, le=100 * 1024 * 1024)  # Max 100MB
     metadata: dict = Field(default_factory=dict)
 
 
@@ -196,17 +225,19 @@ async def check_duplicates(
     
     # Validate hash format (should be 64 hex characters)
     if not body.content_hash or len(body.content_hash) != 64:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid content_hash: must be 64-character SHA-256 hex digest"
+        raise_http_error(
+            400,
+            ApiErrorCode.INVALID_INPUT.value,
+            "Invalid content_hash: must be 64-character SHA-256 hex digest",
         )
     
     try:
         int(body.content_hash, 16)  # Validate hex
     except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid content_hash: must be valid hexadecimal"
+        raise_http_error(
+            400,
+            ApiErrorCode.INVALID_INPUT.value,
+            "Invalid content_hash: must be valid hexadecimal",
         )
     
     # Check for existing document with same hash belonging to this user
@@ -267,9 +298,10 @@ async def generate_upload_url(
     # 1. Validate file type
     if body.file_type.lower() not in [m.lower() for m in ALLOWED_MIME_TYPES.keys()]:
         allowed = ", ".join(ALLOWED_MIME_TYPES.keys())
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: {body.file_type}. Allowed: {allowed}"
+        raise_http_error(
+            400,
+            ApiErrorCode.INVALID_INPUT.value,
+            f"Unsupported file type: {body.file_type}. Allowed: {allowed}",
         )
     
     # 2. Check quota before generating URL
@@ -319,30 +351,30 @@ async def generate_upload_url(
     
     storage_path = f"uploads/{user_id}/{path_segment}/{safe_filename}"
     
-    # 4. Generate signed upload URL (valid for 1 hour)
+    # 4. Generate signed upload URL (valid for 10 minutes)
     try:
         result = supabase.storage.from_(STAGING_BUCKET).create_signed_upload_url(storage_path)
         
         if not result:
             logger.error(f"[Upload] Supabase returned None for {storage_path}")
-            raise HTTPException(status_code=500, detail="Storage service returned empty response")
-        
+            raise api_error(ApiErrorCode.EXTERNAL_SERVICE_ERROR, None, "get_upload_url")
+
         if not result.get("signed_url"):
             logger.error(f"[Upload] No signed_url in response: {result}")
-            raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+            raise api_error(ApiErrorCode.EXTERNAL_SERVICE_ERROR, None, "get_upload_url")
         
         logger.info(f"[Upload] Generated presigned URL for {safe_file_ref(filename=body.filename)} (path:{storage_path[:16]}...)")
         
         return UploadUrlResponse(
             upload_url=result["signed_url"],
             storage_path=storage_path,
-            expires_in=3600  # 1 hour
+            expires_in=600  # 10 minutes — short window minimizes leaked URL risk
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"[Upload] Failed to generate presigned URL: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
+        raise api_error(ApiErrorCode.EXTERNAL_SERVICE_ERROR, e, "get_upload_url")
 
 
 @router.post("/file/reference", response_model=IngestResponse)
@@ -372,9 +404,10 @@ async def ingest_file_reference(
         file_exists = any(f.get("name") == filename for f in file_list)
         
         if not file_exists:
-            raise HTTPException(
-                status_code=404, 
-                detail="File not found in storage. Upload may have failed or expired."
+            raise_http_error(
+                404,
+                ApiErrorCode.NOT_FOUND.value,
+                "File not found in storage. Upload may have failed or expired.",
             )
     except HTTPException:
         raise
@@ -386,8 +419,8 @@ async def ingest_file_reference(
     if not quota_check["allowed"]:
         try:
             supabase.storage.from_(STAGING_BUCKET).remove([body.storage_path])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[Upload] Failed to cleanup staging file after quota exceeded: {e}")
         raise_http_error(
             status.HTTP_403_FORBIDDEN,
             "PLAN_LIMIT_EXCEEDED",
@@ -432,7 +465,7 @@ async def ingest_file_reference(
     
     job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
     if not job_res.data:
-        raise HTTPException(status_code=500, detail="Failed to create ingestion job")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, None, "ingest_file")
     
     job_id = str(job_res.data[0]["id"])
     audit_logger.log_sync(
@@ -471,11 +504,11 @@ async def ingest_file_reference(
         logger.error(f"[Upload] Failed to dispatch unified task: {e}")
         try:
             supabase.storage.from_(STAGING_BUCKET).remove([body.storage_path])
-        except Exception:
-            pass
-        raise HTTPException(
+        except Exception as e:
+            logger.warning(f"[Upload] Failed to cleanup staging file after task dispatch failure: {e}")
+        raise api_error(
+            ApiErrorCode.SERVICE_UNAVAILABLE, e, "ingest_file",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Task queue unavailable. Please try again later."
         )
     
     logger.info(f"[Upload] Unified task queued: {safe_file_ref(filename=body.filename)}, task={task.id}")

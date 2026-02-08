@@ -77,7 +77,9 @@ export function GitHubRepoSelector({
             const response = await api.get<{ repositories: GitHubRepo[] }>("/integrations/github/repos");
             setRepos(response.data.repositories || []);
         } catch (err) {
-            console.error("Failed to fetch GitHub repos:", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to fetch GitHub repos:", err);
+            }
             setError("Failed to load repositories. Please try again.");
         } finally {
             setLoading(false);
@@ -128,10 +130,14 @@ export function GitHubRepoSelector({
                 selected_repositories: selectedRepoData,
             });
 
-            console.log("✅ GitHub repos selected:", selectedRepoData);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log("✅ GitHub repos selected:", selectedRepoData);
+            }
             onComplete();
         } catch (err) {
-            console.error("Failed to save repo selection:", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to save repo selection:", err);
+            }
             setError("Failed to save selection. Please try again.");
         } finally {
             setSaving(false);

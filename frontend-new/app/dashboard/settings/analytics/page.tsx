@@ -14,7 +14,7 @@
  * - docs/ChatFeedback_Implementation_Spec.md (specification)
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
     BarChart3,
@@ -55,6 +55,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { useProfile } from '@/hooks/useProfile';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 // =============================================================================
 // Types
@@ -120,6 +122,36 @@ const DATE_RANGE_PRESETS = [
     { label: 'Last 90 days', value: '90d', getDates: () => ({ from: subDays(new Date(), 90), to: new Date() }) },
     { label: 'All time', value: 'all', getDates: () => ({ from: null, to: null }) },
 ];
+
+// =============================================================================
+// Chart Configuration
+// =============================================================================
+
+const feedbackChartConfig = {
+    positive: { label: "Positive", color: "var(--color-green-500, #22c55e)" },
+    negative: { label: "Negative", color: "var(--color-red-500, #ef4444)" },
+} satisfies ChartConfig;
+
+const ratingDistConfig = {
+    count: { label: "Count" },
+    positive: { label: "Positive", color: "var(--color-green-500, #22c55e)" },
+    negative: { label: "Negative", color: "var(--color-red-500, #ef4444)" },
+} satisfies ChartConfig;
+
+/**
+ * Aggregate feedback items by day for the trend chart.
+ */
+function aggregateFeedbackByDay(items: FeedbackItem[]): Array<{ date: string; positive: number; negative: number }> {
+    const byDay = new Map<string, { positive: number; negative: number }>();
+    for (const item of items) {
+        const day = format(new Date(item.created_at), 'MMM d');
+        const entry = byDay.get(day) ?? { positive: 0, negative: 0 };
+        if (item.rating === 'positive') entry.positive++;
+        else entry.negative++;
+        byDay.set(day, entry);
+    }
+    return Array.from(byDay.entries()).map(([date, counts]) => ({ date, ...counts }));
+}
 
 // =============================================================================
 // API Functions
@@ -251,7 +283,23 @@ export default function FeedbackAnalyticsPage() {
     }
     
     const summary = feedbackData?.summary;
-    
+
+    const trendData = useMemo(
+        () => (feedbackData?.items ? aggregateFeedbackByDay(feedbackData.items) : []),
+        [feedbackData?.items]
+    );
+
+    const ratingDistData = useMemo(
+        () =>
+            summary
+                ? [
+                      { name: 'Positive', count: summary.positive_count, fill: 'var(--color-green-500, #22c55e)' },
+                      { name: 'Negative', count: summary.negative_count, fill: 'var(--color-red-500, #ef4444)' },
+                  ]
+                : [],
+        [summary]
+    );
+
     return (
         <div className="space-y-8">
             <SettingsPageHeader
@@ -332,6 +380,50 @@ export default function FeedbackAnalyticsPage() {
                 />
             </div>
             
+            {/* Charts */}
+            {!feedbackLoading && trendData.length > 1 && (
+                <div className="grid gap-4 md:grid-cols-2">
+                    {/* Feedback Trend Line Chart */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base">Feedback Trend</CardTitle>
+                            <CardDescription>Positive vs negative feedback over time</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <ChartContainer config={feedbackChartConfig} className="h-[220px] w-full">
+                                <LineChart data={trendData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                                    <XAxis dataKey="date" fontSize={12} tickLine={false} axisLine={false} />
+                                    <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                                    <ChartTooltip content={<ChartTooltipContent />} />
+                                    <Line type="monotone" dataKey="positive" stroke="var(--color-green-500, #22c55e)" strokeWidth={2} dot={false} />
+                                    <Line type="monotone" dataKey="negative" stroke="var(--color-red-500, #ef4444)" strokeWidth={2} dot={false} />
+                                </LineChart>
+                            </ChartContainer>
+                        </CardContent>
+                    </Card>
+
+                    {/* Rating Distribution Bar Chart */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base">Rating Distribution</CardTitle>
+                            <CardDescription>Total positive vs negative ratings</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <ChartContainer config={ratingDistConfig} className="h-[220px] w-full">
+                                <BarChart data={ratingDistData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                                    <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
+                                    <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                                    <ChartTooltip content={<ChartTooltipContent />} />
+                                    <Bar dataKey="count" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ChartContainer>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
+
             {/* Source Quality Metrics */}
             <Card>
                 <CardHeader>

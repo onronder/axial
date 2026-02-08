@@ -3,6 +3,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -34,6 +35,7 @@ export default function RootLayout({
             >
               <TooltipProvider>
                 {children}
+                <Toaster />
               </TooltipProvider>
             </ThemeProvider>
           </SessionProvider>

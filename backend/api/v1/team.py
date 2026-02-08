@@ -9,7 +9,7 @@ Note: Most endpoints require paid access via require_paid_access dependency.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Query, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional
 from api.v1.dependencies import validate_team_access, require_admin, require_paid_access
 from core.security import get_current_user
@@ -17,10 +17,18 @@ from core.db import get_supabase
 from core.rate_limit import limiter
 from services.team_service import team_service
 from datetime import datetime, timezone
-from api.v1.error_utils import api_error, ApiErrorCode
+from api.v1.error_utils import api_error, api_error_400, api_error_403, api_error_404, ApiErrorCode
+from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class TeamRole(str, Enum):
+    """Valid team member roles."""
+    admin = "admin"
+    editor = "editor"
+    viewer = "viewer"
 
 # Main router with paid access requirement for team management operations
 router = APIRouter()
@@ -50,14 +58,14 @@ class TeamMemberResponse(BaseModel):
     invited_at: Optional[str] = None
 
 class TeamMemberCreate(BaseModel):
-    email: str
-    name: Optional[str] = None
-    role: str = "viewer"
+    email: EmailStr
+    name: Optional[str] = Field(None, max_length=100)
+    role: TeamRole = TeamRole.viewer
 
 class TeamMemberUpdate(BaseModel):
-    name: Optional[str] = None
-    role: Optional[str] = None
-    status: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=100)
+    role: Optional[TeamRole] = None
+    status: Optional[str] = Field(None, max_length=30)
 
 class TeamStatsResponse(BaseModel):
     total_seats: int = 20
@@ -74,15 +82,15 @@ class EffectivePlanResponse(BaseModel):
 
 class TeamUpdate(BaseModel):
     """Request model for updating team details."""
-    name: Optional[str] = None
-    slug: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=100)
+    slug: Optional[str] = Field(None, max_length=50)
 
 
 class InviteRequest(BaseModel):
     """Request to invite a team member."""
-    email: str
-    role: str = "viewer"
-    name: Optional[str] = None
+    email: EmailStr
+    role: TeamRole = TeamRole.viewer
+    name: Optional[str] = Field(None, max_length=100)
 
 
 class InviteResponse(BaseModel):
@@ -148,8 +156,8 @@ async def get_current_team(request: Request, user_id: str = Depends(get_current_
     team = await team_service.get_user_team(user_id)
     
     if not team:
-        raise HTTPException(status_code=404, detail="No team found for user")
-    
+        raise api_error_404("team")
+
     return team
 
 
@@ -220,13 +228,10 @@ async def update_team(
         team = await team_service.get_user_team(user_id)
         
         if not team:
-            raise HTTPException(status_code=404, detail="No team found for user")
-        
+            raise api_error_404("team")
+
         if not team.get("is_owner"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only team owners can update team details"
-            )
+            raise api_error_403("Only team owners can update team details")
         
         # Build update payload
         update_data = {}
@@ -236,15 +241,12 @@ async def update_team(
             # Validate slug format (lowercase, alphanumeric with dashes)
             import re
             if not re.match(r'^[a-z0-9-]+$', payload.slug):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Slug must be lowercase alphanumeric with dashes only"
-                )
+                raise api_error_400("Slug must be lowercase alphanumeric with dashes only")
             update_data["slug"] = payload.slug
         
         if not update_data:
-            raise HTTPException(status_code=400, detail="No update fields provided")
-        
+            raise api_error_400("No update fields provided")
+
         # Perform update
         result = supabase.table("teams")\
             .update(update_data)\
@@ -287,13 +289,10 @@ async def delete_team(
         team = await team_service.get_user_team(user_id)
         
         if not team:
-            raise HTTPException(status_code=404, detail="No team found for user")
-        
+            raise api_error_404("team")
+
         if not team.get("is_owner"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only team owners can delete a team"
-            )
+            raise api_error_403("Only team owners can delete a team")
         
         team_id = team["id"]
 
@@ -302,10 +301,10 @@ async def delete_team(
             try:
                 await cleanup_service.execute_org_deletion(team_id, owner_id=user_id)
             except ActiveIngestionError as exc:
-                raise HTTPException(
+                raise api_error(
+                    ApiErrorCode.CONFLICT, exc, "delete_team",
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=str(exc),
-                ) from exc
+                )
         
         # Delete all team members first (respects FK constraints)
         supabase.table("team_members")\
@@ -473,25 +472,13 @@ async def invite_team_member(
         error_code = result.get("code", "ERROR")
         
         if error_code == "UPGRADE_REQUIRED":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail=result.get("error", "Upgrade required")
-            )
+            raise api_error_403(result.get("error", "Upgrade required"), code=ApiErrorCode.SUBSCRIPTION_REQUIRED)
         elif error_code == "ALREADY_EXISTS":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=result.get("error", "Already invited")
-            )
+            raise api_error(ApiErrorCode.CONFLICT, status_code=409, operation="invite_member")
         elif error_code == "SEAT_LIMIT":
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=result.get("error", "Seat limit reached")
-            )
+            raise api_error(ApiErrorCode.QUOTA_EXCEEDED, status_code=402, operation="invite_member")
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=result.get("error", "Invite failed")
-            )
+            raise api_error_400(result.get("error", "Invite failed"))
     
     return InviteResponse(
         success=True,
@@ -524,10 +511,7 @@ async def bulk_invite_team_members(
         csv_content = content.decode("utf-8")
     except Exception as e:
         logger.error(f"Failed to read CSV: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unable to read CSV file. Please check the file format."
-        )
+        raise api_error_400("Unable to read CSV file. Please check the file format.")
     
     result = await team_service.bulk_invite_csv(
         owner_id=user_id,
@@ -535,10 +519,7 @@ async def bulk_invite_team_members(
     )
     
     if not result.get("success") and result.get("code") == "UPGRADE_REQUIRED":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=result.get("error", "Upgrade required")
-        )
+        raise api_error_403(result.get("error", "Upgrade required"), code=ApiErrorCode.SUBSCRIPTION_REQUIRED)
     
     return BulkInviteResponse(**result)
 
@@ -564,22 +545,25 @@ async def invite_team_member_legacy(
     
     if not result.get("success"):
         error_code = result.get("code", "ERROR")
-        
+
         if error_code == "UPGRADE_REQUIRED":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail=result.get("error", "Upgrade to Enterprise to invite team members")
+            raise api_error_403(
+                result.get("error", "Upgrade to Enterprise to invite team members"),
+                code=ApiErrorCode.SUBSCRIPTION_REQUIRED,
             )
         elif error_code == "ALREADY_EXISTS":
-            raise HTTPException(status_code=409, detail="Member already invited")
+            raise api_error(
+                ApiErrorCode.CONFLICT, None, "invite_member",
+                status_code=status.HTTP_409_CONFLICT,
+            )
         else:
-            raise HTTPException(status_code=400, detail=result.get("error", "Invite failed"))
-    
+            raise api_error_400(result.get("error", "Invite failed"))
+
     # Return the member data in legacy format
     if result.get("member"):
         return result["member"]
-    
-    raise HTTPException(status_code=500, detail="Failed to create invitation")
+
+    raise api_error(ApiErrorCode.INTERNAL_ERROR, None, "invite_member")
 
 
 @router.patch("/team/members/{member_id}", response_model=TeamMemberResponse, dependencies=_paid_team_deps)
@@ -601,9 +585,6 @@ async def update_team_member(
             update_data["name"] = payload.name
         
         if payload.role is not None:
-            if payload.role not in ["admin", "editor", "viewer"]:
-                raise HTTPException(status_code=400, detail="Invalid role")
-            
             # Last-admin protection: prevent demoting the last admin
             if payload.role != "admin":
                 # Check if this member is currently an admin
@@ -624,16 +605,13 @@ async def update_team_member(
                     
                     admin_count = admin_count_response.count or 0
                     if admin_count <= 1:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Cannot demote the last admin. Promote another member to admin first."
-                        )
-            
+                        raise api_error_400("Cannot demote the last admin. Promote another member to admin first.")
+
             update_data["role"] = payload.role
         
         if payload.status is not None:
             if payload.status not in ["active", "pending", "suspended"]:
-                raise HTTPException(status_code=400, detail="Invalid status")
+                raise api_error_400("Invalid status. Must be active, pending, or suspended.")
             
             # Last-admin protection: prevent suspending the last admin
             if payload.status in ["suspended", "pending"]:
@@ -656,16 +634,13 @@ async def update_team_member(
                     
                     admin_count = admin_count_response.count or 0
                     if admin_count <= 1:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Cannot suspend the last admin. Promote another member to admin first."
-                        )
+                        raise api_error_400("Cannot suspend the last admin. Promote another member to admin first.")
             
             update_data["status"] = payload.status
         
         if not update_data:
-            raise HTTPException(status_code=400, detail="No update fields provided")
-        
+            raise api_error_400("No update fields provided")
+
         response = supabase.table("team_members")\
             .update(update_data)\
             .eq("id", member_id)\
@@ -674,8 +649,8 @@ async def update_team_member(
         
         if response.data and len(response.data) > 0:
             return response.data[0]
-        
-        raise HTTPException(status_code=404, detail="Member not found")
+
+        raise api_error_404("member", member_id)
         
     except HTTPException:
         raise
@@ -702,16 +677,13 @@ async def remove_team_member(
             .execute()
         
         if not member_check.data:
-            raise HTTPException(status_code=404, detail="Member not found")
-        
+            raise api_error_404("member", member_id)
+
         member_data = member_check.data[0]
-        
+
         # Prevent removing the team owner (themselves)
         if member_data.get("member_user_id") == user_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot remove yourself. Transfer ownership or delete the team instead."
-            )
+            raise api_error_400("Cannot remove yourself. Transfer ownership or delete the team instead.")
         
         # Prevent removing the last active admin
         if member_data.get("role") == "admin" and member_data.get("status") == "active":
@@ -724,11 +696,8 @@ async def remove_team_member(
             
             admin_count = admin_count_response.count or 0
             if admin_count <= 1:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot remove the last admin. Promote another member to admin first."
-                )
-        
+                raise api_error_400("Cannot remove the last admin. Promote another member to admin first.")
+
         response = supabase.table("team_members")\
             .delete()\
             .eq("id", member_id)\
@@ -736,8 +705,8 @@ async def remove_team_member(
             .execute()
         
         if not response.data:
-            raise HTTPException(status_code=404, detail="Member not found")
-        
+            raise api_error_404("member", member_id)
+
         return {"status": "success", "id": member_id}
         
     except HTTPException:
@@ -761,7 +730,7 @@ async def resend_invitation(
         # Map service errors to HTTP codes
         error = result.get("error", "Unknown error")
         if error == "Pending member not found":
-            raise HTTPException(status_code=404, detail=error)
+            raise api_error_404("member", member_id)
         else:
             raise api_error(ApiErrorCode.INTERNAL_ERROR, None, "resend_invite")
     
@@ -794,10 +763,7 @@ async def accept_invite(
         ).eq("id", payload.token).eq("status", "pending").execute()
         
         if not invite_response.data or len(invite_response.data) == 0:
-            raise HTTPException(
-                status_code=404, 
-                detail="Invalid or expired invite link"
-            )
+            raise api_error_404("invite")
         
         invite = invite_response.data[0]
         team_info = invite.get("teams", {})

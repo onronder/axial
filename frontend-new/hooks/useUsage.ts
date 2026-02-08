@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { getUsageStats, getEffectivePlan } from '@/lib/api';
 import type { UserUsage, EffectivePlan, PlanType } from '@/types';
 import { AxiosError } from 'axios';
+import { extractErrorMessage } from '@/lib/error-handling';
 
 /**
  * Usage Context - Singleton pattern for usage data
@@ -96,7 +97,9 @@ export function UsageProvider({ children }: UsageProviderProps) {
                 // 402 is expected for free/none users - don't treat as error
                 // The plan data we already have is sufficient for PaywallGuard
                 if (usageError instanceof AxiosError && usageError.response?.status === 402) {
-                    console.log('[useUsage] Usage endpoint returned 402 (expected for free/none plan)');
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.log('[useUsage] Usage endpoint returned 402 (expected for free/none plan)');
+                    }
                 } else {
                     throw usageError;
                 }
@@ -110,8 +113,7 @@ export function UsageProvider({ children }: UsageProviderProps) {
                 // Set a minimal effective plan so PaywallGuard can show the paywall
                 setEffectivePlan({ plan: planFromError, inherited: false, team_id: null, team_name: null });
             } else {
-                const message = err instanceof Error ? err.message : 'Failed to fetch usage';
-                setError(message);
+                setError(extractErrorMessage(err, 'Failed to fetch usage'));
             }
         } finally {
             setIsLoading(false);

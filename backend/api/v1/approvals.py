@@ -6,8 +6,8 @@ Human-in-the-loop approval workflow for destructive actions.
 
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status, Query
+from pydantic import BaseModel, Field
 
 from api.v1.dependencies import (
     require_admin,
@@ -16,6 +16,7 @@ from api.v1.dependencies import (
     validate_team_access,
 )
 from core.rate_limit import limiter
+from api.v1.error_utils import api_error, ApiErrorCode
 from services.scope_guard import (
     ScopeGuardStateMachine,
     ActionType,
@@ -35,11 +36,11 @@ router = APIRouter(
 
 class ApprovalRequestPayload(BaseModel):
     """Request payload for creating an approval request."""
-    action_type: str
-    resource_type: str
-    resource_id: str
+    action_type: str = Field(..., max_length=50)
+    resource_type: str = Field(..., max_length=50)
+    resource_id: str = Field(..., max_length=100)
     context: Optional[dict] = None
-    ttl_minutes: int = 30
+    ttl_minutes: int = Field(default=30, ge=1, le=1440)
 
 
 class ApprovalResponse(BaseModel):
@@ -149,11 +150,7 @@ async def request_approval(
         return ApprovalResponse(**result)
 
     except Exception as e:
-        logger.error(f"[Approvals] Request failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "request_approval")
 
 
 @router.post("/approvals/{approval_id}/approve")
@@ -202,16 +199,10 @@ async def approve_action(
         return result
 
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "approve_action",
+                        status_code=status.HTTP_400_BAD_REQUEST, log_level="warning")
     except Exception as e:
-        logger.error(f"[Approvals] Approve failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "approve_action")
 
 
 @router.post("/approvals/{approval_id}/reject")
@@ -262,16 +253,10 @@ async def reject_action(
         return result
 
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "reject_action",
+                        status_code=status.HTTP_400_BAD_REQUEST, log_level="warning")
     except Exception as e:
-        logger.error(f"[Approvals] Reject failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "reject_action")
 
 
 @router.post("/approvals/{approval_id}/execute")
@@ -323,16 +308,10 @@ async def execute_approved(
         return result
 
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "execute_approved",
+                        status_code=status.HTTP_400_BAD_REQUEST, log_level="warning")
     except Exception as e:
-        logger.error(f"[Approvals] Execute failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "execute_approved")
 
 
 @router.get("/approvals/pending", response_model=List[ApprovalListItem])
@@ -341,9 +320,11 @@ async def list_pending(
     request: Request,
     user_id: str = Depends(require_admin),
     organization_id: str = Depends(get_user_organization_id),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ):
     """
-    List all pending approval requests.
+    List pending approval requests with pagination.
 
     Only organization admins can view pending approvals.
     Expired requests are automatically marked as expired.
@@ -354,7 +335,9 @@ async def list_pending(
     state_machine = ScopeGuardStateMachine()
 
     try:
-        approvals = await state_machine.get_pending_approvals(organization_id)
+        approvals = await state_machine.get_pending_approvals(
+            organization_id, limit=limit, offset=offset
+        )
         return [
             ApprovalListItem(
                 id=a["id"],
@@ -370,11 +353,7 @@ async def list_pending(
             for a in approvals
         ]
     except Exception as e:
-        logger.error(f"[Approvals] List failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "list_approvals")
 
 
 @router.get("/approvals/{approval_id}")
@@ -403,8 +382,4 @@ async def get_approval(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Approvals] Get failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_approval")

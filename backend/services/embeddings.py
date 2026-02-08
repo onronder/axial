@@ -61,36 +61,47 @@ _EMBEDDING_THROTTLE = _EmbeddingThrottle()
 
 
 class _TpmRegulator:
-    """Simple per-plan token-per-minute regulator to cap cost exposure."""
+    """Simple per-plan token-per-minute regulator to cap cost exposure.
+
+    Thread-safe: uses a lock to protect _state from concurrent task access
+    within a single Celery worker process.
+    """
 
     def __init__(self) -> None:
-        self._state = {}
+        self._state: dict = {}
+        self._lock = threading.Lock()
 
     def throttle(self, plan_code: str, tokens: int, max_tpm: Optional[int]) -> None:
         if not max_tpm or max_tpm <= 0 or tokens <= 0:
             return
 
-        now = time.time()
-        state = self._state.get(plan_code)
-        if not state or now >= state["reset_at"]:
-            state = {"tokens": 0, "reset_at": now + 60}
-            self._state[plan_code] = state
-
-        if state["tokens"] + tokens > max_tpm:
-            sleep_seconds = max(0.0, state["reset_at"] - now)
-            if sleep_seconds > 0:
-                logger.info(
-                    "⏱️ [Embeddings] Throttling embedding for Plan %s: Sleeping %.2fs (max_tpm=%s)",
-                    plan_code,
-                    sleep_seconds,
-                    max_tpm,
-                )
-                time.sleep(sleep_seconds)
+        with self._lock:
             now = time.time()
-            state["tokens"] = 0
-            state["reset_at"] = now + 60
+            state = self._state.get(plan_code)
+            if not state or now >= state["reset_at"]:
+                state = {"tokens": 0, "reset_at": now + 60}
+                self._state[plan_code] = state
 
-        state["tokens"] += min(tokens, max_tpm)
+            if state["tokens"] + tokens > max_tpm:
+                sleep_seconds = max(0.0, state["reset_at"] - now)
+                if sleep_seconds > 0:
+                    logger.info(
+                        "⏱️ [Embeddings] Throttling embedding for Plan %s: Sleeping %.2fs (max_tpm=%s)",
+                        plan_code,
+                        sleep_seconds,
+                        max_tpm,
+                    )
+                    # Release lock during sleep so other plans aren't blocked
+                    self._lock.release()
+                    try:
+                        time.sleep(sleep_seconds)
+                    finally:
+                        self._lock.acquire()
+                    now = time.time()
+                    state["tokens"] = 0
+                    state["reset_at"] = now + 60
+
+            state["tokens"] += min(tokens, max_tpm)
 
 
 _TPM_REGULATOR = _TpmRegulator()
@@ -291,8 +302,8 @@ def generate_embeddings_batch_sync(
             from openai import RateLimitError
             if isinstance(exc, RateLimitError):
                 return True
-        except Exception:
-            pass
+        except ImportError:
+            pass  # openai not installed
 
         status_code = getattr(exc, "status_code", None)
         response = getattr(exc, "response", None)

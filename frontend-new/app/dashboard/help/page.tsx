@@ -1,3 +1,6 @@
+import type { Metadata } from "next";
+export const metadata: Metadata = { title: "Help Center | Axio Hub" };
+
 /**
  * Help Center Index Page - Production Grade
  *

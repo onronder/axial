@@ -115,8 +115,8 @@ def queue_web_crawl(
             supabase.table("ingestion_jobs").update({
                 "celery_task_id": task.id
             }).eq("id", ingestion_job_id).execute()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[WebCrawl] Failed to update ingestion job celery_task_id: {e}")
 
     response = {"crawl_id": crawl_id, "task_id": task.id}
     if include_job_id and ingestion_job_id:

@@ -96,7 +96,9 @@ export function DataInvalidationProvider({
 
                 setOrganizationId(data?.team_id || user.id);
             } catch (e) {
-                console.warn("[DataInvalidationProvider] Failed to fetch org:", e);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.warn("[DataInvalidationProvider] Failed to fetch org:", e);
+                }
                 setOrganizationId(user.id);
             }
         };

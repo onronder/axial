@@ -6,7 +6,7 @@ Endpoints for user profile and notification settings management.
 
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from api.v1.dependencies import validate_team_access, require_paid_access
 from api.v1.error_utils import api_error, ApiErrorCode
@@ -34,9 +34,9 @@ class ProfileResponse(BaseModel):
     updated_at: str
 
 class ProfileUpdate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    theme: Optional[str] = None
+    first_name: Optional[str] = Field(None, max_length=100)
+    last_name: Optional[str] = Field(None, max_length=100)
+    theme: Optional[str] = Field(None, max_length=20)
 
 class NotificationSettingResponse(BaseModel):
     id: str

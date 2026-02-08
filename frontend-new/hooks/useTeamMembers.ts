@@ -30,6 +30,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { extractErrorMessage } from '@/lib/error-handling';
 
 // =============================================================================
 // Types
@@ -121,9 +122,11 @@ export const useTeamMembers = () => {
                 setMembers(data);
             }
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to fetch team';
-            console.error('Failed to fetch team members:', message);
-            
+            const message = extractErrorMessage(err, 'Failed to fetch team');
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to fetch team members:', message);
+            }
+
             if (mountedRef.current) {
                 setError(message);
             }
@@ -145,7 +148,9 @@ export const useTeamMembers = () => {
                 setStats(data);
             }
         } catch (err) {
-            console.error('Failed to fetch team stats:', err instanceof Error ? err.message : err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to fetch team stats:', extractErrorMessage(err));
+            }
         }
     }, []);
 
@@ -194,9 +199,10 @@ export const useTeamMembers = () => {
             
             return true;
         } catch (err) {
-            const axiosErr = err as { response?: { data?: { detail?: string } } };
-            const message = axiosErr.response?.data?.detail || 'Failed to send invitation';
-            console.error('Failed to invite member:', message);
+            const message = extractErrorMessage(err, 'Failed to send invitation');
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to invite member:', message);
+            }
             
             if (mountedRef.current) {
                 // Rollback optimistic update
@@ -251,7 +257,9 @@ export const useTeamMembers = () => {
             
             return true;
         } catch (err) {
-            console.error('Failed to update role:', err instanceof Error ? err.message : err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to update role:', extractErrorMessage(err));
+            }
             
             if (mountedRef.current) {
                 // Rollback to previous state
@@ -310,7 +318,9 @@ export const useTeamMembers = () => {
             
             return true;
         } catch (err) {
-            console.error('Failed to update status:', err instanceof Error ? err.message : err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to update status:', extractErrorMessage(err));
+            }
             
             if (mountedRef.current) {
                 // Rollback to previous state
@@ -370,7 +380,9 @@ export const useTeamMembers = () => {
             
             return true;
         } catch (err) {
-            console.error('Failed to remove member:', err instanceof Error ? err.message : err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to remove member:', extractErrorMessage(err));
+            }
             
             if (mountedRef.current) {
                 // Rollback to previous state
@@ -402,7 +414,9 @@ export const useTeamMembers = () => {
             
             return true;
         } catch (err) {
-            console.error('Failed to resend invite:', err instanceof Error ? err.message : err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to resend invite:', extractErrorMessage(err));
+            }
             
             toast({
                 title: 'Error',

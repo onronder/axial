@@ -189,7 +189,9 @@ export function BillingSettings() {
       }
     } catch (error) {
       // 404 is expected for users without subscription
-      console.debug("[Billing] No subscription found:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug("[Billing] No subscription found:", error);
+      }
       setSubscriptionDetail(null);
     } finally {
       setIsLoadingSubscription(false);
@@ -204,7 +206,9 @@ export function BillingSettings() {
       const response = await api.get("/billing/invoices");
       setInvoices(response.data || []);
     } catch (error) {
-      console.error("[Billing] Failed to fetch invoices:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("[Billing] Failed to fetch invoices:", error);
+      }
       setInvoiceError("Failed to load billing history");
     } finally {
       setIsLoadingInvoices(false);
@@ -238,7 +242,9 @@ export function BillingSettings() {
         throw new Error("No checkout URL");
       }
     } catch (error) {
-      console.error("[Billing] Checkout failed:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("[Billing] Checkout failed:", error);
+      }
       toast.error("Failed to start checkout. Please try again.");
     } finally {
       setCheckoutLoading(null);
@@ -256,7 +262,9 @@ export function BillingSettings() {
         throw new Error("No portal URL returned");
       }
     } catch (error) {
-      console.error("[Billing] Portal redirect failed:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("[Billing] Portal redirect failed:", error);
+      }
       toast.error("Failed to open subscription portal");
     } finally {
       setIsPortalLoading(false);
@@ -282,7 +290,9 @@ export function BillingSettings() {
         throw new Error("No invoice URL returned");
       }
     } catch (error) {
-      console.error("[Billing] Invoice download failed:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("[Billing] Invoice download failed:", error);
+      }
       toast.error("Failed to download invoice");
     } finally {
       setDownloadingId(null);
@@ -304,7 +314,9 @@ export function BillingSettings() {
         throw new Error(response.data?.message || "Failed to cancel");
       }
     } catch (error) {
-      console.error("[Billing] Cancel failed:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("[Billing] Cancel failed:", error);
+      }
       toast.error("Failed to cancel subscription. Please try again.");
     } finally {
       setIsCancelling(false);

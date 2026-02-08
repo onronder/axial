@@ -17,8 +17,8 @@ Polar API Reference:
 import httpx
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from pydantic import BaseModel, EmailStr, Field
 from services.team_service import team_service
 from core.config import settings
 from core.rate_limit import limiter
@@ -82,8 +82,8 @@ PLAN_METADATA = {
 # ============================================================
 
 class CheckoutRequest(BaseModel):
-    plan: str  # 'starter', 'pro', or 'enterprise'
-    interval: str = "month"
+    plan: str = Field(..., max_length=30)  # 'starter', 'pro', or 'enterprise'
+    interval: str = Field(default="month", max_length=10)
 
 
 class PlanResponse(BaseModel):
@@ -564,25 +564,30 @@ async def cancel_subscription(request: Request, current_user_id: str = Depends(v
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
 @limiter.limit("30/minute")
-async def get_billing_history(request: Request, current_user_id: str = Depends(validate_team_access)):
+async def get_billing_history(
+    request: Request,
+    current_user_id: str = Depends(validate_team_access),
+    limit: int = Query(default=120, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
     """
-    Get billing history (orders) from Polar.
-    
+    Get billing history (orders) from Polar with pagination.
+
     Uses GET /v1/orders/?customer_id={id}
     """
     if not settings.POLAR_ACCESS_TOKEN:
         return []
-    
+
     try:
         customer_id = await get_customer_id_for_user(current_user_id)
-        
+
         if not customer_id:
             return []
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{POLAR_API_BASE}/orders/",
-                params={"customer_id": customer_id},
+                params={"customer_id": customer_id, "limit": limit, "page": (offset // limit) + 1},
                 headers=get_polar_headers()
             )
             
@@ -750,11 +755,11 @@ async def fix_customer_id(request: Request, current_user_id: str = Depends(valid
 # ============================================================
 
 class EnterpriseInquiryRequest(BaseModel):
-    name: str
-    email: str
-    company: str
-    message: str = ""
-    team_size: str = ""
+    name: str = Field(..., min_length=1, max_length=200)
+    email: EmailStr
+    company: str = Field(..., min_length=1, max_length=200)
+    message: str = Field(default="", max_length=5000)
+    team_size: str = Field(default="", max_length=50)
 
 
 @router.post("/enterprise-inquiry")

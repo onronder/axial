@@ -48,8 +48,7 @@ const devLog = (...args: Parameters<typeof console.log>) => {
 };
 
 const devError = (...args: Parameters<typeof console.error>) => {
-    // Errors always logged in all environments
-    console.error(...args);
+    if (isDev) console.error(...args);
 };
 
 /**

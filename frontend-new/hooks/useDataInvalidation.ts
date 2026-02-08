@@ -188,11 +188,13 @@ export function useDataInvalidation(
                 }
             } else if (tombstone.status === "failed") {
                 // Failed tombstones still block access, but we should alert
-                console.warn(
-                    "[DataInvalidation] Tombstone failed:",
-                    tombstone.id.slice(0, 8),
-                    "- data still blocked"
-                );
+                if (process.env.NODE_ENV !== 'production') {
+                    console.warn(
+                        "[DataInvalidation] Tombstone failed:",
+                        tombstone.id.slice(0, 8),
+                        "- data still blocked"
+                    );
+                }
             }
         },
         []
@@ -212,7 +214,9 @@ export function useDataInvalidation(
                 .eq("status", "active");
 
             if (error) {
-                console.warn("[DataInvalidation] Failed to load tombstones:", error);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.warn("[DataInvalidation] Failed to load tombstones:", error);
+                }
                 return;
             }
 
@@ -236,7 +240,9 @@ export function useDataInvalidation(
                 }
             }
         } catch (e) {
-            console.warn("[DataInvalidation] Error loading tombstones:", e);
+            if (process.env.NODE_ENV !== 'production') {
+                console.warn("[DataInvalidation] Error loading tombstones:", e);
+            }
         }
     }, [organizationId]);
 

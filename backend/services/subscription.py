@@ -118,8 +118,8 @@ class SubscriptionService:
             # Base64 Decode
             try:
                 secret_candidates.append(("Base64", base64.b64decode(secret)))
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"[Webhook Verify] Base64 decode failed: {e}")
             
             # Raw Bytes
             secret_candidates.append(("Raw", secret.encode("utf-8")))
@@ -129,8 +129,8 @@ class SubscriptionService:
                 try:
                     stripped = secret.replace("whsec_", "")
                     secret_candidates.append(("Whsec_Base64", base64.b64decode(stripped)))
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[Webhook Verify] Whsec Base64 decode failed: {e}")
 
             # 5. Brute-Force Verify
             for msg_bytes in messages_to_try:

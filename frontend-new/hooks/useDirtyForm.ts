@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export function useDirtyForm<T extends Record<string, unknown>>(initialValues: T) {
   const initialRef = useRef<T>(initialValues);
@@ -11,6 +11,16 @@ export function useDirtyForm<T extends Record<string, unknown>>(initialValues: T
   }, []);
 
   const isDirty = JSON.stringify(values) !== JSON.stringify(initialRef.current);
+
+  // Warn user before leaving page with unsaved changes
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   const reset = useCallback((newInitial?: T) => {
     if (newInitial) {

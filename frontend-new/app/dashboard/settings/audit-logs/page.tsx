@@ -188,7 +188,9 @@ export default function AuditLogsPage() {
       setTotal(response.data.total);
       setHasMore(response.data.has_more);
     } catch (error) {
-      console.error("Failed to fetch audit logs:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Failed to fetch audit logs:", error);
+      }
       toast({
         title: "Error",
         description: "Failed to load audit logs. Please try again.",

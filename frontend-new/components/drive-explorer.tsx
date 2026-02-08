@@ -46,7 +46,9 @@ export function DriveExplorer() {
                 } else if (res && Array.isArray(res.items)) {
                     setItems(res.items)
                 } else {
-                    console.error("[DriveExplorer] Unexpected response format:", res)
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.error("[DriveExplorer] Unexpected response format:", res)
+                    }
                     setItems([])
                     setError("Received invalid data from Google Drive.")
                 }

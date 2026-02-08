@@ -28,7 +28,9 @@ export function ArticleFeedback({ articleId, articleSlug, className }: ArticleFe
 
         // In production, send this to analytics
         const identifier = articleId || articleSlug || 'unknown';
-        console.log(`Article ${identifier} feedback: ${type}`);
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`Article ${identifier} feedback: ${type}`);
+        }
     };
 
     if (showThankYou) {

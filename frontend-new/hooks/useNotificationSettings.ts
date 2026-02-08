@@ -31,7 +31,9 @@ export const useNotificationSettings = () => {
             const { data } = await api.get('/settings/notifications');
             setSettings(data);
         } catch (err: unknown) {
-            console.error('Failed to fetch notification settings:', err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to fetch notification settings:', err);
+            }
             const message = err instanceof Error ? err.message : 'Failed to fetch settings';
             setError(message);
         } finally {
@@ -72,7 +74,9 @@ export const useNotificationSettings = () => {
             });
             return true;
         } catch (err: unknown) {
-            console.error('Failed to update notification setting:', err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to update notification setting:', err);
+            }
 
             // Revert optimistic update
             setSettings(prev => prev.map(s =>
@@ -103,7 +107,9 @@ export const useNotificationSettings = () => {
             });
             return true;
         } catch (err: unknown) {
-            console.error('Failed to reset notification settings:', err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to reset notification settings:', err);
+            }
             toast({
                 title: 'Error',
                 description: 'Failed to reset notification settings.',

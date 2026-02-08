@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     SUPABASE_PUBLISHABLE_KEY: Optional[str] = None 
     
     OPENAI_API_KEY: str
-    API_KEY: str = "default-insecure-key"
+    API_KEY: str
     
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None
@@ -155,6 +155,7 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB per file
     MAX_STRUCTURED_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB for CSV/XLSX parsing
     MALWARE_SCAN_MAX_BYTES: int = 1024 * 1024 * 1024  # Skip malware scan above 1GB
+    MALWARE_SCAN_FAIL_CLOSED: bool = os.getenv("ENVIRONMENT", "development") == "production"  # Reject uploads when scanner unavailable (production only)
     MAX_CHUNK_BATCH_SIZE: int = 100  # Process 100 chunks at a time
     MEMORY_WARNING_THRESHOLD: float = 0.85  # Warn at 85% memory
     MEMORY_CRITICAL_THRESHOLD: float = 0.95  # Stop at 95% memory

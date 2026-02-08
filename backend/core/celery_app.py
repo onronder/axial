@@ -56,8 +56,8 @@ def init_celery_sentry() -> None:
             )
         except ImportError:
             pass  # sentry-sdk not installed
-        except Exception:
-            pass  # Sentry init failed
+        except Exception as e:
+            logger.warning(f"[Celery] Sentry initialization failed: {e}")
 
 
 init_celery_sentry()

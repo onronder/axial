@@ -67,7 +67,9 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    console.error('[Proxy] CRITICAL: Missing Supabase environment variables')
+    if (process.env.NODE_ENV !== 'production') {
+        console.error('[Proxy] CRITICAL: Missing Supabase environment variables')
+    }
 }
 
 // =============================================================================
@@ -182,7 +184,9 @@ export async function proxy(request: NextRequest) {
     // 0. FAIL-SAFE: If Supabase is not configured, skip proxy
     // ---------------------------------------------------------------------
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-        console.warn('[Proxy] Supabase not configured - skipping auth checks')
+        if (process.env.NODE_ENV !== 'production') {
+            console.warn('[Proxy] Supabase not configured - skipping auth checks')
+        }
         return NextResponse.next()
     }
     
@@ -240,7 +244,9 @@ export async function proxy(request: NextRequest) {
             // Log for debugging (will appear in Vercel/server logs)
             // Only log for protected routes to reduce noise
             if (!isPublicPath(pathname)) {
-                console.warn('[Proxy] Auth error:', error.message, 'Path:', pathname)
+                if (process.env.NODE_ENV !== 'production') {
+                    console.warn('[Proxy] Auth error:', error.message, 'Path:', pathname)
+                }
             }
             
             // Check if it's a session_not_found or similar invalid session error
@@ -267,7 +273,9 @@ export async function proxy(request: NextRequest) {
 
             // For non-session errors (e.g., network issues), don't block
             // Just log and continue - better to allow access than break the app
-            console.error('[Proxy] Non-session auth error:', error)
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('[Proxy] Non-session auth error:', error)
+            }
         }
         
         // ---------------------------------------------------------------------
@@ -291,7 +299,9 @@ export async function proxy(request: NextRequest) {
         // ---------------------------------------------------------------------
         // 7. HANDLE UNEXPECTED ERRORS GRACEFULLY
         // ---------------------------------------------------------------------
-        console.error('[Proxy] Unexpected error:', error)
+        if (process.env.NODE_ENV !== 'production') {
+            console.error('[Proxy] Unexpected error:', error)
+        }
         
         // IMPORTANT: Don't break the app on proxy errors
         // Clear auth state and let the page handle authentication

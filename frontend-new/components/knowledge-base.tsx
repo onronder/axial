@@ -1,12 +1,24 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { toast } from "@/lib/toast"
 import { authFetch } from "@/lib/api"
+import { extractErrorMessage } from "@/lib/error-handling"
 import { format } from "date-fns"
 import { FileText, Link as LinkIcon, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { DataSourceIcon } from "@/components/data-sources/DataSourceIcon"
 import { normalizeSourceType } from "@/lib/sourceType"
 
@@ -25,37 +37,45 @@ export function KnowledgeBase() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
-    const fetchDocuments = async () => {
+    const fetchDocuments = useCallback(async () => {
         setLoading(true)
         setError(null)
         try {
             const response = await authFetch.get('/documents')
             setDocuments(response.data)
         } catch (err: unknown) {
-            console.error(err)
-            const message = err instanceof Error ? err.message : "Failed to load documents"
-            setError(message)
+            if (process.env.NODE_ENV !== 'production') {
+                console.error(err)
+            }
+            setError(extractErrorMessage(err, "Failed to load documents"))
         } finally {
             setLoading(false)
         }
-    }
+    }, [])
+
+    const [deleteId, setDeleteId] = useState<string | null>(null)
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this document? This action implies deleting all learned knowledge from this source.")) return
+        setDeleteId(id)
+    }
+
+    const executeDelete = async () => {
+        const id = deleteId
+        if (!id) return
+        setDeleteId(null)
 
         try {
             await authFetch.delete(`/documents/${id}`)
             // Optimistic update or refetch
             setDocuments(prev => prev.filter(d => d.id !== id))
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : "Failed to delete document"
-            alert(message)
+            toast({ title: "Error", description: extractErrorMessage(err, "Failed to delete document"), variant: "destructive" })
         }
     }
 
     useEffect(() => {
         fetchDocuments()
-    }, [])
+    }, [fetchDocuments])
 
     const getIcon = (type: string) => {
         const normalizedType = normalizeSourceType(type) || type;
@@ -153,6 +173,26 @@ export function KnowledgeBase() {
                     </div>
                 )}
             </CardContent>
+
+            <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. All learned knowledge from this source will be permanently removed.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={executeDelete}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </Card>
     )
 }

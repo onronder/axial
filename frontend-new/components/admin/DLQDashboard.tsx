@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
+import { extractErrorMessage } from '@/lib/error-handling';
 import { cn } from '@/lib/utils';
 import { useProfile } from '@/hooks/useProfile';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -183,10 +184,9 @@ export function DLQDashboard() {
             setTasks(tasksRes.data?.tasks || []);
             setStats(statsRes.data || null);
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to fetch DLQ data';
             toast({
                 title: 'Error',
-                description: message,
+                description: extractErrorMessage(err, 'Failed to fetch DLQ data'),
                 variant: 'destructive',
             });
         } finally {
@@ -245,10 +245,9 @@ export function DLQDashboard() {
             });
             await fetchData();
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to retry task';
             toast({
                 title: 'Retry Failed',
-                description: message,
+                description: extractErrorMessage(err, 'Failed to retry task'),
                 variant: 'destructive',
             });
         } finally {
@@ -273,10 +272,9 @@ export function DLQDashboard() {
             setSelectedTasks(new Set());
             await fetchData();
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to retry tasks';
             toast({
                 title: 'Batch Retry Failed',
-                description: message,
+                description: extractErrorMessage(err, 'Failed to retry tasks'),
                 variant: 'destructive',
             });
         }
@@ -293,10 +291,9 @@ export function DLQDashboard() {
             });
             await fetchData();
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to resolve task';
             toast({
                 title: 'Error',
-                description: message,
+                description: extractErrorMessage(err, 'Failed to resolve task'),
                 variant: 'destructive',
             });
         }

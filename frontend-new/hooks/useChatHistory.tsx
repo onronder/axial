@@ -220,7 +220,9 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
             const { data } = await api.get(`/conversations/${conversationId}/messages`);
             return data;
         } catch (error) {
-            console.error('Failed to get messages:', error);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Failed to get messages:', error);
+            }
             return [];
         }
     }, [hasChatAccess, planReady]);

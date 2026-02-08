@@ -60,7 +60,7 @@ class PerformanceMonitor {
         }
 
         // Log slow operations (>1s)
-        if (duration > 1000) {
+        if (duration > 1000 && process.env.NODE_ENV !== 'production') {
             console.warn(`⚠️ Slow operation: ${name} took ${duration.toFixed(2)}ms`);
         }
 

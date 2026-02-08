@@ -287,12 +287,12 @@ class S3Connector(EnhancedConnector, BaseConnector):
         try:
             access_key = decrypt_token(access_key)
         except Exception:
-            pass  # Not encrypted, use as-is
-            
+            pass  # Not encrypted — use as-is (expected for plaintext keys)
+
         try:
             secret_key = decrypt_token(secret_key)
         except Exception:
-            pass  # Not encrypted, use as-is
+            pass  # Not encrypted — use as-is (expected for plaintext keys)
 
         return boto3.client(
             "s3",

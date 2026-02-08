@@ -18,7 +18,7 @@ from core.config import settings
 from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 from connectors.limits import connector_fetch_limit
-from core.resilience import with_google_retry
+from core.resilience import with_google_retry, google_drive_breaker, CircuitBreakerOpen
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
 
     @with_google_retry(max_attempts=3)
     def _drive_get(self, service, **kwargs):
-        with connector_fetch_limit("google_drive"):
+        with google_drive_breaker, connector_fetch_limit("google_drive"):
             try:
                 return service.files().get(**kwargs).execute()
             except Exception as exc:
@@ -47,7 +47,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
 
     @with_google_retry(max_attempts=3)
     def _drive_list(self, service, **kwargs):
-        with connector_fetch_limit("google_drive"):
+        with google_drive_breaker, connector_fetch_limit("google_drive"):
             try:
                 return service.files().list(**kwargs).execute()
             except Exception as exc:

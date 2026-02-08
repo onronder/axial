@@ -155,7 +155,9 @@ export async function sendChatRequest(
     // Handle HTTP 300 Multiple Choices (clarification needed)
     if (response.status === 300) {
         const clarification = await response.json() as ClarificationResponse;
-        console.log('🔍 [Chat] Clarification needed:', clarification.candidates.length, 'scopes');
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('🔍 [Chat] Clarification needed:', clarification.candidates.length, 'scopes');
+        }
         return {
             requires_clarification: true,
             data: clarification,

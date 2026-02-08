@@ -151,7 +151,9 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
             if (error) throw error;
             setJobs(data || []);
         } catch (error) {
-            console.error("Failed to fetch ingestion jobs:", error);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to fetch ingestion jobs:", error);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -248,7 +250,9 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
         } catch (err) {
             const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
             const message = axiosErr.response?.data?.detail || axiosErr.message || 'Could not retry the job.';
-            console.error("Failed to retry job:", message);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to retry job:", message);
+            }
             toast({
                 title: "Retry Failed",
                 description: message,
@@ -272,7 +276,9 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
         } catch (err) {
             const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
             const message = axiosErr.response?.data?.detail || axiosErr.message || 'Could not cancel the job.';
-            console.error("Failed to cancel job:", message);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to cancel job:", message);
+            }
             toast({
                 title: "Cancel Failed",
                 description: message,
@@ -290,7 +296,9 @@ export function useIngestionJobs(): UseIngestionJobsReturn {
         } catch (err) {
             const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
             const message = axiosErr.response?.data?.detail || axiosErr.message || 'Could not fetch job files.';
-            console.error("Failed to fetch job files:", message);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to fetch job files:", message);
+            }
             toast({
                 title: "Error",
                 description: message,

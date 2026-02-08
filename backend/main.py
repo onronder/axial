@@ -54,7 +54,7 @@ def init_sentry() -> None:
                 # Profiling
                 profiles_sample_rate=0.1,  # 10% of sampled transactions
                 # Environment
-                environment=os.getenv("ENVIRONMENT", "development"),
+                environment=settings.ENVIRONMENT,
                 # Integrations
                 integrations=[
                     FastApiIntegration(),
@@ -93,6 +93,25 @@ async def lifespan(app: FastAPI):
     # This must be called early to set up SIGTERM/SIGINT handlers
     register_cleanup_handlers()
 
+    # Validate critical security config
+    if settings.API_KEY == "default-insecure-key":
+        raise RuntimeError(
+            "CRITICAL: API_KEY is set to default value. "
+            "Set a unique API_KEY environment variable."
+        )
+
+    # Warn about encryption config mismatch in non-production
+    if (
+        settings.STRICT_ENCRYPTION_MODE
+        and not settings.CHUNK_ENCRYPTION_KEY
+        and settings.ENVIRONMENT != "production"
+    ):
+        logger.warning(
+            "⚠️ STRICT_ENCRYPTION_MODE=True but CHUNK_ENCRYPTION_KEY not set. "
+            "Reads of encrypted content will fail. "
+            "Set CHUNK_ENCRYPTION_KEY or set STRICT_ENCRYPTION_MODE=false for development."
+        )
+
     # Startup: verify database connection
     try:
         await check_connection()
@@ -117,8 +136,8 @@ app = FastAPI(
     title="Axio Hub RAG API",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
-    redoc_url="/redoc" if os.getenv("ENVIRONMENT") != "production" else None,
+    docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
+    redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,
 )
 
 # Register rate limiter
@@ -138,8 +157,8 @@ def configure_cors() -> list[str]:
     2. DEVELOPMENT: Allows localhost fallback
     3. Never allows wildcard (*) in production
     """
-    environment = os.getenv("ENVIRONMENT", "development")
-    allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+    environment = settings.ENVIRONMENT
+    allowed_origins_env = settings.ALLOWED_ORIGINS
     
     origins: list[str] = []
     
@@ -187,11 +206,20 @@ def configure_cors() -> list[str]:
             ]
             logger.info("🔓 CORS: Development mode - using localhost origins")
         
-        # Add Vercel preview pattern for development
+        # Add specific Vercel preview URL (not wildcard)
         vercel_env = os.getenv("VERCEL_ENV")
         if vercel_env in ("preview", "development"):
-            origins.append("https://*.vercel.app")
-            logger.info("🔓 CORS: Added Vercel preview pattern")
+            # VERCEL_URL is auto-set by Vercel for each deployment (e.g. "my-app-abc123.vercel.app")
+            vercel_url = os.getenv("VERCEL_URL")
+            vercel_branch_url = os.getenv("VERCEL_BRANCH_URL")
+            if vercel_url:
+                origins.append(f"https://{vercel_url}")
+            if vercel_branch_url and vercel_branch_url != vercel_url:
+                origins.append(f"https://{vercel_branch_url}")
+            if vercel_url or vercel_branch_url:
+                logger.info("🔓 CORS: Added Vercel preview origin(s)")
+            else:
+                logger.warning("⚠️ CORS: VERCEL_ENV is set but VERCEL_URL is empty — no preview origin added")
     
     return origins
 
@@ -201,7 +229,7 @@ def build_cors_origins() -> list[str]:
         return configure_cors()
     except RuntimeError as e:
         # In development, fall back to permissive mode
-        if os.getenv("ENVIRONMENT") != "production":
+        if settings.ENVIRONMENT != "production":
             logger.warning(f"⚠️ CORS configuration error (dev mode, using fallback): {e}")
             return ["*"]
         raise
@@ -215,7 +243,7 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Idempotency-Key", "Idempotency-Key", "Accept", "Origin"],
     expose_headers=["X-Request-ID", "X-Response-Time"],
 )
 
@@ -225,6 +253,19 @@ app.add_middleware(RequestTracingMiddleware)
 
 # Add GZip compression for responses > 500 bytes
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# Request body size limit (100MB) to prevent large-payload DoS
+MAX_REQUEST_BODY_BYTES = settings.MAX_FILE_SIZE  # 100MB from config
+
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_REQUEST_BODY_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "Request body too large"},
+        )
+    return await call_next(request)
 
 # =============================================================================
 # API Routers
@@ -295,7 +336,7 @@ async def health_check():
     status = {
         "status": "healthy",
         "version": "1.0.0",
-        "environment": os.getenv("ENVIRONMENT", "development"),
+        "environment": settings.ENVIRONMENT,
         "services": {
             "database": "unknown",
             "redis": "unknown"
@@ -318,9 +359,10 @@ async def health_check():
     
     # 2. Check Redis (NON-CRITICAL for Read API)
     redis_healthy = False
+    r = None
     try:
         import redis
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        redis_url = settings.REDIS_URL
         r = redis.from_url(redis_url)
         r.ping()
         status["services"]["redis"] = "up"
@@ -332,6 +374,12 @@ async def health_check():
             status["status"] = "degraded"
         status["issues"].append("redis_down")
         logger.error(f"❌ Health check - Redis: {e}")
+    finally:
+        if r is not None:
+            try:
+                r.close()
+            except Exception as e:
+                logger.debug(f"[Health] Failed to close Redis connection: {e}")
     
     # Decision Matrix:
     # DB Down -> 503 (Unhealthy)

@@ -178,7 +178,9 @@ export function GlobalProgress() {
      * Called when ingestion completes - refresh data caches
      */
     const handleIngestionComplete = useCallback(() => {
-        console.log("📊 [GlobalProgress] Ingestion complete - refreshing data...");
+        if (process.env.NODE_ENV !== 'production') {
+            console.log("📊 [GlobalProgress] Ingestion complete - refreshing data...");
+        }
         refresh(true);
         queryClient.invalidateQueries({ queryKey: ["documents"] });
         queryClient.invalidateQueries({ queryKey: ["documentCount"] });
@@ -262,7 +264,9 @@ export function GlobalProgress() {
             )
             .subscribe((status) => {
                 if (status === "SUBSCRIBED") {
-                    console.log("🔔 GlobalProgress: Realtime connected");
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.log("🔔 GlobalProgress: Realtime connected");
+                    }
                 }
             });
 

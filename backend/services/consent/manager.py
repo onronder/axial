@@ -535,8 +535,9 @@ class ConsentManager:
         self,
         organization_id: str,
         limit: int = 100,
+        offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """Get consent change audit log for organization."""
+        """Get consent change audit log for organization with pagination."""
         from core.db import get_supabase
 
         supabase = get_supabase()
@@ -544,7 +545,7 @@ class ConsentManager:
             .select("*")\
             .eq("organization_id", organization_id)\
             .order("changed_at", desc=True)\
-            .limit(limit)\
+            .range(offset, offset + limit - 1)\
             .execute()
 
         return result.data or []

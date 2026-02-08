@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
+from celery.exceptions import SoftTimeLimitExceeded
 from core.celery_app import celery_app
 from core.db import get_supabase
 from core.db_utils import insert_rows_with_retry, delete_rows_with_retry
@@ -282,8 +283,8 @@ def _ensure_scope_identity_placeholder_fallback(
             if check.data:
                 logger.info(f"[ScopePlaceholder] Placeholder exists (concurrent create): {scope_id[:50]}...")
                 return "exists"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[ScopePlaceholder] Existence check failed for {scope_id[:50]}...: {e}")
         
         raise
 
@@ -376,16 +377,16 @@ def _resolve_org_scope(supabase, user_id: str) -> Dict[str, Optional[str]]:
         res = supabase.table("team_members").select("team_id").eq("member_user_id", user_id).limit(1).execute()
         if res.data:
             team_id = res.data[0].get("team_id")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[OrgScope] team_members lookup failed for user {user_id[:8]}...: {e}")
 
     if not team_id:
         try:
             owner_res = supabase.table("teams").select("id").eq("owner_id", user_id).limit(1).execute()
             if owner_res.data:
                 team_id = owner_res.data[0].get("id")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[OrgScope] teams owner lookup failed for user {user_id[:8]}...: {e}")
 
     return {"team_id": team_id, "user_id": user_id}
 
@@ -440,8 +441,8 @@ def _is_duplicate_document(
                         supabase.table("documents").update(
                             {"updated_at": datetime.now(timezone.utc).isoformat()}
                         ).eq("id", existing_doc["id"]).execute()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"[Dedup] Failed to touch updated_at for doc {existing_doc['id'][:8]}...: {e}")
                     logger.debug(f"[Dedup] Exact duplicate found for source_id={source_id[:50]}...")
                     return True
                 
@@ -473,8 +474,8 @@ def _is_duplicate_document(
                 supabase.table("documents").update(
                     {"updated_at": datetime.now(timezone.utc).isoformat()}
                 ).eq("id", res.data[0]["id"]).execute()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[Dedup] Failed to touch updated_at for cross-org doc: {e}")
             return True
             
     except Exception as exc:
@@ -674,8 +675,8 @@ def _record_crawl_outcome_and_maybe_finalize(
                 failed_files=counters.get("failed", 0),
                 progress=progress,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[BatchIngest] Failed to update job status: {e}")
 
 
 def ingest_document_batched(
@@ -1586,7 +1587,9 @@ def _collect_documents_sync(connector, item_ids, credentials, user_id):
     retry_backoff_max=600,
     max_retries=3,
     acks_late=True,
-    ignore_result=True
+    ignore_result=True,
+    soft_time_limit=900,
+    time_limit=960,
 )
 def unified_ingest_task(
     self,
@@ -1644,8 +1647,8 @@ def unified_ingest_task(
             )
             if job_res.data and job_res.data.get("organization_id"):
                 organization_id = job_res.data["organization_id"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[UnifiedIngest] Failed to fetch organization_id from job: {e}")
     if not organization_id:
         org_scope = _resolve_org_scope(supabase, user_id)
         organization_id = org_scope.get("team_id") or user_id
@@ -2169,6 +2172,21 @@ def process_file_task(
         if isinstance(content, str):
             content = content.encode("utf-8")
 
+        # MIME type verification: detect content type mismatch
+        if mime_type and content:
+            try:
+                import magic
+                actual_mime = magic.from_buffer(content[:2048], mime=True)
+                if actual_mime != mime_type and actual_mime not in ("application/octet-stream", "text/plain"):
+                    logger.warning(
+                        f"[Ingest] MIME mismatch for {filename}: "
+                        f"claimed={mime_type}, actual={actual_mime}"
+                    )
+            except ImportError:
+                pass  # python-magic not installed
+            except Exception as mime_err:
+                logger.debug(f"[Ingest] MIME check skipped: {mime_err}")
+
         if ext in structured_exts and len(content) > settings.MAX_STRUCTURED_FILE_SIZE:
             update_file_status(
                 supabase,
@@ -2210,11 +2228,19 @@ def process_file_task(
                 skip_reason = "timeout"
             else:
                 skip_reason = "scan error"
-            logger.warning("⚠️ [Malware] File %s skipped malware scan (%s)", scan_target, skip_reason)
-            scan_result = {"safe": True, "reason": f"scan_skipped:{skip_reason}"}
+            if settings.MALWARE_SCAN_FAIL_CLOSED:
+                logger.error("🚫 [Malware] File %s rejected: scanner unavailable (%s)", scan_target, skip_reason)
+                scan_result = {"safe": False, "reason": f"scan_unavailable:{skip_reason}"}
+            else:
+                logger.warning("⚠️ [Malware] File %s skipped malware scan (%s)", scan_target, skip_reason)
+                scan_result = {"safe": True, "reason": f"scan_skipped:{skip_reason}"}
         except Exception as exc:
-            logger.warning("⚠️ [Malware] File %s skipped malware scan (scan error: %s)", scan_target, exc)
-            scan_result = {"safe": True, "reason": "scan_skipped:exception"}
+            if settings.MALWARE_SCAN_FAIL_CLOSED:
+                logger.error("🚫 [Malware] File %s rejected: scanner error (%s)", scan_target, exc)
+                scan_result = {"safe": False, "reason": "scan_unavailable:exception"}
+            else:
+                logger.warning("⚠️ [Malware] File %s skipped malware scan (scan error: %s)", scan_target, exc)
+                scan_result = {"safe": True, "reason": "scan_skipped:exception"}
         if not scan_result.get("safe"):
             reason = scan_result.get("reason") or "Security Violation: Malware Detected"
             logger.critical(f"[ProcessFile:{task_id}] 🚫 Malware detected in {filename}: {reason}")
@@ -2498,15 +2524,41 @@ def process_file_task(
         )
         return {"status": "queued_embedding", "file_ref": safe_file_ref(filename=filename)}
         
+    except SoftTimeLimitExceeded:
+        logger.error(f"[ProcessFile:{task_id}] ⏰ Soft time limit exceeded for {safe_file_ref(filename=filename)}")
+
+        update_file_status(supabase, file_status_id, job_id, status="failed",
+            progress=0,
+            message="Processing timed out. File may be too large or complex.",
+            error="soft_time_limit_exceeded"
+        )
+
+        _record_ingest_outcome_and_maybe_finalize(
+            supabase,
+            user_id,
+            job_id,
+            file_status_id,
+            "failed",
+        )
+        audit_logger.log_sync(
+            user_id=user_id,
+            action="ingest.timeout",
+            resource_type="ingestion_job",
+            resource_id=job_id,
+            details={"filename": filename, "error": "soft_time_limit_exceeded"},
+        )
+
+        raise  # Re-raise so Celery marks task as failed
+
     except Exception as e:
         logger.error(f"[ProcessFile:{task_id}] ❌ {safe_file_ref(filename=filename)}: {e}")
-        
+
         update_file_status(supabase, file_status_id, job_id, status="failed",
             progress=0,
             message=str(e)[:500],
             error=str(e)[:1000]
         )
-        
+
         _record_ingest_outcome_and_maybe_finalize(
             supabase,
             user_id,
@@ -2521,7 +2573,7 @@ def process_file_task(
             resource_id=job_id,
             details={"filename": filename, "error": str(e)},
         )
-        
+
         return {
             "status": "failed",
             "filename": filename,
@@ -2555,6 +2607,8 @@ def process_file_task(
     bind=True,
     queue="queues.embedding",
     ignore_result=True,
+    soft_time_limit=600,
+    time_limit=660,
 )
 def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_code: Optional[str] = None):
     """
@@ -2653,6 +2707,8 @@ def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_
     bind=True,
     queue="queues.indexing",
     ignore_result=True,
+    soft_time_limit=300,
+    time_limit=330,
 )
 def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
     """
@@ -2774,7 +2830,9 @@ def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
 @celery_app.task(
     bind=True,
     name="finalize_job_task",
-    ignore_result=True
+    ignore_result=True,
+    soft_time_limit=120,
+    time_limit=150,
 )
 def finalize_job_task(self, user_id: str, job_id: str):
     """
@@ -3091,6 +3149,8 @@ def update_crawl_status(
     max_retries=2,
     ignore_result=True,
     queue="queues.parsing",
+    soft_time_limit=1800,
+    time_limit=1860,
 )
 def crawl_discovery_task(
     self,
@@ -3137,8 +3197,8 @@ def crawl_discovery_task(
             )
             if job_res.data and job_res.data.get("organization_id"):
                 organization_id = job_res.data["organization_id"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Discovery] Failed to fetch organization_id from job: {e}")
     if not organization_id:
         org_scope = _resolve_org_scope(supabase, user_id)
         organization_id = org_scope.get("team_id") or user_id
@@ -3181,8 +3241,8 @@ def crawl_discovery_task(
                     progress=5,
                     message=f"Processing {content_type}..."
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[Discovery] Failed to update job status: {e}")
         
         # Use appropriate notification title based on content type
         notification_title = "YouTube Indexing Started" if is_youtube else "Web Crawl Started"
@@ -3403,6 +3463,8 @@ def crawl_discovery_task(
     rate_limit="10/s",
     ignore_result=True,
     queue="queues.parsing",
+    soft_time_limit=300,
+    time_limit=330,
 )
 def process_page_task(
     self,
@@ -3705,8 +3767,8 @@ def process_page_task(
                     "p_crawl_id": crawl_id,
                     "p_field": "pages_ingested"
                 }).execute()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[Page] Failed to increment pages_ingested counter: {e}")
         
         _record_crawl_outcome_and_maybe_finalize(
             supabase,
@@ -3731,8 +3793,8 @@ def process_page_task(
                         "p_crawl_id": crawl_id,
                         "p_field": "pages_failed"
                     }).execute()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[Page] Failed to increment pages_failed counter: {e}")
             
             _record_crawl_outcome_and_maybe_finalize(
                 supabase,
@@ -3747,13 +3809,13 @@ def process_page_task(
         finally:
             try:
                 send_failure_email_notification(supabase, user_id, url, str(e))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[Page] Failed to send failure notification email: {e}")
         
         raise
 
 
-@celery_app.task(bind=True, ignore_result=True)
+@celery_app.task(bind=True, ignore_result=True, soft_time_limit=120, time_limit=150)
 def finalize_crawl_task(
     self,
     user_id: str,
@@ -3846,8 +3908,8 @@ def finalize_crawl_task(
             progress=100,
             message=status_msg,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[Finalize] Failed to update crawl job status: {e}")
 
     if job_counters_finalize:
         job_counters_finalize.labels("crawl", counts_source).inc()
@@ -3893,7 +3955,7 @@ crawl_web_task = crawl_discovery_task
 # SCHEDULED RE-CRAWL TASK (Living Knowledge)
 # ============================================================
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, soft_time_limit=120, time_limit=150)
 def check_scheduled_crawls(self):
     """
     Celery Beat task to check for scheduled re-crawls.
@@ -4025,8 +4087,8 @@ def check_scheduled_crawls(self):
                         "status": "processing",
                         "message": "Queued for scheduled crawl"
                     }).eq("id", crawl_id).execute()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[Scheduler] Failed to update ingestion_jobs status: {e}")
                 
                 crawls_triggered += 1
                 
@@ -4089,7 +4151,7 @@ def check_rate_limit(supabase, url: str) -> bool:
         return True  # Allow on error
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, soft_time_limit=30, time_limit=60)
 def health_check_task(self):
     """Simple task to verify worker is running."""
     return {"status": "healthy", "task_id": self.request.id}
@@ -4099,7 +4161,7 @@ def health_check_task(self):
 # DATABASE CLEANUP TASK
 # ============================================================
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, soft_time_limit=120, time_limit=150)
 def cleanup_old_jobs(self):
     """
     Clean up old completed/failed ingestion jobs.

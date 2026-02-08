@@ -1,22 +1,24 @@
 "use client";
 
+import { toast } from "@/lib/toast";
+
 /**
  * useDataSources Hook
- * 
+ *
  * Manages data source connections with real API integration.
  * Fetches available connectors and user's connected integrations,
  * then merges them into a unified data structure.
- * 
+ *
  * Features:
  * - OAuth flow management for multiple providers
  * - PKCE support for Microsoft OAuth
  * - File browsing and ingestion
  * - Connection state management
- * 
+ *
  * @example
  * ```tsx
  * const { dataSources, connect, disconnect } = useDataSources();
- * 
+ *
  * // Connect a new source
  * await connect('google_drive');
  * 
@@ -25,8 +27,10 @@
  * ```
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { api } from "@/lib/api";
+import { dedupedRequest } from "@/lib/request-dedup";
+import { extractErrorMessage } from "@/lib/error-handling";
 import {
     getGoogleRedirectUri,
     getGoogleClientId,
@@ -72,12 +76,24 @@ type IntegrationItem = {
 // =============================================================================
 
 /**
- * Development-only logging utility.
+ * Development-only logging utilities.
  * Prevents sensitive information from appearing in production logs.
  */
 function devLog(...args: unknown[]): void {
     if (IS_DEV) {
         console.log(...args);
+    }
+}
+
+function devError(...args: unknown[]): void {
+    if (IS_DEV) {
+        console.error(...args);
+    }
+}
+
+function devWarn(...args: unknown[]): void {
+    if (IS_DEV) {
+        console.warn(...args);
     }
 }
 
@@ -189,10 +205,11 @@ export const useDataSources = () => {
         setError(null);
 
         try {
-            // Fetch both endpoints in parallel
+            // Fetch both endpoints in parallel (with dedup to prevent duplicate calls
+            // when multiple components mount simultaneously)
             const [availableRes, statusRes] = await Promise.all([
-                api.get('/integrations/available'),
-                api.get('/integrations/status')
+                dedupedRequest('integrations:available', () => api.get('/integrations/available')),
+                dedupedRequest('integrations:status', () => api.get('/integrations/status'))
             ]);
 
             const connectors: ConnectorDefinition[] = availableRes.data || [];
@@ -204,8 +221,8 @@ export const useDataSources = () => {
             setUserIntegrations(integrations);
             setDataSources(mergeData(connectors, integrations));
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to fetch data sources';
-            console.error('📦 [useDataSources] ❌ Fetch failed:', message);
+            const message = extractErrorMessage(err, 'Failed to fetch data sources');
+            devError('📦 [useDataSources] ❌ Fetch failed:', message);
             setError(message);
         } finally {
             setLoading(false);
@@ -237,14 +254,14 @@ export const useDataSources = () => {
             logOAuthConfig('Google', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ Google client ID not configured');
-                alert('Google OAuth not configured. Please check environment variables.');
+                devError('📦 [useDataSources] ❌ Google client ID not configured');
+                toast({ title: "Configuration Error", description: "Google OAuth not configured. Please check environment variables.", variant: "destructive" });
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Google redirect URI not configured');
-                alert('OAuth redirect URI is not configured.');
+                devError('📦 [useDataSources] ❌ Google redirect URI not configured');
+                toast({ title: "Configuration Error", description: "OAuth redirect URI is not configured.", variant: "destructive" });
                 return;
             }
 
@@ -271,14 +288,14 @@ export const useDataSources = () => {
             logOAuthConfig('Notion', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ Notion client ID not configured');
-                alert('Notion OAuth not configured. Please check environment variables.');
+                devError('📦 [useDataSources] ❌ Notion client ID not configured');
+                toast({ title: "Configuration Error", description: "Notion OAuth not configured. Please check environment variables.", variant: "destructive" });
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Notion redirect URI not configured');
-                alert('OAuth redirect URI is not configured.');
+                devError('📦 [useDataSources] ❌ Notion redirect URI not configured');
+                toast({ title: "Configuration Error", description: "OAuth redirect URI is not configured.", variant: "destructive" });
                 return;
             }
 
@@ -303,14 +320,14 @@ export const useDataSources = () => {
             logOAuthConfig('Microsoft', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ Microsoft client ID not configured');
-                alert('Microsoft OAuth not configured. Please check environment variables.');
+                devError('📦 [useDataSources] ❌ Microsoft client ID not configured');
+                toast({ title: "Configuration Error", description: "Microsoft OAuth not configured. Please check environment variables.", variant: "destructive" });
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Microsoft redirect URI not configured');
-                alert('OAuth redirect URI is not configured.');
+                devError('📦 [useDataSources] ❌ Microsoft redirect URI not configured');
+                toast({ title: "Configuration Error", description: "OAuth redirect URI is not configured.", variant: "destructive" });
                 return;
             }
 
@@ -323,8 +340,8 @@ export const useDataSources = () => {
                 pkce = await generatePkcePair();
                 sessionStorage.setItem(`microsoft_pkce_${type}`, pkce.codeVerifier);
             } catch (err) {
-                console.error('📦 [useDataSources] ❌ PKCE generation failed');
-                alert('Unable to start Microsoft OAuth. Please refresh and try again.');
+                devError('📦 [useDataSources] ❌ PKCE generation failed');
+                toast({ title: "OAuth Error", description: "Unable to start Microsoft OAuth. Please refresh and try again.", variant: "destructive" });
                 return;
             }
 
@@ -352,14 +369,14 @@ export const useDataSources = () => {
             logOAuthConfig('Dropbox', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ Dropbox client ID not configured');
-                alert('Dropbox OAuth not configured. Please check environment variables.');
+                devError('📦 [useDataSources] ❌ Dropbox client ID not configured');
+                toast({ title: "Configuration Error", description: "Dropbox OAuth not configured. Please check environment variables.", variant: "destructive" });
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Dropbox redirect URI not configured');
-                alert('OAuth redirect URI is not configured.');
+                devError('📦 [useDataSources] ❌ Dropbox redirect URI not configured');
+                toast({ title: "Configuration Error", description: "OAuth redirect URI is not configured.", variant: "destructive" });
                 return;
             }
 
@@ -383,14 +400,14 @@ export const useDataSources = () => {
             logOAuthConfig('GitHub', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ GitHub client ID not configured');
-                alert('GitHub OAuth not configured. Please check environment variables.');
+                devError('📦 [useDataSources] ❌ GitHub client ID not configured');
+                toast({ title: "Configuration Error", description: "GitHub OAuth not configured. Please check environment variables.", variant: "destructive" });
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ GitHub redirect URI not configured');
-                alert('OAuth redirect URI is not configured.');
+                devError('📦 [useDataSources] ❌ GitHub redirect URI not configured');
+                toast({ title: "Configuration Error", description: "OAuth redirect URI is not configured.", variant: "destructive" });
                 return;
             }
 
@@ -413,14 +430,14 @@ export const useDataSources = () => {
             logOAuthConfig('Box', clientId, redirectUri);
 
             if (!clientId) {
-                console.error('📦 [useDataSources] ❌ Box client ID not configured');
-                alert('Box OAuth not configured. Please check environment variables.');
+                devError('📦 [useDataSources] ❌ Box client ID not configured');
+                toast({ title: "Configuration Error", description: "Box OAuth not configured. Please check environment variables.", variant: "destructive" });
                 return;
             }
 
             if (!redirectUri) {
-                console.error('📦 [useDataSources] ❌ Box redirect URI not configured');
-                alert('OAuth redirect URI is not configured.');
+                devError('📦 [useDataSources] ❌ Box redirect URI not configured');
+                toast({ title: "Configuration Error", description: "OAuth redirect URI is not configured.", variant: "destructive" });
                 return;
             }
 
@@ -436,7 +453,7 @@ export const useDataSources = () => {
         }
 
         // Unknown provider
-        console.warn('📦 [useDataSources] Unknown provider type:', type);
+        devWarn('📦 [useDataSources] Unknown provider type:', type);
     }, []);
 
     // =========================================================================
@@ -461,8 +478,8 @@ export const useDataSources = () => {
                     : ds
             ));
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Unknown error';
-            console.error('📦 [useDataSources] ❌ Disconnect failed:', message);
+            const message = extractErrorMessage(err, 'Unknown error');
+            devError('📦 [useDataSources] ❌ Disconnect failed:', message);
             throw new Error("Failed to disconnect source");
         }
     }, []);
@@ -500,7 +517,7 @@ export const useDataSources = () => {
             devLog('📦 [useDataSources] ✅ Got', normalized.length, 'files');
             return normalized;
         } catch (err) {
-            console.error('📦 [useDataSources] ❌ Get files failed');
+            devError('📦 [useDataSources] ❌ Get files failed');
             return [];
         }
     }, []);
@@ -518,9 +535,8 @@ export const useDataSources = () => {
             devLog('📦 [useDataSources] ✅ Ingested');
             return true;
         } catch (err) {
-            const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
-            const message = axiosErr.response?.data?.detail || axiosErr.message || 'Ingestion failed';
-            console.error('📦 [useDataSources] ❌ Ingest failed:', message);
+            const message = extractErrorMessage(err, 'Ingestion failed');
+            devError('📦 [useDataSources] ❌ Ingest failed:', message);
             throw new Error(message);
         }
     }, []);
@@ -541,7 +557,7 @@ export const useDataSources = () => {
             return { success: true, jobId: res.data.job_id };
         } catch (err) {
             const axiosErr = err as { response?: { status?: number }; message?: string };
-            console.error('📦 [useDataSources] ❌ Sync failed');
+            devError('📦 [useDataSources] ❌ Sync failed');
             
             if (axiosErr.response?.status === 429) {
                 throw new Error("Sync already in progress");
@@ -562,7 +578,7 @@ export const useDataSources = () => {
             devLog('📦 [useDataSources] ✅ Found', ids.length, 'ingested files');
             return new Set(ids);
         } catch (err) {
-            console.error('📦 [useDataSources] ❌ Failed to fetch ingested files');
+            devError('📦 [useDataSources] ❌ Failed to fetch ingested files');
             return new Set();
         }
     }, []);
@@ -589,9 +605,10 @@ export const useDataSources = () => {
     }, [dataSources]);
 
     // Legacy: connectedSources array for backward compatibility
-    const connectedSources = dataSources
-        .filter(ds => ds.isConnected)
-        .map(ds => ds.id);
+    const connectedSources = useMemo(
+        () => dataSources.filter(ds => ds.isConnected).map(ds => ds.id),
+        [dataSources]
+    );
 
     // =========================================================================
     // Return

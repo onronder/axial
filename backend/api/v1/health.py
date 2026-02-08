@@ -6,7 +6,10 @@ Provides readiness and liveness probes for container orchestration.
 
 import logging
 import psutil
-from fastapi import APIRouter, Response, status
+from typing import Dict, Optional, List
+from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from core.db import get_supabase
 from core.celery_app import celery_app
 
@@ -15,7 +18,33 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Health"])
 
 
-@router.get("/health")
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+
+
+class ReadinessChecks(BaseModel):
+    database: bool
+    celery: bool
+    memory: bool
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    checks: ReadinessChecks
+
+
+class LivenessResponse(BaseModel):
+    status: str
+    reason: Optional[str] = None
+
+
+class StartupResponse(BaseModel):
+    status: str
+    reason: Optional[str] = None
+
+
+@router.get("/health", response_model=HealthResponse)
 async def health_check():
     """
     Basic health check endpoint.
@@ -25,7 +54,7 @@ async def health_check():
     return {"status": "healthy", "service": "axial-api"}
 
 
-@router.get("/health/ready")
+@router.get("/health/ready", response_model=ReadinessResponse)
 async def readiness_probe():
     """
     Readiness probe for Kubernetes.
@@ -77,13 +106,13 @@ async def readiness_probe():
             "checks": checks
         }
     else:
-        return Response(
+        return JSONResponse(
             content={"status": "not_ready", "checks": checks},
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE
         )
 
 
-@router.get("/health/live")
+@router.get("/health/live", response_model=LivenessResponse)
 async def liveness_probe():
     """
     Liveness probe for Kubernetes.
@@ -100,7 +129,7 @@ async def liveness_probe():
         # Consider dead if memory usage > 95% (likely OOM soon)
         if memory.percent > 95:
             logger.error(f"Liveness check failed: Memory usage at {memory.percent}%")
-            return Response(
+            return JSONResponse(
                 content={"status": "unhealthy", "reason": "memory_critical"},
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE
             )
@@ -109,13 +138,13 @@ async def liveness_probe():
     
     except Exception as e:
         logger.error(f"Liveness check failed: {e}")
-        return Response(
+        return JSONResponse(
             content={"status": "unhealthy", "reason": str(e)},
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE
         )
 
 
-@router.get("/health/startup")
+@router.get("/health/startup", response_model=StartupResponse)
 async def startup_probe():
     """
     Startup probe for Kubernetes.
@@ -134,7 +163,7 @@ async def startup_probe():
     
     except Exception as e:
         logger.error(f"Startup check failed: {e}")
-        return Response(
+        return JSONResponse(
             content={"status": "starting", "reason": str(e)},
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE
         )

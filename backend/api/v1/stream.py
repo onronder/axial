@@ -10,13 +10,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from api.v1.chat import ChatRequest, chat_endpoint
 from api.v1.dependencies import validate_team_access, require_paid_access
 from core.security import get_current_user
+from core.rate_limit import limiter
 
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 @router.post("/chat/stream")
+@limiter.limit("30/minute")
 async def stream_chat(
-    payload: ChatRequest,
     request: Request,
+    payload: ChatRequest,
     background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user),
 ):

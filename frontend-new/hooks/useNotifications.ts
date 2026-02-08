@@ -176,7 +176,9 @@ export function useNotifications() {
             const userId = response.data?.user_id;
 
             if (!userId) {
-                console.warn("⚠️ Could not get user ID for realtime subscription");
+                if (process.env.NODE_ENV !== 'production') {
+                    console.warn("⚠️ Could not get user ID for realtime subscription");
+                }
                 return;
             }
 
@@ -208,7 +210,9 @@ export function useNotifications() {
             }
 
         } catch (err) {
-            console.error("❌ [Realtime] Failed to setup subscription:", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("❌ [Realtime] Failed to setup subscription:", err);
+            }
         }
     }, [handleRealtimeInsert]);
 
@@ -235,7 +239,9 @@ export function useNotifications() {
                 setUnreadCount(response.data.count);
             }
         } catch (err) {
-            console.debug("Failed to fetch unread count:", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.debug("Failed to fetch unread count:", err);
+            }
         }
     }, []);
 
@@ -259,7 +265,9 @@ export function useNotifications() {
             }
         } catch (err) {
             setError("Failed to fetch notifications");
-            console.error("Failed to fetch notifications:", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to fetch notifications:", err);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -279,7 +287,9 @@ export function useNotifications() {
                 prev.map(n => n.id === notificationId ? { ...n, is_read: false } : n)
             );
             setUnreadCount(prev => prev + 1);
-            console.error("Failed to mark as read:", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to mark as read:", err);
+            }
         }
     }, []);
 
@@ -296,7 +306,9 @@ export function useNotifications() {
         } catch (err) {
             setNotifications(prevNotifications);
             setUnreadCount(prevUnreadCount);
-            console.error("Failed to mark all as read:", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to mark all as read:", err);
+            }
         }
     }, [notifications, unreadCount]);
 
@@ -312,7 +324,9 @@ export function useNotifications() {
             await authFetch.delete("/notifications/all");
         } catch (err) {
             setNotifications(prevNotifications);
-            console.error("Failed to clear notifications:", err);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error("Failed to clear notifications:", err);
+            }
         }
     }, [notifications]);
 
