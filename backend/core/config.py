@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     SUPABASE_PUBLISHABLE_KEY: Optional[str] = None 
     
     OPENAI_API_KEY: str
-    API_KEY: str
+    API_KEY: str = ""
     
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None

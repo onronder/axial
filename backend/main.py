@@ -100,6 +100,12 @@ async def lifespan(app: FastAPI):
             "Set a unique API_KEY environment variable."
         )
 
+    if not settings.API_KEY:
+        logger.warning(
+            "⚠️ API_KEY is not set. "
+            "Set a unique API_KEY environment variable for production."
+        )
+
     # Warn about encryption config mismatch in non-production
     if (
         settings.STRICT_ENCRYPTION_MODE
