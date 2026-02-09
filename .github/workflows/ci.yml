@@ -113,6 +113,10 @@ jobs:
           cache-dependency-path: frontend-new/package-lock.json
       - run: cd frontend-new && npm ci
       - run: cd frontend-new && npm run lint
-      - run: cd frontend-new && npm run build
+      - name: Build frontend
+        run: cd frontend-new && npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
       - name: Run frontend tests
         run: cd frontend-new && npm run test --if-present

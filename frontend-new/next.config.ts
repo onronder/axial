@@ -9,7 +9,7 @@ const requiredEnvVars = [
 
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' && !process.env.CI) {
       throw new Error(
         `Missing required environment variable: ${envVar}. ` +
         `Set it in your deployment environment.`
