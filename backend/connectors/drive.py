@@ -7,18 +7,31 @@ File parsing is delegated to the centralized DocumentParser service.
 """
 
 import logging
-from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from starlette.concurrency import run_in_threadpool
-from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
-from connectors.base import BaseConnector, ConnectorAuthError, ConnectorRateLimitError, ConnectorTransientError, RemoteFile
-from core.db import get_supabase
+
+from connectors.base import (
+    BaseConnector,
+    ConnectorAuthError,
+    ConnectorTransientError,
+    RemoteFile,
+)
+from connectors.enhanced import (
+    AuthenticationError,
+    EnhancedConnector,
+    SourceDocument,
+    SourceType,
+)
+from connectors.limits import connector_fetch_limit
 from core.config import settings
+from core.db import get_supabase
+from core.resilience import google_drive_breaker, with_google_retry
 from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
-from connectors.limits import connector_fetch_limit
-from core.resilience import with_google_retry, google_drive_breaker, CircuitBreakerOpen
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +39,7 @@ logger = logging.getLogger(__name__)
 class DriveConnector(EnhancedConnector, BaseConnector):
     """
     Google Drive connector for unified ingestion.
-    
+
     Supports:
     - OAuth token refresh
     - File listing with folder expansion
@@ -52,34 +65,35 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                 return service.files().list(**kwargs).execute()
             except Exception as exc:
                 raise ConnectorTransientError(str(exc)) from exc
-    
+
     def _download_file_content(self, service, file_meta):
         """
         Download file content using chunked streaming with memory-safe buffering.
         Returns (content_bytes, export_mime_type, filename).
-        
+
         Uses SpooledTemporaryFile for memory safety:
         - Files < 10MB: buffered in RAM (fast)
         - Files > 10MB: automatically spilled to disk (safe)
         - Prevents OOM crashes on large file downloads
         """
         import tempfile
+
         from googleapiclient.http import MediaIoBaseDownload
-        
+
         # 10MB threshold: small files stay in RAM, large files go to disk
         MAX_MEM_SIZE = 10 * 1024 * 1024
-        
+
         file_id = file_meta['id']
         mime_type = file_meta.get('mimeType')
         name = file_meta.get('name')
-        
+
         # 1. Handle Google Native formats (Export)
         if mime_type in self.EXPORT_MIME_TYPES:
             export_info = self.EXPORT_MIME_TYPES[mime_type]
             export_mime = export_info['export_mime']
             ext = export_info['extension']
             filename = f"{name}{ext}"
-            
+
             try:
                 with connector_fetch_limit("google_drive"):
                     request = service.files().export_media(fileId=file_id, mimeType=export_mime)
@@ -101,7 +115,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
         # 2. Handle Folders (skip)
         elif mime_type == 'application/vnd.google-apps.folder':
             return None, None, None
-            
+
         # 3. Handle Binary files (Direct Download with streaming)
         else:
             try:
@@ -122,13 +136,13 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                 logger.warning(f"⚠️ [Drive] Download failed for {name}: {e}")
                 raise ConnectorTransientError(str(e)) from e
 
-    def _get_all_files_recursive(self, service, parent_id: str) -> Iterator[Dict]:
+    def _get_all_files_recursive(self, service, parent_id: str) -> Iterator[dict]:
         """
         Recursively fetch all files in a folder (Generator).
         Yields file metadata objects.
         """
         query = f"'{parent_id}' in parents and trashed=false"
-        
+
         # Paginator for large folders
         page_token = None
         while True:
@@ -140,7 +154,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                     pageSize=1000,
                     pageToken=page_token,
                 )
-                
+
                 files = results.get('files', [])
                 for f in files:
                     if f['mimeType'] == 'application/vnd.google-apps.folder':
@@ -148,14 +162,14 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                         yield from self._get_all_files_recursive(service, f['id'])
                     else:
                         yield f
-                
+
                 page_token = results.get('nextPageToken')
                 if not page_token:
                     break
             except Exception as e:
                 logger.error(f"❌ [Drive] Error listing folder {parent_id}: {e}")
                 break
-    
+
     # =========================================================================
     # EXPORT FORMAT: Map Google Native types to text formats for ingestion
     # =========================================================================
@@ -176,8 +190,8 @@ class DriveConnector(EnhancedConnector, BaseConnector):
             "extension": ".txt",
         },
     }
-    
-    
+
+
     async def authorize(self, user_id: str) -> bool:
         """Async wrapper for authorization check."""
         return await run_in_threadpool(self._authorize_implementation, user_id)
@@ -188,19 +202,19 @@ class DriveConnector(EnhancedConnector, BaseConnector):
     def _authorize_implementation(self, user_id: str) -> bool:
         """Synchronous implementation of authorize."""
         supabase = get_supabase()
-        
+
         # Lookup connector definition
         def_res = supabase.table("connector_definitions").select("id").eq("type", "google_drive").single().execute()
         if not def_res.data:
             return False
-        
+
         connector_def_id = def_res.data["id"]
-        
+
         # Check for user integration
         res = supabase.table("user_integrations").select("id").eq(
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
-        
+
         return len(res.data) > 0
 
     def _get_credentials_by_integration(self, integration: dict) -> Credentials:
@@ -221,7 +235,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                 integration,
                 'google_drive'
             )
-            
+
             # Build Google credentials with refreshed token
             creds = Credentials(
                 token=creds_data['access_token'],
@@ -232,9 +246,9 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                 scopes=['https://www.googleapis.com/auth/drive.readonly'],
                 quota_project_id=None
             )
-            
+
             return creds
-        
+
         except TokenRefreshError as e:
             logger.error(f"❌ Token refresh failed: {e}")
             raise ValueError("Integration requires reconnection (Token Expired/Revoked)") from e
@@ -244,37 +258,37 @@ class DriveConnector(EnhancedConnector, BaseConnector):
         Get Google credentials for a user by looking up their integration.
         """
         supabase = get_supabase()
-        
+
         # Lookup connector definition
         def_res = supabase.table("connector_definitions").select("id").eq("type", "google_drive").single().execute()
         if not def_res.data:
             raise ValueError("google_drive connector not found in definitions")
-        
+
         connector_def_id = def_res.data["id"]
-        
+
         # Get user integration
         res = supabase.table("user_integrations").select("*").eq(
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
-        
+
         if not res.data:
             raise ValueError("Google Drive not connected for this user.")
-        
+
         return self._get_credentials_by_integration(res.data[0])
 
-    async def list_files(self, config: Dict[str, Any], since: Optional[str] = None) -> List[RemoteFile]:
+    async def list_files(self, config: dict[str, Any], since: str | None = None) -> list[RemoteFile]:
         """Async wrapper for listing items using config."""
         user_id = config.get("user_id")
         parent_id = config.get("parent_id")
         return await run_in_threadpool(self._list_files_sync, user_id, parent_id)
 
-    def _list_files_sync(self, user_id: str, parent_id: Optional[str] = None) -> List[RemoteFile]:
+    def _list_files_sync(self, user_id: str, parent_id: str | None = None) -> list[RemoteFile]:
         """Synchronous implementation of list_files."""
         creds = self._get_credentials(user_id)
         service = build('drive', 'v3', credentials=creds)
-        
+
         query_parent = parent_id if parent_id else 'root'
-        
+
         results = self._drive_list(
             service,
             q=f"'{query_parent}' in parents and trashed=false",
@@ -284,7 +298,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
         )
 
         files = results.get('files', [])
-        items: List[RemoteFile] = []
+        items: list[RemoteFile] = []
         for f in files:
             is_folder = f['mimeType'] == 'application/vnd.google-apps.folder'
             items.append(
@@ -306,7 +320,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
     async def fetch_documents(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs
     ) -> AsyncIterator[SourceDocument]:
         """Async wrapper for sync fetch."""
@@ -316,7 +330,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
     def fetch_documents_sync(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs
     ) -> Iterator[SourceDocument]:
         user_id = kwargs.get("user_id") or credentials.get("user_id") if credentials else None
@@ -357,7 +371,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                     fileId=item_id,
                     fields="id, name, mimeType, webViewLink, size",
                 )
-                
+
                 # Generate scope_id using canonical URI builder
                 scope_id = build_scope_uri("google_drive", {"folder_id": item_id})
 
@@ -385,10 +399,10 @@ class DriveConnector(EnhancedConnector, BaseConnector):
     def _build_source_document(
         self,
         service,
-        file_meta: Dict[str, Any],
-        parent_id: Optional[str],
+        file_meta: dict[str, Any],
+        parent_id: str | None,
         scope_id: str,
-    ) -> Optional[SourceDocument]:
+    ) -> SourceDocument | None:
         content_bytes, export_mime, filename = self._download_file_content(service, file_meta)
         if not content_bytes:
             return None
@@ -417,7 +431,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
             parent_id=parent_id,
         )
 
-    def fetch_file_content(self, file_id: str, config: Dict[str, Any]) -> bytes:
+    def fetch_file_content(self, file_id: str, config: dict[str, Any]) -> bytes:
         """
         Fetch raw file bytes for a given Drive file ID.
         Required by BaseConnector interface.

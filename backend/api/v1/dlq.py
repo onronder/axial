@@ -5,13 +5,18 @@ Production-grade API for managing failed tasks and retry operations.
 """
 
 import logging
-from typing import List, Optional
-from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel, Field, ConfigDict
+from datetime import datetime, timedelta, timezone
 
-from api.v1.dependencies import get_current_user, require_admin, validate_team_access, require_paid_access
-from api.v1.error_utils import api_error, ApiErrorCode
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field
+
+from api.v1.dependencies import (
+    get_current_user,
+    require_admin,
+    require_paid_access,
+    validate_team_access,
+)
+from api.v1.error_utils import ApiErrorCode, api_error
 from core.db import get_supabase
 from core.rate_limit import limiter
 from worker.dlq_worker import retry_failed_tasks
@@ -31,18 +36,18 @@ class FailedTaskResponse(BaseModel):
     task_id: str
     task_name: str
     user_id: str
-    job_id: Optional[str] = None
+    job_id: str | None = None
     status: str
     attempt_count: int
     max_retries: int
-    next_retry_at: Optional[datetime] = None
-    exception_type: Optional[str] = None
-    exception_message: Optional[str] = None
-    traceback: Optional[str] = None
+    next_retry_at: datetime | None = None
+    exception_type: str | None = None
+    exception_message: str | None = None
+    traceback: str | None = None
     created_at: datetime
     updated_at: datetime
-    resolved_at: Optional[datetime] = None
-    
+    resolved_at: datetime | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -55,7 +60,7 @@ class DLQStatsResponse(BaseModel):
     permanently_failed: int = Field(..., description="Tasks that failed all retries")
     resolved: int = Field(..., description="Total tasks resolved (all time)")
     resolved_today: int = Field(..., description="Tasks resolved in last 24 hours")
-    
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -73,7 +78,7 @@ class DLQStatsResponse(BaseModel):
 
 class ManualRetryRequest(BaseModel):
     """Request model for manual retry."""
-    reason: Optional[str] = Field(None, description="Reason for manual retry")
+    reason: str | None = Field(None, description="Reason for manual retry")
 
 
 class ManualRetryResponse(BaseModel):
@@ -86,7 +91,7 @@ class ManualRetryResponse(BaseModel):
 
 class DLQListResponse(BaseModel):
     """Response model for list of failed tasks."""
-    tasks: List[FailedTaskResponse]
+    tasks: list[FailedTaskResponse]
     total: int
     page: int
     page_size: int
@@ -98,7 +103,7 @@ class DLQListResponse(BaseModel):
 
 @router.get(
     "/failed-tasks/{job_id}",
-    response_model=Optional[FailedTaskResponse],
+    response_model=FailedTaskResponse | None,
     summary="Get failed task for a job",
     description="Retrieve the failed task information for a specific ingestion job"
 )
@@ -110,13 +115,13 @@ async def get_failed_task_for_job(
 ):
     """
     Get failed task information for a specific job.
-    
+
     Returns the most recent failed task for the given job ID.
     Only returns tasks belonging to the authenticated user.
     """
     try:
         supabase = get_supabase()
-        
+
         # Query failed_tasks table
         result = supabase.table("failed_tasks").select("*").eq(
             "job_id", job_id
@@ -125,12 +130,12 @@ async def get_failed_task_for_job(
         ).order(
             "created_at", desc=True
         ).limit(1).execute()
-        
+
         if not result.data:
             return None
-        
+
         task = result.data[0]
-        
+
         # Convert to response model
         return FailedTaskResponse(
             id=task["id"],
@@ -149,7 +154,7 @@ async def get_failed_task_for_job(
             updated_at=task["updated_at"],
             resolved_at=task.get("resolved_at")
         )
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_failed_task")
 
@@ -169,47 +174,47 @@ async def manual_retry_task(
 ):
     """
     Manually trigger retry for a failed task.
-    
+
     This bypasses the automatic retry schedule and immediately
     re-queues the task for execution.
     """
     try:
         supabase = get_supabase()
-        
+
         # Get the task
         result = supabase.table("failed_tasks").select("*").eq(
             "id", task_id
         ).eq(
             "user_id", user_id  # Security: Only user's own tasks
         ).single().execute()
-        
+
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Task not found or access denied"
             )
-        
+
         task = result.data
-        
+
         # Check if task can be retried
         if task["status"] == "resolved":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Task already resolved, cannot retry"
             )
-        
+
         if task["status"] == "retrying":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Task is already retrying"
             )
-        
+
         if task["attempt_count"] >= task["max_retries"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Task has exceeded maximum retry attempts"
             )
-        
+
         # Update task status to trigger immediate retry
         now = datetime.now(timezone.utc)
         update_result = supabase.table("failed_tasks").update({
@@ -217,26 +222,26 @@ async def manual_retry_task(
             "next_retry_at": now.isoformat(),  # Immediate retry
             "updated_at": now.isoformat()
         }).eq("id", task_id).execute()
-        
+
         if not update_result.data:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to update task status"
             )
-        
+
         # Log manual retry
         logger.info(
             f"📥 [DLQ] Manual retry triggered for task {task_id} by user {user_id}"
             + (f" - Reason: {request.reason}" if request.reason else "")
         )
-        
+
         return ManualRetryResponse(
             success=True,
             message="Task scheduled for immediate retry",
             task_id=task_id,
             new_status="pending_retry"
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -257,34 +262,34 @@ async def resolve_failed_task(
 ):
     """
     Mark a failed task as resolved.
-    
+
     This removes the task from the active failed list.
     Used when the issue has been fixed manually or the task is no longer needed.
     """
     try:
         supabase = get_supabase()
-        
+
         # Get the task
         result = supabase.table("failed_tasks").select("*").eq(
             "id", task_id
         ).eq(
             "user_id", user_id  # Security: Only user's own tasks
         ).single().execute()
-        
+
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Task not found or access denied"
             )
-        
+
         task = result.data
-        
+
         if task["status"] == "resolved":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Task is already resolved"
             )
-        
+
         # Update task status to resolved
         now = datetime.now(timezone.utc)
         update_result = supabase.table("failed_tasks").update({
@@ -292,22 +297,22 @@ async def resolve_failed_task(
             "resolved_at": now.isoformat(),
             "updated_at": now.isoformat()
         }).eq("id", task_id).execute()
-        
+
         if not update_result.data:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to update task status"
             )
-        
+
         logger.info(f"📥 [DLQ] Task {task_id} marked as resolved by user {user_id}")
-        
+
         return ManualRetryResponse(
             success=True,
             message="Task marked as resolved",
             task_id=task_id,
             new_status="resolved"
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -327,19 +332,19 @@ async def get_dlq_stats(
 ):
     """
     Get DLQ statistics for the authenticated user.
-    
+
     Returns counts of tasks in each status category including resolved_today.
     """
     try:
         supabase = get_supabase()
-        
+
         # Get all tasks for user with resolved_at for today calculation
         result = supabase.table("failed_tasks").select(
             "status, resolved_at"
         ).eq(
             "user_id", user_id
         ).execute()
-        
+
         if not result.data:
             return DLQStatsResponse(
                 total_failed=0,
@@ -350,7 +355,7 @@ async def get_dlq_stats(
                 resolved=0,
                 resolved_today=0
             )
-        
+
         # Count by status
         status_counts = {
             "pending_retry": 0,
@@ -358,17 +363,17 @@ async def get_dlq_stats(
             "permanently_failed": 0,
             "resolved": 0
         }
-        
+
         # Calculate resolved_today (last 24 hours)
         now = datetime.now(timezone.utc)
         today_start = now - timedelta(hours=24)
         resolved_today = 0
-        
+
         for task in result.data:
             task_status = task["status"]
             if task_status in status_counts:
                 status_counts[task_status] += 1
-            
+
             # Check if resolved within last 24 hours
             resolved_at = task.get("resolved_at")
             if resolved_at and task_status == "resolved":
@@ -378,9 +383,9 @@ async def get_dlq_stats(
                         resolved_today += 1
                 except (ValueError, TypeError):
                     pass
-        
+
         total = len(result.data)
-        
+
         return DLQStatsResponse(
             total_failed=total,
             total=total,
@@ -390,7 +395,7 @@ async def get_dlq_stats(
             resolved=status_counts["resolved"],
             resolved_today=resolved_today
         )
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_dlq_stats")
 
@@ -406,22 +411,22 @@ async def get_my_failed_tasks(
     request: Request,
     page: int = 1,
     page_size: int = 20,
-    status_filter: Optional[str] = None,
+    status_filter: str | None = None,
     user_id: str = Depends(get_current_user)
 ):
     """
     Get all failed tasks for the authenticated user.
-    
+
     Supports pagination and filtering by status.
     """
     try:
         supabase = get_supabase()
-        
+
         # Build query
         query = supabase.table("failed_tasks").select(
             "*", count="exact"
         ).eq("user_id", user_id)
-        
+
         # Apply status filter if provided
         if status_filter:
             valid_statuses = ["failed", "pending_retry", "retrying", "permanently_failed", "resolved"]
@@ -431,13 +436,13 @@ async def get_my_failed_tasks(
                     detail=f"Invalid status filter. Must be one of: {', '.join(valid_statuses)}"
                 )
             query = query.eq("status", status_filter)
-        
+
         # Apply pagination
         offset = (page - 1) * page_size
         query = query.order("created_at", desc=True).range(offset, offset + page_size - 1)
-        
+
         result = query.execute()
-        
+
         tasks = [
             FailedTaskResponse(
                 id=task["id"],
@@ -458,14 +463,14 @@ async def get_my_failed_tasks(
             )
             for task in result.data
         ]
-        
+
         return DLQListResponse(
             tasks=tasks,
             total=result.count or 0,
             page=page,
             page_size=page_size
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -487,31 +492,31 @@ async def admin_get_all_failed_tasks(
     request: Request,
     page: int = 1,
     page_size: int = 50,
-    status_filter: Optional[str] = None,
+    status_filter: str | None = None,
     user_id: str = Depends(get_current_user),
     _: bool = Depends(require_admin)
 ):
     """
     Admin: Get all failed tasks across all users.
-    
+
     Requires admin privileges.
     """
     try:
         supabase = get_supabase()
-        
+
         # Build query
         query = supabase.table("failed_tasks").select("*", count="exact")
-        
+
         # Apply status filter if provided
         if status_filter:
             query = query.eq("status", status_filter)
-        
+
         # Apply pagination
         offset = (page - 1) * page_size
         query = query.order("created_at", desc=True).range(offset, offset + page_size - 1)
-        
+
         result = query.execute()
-        
+
         tasks = [
             FailedTaskResponse(
                 id=task["id"],
@@ -532,16 +537,16 @@ async def admin_get_all_failed_tasks(
             )
             for task in result.data
         ]
-        
+
         logger.info(f"📥 [DLQ Admin] User {user_id} retrieved {len(tasks)} failed tasks")
-        
+
         return DLQListResponse(
             tasks=tasks,
             total=result.count or 0,
             page=page,
             page_size=page_size
         )
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_failed_tasks")
 
@@ -559,23 +564,23 @@ async def admin_trigger_retry_cycle(
 ):
     """
     Admin: Manually trigger the DLQ retry cycle.
-    
+
     This runs the same logic as the Celery Beat periodic task.
     Requires admin privileges.
     """
     try:
         logger.info(f"📥 [DLQ Admin] User {user_id} triggered manual retry cycle")
-        
+
         # Run the retry cycle
         result = retry_failed_tasks()
-        
+
         return {
             "success": True,
             "message": "Retry cycle completed",
             "retried": result.get("retried", 0),
             "failed": result.get("failed", 0)
         }
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.INTERNAL_ERROR, e, "trigger_retry_cycle")
 
@@ -593,15 +598,15 @@ async def admin_get_global_stats(
 ):
     """
     Admin: Get global DLQ statistics across all users.
-    
+
     Requires admin privileges.
     """
     try:
         supabase = get_supabase()
-        
+
         # Get all tasks
         result = supabase.table("failed_tasks").select("status, user_id").execute()
-        
+
         if not result.data:
             return {
                 "total_failed": 0,
@@ -611,7 +616,7 @@ async def admin_get_global_stats(
                 "resolved": 0,
                 "unique_users": 0
             }
-        
+
         # Count by status
         status_counts = {
             "pending_retry": 0,
@@ -619,16 +624,16 @@ async def admin_get_global_stats(
             "permanently_failed": 0,
             "resolved": 0
         }
-        
+
         unique_users = set()
-        
+
         for task in result.data:
             task_status = task["status"]
             if task_status in status_counts:
                 status_counts[task_status] += 1
             if task.get("user_id"):
                 unique_users.add(task["user_id"])
-        
+
         return {
             "total_failed": len(result.data),
             "pending_retry": status_counts["pending_retry"],
@@ -637,6 +642,6 @@ async def admin_get_global_stats(
             "resolved": status_counts["resolved"],
             "unique_users": len(unique_users)
         }
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_dlq_stats")

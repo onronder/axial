@@ -13,11 +13,12 @@ Tests all OAuth token management functionality:
 - Token refresh decorator
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime, timezone, timedelta
-import sys
 import os
+import sys
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -68,7 +69,7 @@ class TestRefreshGoogleToken:
     def test_returns_existing_if_not_expired(self):
         """Should return existing token if still valid."""
         future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted-token"):
             access, expires = OAuthTokenManager.refresh_google_token(
                 integration_id="int-1",
@@ -76,7 +77,7 @@ class TestRefreshGoogleToken:
                 refresh_token="encrypted-refresh",
                 expires_at=future,
             )
-        
+
         assert access == "decrypted-token"
         assert expires == future
 
@@ -95,13 +96,13 @@ class TestRefreshGoogleToken:
     def test_refresh_success(self):
         """Should refresh and persist token."""
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        
+
         mock_creds = Mock()
         mock_creds.token = "new-access-token"
         mock_creds.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
-        
+
         mock_supabase = MagicMock()
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"), \
              patch("core.security.encrypt_token", return_value="encrypted"), \
              patch("core.db.get_supabase", return_value=mock_supabase), \
@@ -113,14 +114,14 @@ class TestRefreshGoogleToken:
                 refresh_token="refresh",
                 expires_at=past,
             )
-        
+
         assert access == "new-access-token"
         mock_supabase.table.return_value.update.return_value.eq.return_value.execute.assert_called()
 
     def test_refresh_failure_raises(self):
         """Should raise TokenRefreshError on failure."""
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"), \
              patch("google.oauth2.credentials.Credentials", side_effect=Exception("Auth failed")):
             with pytest.raises(TokenRefreshError) as exc:
@@ -145,7 +146,7 @@ class TestRefreshNotionToken:
                 refresh_token=None,
                 expires_at=None,
             )
-        
+
         assert access == "notion-token"
         assert expires is None
 
@@ -156,7 +157,7 @@ class TestRefreshMicrosoftToken:
     def test_returns_existing_if_not_expired(self):
         """Should return existing if still valid."""
         future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"):
             access, refresh, expires = OAuthTokenManager.refresh_microsoft_token(
                 integration_id="int-1",
@@ -164,7 +165,7 @@ class TestRefreshMicrosoftToken:
                 refresh_token="refresh",
                 expires_at=future,
             )
-        
+
         assert access == "decrypted"
         assert expires == future
 
@@ -182,7 +183,7 @@ class TestRefreshMicrosoftToken:
     def test_refresh_success(self):
         """Should refresh Microsoft token."""
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -190,7 +191,7 @@ class TestRefreshMicrosoftToken:
             "refresh_token": "new-refresh",
             "expires_in": 3600,
         }
-        
+
         mock_supabase = MagicMock()
         mock_settings = Mock()
         mock_settings.MICROSOFT_CLIENT_ID = "client-id"
@@ -198,7 +199,7 @@ class TestRefreshMicrosoftToken:
         mock_settings.MICROSOFT_TENANT_ID = "common"
         mock_settings.MICROSOFT_SCOPES_ONEDRIVE = "scope"
         mock_settings.MICROSOFT_SCOPES_SHAREPOINT = "scope"
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"), \
              patch("core.security.encrypt_token", return_value="encrypted"), \
              patch("core.db.get_supabase", return_value=mock_supabase), \
@@ -210,25 +211,25 @@ class TestRefreshMicrosoftToken:
                 refresh_token="refresh",
                 expires_at=past,
             )
-        
+
         assert access == "new-access"
         assert refresh == "new-refresh"
 
     def test_refresh_retries_without_client_secret(self):
         """Should retry as public client if AADSTS700025 error."""
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        
+
         mock_response_fail = Mock()
         mock_response_fail.status_code = 400
         mock_response_fail.text = "AADSTS700025: Client is public"
-        
+
         mock_response_success = Mock()
         mock_response_success.status_code = 200
         mock_response_success.json.return_value = {
             "access_token": "new-access",
             "expires_in": 3600,
         }
-        
+
         mock_supabase = MagicMock()
         mock_settings = Mock()
         mock_settings.MICROSOFT_CLIENT_ID = "client-id"
@@ -236,7 +237,7 @@ class TestRefreshMicrosoftToken:
         mock_settings.MICROSOFT_TENANT_ID = "common"
         mock_settings.MICROSOFT_SCOPES_ONEDRIVE = "scope"
         mock_settings.MICROSOFT_SCOPES_SHAREPOINT = "scope"
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"), \
              patch("core.security.encrypt_token", return_value="encrypted"), \
              patch("core.db.get_supabase", return_value=mock_supabase), \
@@ -248,7 +249,7 @@ class TestRefreshMicrosoftToken:
                 refresh_token="refresh",
                 expires_at=past,
             )
-        
+
         assert access == "new-access"
 
 
@@ -258,7 +259,7 @@ class TestRefreshDropboxToken:
     def test_returns_existing_if_not_expired(self):
         """Should return existing if still valid."""
         future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"):
             access, refresh, expires = OAuthTokenManager.refresh_dropbox_token(
                 integration_id="int-1",
@@ -266,26 +267,26 @@ class TestRefreshDropboxToken:
                 refresh_token="refresh",
                 expires_at=future,
             )
-        
+
         assert access == "decrypted"
         assert expires == future
 
     def test_refresh_success(self):
         """Should refresh Dropbox token."""
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "access_token": "new-access",
             "expires_in": 14400,
         }
-        
+
         mock_supabase = MagicMock()
         mock_settings = Mock()
         mock_settings.DROPBOX_CLIENT_ID = "client-id"
         mock_settings.DROPBOX_CLIENT_SECRET = "secret"
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"), \
              patch("core.security.encrypt_token", return_value="encrypted"), \
              patch("core.db.get_supabase", return_value=mock_supabase), \
@@ -297,17 +298,17 @@ class TestRefreshDropboxToken:
                 refresh_token="refresh",
                 expires_at=past,
             )
-        
+
         assert access == "new-access"
 
     def test_no_credentials_raises(self):
         """Should raise if no Dropbox credentials configured."""
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        
+
         mock_settings = Mock()
         mock_settings.DROPBOX_CLIENT_ID = None
         mock_settings.DROPBOX_CLIENT_SECRET = None
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"), \
              patch("core.config.settings", mock_settings):
             with pytest.raises(TokenRefreshError) as exc:
@@ -327,14 +328,14 @@ class TestValidateGitHubToken:
         """Valid token should return decrypted access."""
         mock_response = Mock()
         mock_response.status_code = 200
-        
+
         with patch("core.security.decrypt_token", return_value="github-token"), \
              patch("requests.get", return_value=mock_response):
             access = OAuthTokenManager.validate_github_token(
                 integration_id="int-1",
                 access_token="encrypted",
             )
-        
+
         assert access == "github-token"
 
     def test_no_token_raises(self):
@@ -351,7 +352,7 @@ class TestValidateGitHubToken:
         """401 response should indicate revoked token."""
         mock_response = Mock()
         mock_response.status_code = 401
-        
+
         with patch("core.security.decrypt_token", return_value="token"), \
              patch("requests.get", return_value=mock_response):
             with pytest.raises(TokenRefreshError) as exc:
@@ -365,7 +366,7 @@ class TestValidateGitHubToken:
         """403 response should indicate permission issue."""
         mock_response = Mock()
         mock_response.status_code = 403
-        
+
         with patch("core.security.decrypt_token", return_value="token"), \
              patch("requests.get", return_value=mock_response):
             with pytest.raises(TokenRefreshError) as exc:
@@ -382,7 +383,7 @@ class TestRefreshBoxToken:
     def test_returns_existing_if_not_expired(self):
         """Should return existing if still valid."""
         future = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"):
             access, refresh, expires = OAuthTokenManager.refresh_box_token(
                 integration_id="int-1",
@@ -390,14 +391,14 @@ class TestRefreshBoxToken:
                 refresh_token="refresh",
                 expires_at=future,
             )
-        
+
         assert access == "decrypted"
         assert expires == future
 
     def test_refresh_success_with_lock(self):
         """Should acquire lock, refresh, and release."""
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -405,17 +406,17 @@ class TestRefreshBoxToken:
             "refresh_token": "new-refresh",
             "expires_in": 3600,
         }
-        
+
         mock_supabase = MagicMock()
         # Lock acquisition succeeds
         mock_supabase.rpc.return_value.execute.return_value.data = True
         # Fresh tokens return None (triggers refresh)
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
-        
+
         mock_settings = Mock()
         mock_settings.BOX_CLIENT_ID = "client-id"
         mock_settings.BOX_CLIENT_SECRET = "secret"
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"), \
              patch("core.security.encrypt_token", return_value="encrypted"), \
              patch("core.db.get_supabase", return_value=mock_supabase), \
@@ -427,25 +428,25 @@ class TestRefreshBoxToken:
                 refresh_token="refresh",
                 expires_at=past,
             )
-        
+
         assert access == "new-access"
         assert refresh == "new-refresh"
 
     def test_waits_if_locked_then_uses_refreshed(self):
         """Should wait if locked and use freshly refreshed token."""
         future = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
-        
+
         # This test verifies that when lock acquisition fails, the code re-checks
         # for freshly refreshed tokens. We mock _get_fresh_integration_tokens directly.
-        
+
         mock_supabase = MagicMock()
         # First call: lock fails
         mock_supabase.rpc.return_value.execute.return_value.data = False
-        
+
         mock_settings = Mock()
         mock_settings.BOX_CLIENT_ID = "client-id"
         mock_settings.BOX_CLIENT_SECRET = "secret"
-        
+
         # Create a function that returns fresh tokens
         def mock_get_fresh(*args, **kwargs):
             return {
@@ -453,7 +454,7 @@ class TestRefreshBoxToken:
                 "refresh_token": "fresh-encrypted-refresh",
                 "expires_at": future,
             }
-        
+
         with patch("core.security.decrypt_token", return_value="fresh-token"), \
              patch("core.db.get_supabase", return_value=mock_supabase), \
              patch("core.config.settings", mock_settings), \
@@ -466,7 +467,7 @@ class TestRefreshBoxToken:
                 refresh_token="old-refresh",
                 expires_at=None,  # Expired
             )
-        
+
         assert access == "fresh-token"
         assert expires == future
 
@@ -478,44 +479,44 @@ class TestAcquireReleaseLock:
         """Should return True on successful lock acquisition."""
         mock_supabase = MagicMock()
         mock_supabase.rpc.return_value.execute.return_value.data = True
-        
+
         result = OAuthTokenManager._acquire_refresh_lock(
             mock_supabase, "lock-key", "worker-1", 30
         )
-        
+
         assert result is True
 
     def test_acquire_lock_failure(self):
         """Should return False if lock already held."""
         mock_supabase = MagicMock()
         mock_supabase.rpc.return_value.execute.return_value.data = False
-        
+
         result = OAuthTokenManager._acquire_refresh_lock(
             mock_supabase, "lock-key", "worker-1", 30
         )
-        
+
         assert result is False
 
     def test_acquire_lock_rpc_not_found(self):
         """Should return True (proceed) if RPC doesn't exist."""
         mock_supabase = MagicMock()
         mock_supabase.rpc.side_effect = Exception("function acquire_lock does not exist")
-        
+
         result = OAuthTokenManager._acquire_refresh_lock(
             mock_supabase, "lock-key", "worker-1", 30
         )
-        
+
         assert result is True
 
     def test_release_lock_success(self):
         """Should release lock without error."""
         mock_supabase = MagicMock()
-        
+
         # Should not raise
         OAuthTokenManager._release_refresh_lock(
             mock_supabase, "lock-key", "worker-1"
         )
-        
+
         mock_supabase.rpc.assert_called()
 
 
@@ -530,11 +531,11 @@ class TestGetValidCredentials:
             "refresh_token": "refresh",
             "expires_at": None,
         }
-        
+
         with patch.object(OAuthTokenManager, "refresh_google_token", return_value=("new-access", "new-expires")) as mock_refresh, \
              patch("core.security.decrypt_token", return_value="decrypted"):
             result = OAuthTokenManager.get_valid_credentials(integration, "google_drive")
-        
+
         mock_refresh.assert_called_once()
         assert result["access_token"] == "new-access"
 
@@ -546,11 +547,11 @@ class TestGetValidCredentials:
             "refresh_token": None,
             "expires_at": None,
         }
-        
+
         with patch.object(OAuthTokenManager, "refresh_notion_token", return_value=("notion-token", None)) as mock_refresh, \
              patch("core.security.decrypt_token", return_value="decrypted"):
             result = OAuthTokenManager.get_valid_credentials(integration, "notion")
-        
+
         mock_refresh.assert_called_once()
         assert result["access_token"] == "notion-token"
 
@@ -562,10 +563,10 @@ class TestGetValidCredentials:
             "refresh_token": None,
             "expires_at": None,
         }
-        
+
         with patch.object(OAuthTokenManager, "validate_github_token", return_value="github-token"):
             result = OAuthTokenManager.get_valid_credentials(integration, "github")
-        
+
         assert result["access_token"] == "github-token"
         assert result["refresh_token"] is None
 
@@ -577,10 +578,10 @@ class TestGetValidCredentials:
             "refresh_token": "refresh",
             "expires_at": "2024-01-01T00:00:00Z",
         }
-        
+
         with patch("core.security.decrypt_token", return_value="decrypted"):
             result = OAuthTokenManager.get_valid_credentials(integration, "unknown")
-        
+
         assert result["access_token"] == "decrypted"
 
 
@@ -592,7 +593,7 @@ class TestWithTokenRefreshDecorator:
         @with_token_refresh("google_drive")
         def my_func():
             return "success"
-        
+
         assert my_func() == "success"
 
     def test_non_token_error_propagates(self):
@@ -600,14 +601,14 @@ class TestWithTokenRefreshDecorator:
         @with_token_refresh("google_drive")
         def my_func():
             raise ValueError("not a token error")
-        
+
         with pytest.raises(ValueError):
             my_func()
 
     def test_token_error_triggers_refresh(self):
         """Token errors should trigger refresh and retry."""
         call_count = 0
-        
+
         @with_token_refresh("google_drive")
         def my_func(integration):
             nonlocal call_count
@@ -615,16 +616,16 @@ class TestWithTokenRefreshDecorator:
             if call_count == 1:
                 raise Exception("401 Unauthorized")
             return "success after retry"
-        
+
         integration = {
             "id": "int-1",
             "access_token": "old",
             "refresh_token": "refresh",
         }
-        
+
         with patch.object(OAuthTokenManager, "get_valid_credentials", return_value={"access_token": "new"}):
             result = my_func(integration=integration)
-        
+
         assert result == "success after retry"
         assert call_count == 2
 
@@ -633,13 +634,13 @@ class TestWithTokenRefreshDecorator:
         @with_token_refresh("google_drive")
         def my_func(integration):
             raise Exception("invalid_grant: token expired")
-        
+
         integration = {
             "id": "int-1",
             "access_token": "old",
             "refresh_token": "refresh",
         }
-        
+
         with patch.object(OAuthTokenManager, "get_valid_credentials", side_effect=TokenRefreshError("Failed")):
             with pytest.raises(Exception) as exc:
                 my_func(integration=integration)

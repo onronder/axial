@@ -6,7 +6,7 @@ Each tool has a schema, description, and execution handler.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +106,11 @@ MCP_TOOLS = [
 
 async def execute_tool(
     tool_name: str,
-    arguments: Dict[str, Any],
+    arguments: dict[str, Any],
     organization_id: str,
     agent_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    allowed_scopes: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Execute an MCP tool and return results.
 
@@ -159,19 +159,19 @@ async def execute_tool(
 # =============================================================================
 
 async def _execute_search_documents(
-    arguments: Dict[str, Any],
+    arguments: dict[str, Any],
     organization_id: str,
     agent_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    allowed_scopes: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Execute semantic search over documents.
 
     Returns content chunks with metadata and relevance scores.
     """
+    from core.config import settings
     from core.db import get_supabase
     from core.security import decrypt_text
-    from core.config import settings
 
     query = arguments.get("query")
     if not query or not query.strip():
@@ -189,7 +189,6 @@ async def _execute_search_documents(
     supabase = get_supabase()
 
     # Generate embedding for query
-    import asyncio
     from langchain_openai import OpenAIEmbeddings
 
     # Generate embedding using langchain (same as search.py)
@@ -253,18 +252,16 @@ async def _execute_search_documents(
 
 
 async def _execute_ask_question(
-    arguments: Dict[str, Any],
+    arguments: dict[str, Any],
     organization_id: str,
     agent_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    allowed_scopes: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Execute RAG-based question answering.
 
     Retrieves relevant context, generates answer, and includes citations.
     """
-    from core.db import get_supabase
-    from core.security import decrypt_text
     from services.llm_factory import get_llm_client
 
     question = arguments.get("question")
@@ -359,11 +356,11 @@ Provide a clear, accurate answer based only on the context provided."""
 
 
 async def _execute_list_scopes(
-    arguments: Dict[str, Any],
+    arguments: dict[str, Any],
     organization_id: str,
     agent_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    allowed_scopes: list[str] | None = None,
+) -> dict[str, Any]:
     """
     List available scopes for the organization.
 
@@ -382,7 +379,7 @@ async def _execute_list_scopes(
         .execute()
 
     # Aggregate by scope
-    scope_counts: Dict[str, Dict[str, Any]] = {}
+    scope_counts: dict[str, dict[str, Any]] = {}
     for row in result.data or []:
         scope_id = row.get("scope_id") or "default"
 
@@ -412,11 +409,11 @@ async def _execute_list_scopes(
 
 
 async def _execute_get_document_summary(
-    arguments: Dict[str, Any],
+    arguments: dict[str, Any],
     organization_id: str,
     agent_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    allowed_scopes: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Get summary information for a specific document.
     """
@@ -475,7 +472,7 @@ async def _execute_get_document_summary(
 # Helpers
 # =============================================================================
 
-def _scope_allowed(scope_id: str, allowed_scopes: List[str]) -> bool:
+def _scope_allowed(scope_id: str, allowed_scopes: list[str]) -> bool:
     """
     Check if a scope ID matches the allowed scope patterns.
 

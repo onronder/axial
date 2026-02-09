@@ -3,7 +3,6 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -37,19 +36,19 @@ def _auth_token(supabase_url: str, supabase_key: str, email: str, password: str)
     return token
 
 
-def _post_json(url: str, headers: Dict[str, str], payload: Dict[str, object]) -> Dict[str, object]:
+def _post_json(url: str, headers: dict[str, str], payload: dict[str, object]) -> dict[str, object]:
     response = requests.post(url, headers=headers, json=payload, timeout=60)
     response.raise_for_status()
     return response.json()
 
 
-def _get_json(url: str, headers: Dict[str, str]) -> Dict[str, object]:
+def _get_json(url: str, headers: dict[str, str]) -> dict[str, object]:
     response = requests.get(url, headers=headers, timeout=30)
     response.raise_for_status()
     return response.json()
 
 
-def _poll_job(base_url: str, headers: Dict[str, str], job_id: str, poll_seconds: int = 5) -> Dict[str, object]:
+def _poll_job(base_url: str, headers: dict[str, str], job_id: str, poll_seconds: int = 5) -> dict[str, object]:
     status_url = f"{base_url}/api/v1/jobs/{job_id}"
     while True:
         job = _get_json(status_url, headers)
@@ -59,12 +58,12 @@ def _poll_job(base_url: str, headers: Dict[str, str], job_id: str, poll_seconds:
         time.sleep(poll_seconds)
 
 
-def _fetch_job_files(base_url: str, headers: Dict[str, str], job_id: str) -> List[Dict[str, object]]:
+def _fetch_job_files(base_url: str, headers: dict[str, str], job_id: str) -> list[dict[str, object]]:
     files_url = f"{base_url}/api/v1/jobs/{job_id}/files"
     return _get_json(files_url, headers)
 
 
-def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
+def _parse_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
@@ -73,9 +72,9 @@ def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _summarize_files(files: List[Dict[str, object]]) -> Dict[str, object]:
+def _summarize_files(files: list[dict[str, object]]) -> dict[str, object]:
     durations = []
-    status_counts: Dict[str, int] = {}
+    status_counts: dict[str, int] = {}
 
     for item in files:
         status = item.get("status") or "unknown"
@@ -93,7 +92,7 @@ def _summarize_files(files: List[Dict[str, object]]) -> Dict[str, object]:
     return summary
 
 
-def _percentile(values: List[float], pct: float) -> Optional[float]:
+def _percentile(values: list[float], pct: float) -> float | None:
     if not values:
         return None
     if pct <= 0:
@@ -104,7 +103,7 @@ def _percentile(values: List[float], pct: float) -> Optional[float]:
     return values[idx]
 
 
-def _run_drive_job(base_url: str, headers: Dict[str, str], dataset_name: str, folder_id: str) -> Dict[str, object]:
+def _run_drive_job(base_url: str, headers: dict[str, str], dataset_name: str, folder_id: str) -> dict[str, object]:
     payload = {"item_ids": [folder_id]}
     response = _post_json(f"{base_url}/api/v1/integrations/google_drive/ingest", headers, payload)
     job_id = response.get("job_id")
@@ -133,7 +132,7 @@ def _run_drive_job(base_url: str, headers: Dict[str, str], dataset_name: str, fo
     }
 
 
-def _run_web_crawl(base_url: str, headers: Dict[str, str], url: str, crawl_type: str, max_depth: int = 1, max_pages: int = 50) -> Dict[str, object]:
+def _run_web_crawl(base_url: str, headers: dict[str, str], url: str, crawl_type: str, max_depth: int = 1, max_pages: int = 50) -> dict[str, object]:
     payload = {
         "url": url,
         "crawl_type": crawl_type,

@@ -1,50 +1,51 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 import os
 import sys
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_SECRET_KEY: str  # Replaces SUPABASE_KEY for backend/service_role
     SUPABASE_JWT_SECRET: str
-    SUPABASE_PUBLISHABLE_KEY: Optional[str] = None 
-    
+    SUPABASE_PUBLISHABLE_KEY: str | None = None
+
     OPENAI_API_KEY: str
     API_KEY: str = ""
-    
+
     # Google OAuth
-    GOOGLE_CLIENT_ID: Optional[str] = None
-    GOOGLE_CLIENT_SECRET: Optional[str] = None
-    GOOGLE_REDIRECT_URI: Optional[str] = None
-    
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GOOGLE_REDIRECT_URI: str | None = None
+
     # Notion OAuth
-    NOTION_CLIENT_ID: Optional[str] = None
-    NOTION_CLIENT_SECRET: Optional[str] = None
-    NOTION_REDIRECT_URI: Optional[str] = None
+    NOTION_CLIENT_ID: str | None = None
+    NOTION_CLIENT_SECRET: str | None = None
+    NOTION_REDIRECT_URI: str | None = None
 
     # Microsoft OAuth (OneDrive / SharePoint)
-    MICROSOFT_CLIENT_ID: Optional[str] = None
-    MICROSOFT_CLIENT_SECRET: Optional[str] = None
-    MICROSOFT_REDIRECT_URI: Optional[str] = None
+    MICROSOFT_CLIENT_ID: str | None = None
+    MICROSOFT_CLIENT_SECRET: str | None = None
+    MICROSOFT_REDIRECT_URI: str | None = None
     MICROSOFT_TENANT_ID: str = "common"
     MICROSOFT_SCOPES_ONEDRIVE: str = "offline_access User.Read Files.Read.All"
     MICROSOFT_SCOPES_SHAREPOINT: str = "offline_access User.Read Files.Read.All Sites.Read.All"
-    
+
     # Dropbox OAuth (Supports Personal & Business/Team accounts)
-    DROPBOX_CLIENT_ID: Optional[str] = None
-    DROPBOX_CLIENT_SECRET: Optional[str] = None
-    DROPBOX_REDIRECT_URI: Optional[str] = None
-    
+    DROPBOX_CLIENT_ID: str | None = None
+    DROPBOX_CLIENT_SECRET: str | None = None
+    DROPBOX_REDIRECT_URI: str | None = None
+
     # GitHub OAuth (Code repository integration)
-    GITHUB_CLIENT_ID: Optional[str] = None
-    GITHUB_CLIENT_SECRET: Optional[str] = None
-    GITHUB_REDIRECT_URI: Optional[str] = None
-    
+    GITHUB_CLIENT_ID: str | None = None
+    GITHUB_CLIENT_SECRET: str | None = None
+    GITHUB_REDIRECT_URI: str | None = None
+
     # Box OAuth (Enterprise cloud storage)
-    BOX_CLIENT_ID: Optional[str] = None
-    BOX_CLIENT_SECRET: Optional[str] = None
-    BOX_REDIRECT_URI: Optional[str] = None
-    
+    BOX_CLIENT_ID: str | None = None
+    BOX_CLIENT_SECRET: str | None = None
+    BOX_REDIRECT_URI: str | None = None
+
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_JOB_COUNTER_TTL_SECONDS: int = 86400  # 24 hours
@@ -53,21 +54,21 @@ class Settings(BaseSettings):
     REDIS_JOB_PROGRESS_UPDATE_INTERVAL: int = 30
 
     # Dedicated DB URL for least-privilege ingestion role (optional)
-    INGESTION_DATABASE_URL: Optional[str] = None
-    
+    INGESTION_DATABASE_URL: str | None = None
+
     # Email
-    RESEND_API_KEY: Optional[str] = None
+    RESEND_API_KEY: str | None = None
     EMAILS_FROM_EMAIL: str = "noreply@axiohub.io"
     APP_URL: str = "https://app.axiohub.io"
-    
+
     # Branding
     LOGO_URL: str = "https://raw.githubusercontent.com/onronder/axial/main/frontend-new/public/assets/axio-hub-full-light.png"
-    
+
     # CORS (Critical for Production)
     ALLOWED_ORIGINS: str = ""
-    
+
     # Error Tracking
-    SENTRY_DSN: Optional[str] = None
+    SENTRY_DSN: str | None = None
     ENVIRONMENT: str = "development"
 
     # Rate Limiting
@@ -76,7 +77,7 @@ class Settings(BaseSettings):
     # Celery time limits (seconds)
     CELERY_TASK_SOFT_TIME_LIMIT: int = 900
     CELERY_TASK_TIME_LIMIT: int = 1200
-    
+
     # =========================================================================
     # Celery Worker Memory Management (Enterprise 8-Core/32GB)
     # =========================================================================
@@ -94,51 +95,51 @@ class Settings(BaseSettings):
     # Peak Usage: 8 × 3GB = 24GB << 28GB available ✅
     #
     # CRITICAL: Requires --pool=prefork (gevent does NOT support memory limits)
-    
+
     CELERY_WORKER_MAX_MEMORY_PER_CHILD: int = 3000000  # 3GB in KB
     CELERY_WORKER_MAX_TASKS_PER_CHILD: int = 1000      # High for enterprise RAM
     CELERY_WORKER_CONCURRENCY: int = 8                 # Match CPU cores
-    
+
     # =========================================================================
     # AI & Multi-Model Configuration
     # =========================================================================
-    
+
     PRIMARY_MODEL_PROVIDER: str = "openai"
     PRIMARY_MODEL_NAME: str = "gpt-4o"
-    
+
     SECONDARY_MODEL_PROVIDER: str = "openai"
     SECONDARY_MODEL_NAME: str = "gpt-4o-mini"
-    
+
     GUARDRAIL_MODEL_PROVIDER: str = "groq"
     GUARDRAIL_MODEL_NAME: str = "llama-3.1-8b-instant"
-    
+
     # Groq API Key
-    GROQ_API_KEY: Optional[str] = None
+    GROQ_API_KEY: str | None = None
 
     # Grok (xAI) OpenAI-compatible API
-    GROK_API_KEY: Optional[str] = None
+    GROK_API_KEY: str | None = None
     GROK_BASE_URL: str = "https://api.x.ai/v1"
-    GROK_MODEL_NAME: Optional[str] = None
+    GROK_MODEL_NAME: str | None = None
     GROQ_CHAT_MODEL_NAME: str = "llama-3.3-70b-versatile"
-    
+
     RAG_SIMILARITY_THRESHOLD: float = 0.35  # Lowered from 0.50 for better recall on conversational content
-    
+
     # =========================================================================
     # Guardrails Pre-Flight Search Configuration
     # =========================================================================
     # These settings control the document-context aware guardrails feature.
     # Pre-flight search checks if documents match a query before trusting
     # the LLM's intent classification.
-    
+
     GUARDRAIL_PREFLIGHT_ENABLED: bool = True  # Enable/disable pre-flight document check
     GUARDRAIL_PREFLIGHT_THRESHOLD: float = 0.35  # Lower than RAG threshold for existence check
     GUARDRAIL_PREFLIGHT_MATCH_COUNT: int = 3  # Max documents to check
     GUARDRAIL_PREFLIGHT_MIN_MATCHES: int = 1  # Minimum matches to trigger override
-    
+
     # =========================================================================
     # Advanced Document Parsing (LlamaParse OCR)
     # =========================================================================
-    LLAMA_CLOUD_API_KEY: Optional[str] = None
+    LLAMA_CLOUD_API_KEY: str | None = None
 
     # =========================================================================
     # Vision LLM Configuration
@@ -147,8 +148,8 @@ class Settings(BaseSettings):
     # When enabled, images are analyzed by Vision LLMs for meaning extraction
     VISION_LLM_ENABLED: bool = False  # Opt-in due to cost considerations
     VISION_LLM_PROVIDER: str = "openai"  # "openai" | "gemini"
-    VISION_LLM_MAX_IMAGE_SIZE: int = 20 * 1024 * 1024  # 20MB max image size 
-    
+    VISION_LLM_MAX_IMAGE_SIZE: int = 20 * 1024 * 1024  # 20MB max image size
+
     # =========================================================================
     # Resource Limits & Memory Management
     # =========================================================================
@@ -180,17 +181,17 @@ class Settings(BaseSettings):
     # =========================================================================
     # These settings control the "Zero-Retention" privacy architecture.
     # Content is encrypted at rest, files are securely wiped after processing.
-    
+
     # Encryption key for document chunk content at rest (AES-256 via Fernet)
     # CRITICAL: Must be set in production - app will refuse to ingest without it
     # Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-    CHUNK_ENCRYPTION_KEY: Optional[str] = None
-    
+    CHUNK_ENCRYPTION_KEY: str | None = None
+
     # Memory processing threshold for SmartBuffer
     # Files below this use RAM (BytesIO), above use SecureTempFile (disk)
     # Default: 10MB - balances speed vs OOM risk
     MAX_RAM_PROCESS_LIMIT: int = 10 * 1024 * 1024
-    
+
     # Secure wipe passes for forensic-grade file deletion
     # 1 = fast (single overwrite), 3 = DoD 5220.22-M compliant (3 passes)
     SECURE_WIPE_PASSES: int = 3  # Default to DoD 3-pass for enterprise compliance
@@ -229,7 +230,7 @@ class Settings(BaseSettings):
     # =========================================================================
     # Required for YouTube transcript fetching from cloud infrastructure.
     # YouTube blocks most cloud provider IPs (AWS, GCP, Azure, Railway, etc.)
-    # 
+    #
     # Bright Data Unlocker API setup:
     #   1. Create an "Unlocker API" zone in Bright Data dashboard
     #   2. Get your API token from Bright Data settings
@@ -238,40 +239,40 @@ class Settings(BaseSettings):
     # API endpoint: https://api.brightdata.com/request
     # Docs: https://docs.brightdata.com/scraping-automation/web-unlocker/web-unlocker-api
     #
-    BRIGHTDATA_API_KEY: Optional[str] = None  # Bearer token for Bright Data API
+    BRIGHTDATA_API_KEY: str | None = None  # Bearer token for Bright Data API
     BRIGHTDATA_UNLOCKER_ZONE: str = "axio_unlocker"  # Zone name for Unlocker API
     BRIGHTDATA_TIMEOUT: int = 60  # Request timeout in seconds (YouTube can be slow)
     BRIGHTDATA_RETRY_COUNT: int = 3  # Retry attempts on failure
     BRIGHTDATA_RETRY_DELAY: float = 2.0  # Base delay between retries (exponential backoff)
-    
+
     # Legacy proxy settings (kept for backwards compatibility)
-    YOUTUBE_PROXY_URL: Optional[str] = None
+    YOUTUBE_PROXY_URL: str | None = None
     YOUTUBE_PROXY_ENABLED: bool = False  # Disabled - use Unlocker API instead
     YOUTUBE_PROXY_TIMEOUT: int = 30
     YOUTUBE_PROXY_RETRY_COUNT: int = 3
     YOUTUBE_PROXY_RETRY_DELAY: float = 1.0
     YOUTUBE_DIRECT_FALLBACK: bool = True  # Try direct connection if Unlocker API fails
- 
+
 
     # =========================================================================
     # COMMERCIALIZATION & TIER LIMITS
     # =========================================================================
-    
+
     MODEL_ALIAS_FAST: str = "fast"
     MODEL_ALIAS_SMART: str = "smart"
-    
+
     LIMITS_STARTER_FILES: int = 50
     LIMITS_PRO_FILES: int = 2000
     LIMITS_STARTER_SCOPES: int = 5
     LIMITS_PRO_SCOPES: int = 100
     LIMITS_ENTERPRISE_SCOPES: int = 1000
-    
+
     LIMITS_STARTER_MB: int = 100
-    LIMITS_PRO_MB: int = 10240 
+    LIMITS_PRO_MB: int = 10240
     LIMITS_STARTER_LLM_TOKENS: int = 1000000
     LIMITS_PRO_LLM_TOKENS: int = 10000000
     LIMITS_ENTERPRISE_LLM_TOKENS: int = 100000000
-    
+
     MSG_UPSELL_SMART: str = "⚡ This answer used 'Axio Fast'. Upgrade to Pro for 'Axio Pro' intelligence."
     MSG_UPSELL_FILES: str = "🔒 You have reached your file limit. Upgrade to Pro for 10GB storage."
 
@@ -287,26 +288,26 @@ class Settings(BaseSettings):
     LLM_MAX_CONCURRENT_REQUESTS: int = 20  # Global semaphore limit for LLM calls
     LLM_MAX_TOKENS_PER_REQUEST: int = 50000  # Max input tokens per single request
     LLM_HEARTBEAT_INTERVAL: float = 10.0  # SSE heartbeat interval (seconds)
-    
+
     # =========================================================================
     # Payment Integration (Polar.sh)
     # =========================================================================
-    
-    POLAR_ACCESS_TOKEN: Optional[str] = None
-    POLAR_ORGANIZATION_ID: Optional[str] = None
-    POLAR_WEBHOOK_SECRET: Optional[str] = None
-    
-    POLAR_PRODUCT_ID_STARTER_MONTHLY: Optional[str] = None
-    POLAR_PRODUCT_ID_PRO_MONTHLY: Optional[str] = None
-    POLAR_PRODUCT_ID_ENTERPRISE: Optional[str] = None
-    
+
+    POLAR_ACCESS_TOKEN: str | None = None
+    POLAR_ORGANIZATION_ID: str | None = None
+    POLAR_WEBHOOK_SECRET: str | None = None
+
+    POLAR_PRODUCT_ID_STARTER_MONTHLY: str | None = None
+    POLAR_PRODUCT_ID_PRO_MONTHLY: str | None = None
+    POLAR_PRODUCT_ID_ENTERPRISE: str | None = None
+
     PLAN_STARTER: str = "starter"
     PLAN_PRO: str = "pro"
     PLAN_ENTERPRISE: str = "enterprise"
     PLAN_ENTERPRISE_SMALL: str = "enterprise_small"
     PLAN_ENTERPRISE_MEDIUM: str = "enterprise_medium"
     PLAN_ENTERPRISE_LARGE: str = "enterprise_large"
-    
+
     @property
     def POLAR_PRODUCT_MAPPING(self) -> dict:
         mapping = {}
@@ -365,11 +366,12 @@ def _is_test_runtime() -> bool:
 
 if settings.SENTRY_DSN and not _is_test_runtime():
     try:
-        import sentry_sdk
         import logging as py_logging  # Import BEFORE using logging.INFO/ERROR
+
+        import sentry_sdk
         from sentry_sdk.integrations.celery import CeleryIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
-        
+
         sentry_sdk.init(
             dsn=settings.SENTRY_DSN,
             environment=settings.ENVIRONMENT,
@@ -384,7 +386,7 @@ if settings.SENTRY_DSN and not _is_test_runtime():
             profiles_sample_rate=0.1,  # 10% of transactions
             send_default_pii=False,  # Don't send PII
         )
-        
+
         py_logging.getLogger(__name__).info("✅ Sentry initialized for error tracking")
     except ImportError:
         import logging

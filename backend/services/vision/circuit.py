@@ -8,7 +8,6 @@ Prevents cascading failures and manages API quota limits.
 import logging
 import time
 from enum import Enum
-from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +69,7 @@ class VisionCircuitBreaker:
                 logger.info(f"[{self.name}] Circuit half-open, testing recovery")
         return self._state
 
-    def can_execute(self) -> Tuple[bool, str]:
+    def can_execute(self) -> tuple[bool, str]:
         """
         Check if a request can be executed.
 

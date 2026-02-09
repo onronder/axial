@@ -6,19 +6,21 @@ These tasks run on a schedule to maintain system health.
 
 import logging
 from datetime import datetime, timedelta, timezone
+
 import psutil
+
 from core.celery_app import celery_app
 from core.db import get_supabase
-from core.resilience import check_memory_usage
 from core.job_counters import is_ingest_job_discovery_done
 from core.metrics import (
-    MEMORY_USAGE,
     MEMORY_AVAILABLE_MB,
-    MEMORY_WARNINGS,
     MEMORY_CRITICAL,
-    PROCESS_CPU_PERCENT,
+    MEMORY_USAGE,
+    MEMORY_WARNINGS,
     OPEN_FILES,
+    PROCESS_CPU_PERCENT,
 )
+from core.resilience import check_memory_usage
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +38,9 @@ def _acquire_periodic_lock(task_name: str, ttl: int = 300) -> bool:
         True if lock acquired, False if another worker holds it
     """
     try:
-        from core.config import settings
         import redis as sync_redis
+
+        from core.config import settings
         r = sync_redis.from_url(settings.REDIS_URL)
         return bool(r.set(f"periodic_lock:{task_name}", "1", nx=True, ex=ttl))
     except Exception as e:
@@ -67,19 +70,19 @@ def cleanup_old_jobs():
     try:
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
-        
+
         # Delete old completed jobs
         result = supabase.table("ingestion_jobs").delete().eq(
             "status", "completed"
         ).lt(
             "created_at", cutoff_date.isoformat()
         ).execute()
-        
+
         deleted_count = len(result.data) if result.data else 0
         logger.info(f"🧹 [Cleanup] Deleted {deleted_count} old completed jobs")
-        
+
         return {"deleted": deleted_count}
-        
+
     except Exception as e:
         logger.error(f"❌ [Cleanup] Failed to clean up old jobs: {e}")
         return {"error": str(e)}
@@ -89,12 +92,12 @@ def cleanup_old_jobs():
 def update_memory_metrics():
     """
     Update Prometheus memory metrics.
-    
+
     Runs every minute via Celery Beat.
     """
     try:
         status = check_memory_usage()
-        
+
         # Update Prometheus gauges
         MEMORY_USAGE.set(status['percent'])
         MEMORY_AVAILABLE_MB.set(status['available_mb'])
@@ -102,15 +105,15 @@ def update_memory_metrics():
         process = psutil.Process()
         PROCESS_CPU_PERCENT.set(process.cpu_percent(interval=None))
         OPEN_FILES.set(len(process.open_files()))
-        
+
         # Increment counters if needed
         if status['warning']:
             MEMORY_WARNINGS.inc()
         if status['critical']:
             MEMORY_CRITICAL.inc()
-        
+
         return status
-        
+
     except Exception as e:
         logger.error(f"❌ [Metrics] Failed to update memory metrics: {e}")
         return {"error": str(e)}
@@ -159,19 +162,19 @@ def cleanup_old_file_status():
     try:
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
-        
+
         # Only delete terminal entries (not pending/active processing)
         result = supabase.table("ingestion_file_status").delete().in_(
             "status", ["completed", "failed", "skipped", "cancelled"]
         ).lt(
             "created_at", cutoff_date.isoformat()
         ).execute()
-        
+
         deleted_count = len(result.data) if result.data else 0
         logger.info(f"🧹 [Cleanup] Deleted {deleted_count} old file status entries")
-        
+
         return {"deleted": deleted_count}
-        
+
     except Exception as e:
         logger.error(f"❌ [Cleanup] Failed to clean up file status: {e}")
         return {"error": str(e)}
@@ -200,16 +203,16 @@ def cleanup_old_audit_logs():
     try:
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=90)
-        
+
         result = supabase.table("audit_logs").delete().lt(
             "created_at", cutoff_date.isoformat()
         ).execute()
-        
+
         deleted_count = len(result.data) if result.data else 0
         logger.info(f"🧹 [Cleanup] Deleted {deleted_count} old audit log entries")
-        
+
         return {"deleted": deleted_count}
-        
+
     except Exception as e:
         logger.error(f"❌ [Cleanup] Failed to clean up audit logs: {e}")
         return {"error": str(e)}
@@ -253,52 +256,52 @@ def cleanup_orphan_scope_placeholders():
     try:
         supabase = get_supabase()
         cutoff_date = datetime.now(timezone.utc) - timedelta(hours=72)
-        
+
         # Find placeholder scope identities older than 72 hours
         placeholders_res = supabase.table("scope_identities").select(
             "id, organization_id, user_id, created_at"
         ).eq("status", "placeholder").lt(
             "updated_at", cutoff_date.isoformat()
         ).execute()
-        
+
         placeholders = placeholders_res.data or []
         if not placeholders:
             logger.info("🧹 [Cleanup] No orphan scope placeholders found")
             return {"deleted": 0, "checked": 0}
-        
+
         deleted_count = 0
         checked_count = len(placeholders)
-        
+
         for placeholder in placeholders:
             scope_id = placeholder.get("id")
             org_id = placeholder.get("organization_id")
-            
+
             if not scope_id or not org_id:
                 continue
-            
+
             # Check if any documents reference this scope
             docs_res = supabase.table("documents").select(
                 "id", count="exact"
             ).eq("organization_id", org_id).eq("scope_id", scope_id).limit(1).execute()
-            
+
             doc_count = docs_res.count or 0
-            
+
             if doc_count == 0:
                 # No documents - safe to delete this orphan placeholder
                 try:
                     supabase.table("scope_identities").delete().eq(
                         "organization_id", org_id
                     ).eq("id", scope_id).eq("status", "placeholder").execute()
-                    
+
                     deleted_count += 1
                     logger.info(f"🧹 [Cleanup] Deleted orphan placeholder: {scope_id[:50]}...")
                 except Exception as del_err:
                     logger.warning(f"⚠️ [Cleanup] Failed to delete placeholder {scope_id}: {del_err}")
-        
+
         logger.info(f"🧹 [Cleanup] Deleted {deleted_count}/{checked_count} orphan scope placeholders")
-        
+
         return {"deleted": deleted_count, "checked": checked_count}
-        
+
     except Exception as e:
         logger.error(f"❌ [Cleanup] Failed to clean up orphan placeholders: {e}")
         return {"error": str(e)}

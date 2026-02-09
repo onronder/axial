@@ -12,8 +12,8 @@ Components:
 - zero_retention.py: Ghost Protocol enforcement for MCP responses
 """
 
-from mcp.server import MCPServer, JSONRPCRequest, JSONRPCResponse
 from mcp.auth import MCPApiKey, verify_mcp_api_key
+from mcp.server import JSONRPCRequest, JSONRPCResponse, MCPServer
 from mcp.tools import MCP_TOOLS, execute_tool
 
 __all__ = [

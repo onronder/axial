@@ -1,11 +1,12 @@
 
-import os
-import pytest
 import datetime
+import os
 import uuid
-from jose import jwt
-from supabase import create_client, Client, ClientOptions
+
+import pytest
 from dotenv import dotenv_values
+from jose import jwt
+from supabase import Client, ClientOptions, create_client
 
 # Load real environment variables from .env directly into a dict
 # This bypasses any os.environ manipulation done by conftest.py fixtures
@@ -23,18 +24,18 @@ def test_authenticated_user_cannot_insert_documents_directly():
     Security Penetration Test:
     Verify that an authenticated user using the Supabase Client (bypassing the backend API)
     CANNOT insert directly into the 'documents' table.
-    
+
     This tests Row Level Security (RLS) policies.
     """
-    
+
     # 1. Setup Configuration
     # env_path debug removed for cleanup
 
     supabase_url = get_real_env_var("SUPABASE_URL")
     # Try common names for the Anon/Public key
     supabase_key = (
-        get_real_env_var("SUPABASE_ANON_KEY") or 
-        get_real_env_var("SUPABASE_KEY") or 
+        get_real_env_var("SUPABASE_ANON_KEY") or
+        get_real_env_var("SUPABASE_KEY") or
         get_real_env_var("SUPABASE_PUBLISHABLE_KEY")
     )
     jwt_secret = get_real_env_var("SUPABASE_JWT_SECRET")
@@ -52,7 +53,7 @@ def test_authenticated_user_cannot_insert_documents_directly():
         "email": "security_test@example.com",
         "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
     }
-    
+
     # Sign the token using the project's secret
     token = jwt.encode(payload, jwt_secret, algorithm="HS256")
 

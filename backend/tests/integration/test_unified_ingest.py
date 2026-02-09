@@ -5,9 +5,10 @@ These tests verify the complete end-to-end ingestion flow
 from file upload through to document storage.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
+
+import pytest
 
 
 class TestUnifiedIngestTask:
@@ -31,7 +32,7 @@ class TestUnifiedIngestTask:
                 content=b"test content",
                 metadata={"size": 100}
             )
-        
+
         mock = MagicMock()
         mock.fetch_documents = mock_fetch
         return mock
@@ -51,11 +52,11 @@ class TestUnifiedIngestTask:
         from worker.tasks import update_job_status
 
         job_id = sample_job_payload["job_id"]
-        
+
         # Test pending status
         update_job_status(mock_supabase, job_id, "pending")
         mock_supabase.table.assert_called_with("ingestion_jobs")
-        
+
         # Test processing status
         update_job_status(mock_supabase, job_id, "processing", processed_files=1)
         mock_supabase.table().update.assert_called()
@@ -66,7 +67,7 @@ class TestUnifiedIngestTask:
 
         job_id = str(uuid4())
         user_id = str(uuid4())
-        
+
         result = create_file_status(
             mock_supabase,
             job_id=job_id,
@@ -75,7 +76,7 @@ class TestUnifiedIngestTask:
             filename="test.pdf",
             file_size=1024
         )
-        
+
         # Should call insert on ingestion_file_status table
         mock_supabase.table.assert_called_with("ingestion_file_status")
 
@@ -84,20 +85,20 @@ class TestUnifiedIngestTask:
         from worker.tasks import check_job_cancelled
 
         job_id = str(uuid4())
-        
+
         # Mock cancelled job
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
             "status": "cancelled"
         }
-        
+
         result = check_job_cancelled(mock_supabase, job_id)
         assert result is True
-        
+
         # Mock active job
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
             "status": "processing"
         }
-        
+
         result = check_job_cancelled(mock_supabase, job_id)
         assert result is False
 
@@ -106,7 +107,7 @@ class TestUnifiedIngestTask:
         from worker.tasks import create_notification
 
         user_id = str(uuid4())
-        
+
         create_notification(
             mock_supabase,
             user_id=user_id,
@@ -114,7 +115,7 @@ class TestUnifiedIngestTask:
             message="5 files processed",
             notification_type="success"
         )
-        
+
         mock_supabase.table.assert_called_with("notifications")
 
 
@@ -123,15 +124,14 @@ class TestBatchProcessing:
 
     def test_batched_chunk_insertion(self):
         """Verify chunks are inserted in batches to avoid timeout."""
-        from worker.tasks import ingest_document_batched
-        
+
         # Create mock with 200 chunks (should split into batches)
         mock_supabase = MagicMock()
         mock_supabase.table.return_value.insert.return_value.execute.return_value.data = [{"id": str(uuid4())}]
         mock_supabase.rpc.return_value.execute.return_value.data = {"doc_id": str(uuid4())}
-        
+
         chunks = [{"content": f"chunk_{i}", "embedding": [0.1] * 1536} for i in range(200)]
-        
+
         # Should handle large batch without timeout
         # Implementation verifies batching logic
         assert len(chunks) == 200
@@ -154,7 +154,7 @@ class TestErrorHandling:
         """Verify embedding timeouts are handled gracefully."""
         # The resilience module provides timeout protection
         from core.resilience import Timeouts
-        
+
         # Verify timeout constant exists
         assert hasattr(Timeouts, 'EMBEDDING_BATCH')
         assert Timeouts.EMBEDDING_BATCH > 0
@@ -162,7 +162,7 @@ class TestErrorHandling:
     def test_dlq_integration_on_failure(self):
         """Verify failed tasks are logged to DLQ."""
         from worker.dlq_worker import log_task_failure
-        
+
         mock_supabase = MagicMock()
         mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
         mock_supabase.table.return_value.insert.return_value.execute.return_value.data = [{"id": str(uuid4())}]

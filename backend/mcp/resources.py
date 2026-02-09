@@ -6,7 +6,7 @@ Resources in Axio Hub represent scopes (document collections).
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 async def list_resources(
     organization_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> List[Dict[str, Any]]:
+    allowed_scopes: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """
     List available resources (scopes) for the organization.
 
@@ -45,7 +45,7 @@ async def list_resources(
         .execute()
 
     # Aggregate by scope
-    scope_data: Dict[str, Dict[str, Any]] = {}
+    scope_data: dict[str, dict[str, Any]] = {}
     for row in result.data or []:
         scope_id = row.get("scope_id") or "default"
 
@@ -80,8 +80,8 @@ async def list_resources(
 async def read_resource(
     uri: str,
     organization_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    allowed_scopes: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Read content from a resource URI.
 
@@ -129,8 +129,8 @@ async def read_resource(
 async def _read_scope_resource(
     scope_id: str,
     organization_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    allowed_scopes: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Read scope resource - returns metadata and document list.
     """
@@ -174,8 +174,8 @@ async def _read_scope_resource(
 async def _read_document_resource(
     document_id: str,
     organization_id: str,
-    allowed_scopes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    allowed_scopes: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Read document resource - returns metadata and chunk info.
 
@@ -230,7 +230,7 @@ async def _read_document_resource(
 # Helpers
 # =============================================================================
 
-def _scope_allowed(scope_id: str, allowed_scopes: List[str]) -> bool:
+def _scope_allowed(scope_id: str, allowed_scopes: list[str]) -> bool:
     """Check if a scope ID matches the allowed scope patterns."""
     if not allowed_scopes:
         return True

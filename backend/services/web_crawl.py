@@ -4,10 +4,8 @@ Web crawl queueing helpers.
 Shared across web crawl endpoints.
 """
 
-from datetime import datetime, timezone
-from typing import Dict, Optional
-
 import logging
+from datetime import datetime, timezone
 
 from core.db import get_supabase
 from core.url_utils import is_youtube_url  # Shared utility
@@ -18,7 +16,7 @@ logger = logging.getLogger(__name__)
 def queue_web_crawl(
     *,
     user_id: str,
-    organization_id: Optional[str] = None,
+    organization_id: str | None = None,
     root_url: str,
     crawl_type: str,
     max_depth: int,
@@ -27,7 +25,7 @@ def queue_web_crawl(
     allow_subdomains: bool,
     is_recrawl: bool = False,
     include_job_id: bool = False
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Create a crawl config record and dispatch crawl discovery."""
     supabase = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
@@ -73,7 +71,7 @@ def queue_web_crawl(
         }
     try:
         supabase.table("ingestion_jobs").upsert(job_record, on_conflict="id").execute()
-    except Exception as job_exc:
+    except Exception:
         try:
             supabase.table("ingestion_jobs").insert(job_record).execute()
         except Exception as inner_exc:

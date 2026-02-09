@@ -7,7 +7,6 @@ from dotenv import dotenv_values
 from jose import jwt
 from supabase import Client, ClientOptions, create_client
 
-
 env_config = dotenv_values(os.path.join(os.path.dirname(__file__), "../../../.env"))
 
 if os.getenv("RUN_INTEGRATION_TESTS") != "1":

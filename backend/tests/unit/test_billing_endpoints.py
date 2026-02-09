@@ -277,7 +277,7 @@ class TestBillingHistory:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1", limit=120, offset=0)
 
         assert result[0].id == "order-2"
 
@@ -613,7 +613,7 @@ class TestBillingErrorPaths:
     @pytest.mark.asyncio
     async def test_billing_history_no_token(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", None, create=True):
-            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1", limit=120, offset=0)
 
         assert result == []
 
@@ -622,7 +622,7 @@ class TestBillingErrorPaths:
     async def test_billing_history_no_customer(self):
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value=None)):
-            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1", limit=120, offset=0)
 
         assert result == []
 
@@ -635,7 +635,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1", limit=120, offset=0)
 
         assert result == []
 
@@ -648,7 +648,7 @@ class TestBillingErrorPaths:
         with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.get_customer_id_for_user", new=AsyncMock(return_value="cust-1")), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
-            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1")
+            result = await billing.get_billing_history(request=_make_mock_request(), current_user_id="user-1", limit=120, offset=0)
 
         assert result == []
 

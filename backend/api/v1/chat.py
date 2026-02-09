@@ -4,53 +4,71 @@ Chat API Endpoints
 Scope-aware conversational RAG with Dominance Guard for context disambiguation.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, Query
-from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, AsyncGenerator
+import asyncio
+import json
+import logging
+import re
 from collections import Counter
-from api.v1.dependencies import validate_team_access, require_paid_access, get_user_organization_id
-from api.v1.error_utils import build_error_payload, raise_http_error, api_error, ApiErrorCode
-from core.security import get_current_user
-from core.db import get_supabase
+from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
+from typing import Any
+
+import sentry_sdk
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
+from fastapi.responses import JSONResponse, StreamingResponse
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import OpenAIEmbeddings
+from pydantic import BaseModel, Field
+
+from api.v1.dependencies import (
+    get_user_organization_id,
+    require_paid_access,
+    validate_team_access,
+)
+from api.v1.error_utils import (
+    ApiErrorCode,
+    api_error,
+    build_error_payload,
+    raise_http_error,
+)
 from core.config import settings
+from core.db import get_supabase
 from core.exceptions import QuotaExceededError
 from core.ingestion_utils import normalize_source_type
 from core.rate_limit import limiter
-from core.resilience import is_retryable_error, CircuitBreakerOpen, openai_breaker
-from services.audit import log_chat_delete, audit_logger
-from services.llm_factory import LLMFactory
+from core.resilience import CircuitBreakerOpen, is_retryable_error, openai_breaker
+from core.security import get_current_user
+from services.audit import audit_logger, log_chat_delete
 from services.guardrails import guardrail_service
-from services.router import llm_router, ComplexityEvaluator, ModelSelection
+from services.llm_factory import LLMFactory
+from services.router import ComplexityEvaluator, ModelSelection, llm_router
+from services.scope_analysis import (
+    ScopeClassification,
+    analyze_scope_distribution,
+    filter_docs_by_scope,
+)
 from services.team_service import team_service
 from services.usage import (
     check_llm_quota,
-    record_llm_usage,
-    reserve_llm_tokens,
-    release_reserved_tokens,
     check_per_request_token_limit,
+    record_llm_usage,
+    release_reserved_tokens,
+    reserve_llm_tokens,
 )
-from services.scope_analysis import (
-    analyze_scope_distribution,
-    get_scope_candidates_for_clarification,
-    filter_docs_by_scope,
-    ScopeClassification,
-    ScopeAnalysisResult,
-)
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from datetime import datetime, timezone
-import logging
-import json
-import re
-import sentry_sdk
-import asyncio
 
 logger = logging.getLogger(__name__)
 
 # Global semaphore to limit concurrent LLM calls (Issue #13)
-_llm_semaphore: Optional[asyncio.Semaphore] = None
+_llm_semaphore: asyncio.Semaphore | None = None
 
 
 def _get_llm_semaphore() -> asyncio.Semaphore:
@@ -83,10 +101,10 @@ class MessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    sources: List[Any] = []
+    sources: list[Any] = []
     created_at: str
 
-@router.get("/conversations", response_model=List[ConversationResponse])
+@router.get("/conversations", response_model=list[ConversationResponse])
 @limiter.limit("60/minute")
 async def list_conversations(
     request: Request,
@@ -117,7 +135,7 @@ async def create_conversation(
 ):
     """Create a new conversation (org-scoped for team sharing)."""
     supabase = get_supabase()
-    
+
     now = datetime.now(timezone.utc).isoformat()
     data = {
         "user_id": user_id,
@@ -126,7 +144,7 @@ async def create_conversation(
         "created_at": now,
         "updated_at": now
     }
-    
+
     try:
         response = supabase.table("conversations").insert(data).execute()
         if not response.data:
@@ -145,7 +163,7 @@ async def get_conversation(
 ):
     """Get a specific conversation (org-scoped access)."""
     supabase = get_supabase()
-    
+
     try:
         # Organization-wide access for team collaboration
         response = supabase.table("conversations").select("*").eq("id", conversation_id).eq("organization_id", organization_id).single().execute()
@@ -168,14 +186,14 @@ async def update_conversation(
 ):
     """Update a conversation (e.g., rename). Org-scoped access."""
     supabase = get_supabase()
-    
+
     try:
         # Organization-wide access for team collaboration
         response = supabase.table("conversations").update({
             "title": payload.title,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", conversation_id).eq("organization_id", organization_id).execute()
-        
+
         if not response.data:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return response.data[0]
@@ -195,23 +213,23 @@ async def delete_conversation(
 ):
     """Delete a conversation and all its messages. Org-scoped access."""
     supabase = get_supabase()
-    
+
     try:
         # Get conversation info for audit log (org-scoped)
         conv_response = supabase.table("conversations").select("title").eq("id", conversation_id).eq("organization_id", organization_id).single().execute()
         conv_title = conv_response.data.get("title", "Unknown") if conv_response.data else "Unknown"
-        
+
         # Delete conversation (messages cascade) - org-scoped
         response = supabase.table("conversations").delete().eq("id", conversation_id).eq("organization_id", organization_id).execute()
-        
+
         # Audit log (async)
         log_chat_delete(background_tasks, user_id, conversation_id, conv_title, request)
-        
+
         return {"status": "success", "deleted_id": conversation_id}
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "delete_conversation")
 
-@router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
+@router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
 @limiter.limit("60/minute")
 async def get_messages(
     request: Request,
@@ -221,12 +239,12 @@ async def get_messages(
 ):
     """Get all messages for a conversation. Org-scoped access."""
     supabase = get_supabase()
-    
+
     # Verify org membership has access to this conversation
     conv_check = supabase.table("conversations").select("id").eq("id", conversation_id).eq("organization_id", organization_id).execute()
     if not conv_check.data:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
     try:
         response = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("created_at", desc=False).execute()
         messages = response.data or []
@@ -245,7 +263,7 @@ async def get_messages(
 class ChatRequest(BaseModel):
     """
     Chat request with input validation.
-    
+
     Constraints:
     - query: max 20,000 chars (~5,000 tokens) - prevents massive payloads
     - conversation_id: max 50 chars (UUIDs are 36 chars)
@@ -253,12 +271,12 @@ class ChatRequest(BaseModel):
     - scope_id: explicit scope selection (bypasses Dominance Guard)
     """
     query: str = Field(..., min_length=1, max_length=20000)
-    conversation_id: Optional[str] = Field(None, max_length=50)
-    history: Optional[List[Dict[str, str]]] = Field(default=[], max_length=100)
+    conversation_id: str | None = Field(None, max_length=50)
+    history: list[dict[str, str]] | None = Field(default=[], max_length=100)
     model: str = Field(default=settings.MODEL_ALIAS_FAST, max_length=50)
     stream: bool = Field(default=False)
-    scope_id: Optional[str] = Field(
-        None, 
+    scope_id: str | None = Field(
+        None,
         max_length=500,
         description="Explicit scope URI to search within. Use '__all__' to search across sources."
     )
@@ -267,7 +285,7 @@ class ChatRequest(BaseModel):
 class ScopeCandidate(BaseModel):
     """Scope candidate for clarification response."""
     id: str
-    summary: Optional[str] = None
+    summary: str | None = None
     type: str
 
 
@@ -275,15 +293,15 @@ class ClarificationResponse(BaseModel):
     """Response when scope clarification is needed (HTTP 300)."""
     action: str = "clarify_scope"
     message: str
-    candidates: List[ScopeCandidate]
+    candidates: list[ScopeCandidate]
     query: str
 
 
 class ScopeContext(BaseModel):
     """Scope context metadata included in successful responses."""
     scope_id: str
-    scope_name: Optional[str] = None
-    scope_type: Optional[str] = None
+    scope_name: str | None = None
+    scope_type: str | None = None
     dominance_ratio: float
     classification: str
 
@@ -291,17 +309,17 @@ class ScopeContext(BaseModel):
 class ChatResponse(BaseModel):
     """Chat response with optional scope context."""
     answer: str
-    sources: List[Dict[str, Any]]  # Enhanced sources with metadata
-    conversation_id: Optional[str] = None
-    message_id: Optional[str] = None
-    scope_context: Optional[ScopeContext] = None  # NEW: Scope info for transparency
+    sources: list[dict[str, Any]]  # Enhanced sources with metadata
+    conversation_id: str | None = None
+    message_id: str | None = None
+    scope_context: ScopeContext | None = None  # NEW: Scope info for transparency
 
 
 # ============================================================
 # CONDENSE QUESTION: Rewrite follow-up queries to standalone
 # ============================================================
 
-CONDENSE_PROMPT = """Given the following conversation history and a follow-up question, 
+CONDENSE_PROMPT = """Given the following conversation history and a follow-up question,
 rewrite the follow-up question to be a STANDALONE question that includes all necessary context.
 Do NOT answer the question, just rephrase it so it can be understood without the history.
 
@@ -377,13 +395,13 @@ def _apply_scope_identity_budget(scope_identity: str, context_text: str, model_n
 
 
 def _build_multi_scope_identity_context(
-    scope_infos: List[Dict[str, Any]],
+    scope_infos: list[dict[str, Any]],
     budget_tokens: int = GLOBAL_IDENTITY_TOKEN_BUDGET,
 ) -> str:
     if not scope_infos:
         return ""
     per_scope_budget = max(100, budget_tokens // max(1, len(scope_infos)))
-    parts: List[str] = []
+    parts: list[str] = []
     for info in scope_infos:
         scope_id = info.get("id", "unknown")
         scope_type = info.get("type", "unknown")
@@ -396,7 +414,7 @@ def _build_multi_scope_identity_context(
     return combined
 
 
-def _extract_scope_ids(docs: List[Dict[str, Any]], max_scopes: int = 5) -> List[str]:
+def _extract_scope_ids(docs: list[dict[str, Any]], max_scopes: int = 5) -> list[str]:
     counts: Counter[str] = Counter()
     for doc in docs:
         scope_id = doc.get("scope_id")
@@ -407,7 +425,7 @@ def _extract_scope_ids(docs: List[Dict[str, Any]], max_scopes: int = 5) -> List[
     return [scope_id for scope_id, _count in counts.most_common(max_scopes)]
 
 
-def _estimate_prompt_tokens(system_prompt: str, input_vars: Dict[str, Any]) -> int:
+def _estimate_prompt_tokens(system_prompt: str, input_vars: dict[str, Any]) -> int:
     total = _estimate_token_count(system_prompt)
     for value in input_vars.values():
         if value is None:
@@ -421,10 +439,10 @@ def _build_prompt_bundle(
     context_text: str,
     question: str,
     language: str,
-    scope_identity_context: Optional[str] = None,
-    scope_name: Optional[str] = None,
-    multi_scope_identity_context: Optional[str] = None,
-) -> tuple[ChatPromptTemplate, Dict[str, Any], str]:
+    scope_identity_context: str | None = None,
+    scope_name: str | None = None,
+    multi_scope_identity_context: str | None = None,
+) -> tuple[ChatPromptTemplate, dict[str, Any], str]:
     is_grok = provider == "grok"
     if multi_scope_identity_context:
         system_prompt = GROK_MULTI_SCOPE_SYSTEM_PROMPT if is_grok else MULTI_SCOPE_SYSTEM_PROMPT
@@ -478,7 +496,7 @@ def _is_timeout_error(exc: Exception) -> bool:
         return True
     return "timeout" in str(exc).lower() or "timed out" in str(exc).lower()
 
-def trim_history(history: List[Dict[str, str]], max_tokens: int = 2000) -> List[Dict[str, str]]:
+def trim_history(history: list[dict[str, str]], max_tokens: int = 2000) -> list[dict[str, str]]:
     """
     Trim chat history to fit within max_tokens limits.
     Keeps the System Prompt (if present) and the VERY LAST User message.
@@ -486,37 +504,37 @@ def trim_history(history: List[Dict[str, str]], max_tokens: int = 2000) -> List[
     """
     if not history:
         return []
-    
+
     try:
         encoding = tiktoken.get_encoding("cl100k_base")
     except Exception:
         encoding = None
-        
+
     def count_tokens(text: str):
         if encoding:
             return len(encoding.encode(text))
         return len(text) // 4  # Fallback approximation
-        
+
     current_tokens = sum(count_tokens(msg.get("content", "")) for msg in history)
-    
+
     if current_tokens <= max_tokens:
         return history
-        
+
     logger.info(f"✂️ [Chat] Trimming history: {current_tokens} > {max_tokens}")
-    
+
     # Preserve key messages
     system_msg = vocab_msg = None
     if history and history[0].get("role") == "system":
         system_msg = history.pop(0)
-        
+
     # Always keep the last message (current query usually)
     last_msg = history.pop(-1) if history else None
-    
+
     # Trim middle
     while history and current_tokens > max_tokens:
         removed = history.pop(0)
         current_tokens -= count_tokens(removed.get("content", ""))
-        
+
     # Reassemble
     result = []
     if system_msg:
@@ -524,10 +542,10 @@ def trim_history(history: List[Dict[str, str]], max_tokens: int = 2000) -> List[
     result.extend(history)
     if last_msg:
         result.append(last_msg)
-        
+
     return result
 
-def condense_question(query: str, history: List[Dict[str, str]]) -> str:
+def condense_question(query: str, history: list[dict[str, str]]) -> str:
     """
     If chat history exists, rewrite the query as a standalone question.
     Uses GPT-4o-mini for speed and cost efficiency.
@@ -718,12 +736,12 @@ Context:
 # SCOPE IDENTITY HELPERS
 # ============================================================
 
-def fetch_scope_identity(supabase, scope_id: str, organization_id: str) -> Optional[Dict[str, Any]]:
+def fetch_scope_identity(supabase, scope_id: str, organization_id: str) -> dict[str, Any] | None:
     """
     Fetch scope identity information from scope_identities table.
-    
+
     Returns scope summary and metadata for system prompt injection.
-    
+
     Note: Filters out placeholder identities (status='placeholder' or is_placeholder=True)
     to prevent showing "Generating identity..." text in chat responses.
     """
@@ -731,17 +749,17 @@ def fetch_scope_identity(supabase, scope_id: str, organization_id: str) -> Optio
         response = supabase.table("scope_identities").select(
             "id, type, summary, attributes, file_tree, status"
         ).eq("id", scope_id).eq("organization_id", organization_id).single().execute()
-        
+
         if response.data:
             # Filter out placeholder identities
             status = response.data.get("status")
             attributes = response.data.get("attributes") or {}
             is_placeholder = attributes.get("is_placeholder", False)
-            
+
             if status == "placeholder" or is_placeholder:
                 logger.debug(f"🔍 [Chat] Skipping placeholder scope identity for {scope_id}")
                 return None
-            
+
             return response.data
         return None
     except Exception as e:
@@ -750,41 +768,41 @@ def fetch_scope_identity(supabase, scope_id: str, organization_id: str) -> Optio
 
 
 def fetch_scope_candidates_with_summaries(
-    supabase, 
-    scope_ids: List[str], 
+    supabase,
+    scope_ids: list[str],
     organization_id: str
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Fetch scope identities for multiple scopes (for clarification response).
-    
+
     Returns list of scope info with summaries and types.
-    
+
     Note: Filters out placeholder identities to prevent showing incomplete data.
     """
     if not scope_ids:
         return []
-    
+
     try:
         response = supabase.table("scope_identities").select(
             "id, type, summary, attributes, status"
         ).eq("organization_id", organization_id).in_("id", scope_ids).neq(
             "status", "placeholder"
         ).execute()
-        
+
         # Additional filter for is_placeholder attribute (defense in depth)
         results = []
         for item in (response.data or []):
             attributes = item.get("attributes") or {}
             if not attributes.get("is_placeholder", False):
                 results.append(item)
-        
+
         return results
     except Exception as e:
         logger.warning(f"⚠️ [Chat] Failed to fetch scope candidates: {e}")
         return []
 
 
-def build_scope_identity_context(scope_identity: Dict[str, Any]) -> str:
+def build_scope_identity_context(scope_identity: dict[str, Any]) -> str:
     """
     Build a human-readable scope identity context for system prompt injection.
 
@@ -880,7 +898,7 @@ def extract_scope_name(scope_id: str) -> str:
     """
     if not scope_id:
         return "Unknown Source"
-    
+
     try:
         # Handle common patterns
         if scope_id.startswith("github://"):
@@ -889,65 +907,65 @@ def extract_scope_name(scope_id: str) -> str:
             if "/" in parts:
                 return parts.split("/")[-1]
             return parts
-        
+
         if scope_id.startswith("s3://"):
             # s3://bucket/prefix/ -> bucket/prefix
             return scope_id.replace("s3://", "").rstrip("/") or "S3 Bucket"
-        
+
         if scope_id.startswith("box://"):
             # box://folder/123:Name -> Name
             if ":" in scope_id:
                 return scope_id.split(":")[-1]
             return scope_id.replace("box://folder/", "Box Folder")
-        
+
         if scope_id.startswith("gdrive://"):
             # gdrive://drive/folder:Name -> Name
             if ":" in scope_id:
                 return scope_id.split(":")[-1]
             return "Google Drive"
-        
+
         if scope_id.startswith("notion://"):
             # notion://workspace/page:Title -> Title
             if ":" in scope_id:
                 return scope_id.split(":")[-1]
             return "Notion"
-        
+
         if scope_id.startswith("dropbox://"):
             # dropbox://namespace/path -> path
             parts = scope_id.replace("dropbox://", "").split("/", 1)
             return parts[-1] if len(parts) > 1 else "Dropbox"
-        
+
         # Fallback: return last part of URI
         return scope_id.split("/")[-1].split(":")[-1] or scope_id
-        
+
     except Exception:
         return scope_id[:50]
 
 
-def _decrypt_search_results(docs: List[Dict]) -> List[Dict]:
+def _decrypt_search_results(docs: list[dict]) -> list[dict]:
     """
     GHOST PROTOCOL: Decrypt content in search results.
-    
+
     Iterates through search results and decrypts the 'content' field
     using the Ghost Protocol encryption. Handles errors gracefully
     to ensure search continues even if some content can't be decrypted.
-    
+
     Args:
         docs: List of search result dicts with 'content' field
-        
+
     Returns:
         Same list with 'content' field decrypted in-place
     """
     from core.security import (
-        decrypt_text, 
-        UnencryptedContentError, 
-        EncryptionError,
         HAS_CHUNK_ENCRYPTION,
+        EncryptionError,
+        UnencryptedContentError,
+        decrypt_text,
     )
-    
+
     if not docs or not HAS_CHUNK_ENCRYPTION:
         return docs
-    
+
     for doc in docs:
         if doc.get('content'):
             try:
@@ -970,35 +988,35 @@ def _decrypt_search_results(docs: List[Dict]) -> List[Dict]:
                     f"[GhostProtocol] Unexpected error decrypting content: {e}"
                 )
                 # Don't modify - might be plaintext (legacy data)
-    
+
     return docs
 
 
-def format_context_with_citations(docs: List[Dict]) -> tuple:
+def format_context_with_citations(docs: list[dict]) -> tuple:
     """
     Format retrieved documents with numbered citations.
-    
+
     Returns:
         Tuple of (formatted_context_string, sources_metadata_list)
-        
+
     Note: Expects docs to already have decrypted content via _decrypt_search_results()
     """
     if not docs:
         return "", []
-    
+
     context_parts = []
     sources = []
-    
+
     for i, doc in enumerate(docs, 1):
         content = doc.get('content', '')
         metadata = doc.get('metadata', {}) or {}  # Ensure dict even if None
         source_type = doc.get('source_type', metadata.get('source', 'unknown'))
         normalized_source_type = normalize_source_type(source_type) or source_type
-        
+
         # IMPORTANT: hybrid_search returns 'title' at top-level, NOT inside metadata
         # Check top-level first, then fall back to metadata
         doc_title = doc.get('title') or metadata.get('title')
-        
+
         # Build source label based on type
         if normalized_source_type == "web":
             source_label = metadata.get("url") or metadata.get("source_url") or doc_title or "Web Page"
@@ -1015,18 +1033,18 @@ def format_context_with_citations(docs: List[Dict]) -> tuple:
         else:
             source_label = doc_title or metadata.get("filename") or "Document"
             source_type_display = normalized_source_type.title() if normalized_source_type else "Doc"
-        
+
         # Get additional context (page, section, etc.)
         page_info = ""
         if metadata.get("page_number"):
             page_info = f" (Page {metadata['page_number']})"
         elif metadata.get("header_path"):
             page_info = f" ({metadata['header_path']})"
-        
+
         # Format the citation block
         citation_header = f"[{i}] {source_type_display}: {source_label}{page_info}"
         context_parts.append(f"{citation_header}\n{content[:1500]}")  # Truncate very long chunks
-        
+
         # Build source metadata for response
         sources.append({
             "index": i,
@@ -1036,7 +1054,7 @@ def format_context_with_citations(docs: List[Dict]) -> tuple:
             "page": metadata.get("page_number"),
             "section": metadata.get("header_path"),
         })
-    
+
     formatted_context = "\n\n---\n\n".join(context_parts)
     return formatted_context, sources
 
@@ -1055,7 +1073,7 @@ async def chat_endpoint(
 ):
     """
     Intelligent Conversational RAG Chat Endpoint with Scope-Aware Dominance Guard.
-    
+
     Pipeline:
     1. Guardrail Analysis - Safety, language, intent, complexity
     2. Fast Exit - Handle greetings/off-topic without RAG
@@ -1070,7 +1088,7 @@ async def chat_endpoint(
     8. Streaming Support - Optional SSE streaming
     """
     supabase = get_supabase()
-    
+
     # ========== STEP 1: RESOLVE ORG SCOPE ==========
     try:
         organization_id = await team_service.get_organization_id(user_id)
@@ -1165,7 +1183,7 @@ async def chat_endpoint(
         )
 
     # ========== STEP 7: SMART ROUTING (Select Model) ==========
-    requested_tier: Optional[str] = None
+    requested_tier: str | None = None
     model_hint = (payload.model or "").strip().lower()
     force_smart = ComplexityEvaluator.should_force_pro(payload.query)
 
@@ -1227,17 +1245,17 @@ async def chat_endpoint(
                 requested_tier,
             )
     # ========== STEP 7.1: RESOLVE ORG SCOPE (already fetched) ==========
-    
+
     # ========== STEP 6: CONDENSE QUESTION (with trimmed history) ==========
     trimmed_history = trim_history(payload.history or [])
     search_query = condense_question(payload.query, trimmed_history)
-    
+
     # ========== STEP 7: EMBED QUERY ==========
     embeddings_model = OpenAIEmbeddings(
-        model="text-embedding-3-small", 
+        model="text-embedding-3-small",
         api_key=settings.OPENAI_API_KEY
     )
-    
+
     try:
         query_vector = embeddings_model.embed_query(search_query)
     except Exception as e:
@@ -1251,7 +1269,7 @@ async def chat_endpoint(
     if explicit_scope == "__all__":
         explicit_scope = None
         force_all_scopes = True
-    
+
     try:
         if explicit_scope:
             # User explicitly selected a scope - use scoped search
@@ -1287,10 +1305,10 @@ async def chat_endpoint(
                 "keyword_weight": 0.3,
                 "similarity_threshold": 0.25
             }).execute()
-        
+
         docs = response.data or []
         logger.info(f"📚 [Chat] Hybrid search found {len(docs)} raw candidates")
-        
+
         # GHOST PROTOCOL: Decrypt content before processing
         docs = _decrypt_search_results(docs)
 
@@ -1305,11 +1323,11 @@ async def chat_endpoint(
         raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "retrieve_documents")
 
     # ========== STEP 9: DOMINANCE GUARD (Scope Analysis) ==========
-    scope_context: Optional[ScopeContext] = None
-    selected_scope_id: Optional[str] = None
-    scope_identity: Optional[Dict[str, Any]] = None
-    multi_scope_identity_context: Optional[str] = None
-    
+    scope_context: ScopeContext | None = None
+    selected_scope_id: str | None = None
+    scope_identity: dict[str, Any] | None = None
+    multi_scope_identity_context: str | None = None
+
     if force_all_scopes:
         logger.info("🌐 [Chat] Search all sources selected - skipping dominance guard")
         scope_ids = _extract_scope_ids(docs)
@@ -1333,37 +1351,37 @@ async def chat_endpoint(
             classification="explicit",
         )
         logger.info(f"🎯 [Chat] Using explicit scope: {explicit_scope[:50]}...")
-    
+
     elif docs:
         # Analyze scope distribution
         scope_analysis = analyze_scope_distribution(docs)
-        
+
         logger.info(
             f"🔍 [Chat] Scope analysis: {scope_analysis.classification.value}, "
             f"primary={scope_analysis.primary_scope_id[:50] if scope_analysis.primary_scope_id else 'None'}..., "
             f"ratio={scope_analysis.dominance_ratio:.2%}"
         )
-        
+
         # ========== DOMINANCE GUARD DECISION ==========
-        
+
         if scope_analysis.classification == ScopeClassification.FRAGMENTED:
             # FRAGMENTED: Return HTTP 300 clarification request
             logger.info("⚠️ [Chat] FRAGMENTED scope - requesting clarification")
-            
+
             # Fetch scope summaries for candidates
             candidate_scope_ids = [
-                s.scope_id for s in 
+                s.scope_id for s in
                 ([scope_analysis.primary_scope_stats] if scope_analysis.primary_scope_stats else []) +
                 scope_analysis.secondary_scopes[:4]
             ]
-            
+
             scope_infos = fetch_scope_candidates_with_summaries(
                 supabase, candidate_scope_ids, organization_id
             )
-            
+
             # Build scope_id -> info lookup
             scope_info_map = {s["id"]: s for s in scope_infos}
-            
+
             # Build candidates for response
             candidates = []
             for scope_stats in ([scope_analysis.primary_scope_stats] if scope_analysis.primary_scope_stats else []) + scope_analysis.secondary_scopes[:4]:
@@ -1373,7 +1391,7 @@ async def chat_endpoint(
                     summary=info.get("summary", f"{scope_stats.count} relevant documents")[:200],
                     type=info.get("type", "unknown"),
                 ))
-            
+
             # Return HTTP 300 Multiple Choices
             return JSONResponse(
                 status_code=300,
@@ -1388,11 +1406,11 @@ async def chat_endpoint(
                     query=payload.query,
                 ).model_dump(),
             )
-        
+
         elif scope_analysis.classification in (ScopeClassification.DOMINANT, ScopeClassification.CONTESTED):
             # DOMINANT or CONTESTED: Proceed with primary scope
             selected_scope_id = scope_analysis.primary_scope_id
-            
+
             if selected_scope_id:
                 scope_identity = fetch_scope_identity(supabase, selected_scope_id, organization_id)
                 scope_context = ScopeContext(
@@ -1402,7 +1420,7 @@ async def chat_endpoint(
                     dominance_ratio=scope_analysis.dominance_ratio,
                     classification=scope_analysis.classification.value,
                 )
-            
+
             # For DOMINANT, filter docs to primary scope only
             if scope_analysis.classification == ScopeClassification.DOMINANT and selected_scope_id:
                 docs = filter_docs_by_scope(docs, selected_scope_id)
@@ -1410,13 +1428,13 @@ async def chat_endpoint(
 
     # ========== STEP 10: DYNAMIC CONTEXT INJECTION ==========
     high_quality_docs = [
-        d for d in docs 
+        d for d in docs
         if d.get("vector_score", d.get("similarity", 0)) >= settings.RAG_SIMILARITY_THRESHOLD
     ]
-    
+
     context_text = ""
     sources_metadata = []
-    
+
     if high_quality_docs:
         logger.info(f"✅ [Chat] High quality context: {len(high_quality_docs)} docs")
         context_text, sources_metadata = format_context_with_citations(high_quality_docs)
@@ -1489,7 +1507,7 @@ async def chat_endpoint(
         primary_provider,
         [f"{c.provider}/{c.model}" for c in llm_candidates[1:]],
     )
-    
+
     # ========== STEP 12: BUILD PROMPT (Scope-Aware) ==========
     scope_identity_context = None
     scope_name = None
@@ -1502,9 +1520,9 @@ async def chat_endpoint(
             budget_model_name,
         )
 
-    prompt_cache: Dict[str, tuple[ChatPromptTemplate, Dict[str, Any], str]] = {}
+    prompt_cache: dict[str, tuple[ChatPromptTemplate, dict[str, Any], str]] = {}
 
-    def _prompt_bundle_for(provider: str) -> tuple[ChatPromptTemplate, Dict[str, Any], str]:
+    def _prompt_bundle_for(provider: str) -> tuple[ChatPromptTemplate, dict[str, Any], str]:
         cached = prompt_cache.get(provider)
         if cached:
             return cached
@@ -1573,35 +1591,35 @@ async def chat_endpoint(
         # Status events provide visual feedback for the RAG pipeline steps
         async def stream_with_status():
             import asyncio
-            
+
             # Calculate context for status messages
             source_count = len(sources_metadata)
             scope_name = scope_context.scope_name if scope_context else None
-            
+
             # Determine if this is a complex query that may take longer
             is_complex = guardrail_result.complexity == "COMPLEX" if guardrail_result else False
             is_smart_model = actual_tier == settings.MODEL_ALIAS_SMART
-            
+
             # === Status 1: Searching ===
             # Show immediately to give user feedback
             searching_message = "Searching knowledge base..."
             if scope_name:
                 searching_message = f"Searching {scope_name}..."
-            
+
             yield f"data: {json.dumps({'type': 'status', 'step': 'searching', 'message': searching_message, 'details': {'scopeName': scope_name}})}\n\n"
-            
+
             # Small delay to ensure event is rendered before next
             await asyncio.sleep(0.15)
-            
+
             # === Status 2: Analyzing ===
             analyzing_message = "Analyzing context..."
             if source_count > 10:
                 analyzing_message = f"Analyzing {source_count} documents..."
-            
+
             yield f"data: {json.dumps({'type': 'status', 'step': 'analyzing', 'message': analyzing_message, 'details': {'sourceCount': source_count}})}\n\n"
-            
+
             await asyncio.sleep(0.15)
-            
+
             # === Status 3: Found ===
             if source_count > 0:
                 found_message = f"Found {source_count} relevant sources"
@@ -1609,11 +1627,11 @@ async def chat_endpoint(
                     found_message = f"Found {source_count} sources in {scope_name}"
             else:
                 found_message = "No specific sources found, using general knowledge"
-            
+
             yield f"data: {json.dumps({'type': 'status', 'step': 'found', 'message': found_message, 'details': {'sourceCount': source_count, 'scopeName': scope_name}})}\n\n"
-            
+
             await asyncio.sleep(0.1)
-            
+
             # === Status 4: Generating ===
             # Include model info and complexity warning for transparency
             generating_message = "Generating response..."
@@ -1621,9 +1639,9 @@ async def chat_endpoint(
                 generating_message = "Generating detailed response (complex query)..."
             elif is_smart_model:
                 generating_message = "Generating comprehensive response..."
-            
+
             yield f"data: {json.dumps({'type': 'status', 'step': 'generating', 'message': generating_message, 'details': {'model': actual_tier, 'isComplex': is_complex}})}\n\n"
-            
+
             # Yield all events from the actual streaming response
             async for event in stream_chat_response(
                 _prompt_bundle_for,
@@ -1642,7 +1660,7 @@ async def chat_endpoint(
                 estimated_total_tokens,  # GAP 1 FIX: Pass for token release
             ):
                 yield event
-        
+
         return StreamingResponse(
             stream_with_status(),
             media_type="text/event-stream"
@@ -1656,7 +1674,7 @@ async def chat_endpoint(
             used_provider = primary_provider
             used_model = primary_model_name
             used_prompt_tokens = estimated_input_tokens
-            last_exc: Optional[Exception] = None
+            last_exc: Exception | None = None
 
             for idx, candidate in enumerate(llm_candidates):
                 if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
@@ -1801,7 +1819,7 @@ async def chat_endpoint(
 
 async def _stream_with_timeout_and_heartbeat(
     chain,
-    input_vars: Dict[str, Any],
+    input_vars: dict[str, Any],
     provider: str,
     timeout_seconds: float,
     heartbeat_interval: float,
@@ -1857,16 +1875,16 @@ async def _stream_with_timeout_and_heartbeat(
 
 async def stream_chat_response(
     prompt_builder,
-    llm_candidates: List[ModelSelection],
+    llm_candidates: list[ModelSelection],
     actual_tier: str,
     context: str,
     question: str,
-    sources: List[Dict],
+    sources: list[dict],
     conversation_id: str,
     user_id: str,
     supabase,
     language: str = "en",
-    scope_context: Optional[ScopeContext] = None,
+    scope_context: ScopeContext | None = None,
     organization_id: str = "",
     plan_code: str = "free",
     estimated_total_tokens: int = 0,  # GAP 1 FIX: Add for token release
@@ -1889,7 +1907,7 @@ async def stream_chat_response(
     - Issue #13: Respects global concurrency semaphore
     - GAP 1: Releases reserved tokens after actual usage recording
     """
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     stream_timeout = getattr(settings, 'LLM_STREAM_TIMEOUT', 60)
     heartbeat_interval = getattr(settings, 'LLM_HEARTBEAT_INTERVAL', 10.0)
 
@@ -1903,7 +1921,7 @@ async def stream_chat_response(
                 continue
 
             # Fix Issue #6: Use list for O(n) string building instead of O(n^2) concatenation
-            response_chunks: List[str] = []
+            response_chunks: list[str] = []
             sent_any = False
 
             try:
@@ -2055,22 +2073,22 @@ def save_messages(
     conversation_id: str,
     query: str,
     answer: str,
-    sources: List[Any],
+    sources: list[Any],
     organization_id: str = None,
-) -> Optional[str]:
+) -> str | None:
     """
     Save user and assistant messages to database.
-    
+
     SECURITY: When organization_id is provided, validates that the conversation
     belongs to the organization before updating. This prevents cross-org writes
     when using service keys that bypass RLS.
     """
     if not conversation_id:
         return None
-    
+
     try:
         now = datetime.now(timezone.utc).isoformat()
-        
+
         # SECURITY: Validate conversation belongs to organization before any writes
         # This prevents ID harvesting attacks across organizational boundaries
         if organization_id:
@@ -2085,7 +2103,7 @@ def save_messages(
                     f"not in org {organization_id[:8]}..."
                 )
                 return None  # Silent fail - don't leak info about other orgs
-        
+
         # Save user message
         supabase.table("messages").insert({
             "conversation_id": conversation_id,
@@ -2094,7 +2112,7 @@ def save_messages(
             "sources": [],
             "created_at": now
         }).execute()
-        
+
         # Save assistant message
         assistant_msg = supabase.table("messages").insert({
             "conversation_id": conversation_id,
@@ -2103,11 +2121,11 @@ def save_messages(
             "sources": sources or [],
             "created_at": now
         }).execute()
-        
+
         message_id = None
         if assistant_msg.data:
             message_id = assistant_msg.data[0]['id']
-        
+
         # Update conversation timestamp (org-scoped if provided)
         update_query = supabase.table("conversations").update({
             "updated_at": now
@@ -2115,9 +2133,9 @@ def save_messages(
         if organization_id:
             update_query = update_query.eq("organization_id", organization_id)
         update_query.execute()
-        
+
         return message_id
-        
+
     except Exception as e:
         logger.warning(f"WARNING: Failed to save messages: {e}")
         sentry_sdk.capture_exception(e)

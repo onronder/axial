@@ -1,17 +1,16 @@
-from datetime import datetime
 
 from models import (
     ConnectorDefinition,
-    UserIntegration,
-    IngestionJob,
-    Notification,
-    WebCrawlConfig,
-    JobStatus,
-    NotificationType,
     CrawlStatus,
     CrawlType,
+    IngestionJob,
+    JobStatus,
+    Notification,
+    NotificationType,
     RefreshInterval,
     User,
+    UserIntegration,
+    WebCrawlConfig,
 )
 
 

@@ -5,17 +5,17 @@ from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
 
 class DummyConnector(EnhancedConnector):
     """Test harness implementing all abstract methods."""
-    
+
     @property
     def connector_type(self) -> SourceType:
         return SourceType.FILE_UPLOAD
 
     def list_files(self, config: dict, parent_id=None):
         return iter([])
-    
+
     def fetch_file_content(self, file_id: str, config: dict) -> bytes:
         return b""
-    
+
     def validate_config(self, config: dict) -> bool:
         return True
 
@@ -61,10 +61,10 @@ def test_connector_type_not_implemented():
     class MissingConnector(EnhancedConnector):
         def list_files(self, config: dict, parent_id=None):
             return iter([])
-        
+
         def fetch_file_content(self, file_id: str, config: dict) -> bytes:
             return b""
-        
+
         def validate_config(self, config: dict) -> bool:
             return True
 
@@ -94,10 +94,10 @@ async def test_fetch_documents_not_implemented_raises():
 
         def list_files(self, config: dict, parent_id=None):
             return iter([])
-        
+
         def fetch_file_content(self, file_id: str, config: dict) -> bytes:
             return b""
-        
+
         def validate_config(self, config: dict) -> bool:
             return True
 

@@ -33,27 +33,28 @@ import logging
 import mimetypes
 import time
 from collections import deque
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional, AsyncIterator, Set
+from collections.abc import AsyncIterator, Iterator
+from datetime import datetime
+from typing import Any
 
 import requests
 
 from connectors.base import (
     BaseConnector,
-    RemoteFile,
     ConnectorAuthError,
     ConnectorRateLimitError,
     ConnectorTransientError,
+    RemoteFile,
 )
 from connectors.enhanced import (
     EnhancedConnector,
+    FileTooLargeError,
+    ItemNotFoundError,
     SourceDocument,
     SourceType,
-    ItemNotFoundError,
-    FileTooLargeError,
 )
 from connectors.limits import connector_fetch_limit
-from connectors.utils import load_integration, build_config_from_kwargs
+from connectors.utils import build_config_from_kwargs, load_integration
 from core.config import settings
 from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
@@ -82,14 +83,14 @@ ITEM_FIELDS = "id,name,type,size,sha1,modified_at,parent"
 class BoxConnector(EnhancedConnector, BaseConnector):
     """
     Box connector for unified ingestion pipeline.
-    
+
     Features:
     - OAuth token refresh with rotating refresh tokens (CRITICAL: single-use)
     - Recursive folder traversal with offset pagination
     - Streaming file downloads
     - Rate limit handling with Retry-After support
     - Enterprise and Personal account support
-    
+
     Security:
     - Uses root_readonly scope (minimum required)
     - Gracefully handles 403 on restricted folders
@@ -97,7 +98,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
 
     def __init__(self) -> None:
         super().__init__()
-        self._folder_name_cache: Dict[str, str] = {}
+        self._folder_name_cache: dict[str, str] = {}
 
     @property
     def connector_type(self) -> SourceType:
@@ -118,10 +119,10 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     def validate_config(self, config: dict) -> bool:
         """
         Validate Box configuration.
-        
+
         Validation Strategy:
         - Call GET /users/me to verify token validity
-        
+
         Accepts:
         - access_token: Direct token
         - integration_id: Lookup from user_integrations table
@@ -151,10 +152,10 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     def _verify_token(self, access_token: str) -> dict:
         """
         Verify token by calling GET /users/me.
-        
+
         Returns:
             User info dict
-            
+
         Raises:
             ConnectorAuthError: Invalid/expired token
         """
@@ -191,16 +192,16 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         self,
         config: dict,
         endpoint: str,
-        params: Optional[dict] = None,
+        params: dict | None = None,
     ) -> dict:
         """
         Make a GET request to Box API.
-        
+
         Args:
             config: Configuration with credentials
             endpoint: API endpoint path (e.g., "/folders/0/items")
             params: Query parameters
-            
+
         Returns:
             Parsed JSON response
         """
@@ -226,19 +227,19 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         self,
         method: str,
         url: str,
-        headers: Optional[dict] = None,
-        params: Optional[dict] = None,
+        headers: dict | None = None,
+        params: dict | None = None,
         stream: bool = False,
         timeout: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> requests.Response:
         """
         Execute HTTP request with intelligent retry logic.
-        
+
         Rate Limit Handling:
         - Respects Retry-After header from Box
         - Falls back to exponential backoff if header missing
         - Maximum 3 retries before raising ConnectorRateLimitError
-        
+
         Error Handling:
         - 401: Raise ConnectorAuthError (no retry)
         - 403: Raise ConnectorAuthError (no retry)
@@ -313,16 +314,16 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     def list_files(
         self,
         config: dict,
-        since: Optional[datetime] = None,
+        since: datetime | None = None,
     ) -> Iterator[RemoteFile]:
         """
         List files from Box with folder tree navigation.
-        
+
         Behavior:
         - If parent_id is None/"root"/empty: List root folder
         - If parent_id is set: List that specific folder
         - If recursive=True: Traverse entire subtree
-        
+
         Filtering:
         - If since is provided, only yield files with modified_at >= since
         """
@@ -347,7 +348,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     ) -> Iterator[dict]:
         """
         List all items in a folder with automatic pagination.
-        
+
         Uses offset-based pagination with limit=1000 for efficiency.
         """
         offset = 0
@@ -386,17 +387,17 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         self,
         config: dict,
         root_folder_id: str,
-        since: Optional[datetime] = None,
+        since: datetime | None = None,
         include_folders: bool = True,
     ) -> Iterator[RemoteFile]:
         """
         Recursively traverse folder tree using iterative BFS.
-        
+
         Uses a queue to avoid stack overflow for deep folder structures.
         Gracefully handles 403 errors on restricted folders.
         """
         queue: deque[str] = deque([root_folder_id])
-        visited: Set[str] = set()
+        visited: set[str] = set()
 
         while queue:
             folder_id = queue.popleft()
@@ -412,12 +413,12 @@ class BoxConnector(EnhancedConnector, BaseConnector):
                     if item_type == "folder":
                         # Add subfolder to queue
                         queue.append(item["id"])
-                        
+
                         if include_folders:
                             remote_file = self._item_to_remote_file(item, since, is_folder=True)
                             if remote_file:
                                 yield remote_file
-                                
+
                     elif item_type == "file":
                         remote_file = self._item_to_remote_file(item, since, is_folder=False)
                         if remote_file:
@@ -434,7 +435,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         self,
         config: dict,
         folder_id: str,
-        since: Optional[datetime] = None,
+        since: datetime | None = None,
         include_folders: bool = True,
     ) -> Iterator[RemoteFile]:
         """List contents of a single folder (non-recursive)."""
@@ -455,15 +456,15 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     def _item_to_remote_file(
         self,
         item: dict,
-        since: Optional[datetime] = None,
+        since: datetime | None = None,
         is_folder: bool = False,
-    ) -> Optional[RemoteFile]:
+    ) -> RemoteFile | None:
         """
         Convert Box item to RemoteFile with deterministic ID.
-        
+
         CRITICAL: Uses box://{file_id} format for delete reconciliation.
         This ensures IDs are stable across syncs for ghost file detection.
-        
+
         Returns None for:
         - Files modified before 'since' timestamp
         """
@@ -498,13 +499,13 @@ class BoxConnector(EnhancedConnector, BaseConnector):
             parent_id=self._get_parent_id(item),
             web_view_url=f"https://app.box.com/file/{item_id}",
         )
-    
+
     def _build_canonical_source_id(self, box_id: str, is_folder: bool = False) -> str:
         """
         Build deterministic source ID for delete reconciliation.
-        
+
         Format: box://file/{file_id} or box://folder/{folder_id}
-        
+
         This ID MUST be:
         - Deterministic (same input = same output)
         - Unique across all sources
@@ -512,11 +513,11 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         """
         item_type = "folder" if is_folder else "file"
         return f"box://{item_type}/{box_id}"
-    
+
     def _extract_box_id_from_source_id(self, source_id: str) -> str:
         """
         Extract Box file ID from canonical source ID.
-        
+
         Handles both formats:
         - Canonical: box://file/123456789
         - Raw Box ID: 123456789
@@ -534,11 +535,11 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     def fetch_file_content(self, file_id: str, config: dict) -> bytes:
         """
         Fetch raw file bytes from Box.
-        
+
         Args:
             file_id: Box file ID
             config: Configuration with credentials
-            
+
         Returns:
             Raw file content as bytes
         """
@@ -548,7 +549,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     async def fetch_documents(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
     ) -> AsyncIterator[SourceDocument]:
         """Async wrapper for fetch_documents_sync."""
@@ -558,21 +559,21 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     def fetch_documents_sync(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
     ) -> Iterator[SourceDocument]:
         """
         Fetch documents from Box for ingestion pipeline.
-        
+
         PRODUCTION SAFEGUARDS:
         - Handles canonical IDs (box://file/{id}) and raw Box IDs
         - Continues on individual file errors (doesn't fail entire job)
         - Deduplicates items to prevent double processing
-        
+
         Handles:
         - Single files: Download directly
         - Folders: Recursive traversal and download all files
-        
+
         Args:
             item_ids: List of Box file/folder IDs (raw or canonical format)
             credentials: Optional credentials dict
@@ -587,13 +588,13 @@ class BoxConnector(EnhancedConnector, BaseConnector):
 
         logger.info(f"📥 [BoxConnector] Fetching {len(item_ids)} item(s)")
 
-        processed_ids: Set[str] = set()  # Deduplication by raw Box ID
+        processed_ids: set[str] = set()  # Deduplication by raw Box ID
         failed_count = 0
 
         for item_id in item_ids:
             # Extract raw Box ID from canonical format if needed
             raw_box_id = self._extract_box_id_from_source_id(item_id)
-            
+
             try:
                 # Get item metadata to determine type
                 metadata = self._get_item_metadata(resolved, raw_box_id)
@@ -627,7 +628,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     def _get_item_metadata(self, config: dict, item_id: str) -> dict:
         """
         Get metadata for a file or folder.
-        
+
         Tries file endpoint first, then folder endpoint.
         """
         # Try as file first (most common case)
@@ -656,18 +657,18 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         self,
         config: dict,
         file_id: str,
-        file_size: Optional[int] = None,
+        file_size: int | None = None,
     ) -> bytes:
         """
         Download file content with streaming and resilience.
-        
+
         Production Safeguards:
         - Uses streaming to avoid loading full file into memory
         - Large files (>50MB) use Range requests for resilience
         - Chunks of 1MB for efficient memory usage
         - Enforces MAX_FILE_SIZE limit
         - Box may return 302 redirect to CDN - requests follows automatically
-        
+
         Args:
             config: Configuration with credentials
             file_id: Box file ID
@@ -676,7 +677,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         # Use chunked download for large files
         if file_size and file_size >= LARGE_FILE_THRESHOLD:
             return self._download_large_file_chunked(config, file_id, file_size)
-        
+
         # Standard streaming download for smaller files
         url = f"{BOX_API_BASE}/files/{file_id}/content"
         headers = self._get_headers(config)
@@ -712,7 +713,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
 
         response.close()
         return buffer.getvalue()
-    
+
     def _download_large_file_chunked(
         self,
         config: dict,
@@ -721,20 +722,20 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     ) -> bytes:
         """
         Download large file using Range requests for resilience.
-        
+
         If a chunk fails, we retry that specific chunk, not the whole file.
         This prevents wasting bandwidth on partial downloads.
         """
         buffer = io.BytesIO()
         downloaded = 0
-        
+
         logger.info(
             f"📦 [Box] Large file download ({content_length:,} bytes) "
             f"using Range requests: file_id={file_id}"
         )
 
         url = f"{BOX_API_BASE}/files/{file_id}/content"
-        
+
         while downloaded < content_length:
             end = min(downloaded + CHUNK_SIZE - 1, content_length - 1)
             range_header = f"bytes={downloaded}-{end}"
@@ -743,7 +744,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
                 try:
                     headers = self._get_headers(config)
                     headers["Range"] = range_header
-                    
+
                     with connector_fetch_limit("box"):
                         response = self._request_with_retry(
                             "GET",
@@ -752,10 +753,10 @@ class BoxConnector(EnhancedConnector, BaseConnector):
                             stream=True,
                             timeout=DOWNLOAD_TIMEOUT_SECONDS,
                         )
-                    
+
                     chunk_data = response.content
                     response.close()
-                    
+
                     buffer.write(chunk_data)
                     downloaded += len(chunk_data)
                     break
@@ -765,7 +766,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
                         raise ConnectorTransientError(
                             f"Failed to download chunk {range_header} after {MAX_RETRIES} attempts: {e}"
                         )
-                    
+
                     delay = BASE_BACKOFF_SECONDS * (2 ** attempt)
                     logger.warning(
                         f"⏳ [Box] Chunk download failed, retrying in {delay}s "
@@ -780,11 +781,11 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         self,
         config: dict,
         folder_id: str,
-        processed_ids: Set[str],
+        processed_ids: set[str],
     ) -> Iterator[SourceDocument]:
         """
         Recursively fetch all documents in a folder.
-        
+
         PRODUCTION SAFEGUARDS:
         - Continues on individual file errors
         - Deduplicates by raw Box ID
@@ -800,11 +801,11 @@ class BoxConnector(EnhancedConnector, BaseConnector):
 
         file_count = 0
         failed_count = 0
-        
+
         for remote_file in self.list_files(folder_config):
             # Extract raw Box ID from canonical source ID
             raw_box_id = self._extract_box_id_from_source_id(remote_file.id)
-            
+
             if raw_box_id in processed_ids:
                 continue
 
@@ -815,11 +816,11 @@ class BoxConnector(EnhancedConnector, BaseConnector):
                     f"/files/{raw_box_id}",
                     params={"fields": ITEM_FIELDS},
                 )
-                
+
                 processed_ids.add(raw_box_id)
                 file_count += 1
                 yield self._build_source_document(config, metadata)
-                
+
             except Exception as e:
                 failed_count += 1
                 logger.error(f"❌ [Box] Failed to fetch {remote_file.name}: {e}")
@@ -837,7 +838,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     ) -> SourceDocument:
         """
         Build SourceDocument from Box metadata with deterministic source_id.
-        
+
         CRITICAL: Uses box://file/{id} format for delete reconciliation.
         """
         file_id = metadata.get("id")
@@ -878,9 +879,9 @@ class BoxConnector(EnhancedConnector, BaseConnector):
 
     def _build_config(
         self,
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build configuration dict by merging credentials with kwargs."""
         return build_config_from_kwargs(credentials, **kwargs)
 
@@ -915,7 +916,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
 
         return resolved
 
-    def _load_integration(self, config: dict) -> Dict[str, Any]:
+    def _load_integration(self, config: dict) -> dict[str, Any]:
         """Load integration record from database using shared utility."""
         return load_integration(
             "box",
@@ -927,13 +928,13 @@ class BoxConnector(EnhancedConnector, BaseConnector):
     # Helper Methods
     # =========================================================================
 
-    def _normalize_folder_id(self, folder_id: Optional[str]) -> str:
+    def _normalize_folder_id(self, folder_id: str | None) -> str:
         """Normalize folder ID, treating None/empty/"root" as root folder."""
         if not folder_id or folder_id.lower() in ("root", ""):
             return ROOT_FOLDER_ID
         return folder_id
 
-    def _get_parent_id(self, item: dict) -> Optional[str]:
+    def _get_parent_id(self, item: dict) -> str | None:
         """Extract parent folder ID from item."""
         parent = item.get("parent")
         if parent and isinstance(parent, dict):
@@ -962,7 +963,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         return name
 
     @staticmethod
-    def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    def _parse_datetime(value: str | None) -> datetime | None:
         """Parse Box ISO 8601 timestamp."""
         if not value:
             return None
@@ -975,7 +976,7 @@ class BoxConnector(EnhancedConnector, BaseConnector):
             return None
 
     @staticmethod
-    def _guess_mime_type(filename: Optional[str]) -> str:
+    def _guess_mime_type(filename: str | None) -> str:
         """Guess MIME type from filename."""
         if not filename:
             return "application/octet-stream"

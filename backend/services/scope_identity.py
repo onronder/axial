@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional
 
 from connectors.enhanced import SourceDocument
 from core.db import get_supabase
@@ -27,7 +27,7 @@ MAX_SUMMARY_CHARS = 2000
 def _infer_scope_type(scope_id: str) -> str:
     """
     Infer the identity type from scope_id URI scheme.
-    
+
     Maps canonical URI schemes to human-readable identity types.
     Supports all connector schemes defined in core/scopes.py.
     """
@@ -54,8 +54,8 @@ def _infer_scope_type(scope_id: str) -> str:
     }.get(scheme, "unknown")
 
 
-def _collect_paths(documents: Iterable[SourceDocument]) -> List[str]:
-    paths: List[str] = []
+def _collect_paths(documents: Iterable[SourceDocument]) -> list[str]:
+    paths: list[str] = []
     for doc in documents:
         metadata = doc.metadata or {}
         path = (
@@ -70,8 +70,8 @@ def _collect_paths(documents: Iterable[SourceDocument]) -> List[str]:
     return paths
 
 
-def _build_ascii_tree(paths: List[str], max_depth: int = MAX_TREE_DEPTH, max_children: int = 10) -> str:
-    tree: Dict[str, Dict] = {}
+def _build_ascii_tree(paths: list[str], max_depth: int = MAX_TREE_DEPTH, max_children: int = 10) -> str:
+    tree: dict[str, dict] = {}
     for path in paths:
         parts = [p for p in str(path).strip("/").split("/") if p]
         if not parts:
@@ -80,7 +80,7 @@ def _build_ascii_tree(paths: List[str], max_depth: int = MAX_TREE_DEPTH, max_chi
         for part in parts:
             node = node.setdefault(part, {})
 
-    def _render(node: Dict[str, Dict], prefix: str, depth: int, lines: List[str]) -> None:
+    def _render(node: dict[str, dict], prefix: str, depth: int, lines: list[str]) -> None:
         if depth >= max_depth:
             return
         children = sorted(node.keys())
@@ -92,39 +92,39 @@ def _build_ascii_tree(paths: List[str], max_depth: int = MAX_TREE_DEPTH, max_chi
         if remaining > 0:
             lines.append(f"{prefix}|-- ... ({remaining} more)")
 
-    lines: List[str] = []
+    lines: list[str] = []
     _render(tree, "", 0, lines)
     return "\n".join(lines) if lines else "(no structure available)"
 
 
 async def synthesize_and_save_identity(
     scope_id: str,
-    documents: List[SourceDocument],
+    documents: list[SourceDocument],
     organization_id: str,
     user_id: str,
-    plan_code: Optional[str] = None,
+    plan_code: str | None = None,
 ) -> None:
     """
     Build and persist a scope identity card from a list of SourceDocuments.
-    
+
     This function is called during finalize_job_task after ingestion completes.
     It transitions scope identities from 'placeholder' status (created during
     ingestion) to 'completed' status with full identity information.
-    
+
     Args:
         scope_id: Canonical scope URI (e.g., 'github://owner/repo')
         documents: List of SourceDocument objects from the ingestion
         organization_id: The organization UUID
         user_id: The user who initiated the ingestion
         plan_code: Optional plan code for quota checks
-        
+
     Raises:
         ValueError: If required parameters are missing
         QuotaExceededError: If scope limit exceeded (for new scopes)
     """
     import logging
     logger = logging.getLogger(__name__)
-    
+
     if not scope_id:
         raise ValueError("scope_id is required for identity synthesis")
     if not documents:
@@ -194,7 +194,7 @@ async def synthesize_and_save_identity(
     has_existing = bool(existing_scope.data)
     existing_status = None
     is_placeholder_upgrade = False
-    
+
     if has_existing:
         existing_rows = existing_scope.data
         if isinstance(existing_rows, dict):
@@ -205,10 +205,10 @@ async def synthesize_and_save_identity(
         existing_status = existing_data.get("status")
         existing_attrs = existing_data.get("attributes") or {}
         is_placeholder_upgrade = (
-            existing_status == "placeholder" or 
+            existing_status == "placeholder" or
             existing_attrs.get("is_placeholder", False)
         )
-        
+
         if is_placeholder_upgrade:
             logger.info(
                 f"[ScopeIdentity] Upgrading placeholder to completed: {scope_id[:50]}... "
@@ -222,7 +222,7 @@ async def synthesize_and_save_identity(
     # If max_scopes is 0, the organization has no active subscription.
     # This is the "Hard Zero" rule - strictly enforced, no exceptions.
     # ==========================================================================
-    
+
     if not has_existing:
         # HARD ZERO RULE: Block ALL new scopes if max_scopes <= 0
         if max_scopes <= 0:
@@ -240,7 +240,7 @@ async def synthesize_and_save_identity(
                     "reason": "no_subscription",
                 },
             )
-        
+
         # Standard quota check for subscribed users
         scope_count = (
             supabase.table("scope_identities")
@@ -283,7 +283,7 @@ async def synthesize_and_save_identity(
         },
         on_conflict="organization_id,id",
     ).execute()
-    
+
     action = "upgraded" if is_placeholder_upgrade else ("updated" if has_existing else "created")
     logger.info(
         f"[ScopeIdentity] ✅ {action.capitalize()} identity for {scope_id[:50]}... "

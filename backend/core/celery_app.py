@@ -6,14 +6,19 @@ Uses Redis as broker and result backend.
 """
 
 # Suppress third-party deprecation warnings (MUST be first import)
-import core.suppress_warnings  # noqa: F401
-
+import logging
 import os
 import sys
+
+logger = logging.getLogger(__name__)
+
 from celery import Celery
-from kombu import Queue
 from celery.schedules import crontab  # Required for beat schedule
+from kombu import Queue
+
+import core.suppress_warnings  # noqa: F401
 from core.config import settings
+
 
 # =============================================================================
 # Sentry Error Tracking + Logs for Celery Workers
@@ -30,16 +35,17 @@ def _is_test_runtime() -> bool:
 def init_celery_sentry() -> None:
     if settings.SENTRY_DSN and settings.ENVIRONMENT != "test":
         try:
+            import logging
+
             import sentry_sdk
             from sentry_sdk.integrations.celery import CeleryIntegration
             from sentry_sdk.integrations.logging import LoggingIntegration
-            import logging
-            
+
             logging_integration = LoggingIntegration(
                 level=logging.INFO,
                 event_level=logging.ERROR
             )
-            
+
             sentry_sdk.init(
                 dsn=settings.SENTRY_DSN,
                 traces_sample_rate=0.1,
@@ -77,34 +83,34 @@ celery_app = Celery(
 celery_app.conf.update(
     # Connection retry on startup (Celery 6.0+ compatibility)
     broker_connection_retry_on_startup=True,
-    
+
     # Reliability: Tasks are only acknowledged after successful completion
     # If worker crashes, task goes back to queue
     task_acks_late=True,
-    
+
     # Resilience: Requeue task if worker is killed/lost
     task_reject_on_worker_lost=True,
-    
+
     # Memory Safety: Worker takes ONLY 1 task at a time
     # Vital for large file processing (prevents memory exhaustion)
     worker_prefetch_multiplier=1,
-    
+
     # Serialization
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    
+
     # Timezone
     timezone="UTC",
     enable_utc=True,
-    
+
     # Task result expiration (24 hours)
     result_expires=86400,
 
     # Reduce result backend overhead (we track progress in DB/Redis)
     task_ignore_result=True,
     task_store_errors_even_if_ignored=False,
-    
+
     # Retry configuration
     task_default_retry_delay=60,  # 1 minute
     task_max_retries=3,
@@ -122,11 +128,11 @@ celery_app.conf.update(
     # Memory Math (32GB Enterprise Node):
     #   Available: 28GB, Workers: 8, Limit: 3GB each
     #   Peak: 8 × 3GB = 24GB << 28GB available ✅
-    
+
     # Kill & respawn worker when memory exceeds threshold (KB)
     # Releases ALL memory back to OS via clean process exit
     worker_max_memory_per_child=settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD,
-    
+
     # Kill & respawn worker after N tasks (catches slow memory leaks)
     worker_max_tasks_per_child=settings.CELERY_WORKER_MAX_TASKS_PER_CHILD,
 
@@ -149,7 +155,7 @@ celery_app.conf.update(
         "worker.tasks.finalize_job_task": {"queue": "celery"},
         "worker.tasks.finalize_crawl_task": {"queue": "celery"},
     },
-    
+
     # ============================================================
     # CELERY BEAT - Scheduled Tasks
     # ============================================================

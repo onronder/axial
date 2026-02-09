@@ -5,11 +5,10 @@ Shared utilities for URL detection and parsing across the codebase.
 """
 
 import re
-from typing import List, Optional
 
 # YouTube URL patterns for detection
 # Supports: watch?v=, youtu.be/, embed/, shorts/
-YOUTUBE_URL_PATTERNS: List[str] = [
+YOUTUBE_URL_PATTERNS: list[str] = [
     r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
     r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]{11})',
     r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})',
@@ -20,16 +19,16 @@ YOUTUBE_URL_PATTERNS: List[str] = [
 def is_youtube_url(url: str) -> bool:
     """
     Check if a URL is a YouTube video URL.
-    
+
     Detects standard YouTube URL formats:
     - youtube.com/watch?v=VIDEO_ID
-    - youtu.be/VIDEO_ID  
+    - youtu.be/VIDEO_ID
     - youtube.com/embed/VIDEO_ID
     - youtube.com/shorts/VIDEO_ID
-    
+
     Args:
         url: URL string to check
-        
+
     Returns:
         True if the URL is a YouTube video URL, False otherwise
     """
@@ -38,13 +37,13 @@ def is_youtube_url(url: str) -> bool:
     return any(re.match(pattern, url) for pattern in YOUTUBE_URL_PATTERNS)
 
 
-def extract_youtube_video_id(url: str) -> Optional[str]:
+def extract_youtube_video_id(url: str) -> str | None:
     """
     Extract the video ID from a YouTube URL.
-    
+
     Args:
         url: YouTube URL
-        
+
     Returns:
         11-character video ID or None if not a valid YouTube URL
     """

@@ -9,7 +9,7 @@ from contextlib import contextmanager
 import pytest
 
 import connectors.sftp as sftp_module
-from connectors.sftp import SFTPConnector, SFTP_PREFETCH_THRESHOLD_BYTES
+from connectors.sftp import SFTP_PREFETCH_THRESHOLD_BYTES, SFTPConnector
 
 
 class FakeAttrs:

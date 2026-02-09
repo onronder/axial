@@ -7,13 +7,15 @@ THREAD SAFETY: Uses threading.Lock for safe singleton initialization
 across concurrent requests (fix for shutdown cleanup).
 """
 
-import logging
 import asyncio
+import logging
 import os
 import threading
-from supabase import create_client, Client, ClientOptions
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from supabase import Client, ClientOptions, create_client
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -181,13 +183,13 @@ def close_supabase():
 async def check_connection() -> bool:
     """
     Verify database connection health.
-    
+
     Performs a lightweight query to ensure the Supabase client
     can successfully communicate with the database.
-    
+
     Returns:
         bool: True if connection is healthy
-        
+
     Raises:
         Exception: If connection fails
     """

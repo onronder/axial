@@ -12,41 +12,40 @@ Now implements actual cleanup for:
 - File handles and temp files
 """
 
-import signal
-import sys
-import logging
 import asyncio
 import gc
-from typing import Callable, List, Set
-from pathlib import Path
+import logging
+import signal
+import sys
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
 # Track open file handles for cleanup
-_open_file_handles: Set[int] = set()
+_open_file_handles: set[int] = set()
 
 
 class GracefulShutdown:
     """
     Handles graceful shutdown of the application.
-    
+
     Registers signal handlers and cleanup functions.
     """
-    
+
     def __init__(self):
-        self.shutdown_handlers: List[Callable] = []
+        self.shutdown_handlers: list[Callable] = []
         self.is_shutting_down = False
-    
+
     def register_handler(self, handler: Callable):
         """Register a cleanup handler to run on shutdown."""
         self.shutdown_handlers.append(handler)
-    
+
     def setup(self):
         """Setup signal handlers for graceful shutdown."""
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
         logger.info("✅ Graceful shutdown handlers registered")
-    
+
     def _handle_signal(self, signum, frame):
         """Handle shutdown signals."""
         if self.is_shutting_down:
@@ -144,7 +143,8 @@ async def cleanup_redis_connections():
     logger.info("🔴 Closing Redis connections...")
 
     try:
-        import redis
+        import redis  # noqa: F401
+
         # Close any global Redis connection pools
         # This depends on how Redis is instantiated in the app
         from core.config import settings
@@ -246,7 +246,7 @@ async def cleanup_embeddings_model():
     logger.info("📊 Cleaning up embeddings model...")
 
     try:
-        from services.embeddings import _embeddings_model, _embeddings_lock
+        from services.embeddings import _embeddings_lock
 
         with _embeddings_lock:
             # Clear the singleton reference

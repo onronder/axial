@@ -5,73 +5,78 @@ Background tasks for heavy file processing (ingestion, parsing, embedding).
 These run in a separate worker process to avoid blocking the FastAPI server.
 """
 
-import logging
 import asyncio
-import inspect
-import json
 import base64
+import inspect
+import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 from celery.exceptions import SoftTimeLimitExceeded
-from core.celery_app import celery_app
-from core.db import get_supabase
-from core.db_utils import insert_rows_with_retry, delete_rows_with_retry
-from core.config import settings
-from core.exceptions import QuotaExceededError
-from core.hashing import compute_content_hash
-from core.ingestion_utils import normalize_provider, normalize_source_type
-from core.url_utils import is_youtube_url as _is_youtube_url
-from core.log_utils import safe_file_ref, safe_file_context, safe_extension
-from core.quotas import get_plan_limits
-from core.job_counters import (
-    init_ingest_job_counters,
-    increment_ingest_job_total,
-    record_ingest_outcome,
-    get_ingest_job_counters,
-    mark_ingest_job_discovery_done,
-    mark_ingest_job_finalizing,
-    clear_ingest_job_counters,
-    record_ingest_job_update,
-    record_ingest_file_update,
-    init_crawl_counters,
-    record_crawl_outcome,
-    get_crawl_counters,
-    mark_crawl_finalizing,
-    clear_crawl_counters,
-    record_crawl_job_update,
-)
-from services.parsers import DocumentProcessorFactory
-from services.email import email_service
+
 from connectors import get_connector
 from connectors.base import ConnectorAuthError
 from connectors.enhanced import SourceDocument
 from connectors.limits import connector_fetch_limit
-from services.embeddings import generate_embeddings_batch_sync
-from services.malware import scan_content, MalwareScanException
-from services.scope_identity import synthesize_and_save_identity
+from core.celery_app import celery_app
+from core.config import settings
+from core.db import get_supabase
+from core.db_utils import (  # noqa: F401 — test mock target
+    delete_rows_with_retry,
+    insert_rows_with_retry,
+)
+from core.exceptions import QuotaExceededError
+from core.hashing import compute_content_hash
+from core.ingestion_utils import normalize_provider, normalize_source_type
+from core.job_counters import (
+    clear_crawl_counters,
+    clear_ingest_job_counters,
+    get_crawl_counters,
+    get_ingest_job_counters,
+    increment_ingest_job_total,
+    init_crawl_counters,
+    init_ingest_job_counters,
+    mark_crawl_finalizing,
+    mark_ingest_job_discovery_done,
+    mark_ingest_job_finalizing,
+    record_crawl_job_update,
+    record_crawl_outcome,
+    record_ingest_file_update,
+    record_ingest_job_update,
+    record_ingest_outcome,
+)
+from core.log_utils import safe_extension, safe_file_context, safe_file_ref
+from core.quotas import get_plan_limits
+from core.url_utils import is_youtube_url as _is_youtube_url
 from services.audit import audit_logger
-from services.team_service import team_service
+from services.email import email_service
+from services.embeddings import generate_embeddings_batch_sync
+from services.malware import MalwareScanException, scan_content
+from services.parsers import DocumentProcessorFactory
+from services.scope_identity import synthesize_and_save_identity
+
 # =============================================================================
 # GHOST PROTOCOL: Zero-Retention Security Imports
 # =============================================================================
 from services.secure_cleanup import (
     SmartBuffer,
-    secure_wipe,
     cleanup_staging_file,
+    secure_wipe,
 )
+from services.team_service import team_service
+
 try:
     from core.metrics import (
+        dedup_actions_total,
+        idempotency_hits,
+        job_counters_finalize,
         job_counters_missing,
         job_counters_reconciled,
-        job_counters_finalize,
-        idempotency_hits,
-        dedup_actions_total,
         parser_rejections,
-        timeout_total,
         status_updates_total,
+        timeout_total,
     )
 except Exception:
     job_counters_missing = None
@@ -89,10 +94,10 @@ logger.info("✅ Worker tasks module loaded - Cache buster 001")
 DEFAULT_INGEST_DISPATCH_BATCH_SIZE = 50
 
 
-def _infer_scope_identity_type(scope_id: str, source_type: Optional[str] = None) -> str:
+def _infer_scope_identity_type(scope_id: str, source_type: str | None = None) -> str:
     """
     Infer the identity type from scope_id URI scheme.
-    
+
     Maps canonical URI schemes to human-readable identity types.
     Supports all connector schemes defined in core/scopes.py.
     """
@@ -131,7 +136,7 @@ def _validate_org_scope_consistency(
 ) -> None:
     """
     Validate organization_id and scope_id are present and consistent.
-    
+
     Raises ValueError with detailed context if validation fails.
     This prevents FK violations from org ID mismatches.
     """
@@ -139,7 +144,7 @@ def _validate_org_scope_consistency(
         raise ValueError(f"[{context}] organization_id is required but was None/empty")
     if not scope_id:
         raise ValueError(f"[{context}] scope_id is required but was None/empty")
-    
+
     # Validate UUIDs are properly formatted (basic check)
     try:
         import uuid
@@ -154,18 +159,18 @@ def _ensure_scope_identity_placeholder(
     organization_id: str,
     user_id: str,
     scope_id: str,
-    source_type: Optional[str] = None,
+    source_type: str | None = None,
     max_scopes: int = 0,
 ) -> str:
     """
     Ensure a scope identity placeholder exists before document insertion.
-    
+
     This is CRITICAL for FK compliance: the documents table has a FK
     (organization_id, scope_id) -> scope_identities(organization_id, id).
-    
+
     Uses the atomic try_create_scope_placeholder RPC to prevent TOCTOU
     race conditions where multiple workers could exceed quota simultaneously.
-    
+
     Args:
         supabase: Supabase client
         organization_id: The organization UUID (must match documents.organization_id)
@@ -173,10 +178,10 @@ def _ensure_scope_identity_placeholder(
         scope_id: The canonical scope URI (e.g., 'github://owner/repo')
         source_type: Optional source type for identity type inference
         max_scopes: Maximum allowed scopes for the organization's plan
-        
+
     Returns:
         Result string: 'created', 'exists', 'quota_exceeded', 'no_subscription'
-        
+
     Raises:
         QuotaExceededError: If quota would be exceeded
         ValueError: If org/scope validation fails
@@ -184,16 +189,16 @@ def _ensure_scope_identity_placeholder(
     if not scope_id:
         logger.warning("[ScopePlaceholder] Skipping: scope_id is empty")
         raise ValueError("scope_id is required for placeholder creation")
-    
+
     # Validate org/scope consistency to prevent FK violations
     try:
         _validate_org_scope_consistency(organization_id, scope_id, "ScopePlaceholder")
     except ValueError as e:
         logger.error(f"[ScopePlaceholder] Validation failed: {e}")
         raise
-    
+
     identity_type = _infer_scope_identity_type(scope_id, source_type)
-    
+
     # Try to use the atomic RPC function first
     try:
         result = supabase.rpc(
@@ -206,26 +211,26 @@ def _ensure_scope_identity_placeholder(
                 "p_max_scopes": max_scopes,
             }
         ).execute()
-        
+
         status = result.data if result.data else "exists"
-        
+
         if status == "no_subscription":
             logger.warning(f"[ScopePlaceholder] BLOCKED: No subscription for org {organization_id[:8]}...")
             raise QuotaExceededError(
                 "Active subscription required. Please subscribe to ingest data.",
                 {"reason": "no_subscription", "organization_id": organization_id},
             )
-        
+
         if status == "quota_exceeded":
             logger.warning(f"[ScopePlaceholder] Quota exceeded for org {organization_id[:8]}...")
             raise QuotaExceededError(
                 "Scope limit reached for your plan.",
                 {"max_scopes": max_scopes, "organization_id": organization_id},
             )
-        
+
         logger.debug(f"[ScopePlaceholder] {status}: {scope_id[:50]}... (org: {organization_id[:8]}...)")
         return status
-        
+
     except QuotaExceededError:
         raise
     except Exception as e:
@@ -245,11 +250,11 @@ def _ensure_scope_identity_placeholder_fallback(
 ) -> str:
     """
     Fallback placeholder creation when atomic RPC is not available.
-    
+
     Note: This has race condition risk - use atomic RPC when possible.
     """
     now = datetime.now(timezone.utc).isoformat()
-    
+
     try:
         supabase.table("scope_identities").upsert(
             {
@@ -267,25 +272,25 @@ def _ensure_scope_identity_placeholder_fallback(
             on_conflict="organization_id,id",
             ignore_duplicates=True,
         ).execute()
-        
+
         logger.debug(f"[ScopePlaceholder] Ensured placeholder for {scope_id[:50]}... (org: {organization_id[:8]}...)")
         return "created"
-        
+
     except Exception as e:
         logger.error(f"[ScopePlaceholder] Failed to create placeholder for {scope_id}: {e}")
-        
+
         # Verify the placeholder exists (race condition handling)
         try:
             check = supabase.table("scope_identities").select("id").eq(
                 "organization_id", organization_id
             ).eq("id", scope_id).limit(1).execute()
-            
+
             if check.data:
                 logger.info(f"[ScopePlaceholder] Placeholder exists (concurrent create): {scope_id[:50]}...")
                 return "exists"
         except Exception as e:
             logger.debug(f"[ScopePlaceholder] Existence check failed for {scope_id[:50]}...: {e}")
-        
+
         raise
 
 
@@ -323,7 +328,7 @@ def update_job_status(
             update_data["status_message"] = message
         if progress is not None:
             update_data["progress"] = progress
-            
+
         supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
         if status_updates_total:
             status_updates_total.labels("job", status).inc()
@@ -368,7 +373,7 @@ TEXT_LIKE_EXTENSIONS = {
 }
 
 
-def _resolve_org_scope(supabase, user_id: str) -> Dict[str, Optional[str]]:
+def _resolve_org_scope(supabase, user_id: str) -> dict[str, str | None]:
     """
     Resolve org scope for dedup: prefers team_id if present, otherwise user_id.
     """
@@ -394,28 +399,28 @@ def _resolve_org_scope(supabase, user_id: str) -> Dict[str, Optional[str]]:
 def _is_duplicate_document(
     supabase,
     content_hash: str,
-    org_scope: Dict[str, Optional[str]],
+    org_scope: dict[str, str | None],
     user_id: str,
     source_id: str | None = None,
 ) -> bool:
     """
     Check for existing document within org scope using source_id OR content_hash.
-    
+
     Deduplication Strategy (Ghost Data Prevention):
     1. PRIMARY: Check by source_id (unique identifier from source system)
        - For web pages: URL is the source_id
        - For files: file path or remote file ID is the source_id
        - This prevents "Ghost Data" where renamed/modified files create duplicates
-    
+
     2. FALLBACK: Check by content_hash only if source_id is not available
        - Legacy behavior for backwards compatibility
-    
+
     Returns:
         True if document exists (should skip re-ingestion)
         False if document is new (should proceed with ingestion)
     """
     organization_id = org_scope.get("team_id") or user_id
-    
+
     try:
         # =====================================================================
         # PRIMARY: Source ID based deduplication (prevents Ghost Data)
@@ -429,11 +434,11 @@ def _is_duplicate_document(
                 .limit(1)
             )
             res = query.execute()
-            
+
             if res.data:
                 existing_doc = res.data[0]
                 existing_hash = existing_doc.get("content_hash")
-                
+
                 # Same source, same content = true duplicate (skip)
                 if existing_hash == content_hash:
                     # Touch updated_at to mark as "seen"
@@ -445,7 +450,7 @@ def _is_duplicate_document(
                         logger.debug(f"[Dedup] Failed to touch updated_at for doc {existing_doc['id'][:8]}...: {e}")
                     logger.debug(f"[Dedup] Exact duplicate found for source_id={source_id[:50]}...")
                     return True
-                
+
                 # Same source, different content = content changed
                 # Return False so ingest_document_batched can UPDATE the existing document
                 logger.info(
@@ -454,20 +459,20 @@ def _is_duplicate_document(
                     f"new_hash={content_hash[:8] if content_hash else 'none'}...)"
                 )
                 return False
-            
+
             # No existing document with this source_id = new document
             return False
-        
+
         # =====================================================================
         # FALLBACK: Content hash only (legacy behavior)
         # =====================================================================
         if not content_hash:
             return False
-        
+
         query = supabase.table("documents").select("id").eq("content_hash", content_hash)
         query = query.eq("organization_id", organization_id)
         res = query.limit(1).execute()
-        
+
         if res.data:
             # Touch updated_at
             try:
@@ -477,10 +482,10 @@ def _is_duplicate_document(
             except Exception as e:
                 logger.debug(f"[Dedup] Failed to touch updated_at for cross-org doc: {e}")
             return True
-            
+
     except Exception as exc:
         logger.warning(f"⚠️ [Dedup] Duplicate check failed: {exc}")
-    
+
     return False
 
 
@@ -511,7 +516,7 @@ def update_job_progress(supabase, job_id: str, progress: int, message: str = Non
         if message:
             update_data["message"] = message
             update_data["status_message"] = message
-            
+
         supabase.table("ingestion_jobs").update(update_data).eq("id", job_id).execute()
         if status_updates_total:
             status_updates_total.labels("job", "progress").inc()
@@ -544,7 +549,7 @@ def _should_emit_job_progress_update(job_id: str, processed: int, total: int) ->
         return False
 
 
-def _update_job_progress_from_counters(supabase, job_id: str, counters: Dict[str, int]) -> None:
+def _update_job_progress_from_counters(supabase, job_id: str, counters: dict[str, int]) -> None:
     if not counters:
         return
     total = counters.get("total", 0)
@@ -575,7 +580,7 @@ def _update_job_progress_from_counters(supabase, job_id: str, counters: Dict[str
     )
 
 
-def _get_ingestion_counts_from_db(supabase, job_id: str) -> Dict[str, int]:
+def _get_ingestion_counts_from_db(supabase, job_id: str) -> dict[str, int]:
     counts = {"success": 0, "failed": 0, "skipped": 0}
     try:
         result = supabase.table("ingestion_file_status").select("status").eq("job_id", job_id).execute()
@@ -634,10 +639,10 @@ def _record_ingest_outcome_and_maybe_finalize(
 def _record_crawl_outcome_and_maybe_finalize(
     supabase,
     user_id: str,
-    crawl_id: Optional[str],
+    crawl_id: str | None,
     url: str,
     outcome: str,
-    job_id: Optional[str] = None,
+    job_id: str | None = None,
 ) -> None:
     if not crawl_id:
         return
@@ -697,13 +702,13 @@ def ingest_document_batched(
 ) -> str:
     """
     Insert document and chunks in batches to prevent DB timeouts.
-    
+
     This replaces the single-RPC approach which times out on large documents.
-    
+
     IMPORTANT: This function enforces FK constraints by ensuring scope_identities
     exist before document insertion. The (organization_id, scope_id) must match
     exactly with the scope_identities table.
-    
+
     Args:
         supabase: Supabase client
         user_id: User ID
@@ -717,10 +722,10 @@ def ingest_document_batched(
         job_id: Optional job ID for progress updates
         source_url: Optional source URL
         file_status_id: Optional file status ID for per-file chunk progress
-        
+
     Returns:
         Document ID (UUID string)
-        
+
     Raises:
         ValueError: If organization_id or scope_id is missing/invalid
     """
@@ -728,7 +733,7 @@ def ingest_document_batched(
     source_type = normalize_source_type(source_type) or source_type
     metadata = metadata or {}
     scope_id = metadata.get("scope_id")
-    
+
     # ==========================================================================
     # HARD SCOPE_ID REQUIREMENT
     # ==========================================================================
@@ -744,10 +749,10 @@ def ingest_document_batched(
         )
         logger.error(f"[IngestDoc] {error_msg}")
         raise ValueError(error_msg)
-    
+
     # Validate org/scope consistency BEFORE any database operations
     _validate_org_scope_consistency(organization_id, scope_id, "ingest_document_batched")
-    
+
     # Cross-check: ensure metadata org_id matches parameter
     metadata_org_id = metadata.get("organization_id")
     if metadata_org_id and str(metadata_org_id) != str(organization_id):
@@ -767,7 +772,7 @@ def ingest_document_batched(
             source_type=source_type,
             max_scopes=max_scopes,
         )
-    
+
     # Step 1: Create parent document record FIRST
     # NOTE: Using actual column names from migrations:
     # - file_size_bytes (not file_size)
@@ -785,7 +790,7 @@ def ingest_document_batched(
         "content_hash": content_hash,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     resolved_source_id = source_id or (metadata or {}).get("source_id")
     if resolved_source_id:
         metadata.setdefault("source_id", resolved_source_id)
@@ -853,22 +858,22 @@ def ingest_document_batched(
             raise Exception("Failed to create document record")
         doc_id = doc_result.data[0]["id"]
     logger.info(f"📄 Created document {doc_id}: {doc_title}")
-    
+
     # Step 2: Insert chunks in batches with progress tracking
     # GHOST PROTOCOL: Use encrypted content with TSVECTOR search index
     total_chunks = len(chunks_payload)
-    
+
     if total_chunks == 0:
         return str(doc_id)
-    
+
     # Clean metadata from chunks (column doesn't exist in document_chunks)
     for chunk in chunks_payload:
         if "metadata" in chunk:
             del chunk["metadata"]
-    
+
     # Use Ghost Protocol RPC for type-safe TSVECTOR insertion
     from core.ingestion_utils import insert_chunks_with_ghost_protocol
-    
+
     try:
         inserted_count = insert_chunks_with_ghost_protocol(
             supabase=supabase,
@@ -881,7 +886,7 @@ def ingest_document_batched(
         logger.error(f"❌ Ghost Protocol insertion failed: {e}")
         # Partial ingestion is better than none - count what we got
         inserted_count = 0
-    
+
     logger.info(f"✅ Inserted {inserted_count} chunks for document {doc_id}")
     return str(doc_id)
 
@@ -892,23 +897,23 @@ def ingest_document_batched(
 # ============================================================
 
 def create_file_status(
-    supabase, 
-    job_id: str, 
-    user_id: str, 
+    supabase,
+    job_id: str,
+    user_id: str,
     organization_id: str,
-    filename: str, 
+    filename: str,
     file_size: int = 0
-) -> Optional[str]:
+) -> str | None:
     """
     Create a file status record for granular progress tracking.
-    
+
     Args:
         supabase: Supabase client
         job_id: Parent ingestion job ID
         user_id: User ID
         filename: Name of the file being processed
         file_size: File size in bytes
-        
+
     Returns:
         File status record ID (UUID string) or None on error
     """
@@ -923,7 +928,7 @@ def create_file_status(
             "progress": 0,
             "status_message": "Queued for processing"
         }).execute()
-        
+
         if result.data:
             file_status_id = result.data[0]["id"]
             logger.debug(f"📄 Created file status: {safe_file_ref(filename=filename)} ({file_status_id[:8]}...)")
@@ -948,12 +953,12 @@ def update_file_status(
 ):
     """
     Update file processing status for real-time UI feedback.
-    
+
     Status progression: pending → uploading → parsing → embedding → indexing → completed/failed/skipped
-    
+
     RACE CONDITION FIX: Uses idempotent update that only writes if status/progress
     actually changed. This reduces unnecessary writes during task retries.
-    
+
     Args:
         file_status_id: The file status record ID
         job_id: Parent ingestion job ID for metrics and counters
@@ -967,7 +972,7 @@ def update_file_status(
     """
     if not file_status_id:
         return
-        
+
     try:
         # Try idempotent update via RPC first (reduces unnecessary writes on retries)
         try:
@@ -983,10 +988,10 @@ def update_file_status(
                     "p_chunks_processed": chunks_processed,
                 }
             ).execute()
-            
+
             # RPC returns boolean - true if update was made
             updated = result.data if isinstance(result.data, bool) else True
-            
+
             if updated:
                 if status_updates_total:
                     status_updates_total.labels("file", status or "unknown").inc()
@@ -994,9 +999,9 @@ def update_file_status(
                     record_ingest_file_update(job_id)
             else:
                 logger.debug(f"🔄 File status {file_status_id[:8]}... unchanged (idempotent skip)")
-                
+
             return
-            
+
         except Exception as rpc_exc:
             error_msg = str(rpc_exc)
             if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
@@ -1005,10 +1010,10 @@ def update_file_status(
             else:
                 # Log but continue to fallback
                 logger.warning(f"⚠️ Idempotent update failed, using fallback: {rpc_exc}")
-        
+
         # Fallback to legacy update
         update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
-        
+
         if status:
             update_data["status"] = status
         if progress is not None:
@@ -1023,13 +1028,13 @@ def update_file_status(
             update_data["chunks_processed"] = chunks_processed
         if document_id:
             update_data["document_id"] = document_id
-            
+
         supabase.table("ingestion_file_status").update(update_data).eq("id", file_status_id).execute()
         if status_updates_total:
             status_updates_total.labels("file", status or "unknown").inc()
         if job_id:
             record_ingest_file_update(job_id)
-        
+
     except Exception as e:
         logger.warning(f"⚠️ Failed to update file status {file_status_id[:8]}...: {e}")
 
@@ -1041,26 +1046,26 @@ def update_file_status(
 def check_job_cancelled(supabase, job_id: str) -> bool:
     """
     Check if a job has been cancelled.
-    
+
     Call this periodically in processing loops to support cancellation.
-    
+
     Args:
         supabase: Supabase client
         job_id: Job ID to check
-        
+
     Returns:
         True if job is cancelled, False otherwise
     """
     if not job_id:
         return False
-    
+
     try:
         result = supabase.table("ingestion_jobs")\
             .select("status")\
             .eq("id", job_id)\
             .single()\
             .execute()
-        
+
         return result.data and result.data.get("status") == "cancelled"
     except Exception as e:
         logger.warning(f"⚠️ Failed to check job cancellation status: {e}")
@@ -1070,7 +1075,7 @@ def check_job_cancelled(supabase, job_id: str) -> bool:
 def store_celery_task_id(supabase, job_id: str, celery_task_id: str):
     """
     Store the Celery task ID for a job to enable task revocation.
-    
+
     Args:
         supabase: Supabase client
         job_id: Job ID
@@ -1078,12 +1083,12 @@ def store_celery_task_id(supabase, job_id: str, celery_task_id: str):
     """
     if not job_id or not celery_task_id:
         return
-    
+
     try:
         supabase.table("ingestion_jobs").update({
             "celery_task_id": celery_task_id
         }).eq("id", job_id).execute()
-        
+
         logger.debug(f"📝 Stored Celery task ID {celery_task_id} for job {job_id}")
     except Exception as e:
         logger.warning(f"⚠️ Failed to store Celery task ID: {e}")
@@ -1100,10 +1105,10 @@ def send_email_notification(
 ):
     """
     Send email notification for completed ingestion.
-    
+
     This is fail-safe: errors are logged but never raised.
     Job status updates must succeed even if email fails.
-    
+
     Args:
         supabase: Supabase client
         user_id: User's ID
@@ -1123,11 +1128,11 @@ def send_email_notification(
                 name = user_metadata.get("full_name") or user_metadata.get("name") or "there"
         except Exception as auth_error:
             logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
-            
+
         if not email:
             logger.warning(f"📧 [Email] No email found for user {user_id}")
             return
-        
+
         # Check user preference in user_notification_settings (key-value table)
         # Default to True if no explicit setting exists - fail-safe approach
         email_enabled = True  # Default if no setting or on error
@@ -1138,25 +1143,25 @@ def send_email_notification(
                 .eq("user_id", user_id) \
                 .eq("setting_key", "email_on_ingestion_complete") \
                 .execute()
-            
+
             # Check if we got data (list of rows)
             if settings_response.data and len(settings_response.data) > 0:
                 email_enabled = settings_response.data[0].get("enabled", True)
         except Exception as settings_error:
             # 406/204 errors are expected when no setting exists - default to enabled
             logger.debug(f"📧 [Email] No notification settings found (defaulting to enabled): {settings_error}")
-        
+
         if not email_enabled:
             logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
             return
-        
+
         # Send the email (EmailService handles its own errors)
         email_service.send_ingestion_complete(
             to_email=email,
             name=name,
             total_files=total_files
         )
-        
+
     except Exception as e:
         # CRITICAL: Log but never raise - email is secondary functionality
         logger.error(f"📧 [Email] Failed to send notification: {e}")
@@ -1170,9 +1175,9 @@ def send_failure_email_notification(
 ):
     """
     Send email notification when ingestion fails.
-    
+
     This is fail-safe: errors are logged but never raised.
-    
+
     Args:
         supabase: Supabase client
         user_id: User's ID
@@ -1193,11 +1198,11 @@ def send_failure_email_notification(
                 name = user_metadata.get("full_name") or user_metadata.get("name") or "there"
         except Exception as auth_error:
             logger.warning(f"📧 [Email] Failed to fetch auth user details: {auth_error}")
-            
+
         if not email:
             logger.warning(f"📧 [Email] No email found for user {user_id}")
             return
-        
+
         # Check user preference (respect opt-out for error emails too) - fail-safe
         email_enabled = True  # Default if no setting or on error
         try:
@@ -1207,18 +1212,18 @@ def send_failure_email_notification(
                 .eq("user_id", user_id) \
                 .eq("setting_key", "email_on_ingestion_complete") \
                 .execute()
-            
+
             # Check if we got data (list of rows)
             if settings_response.data and len(settings_response.data) > 0:
                 email_enabled = settings_response.data[0].get("enabled", True)
         except Exception as settings_error:
             # 406/204 errors are expected when no setting exists - default to enabled
             logger.debug(f"📧 [Email] No notification settings found (defaulting to enabled): {settings_error}")
-        
+
         if not email_enabled:
             logger.info(f"📧 [Email] User {user_id} has email notifications disabled")
             return
-        
+
         # Send the failure email
         email_service.send_ingestion_failed(
             to_email=email,
@@ -1226,7 +1231,7 @@ def send_failure_email_notification(
             filename=filename,
             error_message=str(error_message)[:500]
         )
-        
+
     except Exception as e:
         logger.error(f"📧 [Email] Failed to send failure notification: {e}")
 
@@ -1235,6 +1240,7 @@ def send_failure_email_notification(
 # ============================================================
 
 from dataclasses import dataclass
+
 
 @dataclass
 class ProcessResult:
@@ -1267,13 +1273,13 @@ def process_document_pipeline(
 ) -> ProcessResult:
     """
     Unified document processing pipeline.
-    
+
     Handles the common flow for all document types:
     1. Parse content → chunks
     2. Generate embeddings
     3. Insert into database (batched)
     4. Update file status throughout
-    
+
     Args:
         supabase: Supabase client
         content: File content as bytes or string
@@ -1284,14 +1290,14 @@ def process_document_pipeline(
         source_type: Source type (file, drive, notion, web)
         metadata: Optional additional metadata
         source_url: Optional source URL
-        
+
     Returns:
         ProcessResult with success status, document_id, chunk count
     """
     try:
         # 1. Parse content
         update_file_status(supabase, file_status_id, job_id, status="parsing", progress=25, message="Extracting content...")
-        
+
         # Handle both bytes and string content
         if isinstance(content, str):
             content_bytes = content.encode('utf-8')
@@ -1328,7 +1334,7 @@ def process_document_pipeline(
 
         # Check for force_overwrite flag (user confirmed overwrite via UI)
         force_overwrite = (metadata or {}).get("force_overwrite", False)
-        
+
         if source_id and not force_overwrite:
             try:
                 existing = (
@@ -1357,7 +1363,7 @@ def process_document_pipeline(
                 logger.warning("⚠️ [Pipeline] Failed source_id lookup: %s", exc)
         elif force_overwrite:
             logger.info("🔄 [Pipeline] Force overwrite enabled for %s - skipping dedup check", safe_file_ref(filename=filename))
-        
+
         parse_timeout = get_parse_timeout_seconds(filename, metadata.get("mime_type") if metadata else None)
         parse_start = time.time()
 
@@ -1404,25 +1410,25 @@ def process_document_pipeline(
                 chunks_processed=0
             )
             return ProcessResult(success=True, chunks_count=0)
-        
+
         if not result.chunks:
             if parser_rejections:
                 parser_rejections.labels("empty", source_type or "unknown").inc()
             update_file_status(supabase, file_status_id, job_id, status="skipped", progress=100, message="No content found")
             return ProcessResult(success=True, chunks_count=0)
-        
+
         update_file_status(supabase, file_status_id, job_id, progress=40, message=f"Parsed {len(result.chunks)} chunks",
             chunks_total=len(result.chunks))
-        
+
         # 2. Generate embeddings
         update_file_status(supabase, file_status_id, job_id, status="embedding", progress=50, message="Generating embeddings...")
-        
+
         chunk_texts = [_sanitize_text(chunk.content) for chunk in result.chunks]
         token_counts = [chunk.token_count for chunk in result.chunks]
         chunk_embeddings = generate_embeddings_batch_sync(chunk_texts, token_counts=token_counts)
-        
+
         update_file_status(supabase, file_status_id, job_id, progress=70, message="Embeddings complete")
-        
+
         # 3. Build chunks payload
         chunks_payload = []
         for chunk, embedding, chunk_text in zip(result.chunks, chunk_embeddings, chunk_texts):
@@ -1437,10 +1443,10 @@ def process_document_pipeline(
                     "token_count": chunk.token_count,
                 }
             })
-        
+
         # 4. Index in database
         update_file_status(supabase, file_status_id, job_id, status="indexing", progress=80, message="Saving to database...")
-        
+
         # Merge metadata
         doc_metadata = {
             **(metadata or {}),
@@ -1449,15 +1455,15 @@ def process_document_pipeline(
             "total_chunks": len(result.chunks),
             **(result.metadata or {}),
         }
-        
+
         # Extract organization_id and max_scopes from metadata
         organization_id = (metadata or {}).get("organization_id")
         if not organization_id:
             raise ValueError("organization_id is required in metadata for ingestion")
-        
+
         # Get max_scopes from metadata (propagated from parent task)
         pipeline_max_scopes = (metadata or {}).get("max_scopes", 0)
-        
+
         doc_id = ingest_document_batched(
             supabase=supabase,
             user_id=user_id,
@@ -1474,12 +1480,12 @@ def process_document_pipeline(
             source_id=source_id,
             max_scopes=pipeline_max_scopes,  # Propagate quota for atomic scope check
         )
-        
+
         # 5. Complete
         if doc_id:
             update_file_status(supabase, file_status_id, job_id, status="completed", progress=100, message="Complete",
                 chunks_processed=len(chunks_payload), document_id=doc_id)
-            
+
             return ProcessResult(
                 success=True,
                 document_id=doc_id,
@@ -1488,7 +1494,7 @@ def process_document_pipeline(
         else:
             update_file_status(supabase, file_status_id, job_id, status="failed", progress=0, error="Failed to save document")
             return ProcessResult(success=False, error="Database insert failed")
-            
+
     except Exception as e:
         update_file_status(supabase, file_status_id, job_id, status="failed", progress=0, error=str(e))
         return ProcessResult(success=False, error=str(e))
@@ -1509,21 +1515,21 @@ STAGING_BUCKET = "ephemeral-staging"
 def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
     """
     Handle task failure by logging to dead letter queue.
-    
+
     This callback is triggered when a Celery task fails after all retries.
     It logs the failure to the failed_tasks table for tracking and potential retry.
-    
+
     GHOST PROTOCOL: Also ensures S3 staging files are cleaned up on failure
     to maintain Zero-Retention compliance.
     """
     try:
         from worker.dlq_worker import log_task_failure
-        
+
         # Extract user_id and job_id from kwargs
         user_id = kwargs.get('user_id')
         job_id = kwargs.get('job_id')
         supabase = get_supabase()
-        
+
         # Log to DLQ with full context
         log_task_failure(
             task_id=task_id,
@@ -1535,7 +1541,7 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
             user_id=user_id,
             job_id=job_id
         )
-        
+
         logger.info(f"📥 [DLQ] Logged failed task {task_id} to dead letter queue")
 
         if user_id and job_id:
@@ -1547,7 +1553,7 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
                 "error",
                 {"job_id": job_id, "task_id": task_id, "error": str(exc)[:300]},
             )
-        
+
         # =====================================================================
         # GHOST PROTOCOL: Cleanup staging files on failure
         # =====================================================================
@@ -1557,7 +1563,7 @@ def handle_task_failure(self, exc, task_id, args, kwargs, einfo):
         if storage_path:
             logger.warning(f"🚨 [GhostProtocol] Cleaning up staging file after task failure: {task_id}")
             cleanup_staging_file(storage_path, STAGING_BUCKET)
-        
+
     except Exception as e:
         logger.error(f"❌ [DLQ] Failed to log task failure to DLQ: {e}")
 
@@ -1596,21 +1602,21 @@ def unified_ingest_task(
     user_id: str,
     job_id: str,
     connector_type: str,
-    item_ids: Optional[List[str]] = None,
-    credentials: Dict[str, Any] = None,
-    item_id: Optional[str] = None,
-    plan_code: Optional[str] = None,
-    dispatch_batch_size: Optional[int] = None,
+    item_ids: list[str] | None = None,
+    credentials: dict[str, Any] = None,
+    item_id: str | None = None,
+    plan_code: str | None = None,
+    dispatch_batch_size: int | None = None,
 ):
     """
     UNIFIED ingestion task for ALL data sources.
-    
+
     Now uses STREAMED FAN-OUT PATTERN for faster feedback:
     1. Stream files from connector
     2. Create file status records as files are discovered
     3. Dispatch process_file_task in batches
     4. Redis counters trigger finalize when all files complete
-    
+
     Args:
         user_id: User ID
         job_id: Job ID for tracking
@@ -1618,9 +1624,8 @@ def unified_ingest_task(
         item_ids: List of items to ingest (paths, IDs, URLs)
         credentials: Optional auth credentials
     """
-    import base64
     from celery import group
-    
+
     task_id = self.request.id
     raw_connector_type = connector_type
     connector_type = normalize_provider(connector_type)
@@ -1633,7 +1638,7 @@ def unified_ingest_task(
         item_ids = [item_ids]
 
     logger.info(f"[UnifiedIngest:{task_id}] Starting FAN-OUT: {connector_type}, Job: {job_id}, Plan: {plan_code or 'starter'}")
-    
+
     supabase = get_supabase()
     organization_id = None
     if job_id:
@@ -1656,16 +1661,16 @@ def unified_ingest_task(
             logger.warning(
                 f"[UnifiedIngest:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id"
             )
-    
+
     try:
         # Store Celery task ID for cancellation support
         store_celery_task_id(supabase, job_id, task_id)
-        
+
         # Check if job was cancelled before we start
         if check_job_cancelled(supabase, job_id):
             logger.info(f"🛑 [UnifiedIngest:{task_id}] Job cancelled before start")
             return {"status": "cancelled"}
-        
+
         # Update job status
         update_job_status(supabase, job_id, "processing")
         try:
@@ -1682,7 +1687,7 @@ def unified_ingest_task(
                 }).eq("id", job_id).execute()
             except Exception as e:
                 logger.warning(f"[UnifiedIngest:{task_id}] ⚠️ Failed to normalize provider: {e}")
-        
+
         # Create notification
         create_notification(
             supabase, user_id,
@@ -1691,10 +1696,10 @@ def unified_ingest_task(
             "info",
             {"job_id": job_id}
         )
-        
+
         # Get connector instance
         connector = get_connector(connector_type)
-        
+
         # STEP 1: Fetch documents from connector (streamed)
         logger.info(f"[UnifiedIngest:{task_id}] Streaming documents from {connector_type}...")
         batch_size = max(
@@ -1733,7 +1738,7 @@ def unified_ingest_task(
                 scope_plan_code = "free"
         max_scopes = int(get_plan_limits(scope_plan_code).max_scopes or 0)
         existing_scope_count = 0
-        
+
         # ==========================================================================
         # HARD ZERO RULE: Block ingestion if no active subscription
         # ==========================================================================
@@ -1767,7 +1772,7 @@ def unified_ingest_task(
                     "reason": "no_subscription",
                 },
             )
-        
+
         # Count existing scopes for quota tracking
         scope_count = (
             supabase.table("scope_identities")
@@ -1826,9 +1831,9 @@ def unified_ingest_task(
                     "progress": 0,
                     "status_message": "Queued for processing..."  # FIXED: was "message"
                 }).execute()
-                
+
                 file_status_id = file_status_result.data[0]["id"]
-                
+
                 # Serialize document content to base64 for Celery
                 content = doc.content
                 if isinstance(content, bytes):
@@ -1852,7 +1857,7 @@ def unified_ingest_task(
                             content_b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
                 else:
                     raise ValueError(f"Unsupported document content type: {type(content)}")
-                
+
                 doc_metadata = doc.metadata or {}
                 storage_path = doc_metadata.get("storage_path")
                 source_url = doc_metadata.get("source_url") or doc_metadata.get("url")
@@ -1868,7 +1873,7 @@ def unified_ingest_task(
                 # could pass the quota check before any creates the placeholder
                 if scope_id not in scope_ids_seen:
                     scope_ids_seen.add(scope_id)
-                    
+
                     # The atomic function handles: exists check, quota check, placeholder creation
                     result = _ensure_scope_identity_placeholder(
                         supabase=supabase,
@@ -1878,7 +1883,7 @@ def unified_ingest_task(
                         source_type=doc_source_type,
                         max_scopes=max_scopes,  # Pass quota for atomic check
                     )
-                    
+
                     # Track new scopes for local quota tracking
                     if result == "created":
                         new_scope_count += 1
@@ -1897,7 +1902,7 @@ def unified_ingest_task(
                     "source_type": doc_source_type,
                     "metadata": doc_metadata,
                 }
-                
+
                 # Create task signature
                 file_tasks.append(
                     process_file_task.s(
@@ -1927,7 +1932,7 @@ def unified_ingest_task(
                 "box": "No supported files found in the selected Box folder.",
             }
             message = no_docs_messages.get(connector_type, "No documents to process")
-            
+
             update_job_status(
                 supabase,
                 job_id,
@@ -1936,7 +1941,7 @@ def unified_ingest_task(
                 message=message,
                 progress=100,
             )
-            
+
             # Create info notification for empty result
             create_notification(
                 supabase, user_id,
@@ -1945,7 +1950,7 @@ def unified_ingest_task(
                 "info",
                 {"job_id": job_id, "connector": connector_type}
             )
-            
+
             return {"status": "completed", "message": message}
 
         if file_tasks:
@@ -1982,11 +1987,11 @@ def unified_ingest_task(
             "total_files": total_files,
             "group_id": last_group_id,
         }
-    
+
     except ConnectorAuthError as e:
         # Authentication error - user needs to reconnect
         logger.warning(f"[UnifiedIngest:{task_id}] Auth error: {e}")
-        
+
         # Format user-friendly message based on connector
         auth_messages = {
             "github": "GitHub connection expired. Please reconnect your GitHub account in Data Sources.",
@@ -2001,7 +2006,7 @@ def unified_ingest_task(
             connector_type,
             f"Authentication failed for {connector_type}. Please reconnect in Data Sources."
         )
-        
+
         update_job_status(
             supabase,
             job_id,
@@ -2010,7 +2015,7 @@ def unified_ingest_task(
             message=user_message,
             progress=0,
         )
-        
+
         create_notification(
             supabase, user_id,
             "Authentication Required",
@@ -2019,7 +2024,7 @@ def unified_ingest_task(
             {"job_id": job_id, "connector": connector_type, "requires_reconnect": True}
         )
         raise
-        
+
     except Exception as e:
         logger.error(f"[UnifiedIngest:{task_id}] Failed: {e}")
         update_job_status(
@@ -2030,7 +2035,7 @@ def unified_ingest_task(
             message=str(e),
             progress=0,
         )
-        
+
         # Create failure notification
         create_notification(
             supabase, user_id,
@@ -2064,19 +2069,19 @@ def process_file_task(
     self,
     user_id: str,
     job_id: str,
-    file_data: Dict[str, Any],
+    file_data: dict[str, Any],
     file_status_id: str,
     connector_type: str,
     scope_id: str,
-    plan_code: Optional[str] = None,
+    plan_code: str | None = None,
     max_scopes: int = 0,  # Propagated from parent task for atomic quota check
 ):
     """
     Process a SINGLE file independently.
-    
+
     This task is spawned by unified_ingest_task for each file,
     enabling true parallel processing across all Celery workers.
-    
+
     Args:
         user_id: User ID
         job_id: Parent job ID
@@ -2086,16 +2091,14 @@ def process_file_task(
         scope_id: Canonical scope URI for the file
         max_scopes: User's quota limit (propagated for atomic scope creation)
     """
-    import base64
-    import tempfile
     import os
+
     from services.parsers import DocumentProcessorFactory
-    from services.embeddings import generate_embeddings_batch_sync
-    
+
     task_id = self.request.id
     filename = file_data.get("filename", "unknown")
     logger.info(f"[ProcessFile:{task_id}] Starting: {safe_file_context(filename=filename, job_id=job_id)} ext={safe_extension(filename)}")
-    
+
     supabase = get_supabase()
     source_type = normalize_source_type(file_data.get("source_type") or connector_type) or (connector_type or "unknown")
     metadata = file_data.get("metadata") or {}
@@ -2118,7 +2121,7 @@ def process_file_task(
     mime_type = file_data.get("mime_type") or metadata.get("mime_type")
     local_path = None
     start_time = time.time()
-    
+
     try:
         update_file_status(supabase, file_status_id, job_id, status="uploading",
             progress=5,
@@ -2156,7 +2159,7 @@ def process_file_task(
                 "skipped",
             )
             return {"status": "skipped", "filename": filename, "reason": "file_too_large"}
-        
+
         # STEP 1: Download from storage (preferred) or decode base64 payload
         storage_path = file_data.get("storage_path")
         content_b64 = file_data.get("content_b64")
@@ -2296,7 +2299,7 @@ def process_file_task(
             return {"status": "failed", "filename": filename, "error": "File too large"}
 
         content_hash = compute_content_hash(content)
-        
+
         # Check for force_overwrite flag (user confirmed overwrite via UI)
         force_overwrite = metadata.get("force_overwrite", False)
 
@@ -2344,7 +2347,7 @@ def process_file_task(
                 logger.warning("[ProcessFile:%s] ⚠️ Failed source_id lookup: %s", task_id, exc)
         elif force_overwrite:
             logger.info("[ProcessFile:%s] 🔄 Force overwrite enabled - skipping dedup check", task_id)
-        
+
         # =====================================================================
         # GHOST PROTOCOL: SmartBuffer for Memory-Safe Processing
         # =====================================================================
@@ -2353,7 +2356,7 @@ def process_file_task(
         # - Large files (>= MAX_RAM_PROCESS_LIMIT): SecureTempFile (OOM-safe)
         suffix = os.path.splitext(filename)[1] or ".bin"
         buffer = SmartBuffer(content, filename=filename)
-        
+
         # Get a file path for parsers (SmartBuffer handles cleanup tracking)
         local_path = buffer.write_to_temp(suffix=suffix)
         logger.debug(
@@ -2361,13 +2364,13 @@ def process_file_task(
             f"{'RAM-backed' if buffer.is_ram_backed else 'disk-backed'} "
             f"({len(content):,} bytes)"
         )
-        
+
         # STEP 2: Parse document
         update_file_status(supabase, file_status_id, job_id, status="parsing",
             progress=30,
             message="Extracting content (may take 30-90s for PDFs)..."
         )
-        
+
         parse_timeout = get_parse_timeout_seconds(filename, mime_type)
         parse_start = time.time()
         result = DocumentProcessorFactory.process(
@@ -2433,7 +2436,7 @@ def process_file_task(
             )
             return {"status": "skipped", "filename": filename, "reason": reason or "unsupported"}
         chunks = result.chunks
-        
+
         if not chunks:
             skip_message = "No content extracted"
             if result.file_type == "pdf":
@@ -2461,7 +2464,7 @@ def process_file_task(
                 details={"filename": filename, "reason": "empty_or_no_text", "source_type": source_type},
             )
             return {"status": "skipped", "filename": filename, "reason": "empty"}
-        
+
         # STEP 3: Dispatch embeddings task (queue isolation)
         update_file_status(
             supabase,
@@ -2523,7 +2526,7 @@ def process_file_task(
             f"[ProcessFile:{task_id}] ✅ Dispatched embedding task {safe_file_context(filename=filename, job_id=job_id)} plan={plan_code or 'starter'}"
         )
         return {"status": "queued_embedding", "file_ref": safe_file_ref(filename=filename)}
-        
+
     except SoftTimeLimitExceeded:
         logger.error(f"[ProcessFile:{task_id}] ⏰ Soft time limit exceeded for {safe_file_ref(filename=filename)}")
 
@@ -2579,23 +2582,23 @@ def process_file_task(
             "filename": filename,
             "error": str(e)
         }
-        
+
     finally:
         # =====================================================================
         # GHOST PROTOCOL: Guaranteed Cleanup (Zero-Retention Compliance)
         # =====================================================================
-        
+
         # 1. Cleanup SmartBuffer (handles both RAM and disk-backed storage)
         if 'buffer' in dir() and buffer is not None:
             try:
                 buffer.cleanup()
             except Exception as buf_err:
                 logger.warning(f"[ProcessFile:{task_id}] ⚠️ SmartBuffer cleanup failed: {buf_err}")
-        
+
         # 2. Secure wipe any temp files with cryptographic overwrite
         if local_path and os.path.exists(local_path):
             secure_wipe(local_path)
-        
+
         # 3. Remove staging file from S3 (ALWAYS - success or failure)
         # Use centralized cleanup for consistent logging and error handling
         storage_path = file_data.get("storage_path")
@@ -2610,10 +2613,10 @@ def process_file_task(
     soft_time_limit=600,
     time_limit=660,
 )
-def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_code: Optional[str] = None):
+def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_code: str | None = None):
     """
     Generate embeddings for parsed chunks on the embedding queue, then dispatch indexing.
-    
+
     IMPORTANT: Validates organization_id consistency to prevent FK violations downstream.
     """
     task_id = self.request.id
@@ -2624,10 +2627,10 @@ def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_
     metadata = doc_payload.get("metadata") or {}
     organization_id = doc_payload.get("organization_id") or metadata.get("organization_id")
     scope_id = metadata.get("scope_id")
-    
+
     if not organization_id:
         raise ValueError("organization_id is required for ingestion")
-    
+
     # Validate org/scope consistency early to catch mismatches before expensive embedding
     if scope_id:
         try:
@@ -2635,7 +2638,7 @@ def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_
         except ValueError as e:
             logger.error(f"[EmbedTask:{task_id}] Org/scope validation failed: {e}")
             raise
-    
+
     filename = doc_payload.get("filename", "unknown")
     plan_label = plan_code or doc_payload.get("plan_code") or settings.PLAN_STARTER
 
@@ -2713,7 +2716,7 @@ def generate_embeddings_task(self, chunk_payload: list, doc_payload: dict, plan_
 def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
     """
     Persist document and chunk embeddings on the indexing queue.
-    
+
     IMPORTANT: This is the final stage before DB insert. Validates org/scope
     consistency to catch any mismatches that slipped through earlier stages.
     """
@@ -2727,10 +2730,10 @@ def index_chunks_task(self, chunk_payload: list, doc_payload: dict):
     file_status_id = doc_payload.get("file_status_id")
     filename = doc_payload.get("filename", "unknown")
     max_scopes = doc_payload.get("max_scopes", 0)  # Extract quota for atomic scope check
-    
+
     if not organization_id:
         raise ValueError("organization_id is required for indexing")
-    
+
     # Final validation before DB insert - this is our last chance to catch mismatches
     if scope_id:
         try:
@@ -2912,9 +2915,7 @@ def finalize_job_task(self, user_id: str, job_id: str):
         )
         return
 
-    if failed_count == 0:
-        final_status = "completed"
-    elif (success_count + skipped_count) > 0:
+    if failed_count == 0 or (success_count + skipped_count) > 0:
         final_status = "completed"
     else:
         final_status = "failed"
@@ -2950,7 +2951,7 @@ def finalize_job_task(self, user_id: str, job_id: str):
                     .in_("id", doc_ids)
                     .execute()
                 )
-                docs_by_scope: Dict[str, List[SourceDocument]] = {}
+                docs_by_scope: dict[str, list[SourceDocument]] = {}
                 for row in docs_res.data or []:
                     metadata = row.get("metadata") or {}
                     scope_id = row.get("scope_id") or metadata.get("scope_id")
@@ -2969,7 +2970,7 @@ def finalize_job_task(self, user_id: str, job_id: str):
                         )
                     )
 
-                quota_failures: List[Dict[str, str]] = []
+                quota_failures: list[dict[str, str]] = []
 
                 async def _run_identity_updates() -> None:
                     try:
@@ -3068,17 +3069,17 @@ def update_crawl_status(
     supabase,
     crawl_id: str,
     *,
-    status: Optional[str] = None,
-    total_pages: Optional[int] = None,
-    pages_ingested: Optional[int] = None,
-    pages_failed: Optional[int] = None,
-    error_message: Optional[str] = None,
-    job_id: Optional[str] = None,
-    message: Optional[str] = None,
+    status: str | None = None,
+    total_pages: int | None = None,
+    pages_ingested: int | None = None,
+    pages_failed: int | None = None,
+    error_message: str | None = None,
+    job_id: str | None = None,
+    message: str | None = None,
 ) -> None:
     """Update crawl progress in web_crawl_configs with safe defaults."""
     try:
-        update_data: Dict[str, Any] = {
+        update_data: dict[str, Any] = {
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         if status is not None:
@@ -3110,7 +3111,7 @@ def update_crawl_status(
                 if progress is None and status in {"completed", "failed", "cancelled"}:
                     progress = 100
 
-                job_update: Dict[str, Any] = {
+                job_update: dict[str, Any] = {
                     "updated_at": update_data["updated_at"],
                 }
                 if status:
@@ -3156,20 +3157,21 @@ def crawl_discovery_task(
     self,
     user_id: str,
     root_url: str,
-    crawl_config: Dict[str, Any]
+    crawl_config: dict[str, Any]
 ):
     """
     Master task for distributed web crawling.
-    
+
     Discovers URLs (via sitemap or recursive) and dispatches
     individual page processing tasks using Redis counters + group.
     """
-    from celery import group
-    from collections import deque
-    import time
     import random
+    import time
+    from collections import deque
     from urllib.parse import urlparse
-    
+
+    from celery import group
+
     task_id = self.request.id
     crawl_id = crawl_config.get("crawl_id")
     job_id = crawl_config.get("job_id") or crawl_id
@@ -3180,10 +3182,10 @@ def crawl_discovery_task(
     respect_robots = bool(crawl_config.get("respect_robots", True))
     allow_subdomains = bool(crawl_config.get("allow_subdomains", False))
     is_recrawl = bool(crawl_config.get("is_recrawl", False))
-    
+
     logger.info(f"🕸️ [Discovery:{task_id}] Starting crawl for user {user_id}")
     logger.info(f"🕸️ [Discovery:{task_id}] URL: {root_url}, Type: {crawl_type}, Depth: {max_depth}, Max: {max_pages}")
-    
+
     supabase = get_supabase()
     organization_id = crawl_config.get("organization_id")
     if not organization_id and job_id:
@@ -3206,23 +3208,23 @@ def crawl_discovery_task(
             logger.warning(
                 f"🕸️ [Discovery:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id"
             )
-    
+
     try:
         # Import connector
         from connectors.web import WebConnector
         connector = WebConnector()
-        
+
         normalized_root = connector.normalize_url(root_url)
         if not normalized_root:
             raise ValueError("Invalid URL provided for crawl")
         if not connector.is_safe_url(normalized_root):
             raise ValueError("URL is not allowed for crawling")
         root_url = normalized_root
-        
+
         # Detect if this is a YouTube URL for appropriate notifications
         is_youtube = connector._is_youtube_url(root_url)
         content_type = "YouTube video" if is_youtube else "web pages"
-        
+
         # Update status
         if crawl_id:
             update_crawl_status(
@@ -3243,14 +3245,14 @@ def crawl_discovery_task(
                 )
             except Exception as e:
                 logger.debug(f"[Discovery] Failed to update job status: {e}")
-        
+
         # Use appropriate notification title based on content type
         notification_title = "YouTube Indexing Started" if is_youtube else "Web Crawl Started"
         notification_message = (
-            f"Processing YouTube video: {root_url}" if is_youtube 
+            f"Processing YouTube video: {root_url}" if is_youtube
             else f"Discovering pages from {root_url}"
         )
-        
+
         create_notification(
             supabase, user_id,
             notification_title,
@@ -3258,12 +3260,12 @@ def crawl_discovery_task(
             "info",
             {"crawl_id": crawl_id, "crawl_type": crawl_type, "is_youtube": is_youtube}
         )
-        
+
         # ===== DISCOVERY PHASE =====
-        urls_to_process: List[str] = []
+        urls_to_process: list[str] = []
         parsed_root = urlparse(root_url)
         base_domain = parsed_root.hostname or ""
-        
+
         if crawl_type == "sitemap":
             logger.info(f"🗺️ [Discovery] Parsing sitemap: {root_url}")
             sitemap_urls = connector.parse_sitemap(root_url)
@@ -3279,16 +3281,16 @@ def crawl_discovery_task(
                     urls_to_process.append(normalized)
                 if len(urls_to_process) >= max_pages:
                     break
-            
+
         elif crawl_type == "recursive":
             logger.info(f"🔄 [Discovery] Recursive crawl from: {root_url}")
             queue = deque([(root_url, 0)])
             seen = {root_url}
-            
+
             while queue and len(urls_to_process) < max_pages:
                 url, depth = queue.popleft()
                 urls_to_process.append(url)
-                
+
                 if depth < max_depth:
                     html = connector.fetch_html(url)
                     if html:
@@ -3302,21 +3304,21 @@ def crawl_discovery_task(
                             if link not in seen:
                                 seen.add(link)
                                 queue.append((link, depth + 1))
-                    
+
                     # Rate limit during discovery
                     time.sleep(random.uniform(0.3, 0.6))
         else:
             urls_to_process = [root_url]
-        
+
         if respect_robots:
             urls_to_process = [
                 url for url in urls_to_process
                 if connector.check_robots_txt(url, connector.USER_AGENT)
             ]
-        
+
         total_pages = len(urls_to_process)
         logger.info(f"📊 [Discovery] Discovered {total_pages} URLs after filtering")
-        
+
         if crawl_id:
             update_crawl_status(
                 supabase,
@@ -3326,12 +3328,12 @@ def crawl_discovery_task(
                 job_id=job_id,
                 message="Preparing pages for crawling..."
             )
-        
+
         if total_pages == 0:
             if crawl_id:
                 update_crawl_status(supabase, crawl_id, status="completed", total_pages=0, job_id=job_id)
             return {"status": "completed", "message": "No pages found"}
-        
+
         # ===== DEDUP AGAINST EXISTING =====
         if not is_recrawl:
             existing_urls = set()
@@ -3353,16 +3355,16 @@ def crawl_discovery_task(
                             existing_urls.add(src)
             except Exception as e:
                 logger.warning(f"⚠️ [Discovery] Dedup query failed: {e}")
-            
+
             if existing_urls:
                 urls_to_process = [url for url in urls_to_process if url not in existing_urls]
                 logger.info(f"📊 [Discovery] After dedup: {len(urls_to_process)} new URLs")
-        
+
         if not urls_to_process:
             if crawl_id:
                 update_crawl_status(supabase, crawl_id, status="completed", total_pages=0, job_id=job_id)
             return {"status": "completed", "message": "No new URLs to crawl"}
-        
+
         if crawl_id:
             update_crawl_status(
                 supabase,
@@ -3372,7 +3374,7 @@ def crawl_discovery_task(
                 job_id=job_id,
                 message=f"Processing {len(urls_to_process)} pages..."
             )
-        
+
         # ===== DISPATCH PHASE: Parallel processing =====
         if job_id:
             counters_ready = init_ingest_job_counters(job_id, len(urls_to_process))
@@ -3388,7 +3390,7 @@ def crawl_discovery_task(
             if not counters_ready:
                 logger.warning(f"🕸️ [Discovery:{task_id}] ⚠️ Redis counters unavailable; relying on reconciliation")
 
-        file_status_ids: List[Optional[str]] = []
+        file_status_ids: list[str | None] = []
         if job_id:
             for url in urls_to_process:
                 file_status_ids.append(create_file_status(
@@ -3412,21 +3414,21 @@ def crawl_discovery_task(
                 file_status_id=file_status_ids[idx] if idx < len(file_status_ids) else None,
             ) for idx, url in enumerate(urls_to_process)
         ])
-        
+
         result = page_tasks.apply_async()
-        
+
         logger.info(f"🚀 [Discovery:{task_id}] Dispatched {len(urls_to_process)} page tasks")
-        
+
         return {
             "status": "dispatched",
             "crawl_id": crawl_id,
             "total_pages": len(urls_to_process),
             "group_id": str(result.id)
         }
-        
+
     except Exception as e:
         logger.error(f"❌ [Discovery:{task_id}] Failed: {e}")
-        
+
         if crawl_id:
             update_crawl_status(
                 supabase, crawl_id,
@@ -3435,7 +3437,7 @@ def crawl_discovery_task(
                 job_id=job_id,
                 message=str(e)
             )
-        
+
         # Detect YouTube for appropriate error notification
         is_youtube_error = _is_youtube_url(root_url)
         error_notification_title = "YouTube Indexing Failed" if is_youtube_error else "Web Crawl Failed"
@@ -3443,7 +3445,7 @@ def crawl_discovery_task(
             f"Failed to process YouTube video: {str(e)[:200]}" if is_youtube_error
             else f"Discovery failed for {root_url}: {str(e)[:200]}"
         )
-        
+
         create_notification(
             supabase, user_id,
             error_notification_title,
@@ -3451,7 +3453,7 @@ def crawl_discovery_task(
             "error",
             {"crawl_id": crawl_id, "error": str(e), "is_youtube": is_youtube_error}
         )
-        
+
         raise
 
 
@@ -3477,16 +3479,16 @@ def process_page_task(
 ):
     """
     Worker task for processing a single web page.
-    
+
     Downloads, parses, embeds, and stores a single URL.
     Uses rate limiting to be polite to target servers.
     """
-    import time
     import random
-    
+    import time
+
     task_id = self.request.id
     logger.info(f"📄 [Page:{task_id}] Processing: {url}")
-    
+
     supabase = get_supabase()
     job_ref = job_id
 
@@ -3522,11 +3524,11 @@ def process_page_task(
             file_status_id,
             outcome,
         )
-    
+
     try:
         from connectors.web import WebConnector
         from services.parsers import DocumentProcessorFactory
-        
+
         connector = WebConnector()
         mark_file_status("uploading", progress=10, message="Fetching page...")
         if not connector.is_safe_url(url):
@@ -3547,25 +3549,25 @@ def process_page_task(
             mark_file_status("failed", progress=0, message="URL blocked", error="unsafe_url")
             record_ingest_outcome("failed")
             return {"status": "failed", "url": url, "error": "unsafe_url"}
-        
+
         # Rate limiting - wait if needed
         max_wait = 5
         waited = 0.0
         while not check_rate_limit(supabase, url) and waited < max_wait:
             time.sleep(0.5)
             waited += 0.5
-        
+
         crawl_delay = connector.get_crawl_delay(url, connector.USER_AGENT) if respect_robots else None
         if crawl_delay:
             time.sleep(min(crawl_delay, 10.0) + random.uniform(0.1, 0.3))
-        
+
         # Fetch and parse page
         docs = list(connector.fetch_documents_sync(
             [url],
             credentials=None,
             respect_robots=respect_robots,
         ))
-        
+
         if not docs:
             logger.warning(f"⚠️ [Page:{task_id}] No content from: {url}")
             if crawl_id:
@@ -3584,16 +3586,16 @@ def process_page_task(
             mark_file_status("failed", progress=0, message="No content retrieved", error="no_content")
             record_ingest_outcome("skipped")
             return {"status": "skipped", "url": url}
-        
+
         doc = docs[0]
         page_content = doc.content
         if isinstance(page_content, bytes):
             page_content = page_content.decode("utf-8", errors="replace")
         page_metadata = doc.metadata or {}
-        
+
         # Determine source type from document (YouTube vs Web)
         doc_source_type = doc.source_type.value if hasattr(doc.source_type, "value") else str(doc.source_type)
-        
+
         # Set appropriate default title based on source type
         if doc_source_type == "youtube":
             default_title = f"YouTube Video: {page_metadata.get('video_id', 'Unknown')}"
@@ -3606,11 +3608,11 @@ def process_page_task(
             or getattr(doc, "source_id", None)
             or url
         )
-        
+
         # Process using MarkdownProcessor (treats web content as markdown)
         result = DocumentProcessorFactory.process_web_content(page_content, source_url)
         mark_file_status("processing", progress=40, message="Parsing page content...")
-        
+
         if not result.chunks:
             logger.warning(f"⚠️ [Page:{task_id}] No chunks generated from: {url}")
             if crawl_id:
@@ -3629,15 +3631,15 @@ def process_page_task(
             mark_file_status("failed", progress=0, message="No extractable content", error="no_chunks")
             record_ingest_outcome("skipped")
             return {"status": "skipped", "url": url}
-        
+
         # Embed
         from services.embeddings import generate_embeddings_batch_sync
         mark_file_status("embedding", progress=55, message=f"Embedding {len(result.chunks)} chunks...")
-        
+
         chunk_texts = [_sanitize_text(chunk.content) for chunk in result.chunks]
         token_counts = [chunk.token_count for chunk in result.chunks]
         chunk_embeddings = generate_embeddings_batch_sync(chunk_texts, token_counts=token_counts)
-        
+
         # Build chunks payload with enriched metadata
         chunks_payload = []
         failed_chunks = 0
@@ -3646,7 +3648,7 @@ def process_page_task(
                 failed_chunks += 1
                 logger.warning(f"⚠️ [Page:{task_id}] Skipped chunk {chunk.chunk_index} for {url} due to failed embedding")
                 continue
-                
+
             chunks_payload.append({
                 "content": chunk_text,
                 "embedding": embedding,
@@ -3656,7 +3658,7 @@ def process_page_task(
                     "token_count": chunk.token_count,
                 }
             })
-        
+
         if not chunks_payload:
             logger.warning(f"⚠️ [Page:{task_id}] No embeddings for: {url}")
             if crawl_id:
@@ -3675,7 +3677,7 @@ def process_page_task(
             mark_file_status("failed", progress=0, message="Embedding failed", error="no_embeddings")
             record_ingest_outcome("failed")
             return {"status": "failed", "url": url, "error": "no_embeddings"}
-        
+
         # Document metadata
         doc_metadata = {
             **page_metadata,
@@ -3685,7 +3687,7 @@ def process_page_task(
             "total_chunks": len(result.chunks),
             "source_id": source_url,
         }
-        
+
         content_bytes = page_content.encode("utf-8")
         content_size = len(content_bytes)
         content_hash = compute_content_hash(content_bytes)
@@ -3694,14 +3696,14 @@ def process_page_task(
         if not org_scope.get("team_id"):
             logger.warning(f"[Page:{task_id}] ⚠️ No team_id for user {user_id[:8]}..., using user_id as org_id")
         doc_metadata["organization_id"] = organization_id
-        
+
         # Get user's quota for atomic scope check
         try:
             page_plan_code = asyncio.run(team_service.get_effective_plan(user_id))
         except Exception:
             page_plan_code = "free"
         page_max_scopes = int(get_plan_limits(page_plan_code).max_scopes or 0)
-        
+
         # Ghost Data Prevention: Use source_url as source_id for web pages
         # This ensures renamed/modified URLs are properly deduplicated
         if _is_duplicate_document(supabase, content_hash, org_scope, user_id, source_id=source_url):
@@ -3758,9 +3760,9 @@ def process_page_task(
             mark_file_status("failed", progress=0, message="Database insert failed", error="db_insert_failed")
             record_ingest_outcome("failed")
             return {"status": "failed", "url": url, "error": "db_insert_failed"}
-        
+
         logger.info(f"✅ [Page:{task_id}] Stored: {url} ({len(result.chunks)} chunks)")
-        
+
         if crawl_id:
             try:
                 supabase.rpc("increment_crawl_counter", {
@@ -3769,7 +3771,7 @@ def process_page_task(
                 }).execute()
             except Exception as e:
                 logger.debug(f"[Page] Failed to increment pages_ingested counter: {e}")
-        
+
         _record_crawl_outcome_and_maybe_finalize(
             supabase,
             user_id,
@@ -3780,12 +3782,12 @@ def process_page_task(
         )
         mark_file_status("completed", progress=100, message="Indexed", document_id=doc_id, chunks_total=len(chunks_payload), chunks_processed=len(chunks_payload))
         record_ingest_outcome("success")
-        
+
         return {"status": "success", "url": url}
-        
+
     except Exception as e:
         logger.error(f"❌ [Page:{task_id}] Failed {url}: {e}")
-        
+
         try:
             if crawl_id:
                 try:
@@ -3795,7 +3797,7 @@ def process_page_task(
                     }).execute()
                 except Exception as e:
                     logger.debug(f"[Page] Failed to increment pages_failed counter: {e}")
-            
+
             _record_crawl_outcome_and_maybe_finalize(
                 supabase,
                 user_id,
@@ -3811,7 +3813,7 @@ def process_page_task(
                 send_failure_email_notification(supabase, user_id, url, str(e))
             except Exception as e:
                 logger.debug(f"[Page] Failed to send failure notification email: {e}")
-        
+
         raise
 
 
@@ -3917,18 +3919,18 @@ def finalize_crawl_task(
     clear_crawl_counters(crawl_id)
 
     root_url = config.get("root_url") or "website"
-    
+
     # Detect YouTube URL for appropriate notification messaging
     is_youtube = _is_youtube_url(root_url)
-    
+
     if is_youtube:
         # YouTube-specific notifications
         if final_status == "completed":
             notification_title = "YouTube Video Indexed"
-            notification_message = f"Successfully indexed YouTube video"
+            notification_message = "Successfully indexed YouTube video"
         else:
             notification_title = "YouTube Indexing Failed"
-            notification_message = f"Failed to index YouTube video"
+            notification_message = "Failed to index YouTube video"
     else:
         # Standard web crawl notifications
         if final_status == "completed":
@@ -3937,7 +3939,7 @@ def finalize_crawl_task(
         else:
             notification_title = "Web Crawl Failed"
             notification_message = f"Failed to crawl {root_url}"
-    
+
     create_notification(
         supabase, user_id,
         notification_title,
@@ -3959,18 +3961,18 @@ crawl_web_task = crawl_discovery_task
 def check_scheduled_crawls(self):
     """
     Celery Beat task to check for scheduled re-crawls.
-    
+
     Runs hourly via Celery Beat.
     Finds completed crawls that are due for refresh and triggers them.
     """
     from datetime import timedelta
-    
+
     task_id = self.request.id
     logger.info(f"⏰ [Scheduler:{task_id}] Checking for scheduled re-crawls...")
-    
+
     supabase = get_supabase()
     now = datetime.now(timezone.utc)
-    
+
     try:
         # Find crawls that are due for refresh
         # Status = completed, refresh_interval != never, next_crawl_at <= now
@@ -3981,13 +3983,13 @@ def check_scheduled_crawls(self):
         ).lte(
             "next_crawl_at", now.isoformat()
         ).execute()
-        
+
         if not result.data:
             logger.info(f"⏰ [Scheduler:{task_id}] No crawls due for refresh")
             return {"status": "ok", "crawls_triggered": 0}
-        
+
         crawls_triggered = 0
-        
+
         for config in result.data:
             try:
                 crawl_id = str(config["id"])
@@ -3999,9 +4001,9 @@ def check_scheduled_crawls(self):
                 allow_subdomains = config.get("allow_subdomains", False)
                 respect_robots = config.get("respect_robots_txt", True)
                 refresh_interval = config["refresh_interval"]
-                
+
                 logger.info(f"🔄 [Scheduler] Triggering re-crawl: {root_url} ({refresh_interval})")
-                
+
                 # Reset status to pending for re-crawl
                 supabase.table("web_crawl_configs").update({
                     "status": "pending",
@@ -4028,7 +4030,7 @@ def check_scheduled_crawls(self):
                         "message": f"Queued crawl for {root_url}",
                         "status_message": f"Queued crawl for {root_url}",
                     }, on_conflict="id").execute()
-                except Exception as job_exc:
+                except Exception:
                     try:
                         supabase.table("ingestion_jobs").insert({
                             "id": crawl_id,
@@ -4046,7 +4048,7 @@ def check_scheduled_crawls(self):
                     except Exception as inner_err:
                         logger.warning(f"⚠️ [Scheduler] Failed to upsert ingestion job for crawl {crawl_id}: {inner_err}")
                         inner_err = None
-                
+
                 # Queue crawl discovery task for web crawl
                 task = crawl_discovery_task.delay(
                     user_id=user_id,
@@ -4071,7 +4073,7 @@ def check_scheduled_crawls(self):
                     next_crawl = now + timedelta(days=30)
                 else:
                     next_crawl = None
-                
+
                 # Update with new task ID and next crawl time
                 update_data = {
                     "celery_task_id": task.id,
@@ -4079,7 +4081,7 @@ def check_scheduled_crawls(self):
                 }
                 if next_crawl:
                     update_data["next_crawl_at"] = next_crawl.isoformat()
-                
+
                 supabase.table("web_crawl_configs").update(update_data).eq("id", crawl_id).execute()
                 try:
                     supabase.table("ingestion_jobs").update({
@@ -4089,16 +4091,16 @@ def check_scheduled_crawls(self):
                     }).eq("id", crawl_id).execute()
                 except Exception as e:
                     logger.debug(f"[Scheduler] Failed to update ingestion_jobs status: {e}")
-                
+
                 crawls_triggered += 1
-                
+
             except Exception as e:
                 logger.error(f"❌ [Scheduler] Failed to trigger re-crawl for {config.get('root_url')}: {e}")
                 continue
-        
+
         logger.info(f"✅ [Scheduler:{task_id}] Triggered {crawls_triggered} re-crawls")
         return {"status": "ok", "crawls_triggered": crawls_triggered}
-        
+
     except Exception as e:
         logger.error(f"❌ [Scheduler:{task_id}] Failed: {e}")
         return {"status": "error", "error": str(e)}
@@ -4125,27 +4127,28 @@ def check_rate_limit(supabase, url: str) -> bool:
     """
     Check if we can make a request to this domain.
     Uses simple counter with TTL for rate limiting.
-    
+
     Returns True if allowed, False if rate limited.
     """
     import redis
+
     from core.config import settings
-    
+
     try:
         r = redis.from_url(settings.REDIS_URL)
         key = get_domain_rate_limit_key(url)
-        
+
         current = r.get(key)
         if current is None:
             r.setex(key, RATE_LIMIT_WINDOW, 1)
             return True
-        
+
         if int(current) >= RATE_LIMIT_MAX_REQUESTS:
             return False
-        
+
         r.incr(key)
         return True
-        
+
     except Exception as e:
         logger.warning(f"⚠️ Rate limit check failed: {e}")
         return True  # Allow on error
@@ -4165,15 +4168,15 @@ def health_check_task(self):
 def cleanup_old_jobs(self):
     """
     Clean up old completed/failed ingestion jobs.
-    
+
     Runs daily via Celery Beat to prevent database bloat.
     Deletes jobs older than 30 days that are no longer active.
     """
     from datetime import datetime, timedelta, timezone
-    
+
     task_id = self.request.id[:8] if self.request.id else "cleanup"
     logger.info(f"🧹 [Cleanup:{task_id}] Starting database cleanup...")
-    
+
     try:
         from core import db
 
@@ -4182,36 +4185,36 @@ def cleanup_old_jobs(self):
             supabase_fn = db.get_supabase
 
         supabase = supabase_fn()
-        
+
         # Calculate cutoff date (30 days ago)
         cutoff_date = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        
+
         # Delete old completed jobs
         completed_result = supabase.table("ingestion_jobs")\
             .delete()\
             .in_("status", ["completed", "failed"])\
             .lt("created_at", cutoff_date)\
             .execute()
-        
+
         deleted_count = len(completed_result.data) if completed_result.data else 0
         logger.info(f"🧹 [Cleanup:{task_id}] Deleted {deleted_count} old ingestion jobs")
-        
+
         # Delete old read notifications (keep unread ones)
         notif_result = supabase.table("notifications")\
             .delete()\
             .eq("is_read", True)\
             .lt("created_at", cutoff_date)\
             .execute()
-        
+
         notif_deleted = len(notif_result.data) if notif_result.data else 0
         logger.info(f"🧹 [Cleanup:{task_id}] Deleted {notif_deleted} old notifications")
-        
+
         return {
             "status": "success",
             "jobs_deleted": deleted_count,
             "notifications_deleted": notif_deleted
         }
-        
+
     except Exception as e:
         logger.error(f"❌ [Cleanup:{task_id}] Cleanup failed: {e}")
         return {"status": "error", "error": str(e)}

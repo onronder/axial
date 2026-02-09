@@ -8,7 +8,7 @@ Tests for:
 """
 
 import asyncio
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException, Request, Response
@@ -29,17 +29,17 @@ class TestDocumentStatsEndpoint:
     Tests for the optimized /stats endpoint.
     This endpoint should use COUNT query, not fetch all documents.
     """
-    
+
     @pytest.fixture
     def mock_supabase_with_stats(self):
         """Mock Supabase client with count support."""
         mock = MagicMock()
-        
+
         # Mock the count query response
         count_response = MagicMock()
         count_response.count = 5
         count_response.data = []
-        
+
         # Chain the method calls
         table = MagicMock()
         table.select.return_value = table
@@ -48,10 +48,10 @@ class TestDocumentStatsEndpoint:
         table.order.return_value = table
         table.limit.return_value = table
         table.execute.return_value = count_response
-        
+
         mock.table.return_value = table
         return mock
-    
+
     @pytest.mark.unit
     def test_stats_returns_count_without_fetching_data(self, mock_supabase_with_stats):
         """
@@ -60,25 +60,24 @@ class TestDocumentStatsEndpoint:
         """
         # Set up the mock to return a count of 5 documents
         mock_supabase_with_stats.table.return_value.execute.return_value.count = 5
-        
+
         # Verify the query uses count="exact" parameter
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase_with_stats):
-            from api.v1.documents import get_document_stats
             # The test validates that select is called with count parameter
             # In actual implementation: .select("id", count="exact")
             assert mock_supabase_with_stats.table.called or True  # Placeholder
-    
+
     @pytest.mark.unit
     def test_stats_returns_zero_for_new_user(self, mock_supabase_with_stats):
         """New users should have 0 documents."""
         mock_supabase_with_stats.table.return_value.execute.return_value.count = 0
-        
+
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase_with_stats):
             from api.v1.documents import get_document_stats
             scope = {"type": "http", "method": "GET", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)}
             result = asyncio.run(get_document_stats(Request(scope), user_id="user-1", organization_id="org-1"))
         assert result.total_documents == 0
-    
+
     @pytest.mark.unit
     def test_stats_includes_last_updated(self, mock_supabase_with_stats):
         """Stats should include the most recent document timestamp."""
@@ -107,7 +106,7 @@ class TestDocumentStatsEndpoint:
 
 class TestDocumentListEndpoint:
     """Tests for GET /api/v1/documents."""
-    
+
     @pytest.mark.unit
     def test_list_documents_returns_user_documents_only(self, sample_document):
         """Documents endpoint must filter by organization_id."""
@@ -134,7 +133,7 @@ class TestDocumentListEndpoint:
 
         query.eq.assert_any_call("organization_id", "org-1")
         assert len(result) == 1
-    
+
     @pytest.mark.unit
     def test_list_documents_pagination(self):
         """List endpoint should support limit and offset."""
@@ -143,7 +142,7 @@ class TestDocumentListEndpoint:
         mock_request = MagicMock(spec=Request)
         mock_response = MagicMock(spec=Response)
         mock_response.headers = {}
-        
+
         # Setup chain for query builder
         query = mock_supabase.table.return_value
         query.select.return_value = query
@@ -151,17 +150,18 @@ class TestDocumentListEndpoint:
         query.neq.return_value = query
         query.order.return_value = query
         query.range.return_value = query
-        
+
         # Mock execution result
         db_res = MagicMock()
         db_res.data = [{"id": "1", "title": "Doc 1"}]
         db_res.count = 100
         query.execute.return_value = db_res
-        
+
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase):
-            from api.v1.documents import list_documents
             import asyncio
-            
+
+            from api.v1.documents import list_documents
+
             # Execute async test
             result = asyncio.run(list_documents(
                 request=mock_request,
@@ -171,10 +171,10 @@ class TestDocumentListEndpoint:
                 limit=10,
                 offset=20
             ))
-            
+
             # Verify pagination calls
             query.range.assert_called_with(20, 20 + 10 - 1)
-            
+
             # Verify headers
             assert mock_response.headers["X-Total-Count"] == "100"
             assert len(result) == 1
@@ -185,7 +185,7 @@ class TestDocumentListEndpoint:
         mock_supabase = MagicMock()
         mock_request = MagicMock(spec=Request)
         mock_response = MagicMock(spec=Response)
-        
+
         # Setup chain
         query = mock_supabase.table.return_value
         query.select.return_value = query
@@ -195,11 +195,12 @@ class TestDocumentListEndpoint:
         query.order.return_value = query
         query.range.return_value = query
         query.execute.return_value = MagicMock(data=[], count=0)
-        
+
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase):
-            from api.v1.documents import list_documents
             import asyncio
-            
+
+            from api.v1.documents import list_documents
+
             asyncio.run(list_documents(
                 request=mock_request,
                 response=mock_response,
@@ -261,13 +262,13 @@ class TestDocumentListEndpoint:
             ))
 
         assert any(doc.get("status") == "failed" for doc in result)
-    
+
     @pytest.mark.unit
     def test_list_documents_ordered_by_created_at_desc(self):
         """Most recent documents should appear first."""
         mock_supabase = MagicMock()
         mock_response = MagicMock(spec=Response)
-        
+
         query = mock_supabase.table.return_value
         query.select.return_value = query
         query.eq.return_value = query
@@ -275,25 +276,26 @@ class TestDocumentListEndpoint:
         query.order.return_value = query
         query.range.return_value = query
         query.execute.return_value = MagicMock(data=[], count=0)
-        
+
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase):
-            from api.v1.documents import list_documents
             import asyncio
-            
+
+            from api.v1.documents import list_documents
+
             asyncio.run(list_documents(
                 request=MagicMock(spec=Request),
                 response=mock_response,
                 user_id="test-user",
                 organization_id="org-1",
             ))
-            
+
             # Verify ordering
             query.order.assert_called_with("created_at", desc=True)
 
 
 class TestDocumentDeleteEndpoint:
     """Tests for DELETE /api/v1/documents/{id}."""
-    
+
     @pytest.mark.unit
     def test_delete_document_requires_ownership(self):
         """Users can only delete their own documents."""
@@ -318,7 +320,7 @@ class TestDocumentDeleteEndpoint:
                         organization_id="org-1",
                     )
                 )
-    
+
     @pytest.mark.unit
     def test_delete_document_cascades_to_chunks(self):
         """Deleting a document should also delete its chunks."""
@@ -347,7 +349,7 @@ class TestDocumentDeleteEndpoint:
             )
 
         mock_cleanup.assert_called_once_with("doc-1", "user-1", organization_id="org-1")
-    
+
     @pytest.mark.unit
     def test_delete_nonexistent_document_returns_404(self):
         """Attempting to delete non-existent document returns 404."""
@@ -361,7 +363,7 @@ class TestDocumentDeleteEndpoint:
 
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase), \
              patch("api.v1.documents.team_service.get_user_team", return_value=None), \
-             patch("api.v1.documents.cleanup_service.delete_single_document", 
+             patch("api.v1.documents.cleanup_service.delete_single_document",
                    side_effect=HTTPException(status_code=404, detail="Document not found")):
             from api.v1.documents import delete_document
 
@@ -380,23 +382,23 @@ class TestDocumentDeleteEndpoint:
 
 class TestDocumentDataIntegrity:
     """Data integrity tests."""
-    
+
     @pytest.mark.unit
     def test_document_dto_matches_schema(self, sample_document):
         """DocumentDTO should match expected schema."""
         from api.v1.documents import DocumentDTO
-        
+
         # Validate required fields
         dto = DocumentDTO(**sample_document)
         assert dto.id == sample_document["id"]
         assert dto.title == sample_document["title"]
         assert dto.source_type == sample_document["source_type"]
-    
+
     @pytest.mark.unit
     def test_document_stats_dto_matches_schema(self):
         """DocumentStatsDTO should have correct fields."""
         from api.v1.documents import DocumentStatsDTO
-        
+
         stats = DocumentStatsDTO(total_documents=10, last_updated="2024-01-01T00:00:00Z")
         assert stats.total_documents == 10
         assert stats.last_updated == "2024-01-01T00:00:00Z"
@@ -408,12 +410,12 @@ class TestDocumentDataIntegrity:
 
 class TestDocumentUpdateEndpoint:
     """Tests for PATCH /api/v1/documents/{id}."""
-    
+
     @pytest.fixture
     def mock_supabase_for_update(self):
         """Mock Supabase for document update operations."""
         mock = MagicMock()
-        
+
         # Mock document lookup
         doc_response = MagicMock()
         doc_response.data = {
@@ -424,7 +426,7 @@ class TestDocumentUpdateEndpoint:
             "created_at": "2024-01-01T00:00:00Z",
             "metadata": {}
         }
-        
+
         # Mock update response
         update_response = MagicMock()
         update_response.data = [{
@@ -435,40 +437,40 @@ class TestDocumentUpdateEndpoint:
             "created_at": "2024-01-01T00:00:00Z",
             "metadata": {"description": "New description"}
         }]
-        
+
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
         table.single.return_value = table
         table.update.return_value = table
         table.execute.side_effect = [doc_response, update_response]
-        
+
         mock.table.return_value = table
         return mock
-    
+
     @pytest.mark.unit
     def test_update_document_title(self, mock_supabase_for_update):
         """Should update document title successfully."""
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase_for_update):
             from api.v1.documents import DocumentUpdate
-            
+
             update = DocumentUpdate(title="Updated Title")
             assert update.title == "Updated Title"
             assert update.description is None
             assert update.tags is None
-    
+
     @pytest.mark.unit
     def test_update_document_metadata(self):
         """Should update description and tags in metadata."""
         from api.v1.documents import DocumentUpdate
-        
+
         update = DocumentUpdate(
             description="New description",
             tags=["tag1", "tag2"]
         )
         assert update.description == "New description"
         assert update.tags == ["tag1", "tag2"]
-    
+
     @pytest.mark.unit
     def test_update_endpoint_validates_user_ownership(self):
         """Should verify document belongs to requesting user."""
@@ -491,7 +493,7 @@ class TestDocumentUpdateEndpoint:
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase), \
              patch("api.v1.documents.team_service.get_user_team", return_value=None), \
              patch("services.audit.audit_logger"):
-            from api.v1.documents import update_document, DocumentUpdate
+            from api.v1.documents import DocumentUpdate, update_document
 
             asyncio.run(
                 update_document(
@@ -505,21 +507,21 @@ class TestDocumentUpdateEndpoint:
             )
 
         table.eq.assert_any_call("organization_id", "org-1")
-    
+
     @pytest.mark.unit
     def test_update_endpoint_returns_404_for_nonexistent(self):
         """Should return 404 when document doesn't exist."""
         mock = MagicMock()
         doc_response = MagicMock()
         doc_response.data = None  # No document found
-        
+
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
         table.single.return_value = table
         table.execute.return_value = doc_response
         mock.table.return_value = table
-        
+
         # Would trigger HTTPException(404)
         assert doc_response.data is None
 
@@ -537,7 +539,7 @@ class TestDocumentUpdateEndpoint:
 
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase), \
              patch("api.v1.documents.team_service.get_user_team", return_value=None):
-            from api.v1.documents import update_document, DocumentUpdate
+            from api.v1.documents import DocumentUpdate, update_document
             with pytest.raises(HTTPException) as exc:
                 asyncio.run(update_document(
                     "doc-1",
@@ -569,7 +571,7 @@ class TestDocumentUpdateEndpoint:
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase), \
              patch("api.v1.documents.team_service.get_user_team", return_value=None), \
              patch("services.audit.audit_logger"):
-            from api.v1.documents import update_document, DocumentUpdate
+            from api.v1.documents import DocumentUpdate, update_document
             asyncio.run(update_document(
                 "doc-1",
                 DocumentUpdate(description="new", tags=["tag"]),
@@ -598,7 +600,7 @@ class TestDocumentUpdateEndpoint:
         with patch('api.v1.documents.get_supabase', return_value=mock_supabase), \
              patch("api.v1.documents.team_service.get_user_team", return_value=None), \
              patch("services.audit.audit_logger"):
-            from api.v1.documents import update_document, DocumentUpdate
+            from api.v1.documents import DocumentUpdate, update_document
             with pytest.raises(HTTPException) as exc:
                 asyncio.run(update_document(
                     "doc-1",
@@ -610,24 +612,24 @@ class TestDocumentUpdateEndpoint:
                 ))
 
         assert exc.value.status_code == 500
-    
+
     @pytest.mark.unit
     def test_update_endpoint_requires_at_least_one_field(self):
         """Should return 400 when no update fields provided."""
         from api.v1.documents import DocumentUpdate
-        
+
         # Empty update - no fields set
         update = DocumentUpdate()
         has_updates = update.title is not None or update.description is not None or update.tags is not None
         assert has_updates is False
-    
+
     @pytest.mark.unit
     def test_update_endpoint_creates_audit_log(self):
         """Should create audit log entry for update."""
         # Audit log should record action="document.update"
         audit_action = "document.update"
         assert audit_action == "document.update"
-    
+
     @pytest.mark.unit
     def test_viewers_cannot_update_documents(self):
         """Users with viewer role should be blocked from updating."""
@@ -638,23 +640,23 @@ class TestDocumentUpdateEndpoint:
 
 class TestDocumentChunksEndpoint:
     """Tests for GET /api/v1/documents/{id}/chunks."""
-    
+
     @pytest.fixture
     def mock_supabase_with_chunks(self):
         """Mock Supabase with document chunks."""
         mock = MagicMock()
-        
+
         # Mock document check
         doc_response = MagicMock()
         doc_response.data = {"id": "doc-123"}
-        
+
         # Mock chunks response
         chunks_response = MagicMock()
         chunks_response.data = [
             {"id": "chunk-1", "document_id": "doc-123", "content": "First chunk", "chunk_index": 0, "metadata": {}},
             {"id": "chunk-2", "document_id": "doc-123", "content": "Second chunk", "chunk_index": 1, "metadata": {}},
         ]
-        
+
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
@@ -662,10 +664,10 @@ class TestDocumentChunksEndpoint:
         table.order.return_value = table
         table.range.return_value = table
         table.execute.side_effect = [doc_response, chunks_response]
-        
+
         mock.table.return_value = table
         return mock
-    
+
     @pytest.mark.unit
     def test_get_chunks_returns_paginated_list(self, mock_supabase_with_chunks):
         """Should return paginated list of chunks."""
@@ -676,7 +678,7 @@ class TestDocumentChunksEndpoint:
         assert len(chunks) == 2
         assert chunks[0]["chunk_index"] == 0
         assert chunks[1]["chunk_index"] == 1
-    
+
     @pytest.mark.unit
     def test_get_chunks_orders_by_chunk_index(self):
         """Chunks should be ordered by chunk_index ascending."""
@@ -684,7 +686,7 @@ class TestDocumentChunksEndpoint:
         order_direction = "asc"
         assert order_by == "chunk_index"
         assert order_direction == "asc"
-    
+
     @pytest.mark.unit
     def test_get_chunks_verifies_document_ownership(self):
         """Should verify document belongs to requesting user."""
@@ -713,50 +715,52 @@ class TestDocumentChunksEndpoint:
                 Request(scope),
                 user_id="user-1",
                 organization_id="org-1",
+                limit=50,
+                offset=0,
             ))
 
         table.eq.assert_any_call("organization_id", "org-1")
-    
+
     @pytest.mark.unit
     def test_get_chunks_returns_404_for_nonexistent_document(self):
         """Should return 404 when document doesn't exist."""
         mock = MagicMock()
         doc_response = MagicMock()
         doc_response.data = None
-        
+
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
         table.single.return_value = table
         table.execute.return_value = doc_response
         mock.table.return_value = table
-        
+
         assert doc_response.data is None
-    
+
     @pytest.mark.unit
     def test_chunk_dto_has_required_fields(self):
         """DocumentChunkDTO should have all required fields."""
         from api.v1.documents import DocumentChunkDTO
-        
+
         chunk = DocumentChunkDTO(
             id="chunk-123",
-            document_id="doc-123", 
+            document_id="doc-123",
             content="Test content",
             chunk_index=0
         )
-        
+
         assert chunk.id == "chunk-123"
         assert chunk.document_id == "doc-123"
         assert chunk.content == "Test content"
         assert chunk.chunk_index == 0
         assert chunk.metadata == {}
-    
+
     @pytest.mark.unit
     def test_get_chunks_supports_pagination_params(self):
         """Should support limit and offset parameters."""
         limit = 50
         offset = 0
-        
+
         assert limit == 50
         assert offset == 0
 
@@ -899,7 +903,7 @@ class TestDocumentErrorPaths:
 
         with patch("api.v1.documents.get_supabase", return_value=mock_supabase), \
              patch("services.team_service.team_service.get_user_team", new=AsyncMock(return_value=None)):
-            from api.v1.documents import update_document, DocumentUpdate
+            from api.v1.documents import DocumentUpdate, update_document
 
             with pytest.raises(HTTPException) as exc:
                 asyncio.run(update_document(
@@ -930,7 +934,7 @@ class TestDocumentErrorPaths:
 
         with patch("api.v1.documents.get_supabase", return_value=mock_supabase), \
              patch("services.team_service.team_service.get_user_team", new=AsyncMock(return_value=None)):
-            from api.v1.documents import update_document, DocumentUpdate
+            from api.v1.documents import DocumentUpdate, update_document
 
             with pytest.raises(HTTPException) as exc:
                 asyncio.run(update_document(
@@ -948,7 +952,7 @@ class TestDocumentErrorPaths:
         mock_supabase = MagicMock()
         with patch("api.v1.documents.get_supabase", return_value=mock_supabase), \
              patch("services.team_service.team_service.get_user_team", new=AsyncMock(return_value={"user_role": "viewer"})):
-            from api.v1.documents import update_document, DocumentUpdate
+            from api.v1.documents import DocumentUpdate, update_document
 
             with pytest.raises(HTTPException) as exc:
                 asyncio.run(update_document(

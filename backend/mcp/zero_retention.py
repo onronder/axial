@@ -6,8 +6,8 @@ Ensures all agent responses are marked as ephemeral and not cached.
 """
 
 import logging
-from typing import Any, Dict, Optional
 from datetime import datetime, timezone
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class MCPZeroRetention:
     """
 
     @staticmethod
-    def wrap_response(content: Any, metadata: Optional[Dict] = None) -> Dict[str, Any]:
+    def wrap_response(content: Any, metadata: dict | None = None) -> dict[str, Any]:
         """
         Wrap MCP response with Ghost Protocol markers.
 
@@ -59,8 +59,8 @@ class MCPZeroRetention:
         organization_id: str,
         agent_id: str,
         method: str,
-        tool_name: Optional[str] = None,
-        resource_id: Optional[str] = None,
+        tool_name: str | None = None,
+        resource_id: str | None = None,
     ) -> None:
         """
         Log MCP access for audit trail.
@@ -101,7 +101,7 @@ class MCPZeroRetention:
             logger.warning(f"[MCP Audit] Failed to log access: {e}")
 
     @staticmethod
-    def get_response_headers() -> Dict[str, str]:
+    def get_response_headers() -> dict[str, str]:
         """
         Get HTTP headers for Ghost Protocol compliance.
 
@@ -118,7 +118,7 @@ class MCPZeroRetention:
     @staticmethod
     def validate_request_intent(
         tool_name: str,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
     ) -> bool:
         """
         Validate that a tool request doesn't attempt to bypass Ghost Protocol.

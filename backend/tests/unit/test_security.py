@@ -7,14 +7,12 @@ and core rate limit helpers.
 
 import importlib
 import os
-import pytest
-from unittest.mock import patch, MagicMock
-
-import importlib
 import sys
 import types
+from unittest.mock import MagicMock, patch
 
 import jwt
+import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from slowapi.errors import RateLimitExceeded
@@ -250,8 +248,9 @@ def test_security_import_without_encryption_key(monkeypatch):
 
 
 def test_security_import_supports_multiple_keys(monkeypatch):
-    import core.security as security
     from cryptography.fernet import Fernet
+
+    import core.security as security
 
     key_one = Fernet.generate_key().decode()
     key_two = Fernet.generate_key().decode()

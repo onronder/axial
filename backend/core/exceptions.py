@@ -5,8 +5,6 @@ Provides specific exception types for better error categorization,
 handling, and reporting.
 """
 
-from typing import Optional
-
 
 # =============================================================================
 # Base Exceptions
@@ -14,8 +12,8 @@ from typing import Optional
 
 class AxialError(Exception):
     """Base exception for all Axial-specific errors."""
-    
-    def __init__(self, message: str, details: Optional[dict] = None):
+
+    def __init__(self, message: str, details: dict | None = None):
         self.message = message
         self.details = details or {}
         super().__init__(self.message)
@@ -114,7 +112,7 @@ class IndexingError(ProcessingError):
 
 class TimeoutError(AxialRetryableError):
     """Operation exceeded timeout."""
-    
+
     def __init__(self, operation: str, timeout_seconds: int):
         message = f"{operation} exceeded timeout of {timeout_seconds}s"
         super().__init__(message, {"operation": operation, "timeout": timeout_seconds})
@@ -126,7 +124,7 @@ class TimeoutError(AxialRetryableError):
 
 class CircuitBreakerOpenError(AxialRetryableError):
     """Circuit breaker is open, service unavailable."""
-    
+
     def __init__(self, service: str):
         message = f"Circuit breaker open for {service}"
         super().__init__(message, {"service": service})
@@ -157,7 +155,7 @@ class InvalidTokenError(AuthenticationError):
 
 class ValidationError(AxialPermanentError):
     """Input validation failed."""
-    
+
     def __init__(self, field: str, message: str):
         super().__init__(f"Validation error for {field}: {message}", {"field": field})
 
@@ -187,7 +185,7 @@ class DuplicateRecordError(AxialPermanentError):
 
 class MemoryLimitExceededError(AxialRetryableError):
     """Process exceeded memory limit."""
-    
+
     def __init__(self, current_mb: int, limit_mb: int):
         message = f"Memory limit exceeded: {current_mb}MB / {limit_mb}MB"
         super().__init__(message, {"current_mb": current_mb, "limit_mb": limit_mb})

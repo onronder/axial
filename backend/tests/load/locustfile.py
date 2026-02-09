@@ -1,9 +1,10 @@
-import os
-import uuid
 import logging
+import os
 import time
-from locust import HttpUser, task, between
+import uuid
+
 from dotenv import load_dotenv
+from locust import HttpUser, between, task
 
 # Load environment variables
 load_dotenv()
@@ -32,9 +33,9 @@ def get_auth_token(client):
     Refreshes token if it's older than 50 minutes (3000 seconds).
     """
     global _CACHED_TOKEN, _TOKEN_LAST_REFRESH
-    
+
     current_time = time.time()
-    
+
     # Check if token exists and is fresh (< 50 mins)
     if _CACHED_TOKEN and (current_time - _TOKEN_LAST_REFRESH < 3000):
         return _CACHED_TOKEN
@@ -45,20 +46,20 @@ def get_auth_token(client):
 
     logger.info("Performing global login via Supabase...")
     auth_url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
-    
+
     try:
         # We use a separate request here to not mess with the user session analytics yet,
         # or we just use the 'client' passed in.
         # Since we want to cache it, we only really need to do this once.
         # Race condition: Multiple users might enter here at start.
         # It's acceptable for a few to race, better than 250.
-        
+
         if not LOAD_TEST_EMAIL or not LOAD_TEST_PASSWORD:
             logger.error("Skipping login due to missing load test credentials")
             return None
 
         response = client.post(
-            auth_url, 
+            auth_url,
             json={
                 "email": LOAD_TEST_EMAIL,
                 "password": LOAD_TEST_PASSWORD
@@ -69,7 +70,7 @@ def get_auth_token(client):
             },
             name="/auth/v1/token"
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             token = data.get("access_token")
@@ -80,16 +81,16 @@ def get_auth_token(client):
                 return token
         else:
             logger.error(f"Login failed: {response.status_code} - {response.text}")
-            
+
     except Exception as e:
         logger.error(f"Login exception: {e}")
-    
+
     return None
 
 class AxioUser(HttpUser):
     # Allow overriding host via environment to target staging/prod
     host = os.getenv("LOAD_TEST_HOST", "http://localhost:8000")
-    
+
     # Realistic wait time between tasks (1-5 seconds)
     wait_time = between(1, 5)
 
@@ -98,16 +99,16 @@ class AxioUser(HttpUser):
         Log in a user. Uses global cache to prevent 429s.
         """
         self.headers = {}
-        
+
         # Use simple requests to get token if needed, or use self.client
         # We use self.client to track it, but we check cache first
         token = get_auth_token(self.client)
-        
+
         if token:
             self.token = token
             self.headers = {
                 "Authorization": f"Bearer {self.token}",
-                # "apikey": SUPABASE_KEY 
+                # "apikey": SUPABASE_KEY
             }
         else:
             self.token = None
@@ -119,7 +120,7 @@ class AxioUser(HttpUser):
         global _CACHED_TOKEN, _TOKEN_LAST_REFRESH
         _TOKEN_LAST_REFRESH = 0 # Force expiration check to fail
         _CACHED_TOKEN = None
-        
+
         token = get_auth_token(self.client)
         if token:
              self.token = token
@@ -224,10 +225,10 @@ class AxioUser(HttpUser):
             # Optional: "conversation_id": "..."
             # Optional: "history": []
         }
-        
+
         with self.client.post("/api/v1/chat", json=payload, headers=self.headers, catch_response=True) as response:
             if response.status_code == 200:
-                pass 
+                pass
             elif response.status_code == 401:
                 # Token might be expired, try refreshing and retrying once
                 logger.info("401 encountered, refreshing token...")
@@ -240,7 +241,7 @@ class AxioUser(HttpUser):
             else:
                 try:
                     error_detail = response.json()
-                except:
+                except Exception:
                     error_detail = response.text
                 response.failure(f"Chat failed: {response.status_code} - {error_detail}")
 

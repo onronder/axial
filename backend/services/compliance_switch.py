@@ -38,15 +38,15 @@ Usage:
     )
 """
 
-import logging
 import hashlib
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional, Set
+import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
+from typing import Any
 
-from core.db import get_supabase
 from core.config import settings
+from core.db import get_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ except ImportError:
     logger.debug("[ComplianceSwitch] Redis package not installed, cache purge disabled")
 
 
-def _purge_embedding_cache(document_ids: List[str]) -> int:
+def _purge_embedding_cache(document_ids: list[str]) -> int:
     """
     Purge document embeddings from Redis cache.
 
@@ -172,8 +172,8 @@ class Tombstone:
     resource_type: ResourceType
     resource_id: str
     organization_id: str
-    document_ids: List[str]
-    scope_ids: List[str]
+    document_ids: list[str]
+    scope_ids: list[str]
     compliance_type: ComplianceType
     request_id: str
     status: str
@@ -215,8 +215,8 @@ class ComplianceSwitchService:
         resource_id: str,
         organization_id: str,
         compliance_type: ComplianceType,
-        requested_by: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        requested_by: str | None = None,
+        ip_address: str | None = None,
     ) -> Tombstone:
         """
         Create blocking record BEFORE deletion.
@@ -243,8 +243,8 @@ class ComplianceSwitchService:
         )
 
         # Expand document/scope IDs for cascading resources
-        document_ids: List[str] = []
-        scope_ids: List[str] = []
+        document_ids: list[str] = []
+        scope_ids: list[str] = []
 
         if resource_type == ResourceType.DOCUMENT:
             document_ids = [resource_id]
@@ -339,9 +339,9 @@ class ComplianceSwitchService:
 
     async def filter_tombstoned_docs(
         self,
-        docs: List[Dict[str, Any]],
+        docs: list[dict[str, Any]],
         organization_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Remove tombstoned documents from search results.
 
@@ -369,7 +369,7 @@ class ComplianceSwitchService:
             return docs
 
         # Collect all blocked document IDs
-        blocked_ids: Set[str] = set()
+        blocked_ids: set[str] = set()
         for t in tombstones.data:
             blocked_ids.update(t.get("document_ids", []))
 
@@ -414,7 +414,7 @@ class ComplianceSwitchService:
         self,
         organization_id: str,
         since: datetime,
-    ) -> List[Tombstone]:
+    ) -> list[Tombstone]:
         """
         Get tombstones created since a specific time.
 
@@ -454,7 +454,7 @@ class ComplianceSwitchService:
 
     async def has_tombstones_affecting(
         self,
-        document_ids: List[str],
+        document_ids: list[str],
         organization_id: str,
     ) -> bool:
         """
@@ -483,8 +483,8 @@ class ComplianceSwitchService:
         resource_type: ResourceType,
         resource_id: str,
         organization_id: str,
-        user_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Execute deletion using existing cleanup service, then complete tombstone.
 
@@ -596,8 +596,8 @@ class ComplianceSwitchService:
         resource_id: str,
         event_type: str,
         document_count: int = 0,
-        requestor_id: Optional[str] = None,
-        requestor_ip: Optional[str] = None,
+        requestor_id: str | None = None,
+        requestor_ip: str | None = None,
     ) -> None:
         """Log compliance event for auditors."""
         now = datetime.now(timezone.utc)
@@ -652,7 +652,7 @@ class ComplianceSwitchService:
         organization_id: str,
         start_date: datetime,
         end_date: datetime,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Generate GDPR/CCPA compliance report for the specified period.
 
@@ -674,8 +674,8 @@ class ComplianceSwitchService:
 
     async def get_pending_requests(
         self,
-        organization_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        organization_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Get pending/overdue compliance requests.
 

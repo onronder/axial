@@ -3,8 +3,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError, with_token_refresh
 from core.config import settings
+from services.oauth_token_manager import (
+    OAuthTokenManager,
+    TokenRefreshError,
+    with_token_refresh,
+)
 
 
 def test_is_token_expired_returns_true_on_missing():
@@ -358,14 +362,14 @@ def test_validate_github_token_server_error_allows_through():
             integration_id="int-1",
             access_token="enc-token",
         )
-    
+
     assert result == "token"
 
 
 def test_validate_github_token_request_exception():
     """Test GitHub token validation handles network errors."""
     import requests as req
-    
+
     with patch("services.oauth_token_manager.requests.get", side_effect=req.RequestException("Network error")), \
          patch("core.security.decrypt_token", return_value="token"):
         with pytest.raises(TokenRefreshError, match="validation failed"):

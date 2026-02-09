@@ -5,25 +5,26 @@ Provides retry decorators and utilities for resilient API calls,
 especially for external services like Google Drive, Notion, etc.
 """
 
+import asyncio
+import http.client
 import logging
 import ssl
-import http.client
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, TypeVar, Any
+from typing import Any, TypeVar
+
+import psutil
+from httpx import ConnectError, HTTPStatusError, TimeoutException
 from tenacity import (
+    after_log,
+    before_sleep_log,
     retry,
+    retry_if_exception,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
     wait_random_exponential,
-    retry_if_exception_type,
-    retry_if_exception,
-    before_sleep_log,
-    after_log,
-    RetryError,
 )
-from httpx import HTTPStatusError, ConnectError, TimeoutException
-import asyncio
-import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -70,24 +71,22 @@ def is_retryable_error(exception: BaseException) -> bool:
     # Check for transient network errors (including HTTP/2 specific)
     if isinstance(exception, TRANSIENT_EXCEPTIONS):
         return True
-    
+
     # Check for HTTP/2 specific transient errors
     if HTTP2_TRANSIENT_EXCEPTIONS and isinstance(exception, HTTP2_TRANSIENT_EXCEPTIONS):
         return True
-    
+
     # Check for HTTP/2 ConnectionTerminated by string match (when class isn't importable)
     exc_name = type(exception).__name__
     exc_str = str(exception)
     if "ConnectionTerminated" in exc_name or "ConnectionTerminated" in exc_str:
         logger.debug(f"🔄 HTTP/2 connection terminated, will retry: {exception}")
         return True
-    
+
     # Check for HTTP rate limit or server errors
     if isinstance(exception, HTTPStatusError):
         status_code = exception.response.status_code
-        if status_code in RATE_LIMIT_STATUS_CODES or status_code >= 500:
-            return True
-        return False
+        return bool(status_code in RATE_LIMIT_STATUS_CODES or status_code >= 500)
 
     # Check for status codes on other exception types (e.g., requests, postgrest)
     status_code = getattr(exception, "status_code", None)
@@ -95,20 +94,24 @@ def is_retryable_error(exception: BaseException) -> bool:
     if status_code is None and response is not None:
         status_code = getattr(response, "status_code", None)
     if status_code is not None:
-        if status_code in RATE_LIMIT_STATUS_CODES or status_code >= 500:
-            return True
-        return False
+        return bool(status_code in RATE_LIMIT_STATUS_CODES or status_code >= 500)
 
     # OpenAI-specific transient errors (import lazily to avoid hard dependency at import time)
     try:
-        from openai import RateLimitError, APIError, APITimeoutError, APIConnectionError, BadRequestError
+        from openai import (
+            APIConnectionError,
+            APIError,
+            APITimeoutError,
+            BadRequestError,
+            RateLimitError,
+        )
         if isinstance(exception, BadRequestError):
             return False
         if isinstance(exception, (RateLimitError, APIError, APITimeoutError, APIConnectionError)):
             return True
     except ImportError:
         pass  # openai not installed
-    
+
     return False
 
 
@@ -126,13 +129,13 @@ def with_retry(
 ):
     """
     Decorator that adds retry logic with exponential backoff.
-    
+
     Args:
         max_attempts: Maximum number of retry attempts
         min_wait: Minimum wait time between retries (seconds)
         max_wait: Maximum wait time between retries (seconds)
         exceptions: Tuple of exception types to retry on
-    
+
     Usage:
         @with_retry(max_attempts=3)
         async def fetch_documents():
@@ -159,7 +162,7 @@ def with_retry(
         )
         async def wrapper(*args: Any, **kwargs: Any) -> T:
             return await func(*args, **kwargs)
-        
+
         return wrapper
     return decorator
 
@@ -196,7 +199,7 @@ def with_retry_sync(
         )
         def wrapper(*args: Any, **kwargs: Any) -> T:
             return func(*args, **kwargs)
-        
+
         return wrapper
     return decorator
 
@@ -211,13 +214,13 @@ def with_retry_async(
 ):
     """
     Async retry decorator with exponential backoff.
-    
+
     Args:
         max_attempts: Maximum number of retry attempts
         min_wait: Minimum wait time between retries (seconds)
         max_wait: Maximum wait time between retries (seconds)
         exceptions: Tuple of exception types to retry on
-    
+
     Usage:
         @with_retry_async(max_attempts=3)
         async def fetch_data():
@@ -271,12 +274,12 @@ except ImportError:
 def with_google_retry(max_attempts: int = 3):
     """
     Retry decorator specifically for Google API calls.
-    
+
     Handles:
     - Rate limiting (403, 429)
     - Temporary server errors (500, 502, 503)
     - Network issues
-    
+
     Usage:
         @with_google_retry(max_attempts=3)
         def fetch_drive_files():
@@ -285,7 +288,7 @@ def with_google_retry(max_attempts: int = 3):
     def should_retry(exception: BaseException) -> bool:
         if isinstance(exception, TRANSIENT_EXCEPTIONS):
             return True
-        
+
         # Check for Google API specific errors
         try:
             from googleapiclient.errors import HttpError
@@ -303,9 +306,9 @@ def with_google_retry(max_attempts: int = 3):
                     return True
         except ImportError:
             pass
-        
+
         return False
-    
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         @retry(
@@ -317,7 +320,7 @@ def with_google_retry(max_attempts: int = 3):
         )
         def wrapper(*args: Any, **kwargs: Any) -> T:
             return func(*args, **kwargs)
-        
+
         return wrapper
     return decorator
 
@@ -334,22 +337,22 @@ class CircuitBreakerOpen(Exception):
 class CircuitBreaker:
     """
     Simple circuit breaker implementation.
-    
+
     States:
     - CLOSED: Normal operation, requests pass through
     - OPEN: Too many failures, requests are blocked
     - HALF_OPEN: Testing if service recovered
-    
+
     Usage:
         breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60)
-        
+
         try:
             with breaker:
                 result = await call_external_api()
         except CircuitBreakerOpen:
             return fallback_response()
     """
-    
+
     def __init__(
         self,
         failure_threshold: int = 5,
@@ -362,10 +365,10 @@ class CircuitBreaker:
         self.failures = 0
         self.last_failure_time: float | None = None
         self.state = "closed"
-    
+
     def __enter__(self):
         import time
-        
+
         if self.state == "open":
             # Check if recovery timeout has passed
             if self.last_failure_time and time.time() - self.last_failure_time >= self.recovery_timeout:
@@ -374,9 +377,9 @@ class CircuitBreaker:
             else:
                 logger.warning(f"⚡ Circuit breaker '{self.name}' is OPEN, blocking request")
                 raise CircuitBreakerOpen(f"Circuit breaker '{self.name}' is open")
-        
+
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         import time
 
@@ -476,15 +479,15 @@ async def with_timeout(
 ):
     """
     Execute async operation with timeout.
-    
+
     Args:
         coro: Coroutine to execute
         timeout_seconds: Timeout in seconds
         operation_name: Name for error messages
-        
+
     Returns:
         Result of coroutine
-        
+
     Raises:
         TimeoutError: If operation exceeds timeout
     """
@@ -547,13 +550,13 @@ def check_memory_usage() -> dict:
 def enforce_memory_limit():
     """Raise error if memory usage is critical."""
     status = check_memory_usage()
-    
+
     if status["critical"]:
         raise MemoryError(
             f"Memory usage critical: {status['percent']:.1f}% "
             f"({status['available_mb']:.0f}MB available)"
         )
-    
+
     if status["warning"]:
         logger.warning(
             f"⚠️ Memory usage high: {status['percent']:.1f}%"

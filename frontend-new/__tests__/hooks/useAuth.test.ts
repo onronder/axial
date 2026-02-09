@@ -39,7 +39,7 @@ vi.mock('@/lib/supabase', () => ({
             resetPasswordForEmail: (...args: unknown[]) => mockResetPasswordForEmail(...args),
             updateUser: (...args: unknown[]) => mockUpdateUser(...args),
             getSession: () => mockGetSession(),
-            onAuthStateChange: (callback: Function) => {
+            onAuthStateChange: (callback: (...args: unknown[]) => void) => {
                 mockOnAuthStateChange(callback);
                 return {
                     data: {
@@ -132,7 +132,7 @@ describe('useAuth Hook', () => {
 
         it('should handle SIGNED_OUT event and redirect to login', async () => {
             // First, get a reference to the callback
-            let authCallback: Function | null = null;
+            let authCallback: ((...args: unknown[]) => void) | null = null;
             mockOnAuthStateChange.mockImplementation((cb) => {
                 authCallback = cb;
                 return {

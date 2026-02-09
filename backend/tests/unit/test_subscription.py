@@ -4,17 +4,19 @@ Test Suite for Subscription Service
 Tests webhook handling, signature verification, and plan updates.
 """
 
-import pytest
 from types import SimpleNamespace
-from unittest.mock import patch, Mock, PropertyMock, call, AsyncMock
+from unittest.mock import AsyncMock, Mock, PropertyMock, call, patch
+
+import pytest
+
 from services.subscription import SubscriptionService
-from core.config import Settings
+
 
 class TestSubscriptionService:
     @pytest.fixture
     def subscription_service(self):
         return SubscriptionService()
-    
+
     @pytest.mark.unit
     def test_verify_signature_success(self, subscription_service):
         with patch("core.config.settings.POLAR_WEBHOOK_SECRET", "test_secret"):
@@ -102,7 +104,7 @@ class TestSubscriptionService:
             "secret",
             timestamp="123",
         ) is False
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_handle_webhook_created(self, subscription_service):
@@ -116,7 +118,7 @@ class TestSubscriptionService:
                 "product_id": "prod-starter"
             }
         }
-        
+
         mock_supabase = Mock()
         mock_team_service = Mock()
         owner_id = "owner-123"
@@ -142,7 +144,7 @@ class TestSubscriptionService:
             return table
 
         mock_supabase.table.side_effect = table_side_effect
-        
+
         with patch.object(subscription_service, "verify_signature", return_value=True):
             with patch("services.subscription.get_supabase", return_value=mock_supabase):
                 with patch("services.subscription.team_service", mock_team_service):
@@ -212,7 +214,7 @@ class TestSubscriptionService:
                 "id": "sub-123"
             }
         }
-        
+
         mock_supabase = Mock()
         mock_team_service = Mock()
         owner_id = "owner-123"
@@ -236,15 +238,15 @@ class TestSubscriptionService:
             return table
 
         mock_supabase.table.side_effect = table_side_effect
-        
+
         with patch.object(subscription_service, "verify_signature", return_value=True):
             with patch("services.subscription.get_supabase", return_value=mock_supabase):
                 with patch("services.subscription.team_service", mock_team_service):
                     await subscription_service.handle_webhook(data)
-                    
+
                     # Verify update
                     assert tables["subscriptions"].update.called
-                    
+
                     expected_calls = [call(owner_id), call(member_ids[0]), call(member_ids[1])]
                     actual_calls = mock_team_service.invalidate_plan_cache.call_args_list
                     assert all(call_item in actual_calls for call_item in expected_calls)
@@ -256,12 +258,12 @@ class TestSubscriptionService:
         with patch.object(subscription_service, "_handle_subscription_revoked", new=AsyncMock()) as handler:
             await subscription_service.handle_webhook(data)
             handler.assert_awaited_once()
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_missing_team_id_ignored(self, subscription_service):
         data = {"type": "product.updated", "data": {}}
-        
+
         with patch.object(subscription_service, "verify_signature", return_value=True):
              await subscription_service.handle_webhook(data)
              # No side effects to check, just ensuring no crash

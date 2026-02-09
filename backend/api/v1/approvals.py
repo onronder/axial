@@ -5,22 +5,29 @@ Human-in-the-loop approval workflow for destructive actions.
 """
 
 import logging
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status, Query
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from pydantic import BaseModel, Field
 
 from api.v1.dependencies import (
+    get_user_organization_id,
     require_admin,
     require_editor,
-    get_user_organization_id,
     validate_team_access,
 )
+from api.v1.error_utils import ApiErrorCode, api_error
 from core.rate_limit import limiter
-from api.v1.error_utils import api_error, ApiErrorCode
 from services.scope_guard import (
-    ScopeGuardStateMachine,
     ActionType,
-    ApprovalState,
+    ScopeGuardStateMachine,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +46,7 @@ class ApprovalRequestPayload(BaseModel):
     action_type: str = Field(..., max_length=50)
     resource_type: str = Field(..., max_length=50)
     resource_id: str = Field(..., max_length=100)
-    context: Optional[dict] = None
+    context: dict | None = None
     ttl_minutes: int = Field(default=30, ge=1, le=1440)
 
 
@@ -50,8 +57,8 @@ class ApprovalResponse(BaseModel):
     action_type: str
     resource_type: str
     resource_id: str
-    expires_at: Optional[str] = None
-    mandate: Optional[dict] = None
+    expires_at: str | None = None
+    mandate: dict | None = None
     message: str
 
 
@@ -211,7 +218,7 @@ async def reject_action(
     approval_id: str,
     request: Request,
     background_tasks: BackgroundTasks,
-    reason: Optional[str] = None,
+    reason: str | None = None,
     user_id: str = Depends(require_admin),
     organization_id: str = Depends(get_user_organization_id),
 ):
@@ -314,7 +321,7 @@ async def execute_approved(
         raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "execute_approved")
 
 
-@router.get("/approvals/pending", response_model=List[ApprovalListItem])
+@router.get("/approvals/pending", response_model=list[ApprovalListItem])
 @limiter.limit("30/minute")
 async def list_pending(
     request: Request,

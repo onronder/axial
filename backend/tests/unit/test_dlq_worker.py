@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock, Mock, patch
 
-import pytest
-
 from worker import dlq_worker
 
 

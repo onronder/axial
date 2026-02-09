@@ -14,17 +14,18 @@ Polar API Reference:
 - GET /v1/orders/?customer_id={id} - List customer orders
 - GET /v1/customers/{id} - Get customer details
 """
-import httpx
 import logging
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field
-from services.team_service import team_service
-from core.config import settings
-from core.rate_limit import limiter
+
 from api.v1.dependencies import validate_team_access
-from api.v1.error_utils import api_error, ApiErrorCode
+from api.v1.error_utils import ApiErrorCode, api_error
+from core.config import settings
 from core.db import get_supabase
+from core.rate_limit import limiter
+from services.team_service import team_service
 
 router = APIRouter(dependencies=[Depends(validate_team_access)])
 logger = logging.getLogger(__name__)
@@ -89,12 +90,12 @@ class CheckoutRequest(BaseModel):
 class PlanResponse(BaseModel):
     id: str
     name: str
-    description: Optional[str] = ""
+    description: str | None = ""
     price_amount: int  # in cents
     price_currency: str
     interval: str
     type: str  # 'starter', 'pro', 'enterprise'
-    features: List[str] = []
+    features: list[str] = []
     button_text: str = "Subscribe"
     button_variant: str = "default"  # 'default', 'outline', 'ghost'
     popular: bool = False
@@ -107,7 +108,7 @@ class InvoiceResponse(BaseModel):
     status: str
     created_at: str
     product_name: str
-    invoice_url: Optional[str] = None
+    invoice_url: str | None = None
 
 
 class SubscriptionDetailResponse(BaseModel):
@@ -117,8 +118,8 @@ class SubscriptionDetailResponse(BaseModel):
     price_amount: int
     price_currency: str
     interval: str
-    current_period_start: Optional[str] = None
-    current_period_end: Optional[str] = None
+    current_period_start: str | None = None
+    current_period_end: str | None = None
     cancel_at_period_end: bool = False
 
 
@@ -138,10 +139,10 @@ def get_polar_headers() -> dict:
     }
 
 
-async def get_customer_id_for_user(user_id: str) -> Optional[str]:
+async def get_customer_id_for_user(user_id: str) -> str | None:
     """
     Get Polar customer_id for a user.
-    
+
     Strategy:
     1. Check our subscriptions table for stored customer_id
     2. If not found, try to find customer by email via Polar API
@@ -151,18 +152,18 @@ async def get_customer_id_for_user(user_id: str) -> Optional[str]:
         team_member = await team_service.get_user_team_member(user_id)
         if not team_member:
             return None
-        
+
         team_id = str(team_member.team_id)
-        
+
         # Check our database first
         supabase = get_supabase()
         sub_response = supabase.table("subscriptions").select(
             "customer_id, polar_id"
         ).eq("team_id", team_id).limit(1).execute()
-        
+
         if sub_response.data and sub_response.data[0].get("customer_id"):
             return sub_response.data[0]["customer_id"]
-        
+
         if sub_response.data and sub_response.data[0].get("polar_id"):
             polar_sub_id = sub_response.data[0]["polar_id"]
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -179,11 +180,11 @@ async def get_customer_id_for_user(user_id: str) -> Optional[str]:
                             "customer_id": customer_id
                         }).eq("team_id", team_id).execute()
                         return customer_id
-        
+
         # 3. Fallback: Search Polar by Email (Self-healing)
         # If we have no local record, check if they exist in Polar (e.g. they bought it, webhook failed)
         user_email = None
-        
+
         # Fetch user email using Admin API (reliable)
         try:
             user_data = supabase.auth.admin.get_user_by_id(user_id)
@@ -210,7 +211,7 @@ async def get_customer_id_for_user(user_id: str) -> Optional[str]:
                          return customer_id
 
         return None
-        
+
     except Exception as e:
         logger.error(f"[Billing] Failed to get_customer_id_for_user: {e}")
         return None
@@ -220,7 +221,7 @@ async def get_customer_id_for_user(user_id: str) -> Optional[str]:
 # PLANS ENDPOINT
 # ============================================================
 
-@router.get("/plans", response_model=List[PlanResponse])
+@router.get("/plans", response_model=list[PlanResponse])
 @limiter.limit("30/minute")
 async def list_plans(request: Request):
     """
@@ -236,21 +237,21 @@ async def list_plans(request: Request):
                 f"{POLAR_API_BASE}/products?is_archived=false",
                 headers=get_polar_headers()
             )
-            
+
             if response.status_code != 200:
                 logger.error(f"[Billing] Polar API Error: {response.status_code}")
                 return []
-            
+
             data = response.json()
             items = data.get("items", [])
             plans = []
-            
+
             # Map Polar Product IDs to plan types
             product_mapping = {
                 settings.POLAR_PRODUCT_ID_STARTER_MONTHLY: "starter",
                 settings.POLAR_PRODUCT_ID_PRO_MONTHLY: "pro",
             }
-            
+
             if hasattr(settings, 'POLAR_PRODUCT_ID_ENTERPRISE') and settings.POLAR_PRODUCT_ID_ENTERPRISE:
                 product_mapping[settings.POLAR_PRODUCT_ID_ENTERPRISE] = "enterprise"
 
@@ -260,11 +261,11 @@ async def list_plans(request: Request):
                     prices = item.get("prices", [])
                     if not prices:
                         continue
-                    
+
                     price = prices[0]
                     plan_type = product_mapping[product_id]
                     meta = PLAN_METADATA.get(plan_type, {})
-                    
+
                     plans.append(PlanResponse(
                         id=product_id,
                         name=item.get("name", ""),
@@ -278,7 +279,7 @@ async def list_plans(request: Request):
                         button_variant=meta.get("button_variant", "default"),
                         popular=meta.get("popular", False)
                     ))
-            
+
             # Sort: starter, pro, enterprise
             order = {"starter": 0, "pro": 1, "enterprise": 2}
             plans.sort(key=lambda x: order.get(x.type, 99))
@@ -301,9 +302,9 @@ async def list_plans(request: Request):
                     button_variant=ent_meta["button_variant"],
                     popular=ent_meta["popular"]
                 ))
-            
+
             return plans
-            
+
         except Exception as e:
             logger.error(f"[Billing] Failed to fetch plans: {e}")
             return []
@@ -329,15 +330,15 @@ async def create_checkout_session(
     team_member = await team_service.get_user_team_member(current_user_id)
     if not team_member:
         raise HTTPException(status_code=400, detail="User has no team")
-    
+
     team_id = str(team_member.team_id)
-    
+
     product_map = {
         "starter": getattr(settings, 'POLAR_PRODUCT_ID_STARTER_MONTHLY', None),
         "pro": getattr(settings, 'POLAR_PRODUCT_ID_PRO_MONTHLY', None),
         "enterprise": getattr(settings, 'POLAR_PRODUCT_ID_ENTERPRISE', None),
     }
-    
+
     product_id = product_map.get(data.plan)
     if not product_id:
         raise HTTPException(status_code=400, detail=f"Invalid plan: {data.plan}")
@@ -355,7 +356,7 @@ async def create_checkout_session(
             )
             response.raise_for_status()
             return {"url": response.json()["url"]}
-            
+
         except Exception as e:
             raise api_error(ApiErrorCode.PAYMENT_ERROR, e, "create_checkout")
 
@@ -369,23 +370,23 @@ async def create_checkout_session(
 async def create_portal_session(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Create a Polar Customer Portal session.
-    
-    Uses POST /v1/customer-sessions with customer_id to get a 
+
+    Uses POST /v1/customer-sessions with customer_id to get a
     pre-authenticated customer_portal_url.
     """
     if not settings.POLAR_ACCESS_TOKEN:
         raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "create_portal")
-    
+
     try:
         customer_id = await get_customer_id_for_user(current_user_id)
-        
+
         if not customer_id:
             logger.warning(f"[Billing] No customer_id for user {current_user_id[:8]}...")
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="No subscription found. Please subscribe first."
             )
-        
+
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.post(
                 f"{POLAR_API_BASE}/customer-sessions",
@@ -395,18 +396,18 @@ async def create_portal_session(request: Request, current_user_id: str = Depends
                 },
                 headers=get_polar_headers()
             )
-            
+
             if response.status_code in [200, 201]:
                 session_data = response.json()
                 portal_url = session_data.get("customer_portal_url")
-                
+
                 if portal_url:
                     logger.info(f"[Billing] Portal session created for {current_user_id[:8]}...")
                     return PortalResponse(url=portal_url)
-            
+
             logger.error(f"[Billing] Customer session failed: {response.status_code} - {response.text}")
             raise api_error(ApiErrorCode.PAYMENT_ERROR, None, "create_portal")
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -414,49 +415,49 @@ async def create_portal_session(request: Request, current_user_id: str = Depends
 
 
 # ============================================================
-# SUBSCRIPTION STATUS ENDPOINT  
+# SUBSCRIPTION STATUS ENDPOINT
 # ============================================================
 
-@router.get("/subscription", response_model=Optional[SubscriptionDetailResponse])
+@router.get("/subscription", response_model=SubscriptionDetailResponse | None)
 @limiter.limit("30/minute")
 async def get_current_subscription(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Get current subscription details from Polar.
-    
+
     Uses GET /v1/subscriptions/?customer_id={id}
     """
     if not settings.POLAR_ACCESS_TOKEN:
         return None
-    
+
     try:
         customer_id = await get_customer_id_for_user(current_user_id)
-        
+
         if not customer_id:
             return None
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{POLAR_API_BASE}/subscriptions/",
                 params={"customer_id": customer_id, "active": True},
                 headers=get_polar_headers()
             )
-            
+
             if response.status_code != 200:
                 logger.warning(f"[Billing] Subscription fetch failed: {response.status_code}")
                 return None
-            
+
             data = response.json()
             items = data.get("items", [])
-            
+
             if not items:
                 return None
-            
+
             # Get first active subscription
             sub = items[0]
             product = sub.get("product", {})
             prices = product.get("prices", [{}])
             price = prices[0] if prices else {}
-            
+
             return SubscriptionDetailResponse(
                 id=sub.get("id", ""),
                 status=sub.get("status", "unknown"),
@@ -468,7 +469,7 @@ async def get_current_subscription(request: Request, current_user_id: str = Depe
                 current_period_end=sub.get("current_period_end"),
                 cancel_at_period_end=sub.get("cancel_at_period_end", False)
             )
-            
+
     except Exception as e:
         logger.error(f"[Billing] Subscription error: {e}")
         return None
@@ -483,7 +484,7 @@ async def get_current_subscription(request: Request, current_user_id: str = Depe
 async def cancel_subscription(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Cancel the current subscription.
-    
+
     Sets cancel_at_period_end=true in Polar, meaning:
     - User keeps access until end of current billing period
     - Subscription will not renew
@@ -491,16 +492,16 @@ async def cancel_subscription(request: Request, current_user_id: str = Depends(v
     """
     if not settings.POLAR_ACCESS_TOKEN:
         raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "cancel_subscription")
-    
+
     try:
         customer_id = await get_customer_id_for_user(current_user_id)
-        
+
         if not customer_id:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="No subscription found to cancel"
             )
-        
+
         # Get active subscription
         async with httpx.AsyncClient(timeout=30.0) as client:
             # First, get the subscription ID
@@ -509,32 +510,32 @@ async def cancel_subscription(request: Request, current_user_id: str = Depends(v
                 params={"customer_id": customer_id, "active": True},
                 headers=get_polar_headers()
             )
-            
+
             if subs_response.status_code != 200:
                 logger.error(f"[Billing] Failed to get subscription: {subs_response.status_code}")
                 raise HTTPException(status_code=500, detail="Failed to get subscription details")
-            
+
             subs_data = subs_response.json()
             items = subs_data.get("items", [])
-            
+
             if not items:
                 raise HTTPException(status_code=400, detail="No active subscription found")
-            
+
             subscription_id = items[0].get("id")
-            
+
             if not subscription_id:
                 raise HTTPException(status_code=500, detail="Invalid subscription data")
-            
+
             # Cancel the subscription (set cancel_at_period_end=true)
             cancel_response = await client.patch(
                 f"{POLAR_API_BASE}/subscriptions/{subscription_id}",
                 json={"cancel_at_period_end": True},
                 headers=get_polar_headers()
             )
-            
+
             if cancel_response.status_code in [200, 201, 204]:
                 logger.info(f"[Billing] Subscription {subscription_id} scheduled for cancellation")
-                
+
                 # Update local database
                 team_member = await team_service.get_user_team_member(current_user_id)
                 if team_member:
@@ -542,7 +543,7 @@ async def cancel_subscription(request: Request, current_user_id: str = Depends(v
                     supabase.table("subscriptions").update({
                         "cancel_at_period_end": True
                     }).eq("team_id", str(team_member.team_id)).execute()
-                
+
                 return {
                     "status": "cancelled",
                     "message": "Subscription will be cancelled at end of billing period",
@@ -551,7 +552,7 @@ async def cancel_subscription(request: Request, current_user_id: str = Depends(v
             else:
                 logger.error(f"[Billing] Cancel failed: {cancel_response.status_code} - {cancel_response.text}")
                 raise api_error(ApiErrorCode.PAYMENT_ERROR, None, "cancel_subscription")
-                
+
     except HTTPException:
         raise
     except Exception as e:
@@ -562,7 +563,7 @@ async def cancel_subscription(request: Request, current_user_id: str = Depends(v
 # BILLING HISTORY / ORDERS ENDPOINT
 # ============================================================
 
-@router.get("/invoices", response_model=List[InvoiceResponse])
+@router.get("/invoices", response_model=list[InvoiceResponse])
 @limiter.limit("30/minute")
 async def get_billing_history(
     request: Request,
@@ -590,18 +591,18 @@ async def get_billing_history(
                 params={"customer_id": customer_id, "limit": limit, "page": (offset // limit) + 1},
                 headers=get_polar_headers()
             )
-            
+
             if response.status_code != 200:
                 logger.warning(f"[Billing] Orders fetch failed: {response.status_code}")
                 return []
-            
+
             data = response.json()
             items = data.get("items", [])
-            
+
             invoices = []
             for item in items:
                 product = item.get("product", {})
-                
+
                 invoices.append(InvoiceResponse(
                     id=item.get("id", ""),
                     amount=item.get("amount", 0),
@@ -611,11 +612,11 @@ async def get_billing_history(
                     product_name=product.get("name", "Subscription"),
                     invoice_url=item.get("invoice_url")
                 ))
-            
+
             # Sort by date (most recent first)
             invoices.sort(key=lambda x: x.created_at, reverse=True)
             return invoices
-            
+
     except Exception as e:
         logger.error(f"[Billing] Orders error: {e}")
         return []
@@ -634,12 +635,12 @@ async def download_invoice(
 ):
     """
     Get invoice download URL for an order.
-    
+
     Uses GET /v1/orders/{id}/invoice
     """
     if not settings.POLAR_ACCESS_TOKEN:
         raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "download_invoice")
-    
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             # First try to get the invoice
@@ -647,26 +648,26 @@ async def download_invoice(
                 f"{POLAR_API_BASE}/orders/{order_id}/invoice",
                 headers=get_polar_headers()
             )
-            
+
             if response.status_code == 200:
                 invoice_data = response.json()
                 return {"url": invoice_data.get("url")}
-            
+
             elif response.status_code == 404:
                 # Invoice not generated, generate it
                 gen_response = await client.post(
                     f"{POLAR_API_BASE}/orders/{order_id}/invoice",
                     headers=get_polar_headers()
                 )
-                
+
                 if gen_response.status_code == 202:
                     return {
                         "status": "generating",
                         "message": "Invoice is being generated. Please try again in a few seconds."
                     }
-                    
+
             raise HTTPException(status_code=404, detail="Invoice not found")
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -682,68 +683,68 @@ async def download_invoice(
 async def fix_customer_id(request: Request, current_user_id: str = Depends(validate_team_access)):
     """
     Fetch and update customer_id from Polar for the current user's subscription.
-    
+
     This is needed for subscriptions created before customer_id was stored.
     """
     if not settings.POLAR_ACCESS_TOKEN:
         raise api_error(ApiErrorCode.CREDENTIALS_NOT_CONFIGURED, None, "fix_customer")
-    
+
     try:
         team_member = await team_service.get_user_team_member(current_user_id)
         if not team_member:
             raise HTTPException(status_code=400, detail="No team found")
-        
+
         team_id = str(team_member.team_id)
-        
+
         supabase = get_supabase()
         sub_response = supabase.table("subscriptions").select(
             "polar_id, customer_id"
         ).eq("team_id", team_id).limit(1).execute()
-        
+
         if not sub_response.data:
             raise HTTPException(status_code=400, detail="No subscription found")
-        
+
         sub = sub_response.data[0]
         polar_id = sub.get("polar_id")
-        
+
         if not polar_id:
             raise HTTPException(status_code=400, detail="No Polar subscription ID")
-        
+
         # Already has customer_id?
         if sub.get("customer_id"):
             return {"status": "ok", "customer_id": sub["customer_id"], "message": "Already has customer_id"}
-        
+
         # Fetch from Polar
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{POLAR_API_BASE}/subscriptions/{polar_id}",
                 headers=get_polar_headers()
             )
-            
+
             logger.info(f"[Billing] Polar subscription response: {response.status_code}")
-            
+
             if response.status_code == 200:
                 data = response.json()
                 customer = data.get("customer", {})
                 customer_id = customer.get("id")
-                
+
                 if customer_id:
                     # Update database
                     supabase.table("subscriptions").update({
                         "customer_id": customer_id
                     }).eq("team_id", team_id).execute()
-                    
+
                     logger.info(f"[Billing] Updated customer_id for team {team_id}: {customer_id}")
                     return {"status": "ok", "customer_id": customer_id, "message": "Fixed!"}
                 else:
                     return {"status": "error", "message": "No customer in subscription data", "data": data}
             else:
                 return {
-                    "status": "error", 
+                    "status": "error",
                     "message": f"Polar API error: {response.status_code}",
                     "response": response.text
                 }
-                
+
     except HTTPException:
         raise
     except Exception as e:
@@ -775,7 +776,7 @@ async def submit_enterprise_inquiry(
     try:
         # Import email service
         from services.email import email_service
-        
+
         # Send email to sales
         success = email_service.send_enterprise_inquiry(
             from_name=data.name,
@@ -785,14 +786,14 @@ async def submit_enterprise_inquiry(
             message=data.message,
             user_id=current_user_id
         )
-        
+
         if success:
             logger.info(f"[Billing] Enterprise inquiry sent from {data.email}")
             return {"status": "ok", "message": "Your inquiry has been sent. We'll get back to you shortly!"}
         else:
             logger.warning(f"[Billing] Failed to send enterprise inquiry from {data.email}")
             return {"status": "ok", "message": "Thank you for your interest! We'll contact you soon."}
-            
+
     except Exception as e:
         logger.error(f"[Billing] Enterprise inquiry error: {e}")
         # Don't fail the request - just log it

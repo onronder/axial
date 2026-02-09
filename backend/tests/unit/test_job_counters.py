@@ -1,7 +1,5 @@
-from unittest.mock import patch
 import builtins
-
-import pytest
+from unittest.mock import patch
 
 from core import job_counters
 

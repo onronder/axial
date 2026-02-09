@@ -4,41 +4,51 @@ Integrations API Endpoints
 Provides dynamic connector discovery, OAuth handling, and integration management.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, Query
-from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
-from core.security import get_current_user, encrypt_token, decrypt_token
-from core.db import get_supabase
-from core.config import settings
-from core.rate_limit import limiter
-from api.v1.dependencies import (
-    validate_team_access,
-    require_editor,
-    get_effective_plan,
-    require_paid_access,
-    get_user_organization_id,
-)
-from api.v1.error_utils import raise_http_error, api_error, ApiErrorCode
-from services.quotas import check_admission, increment_usage
-from services.team_service import team_service
-from core.exceptions import QuotaExceededError
-from services.usage import check_feature_access
-from services.audit import audit_logger, log_connector_sync
-from services.web_crawl import queue_web_crawl
-from connectors.web import WebConnector
-from connectors.sftp import SFTPConnector
-from connectors.s3 import S3Connector
-from core.ingestion_utils import require_canonical_provider
-from core.scopes import get_scope_prefixes
-from connectors.registry import get_connector_manifest
-from connectors.base import ConnectorAuthError, ConnectorTransientError
-from google_auth_oauthlib.flow import Flow
-from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Literal, Any
-from uuid import UUID
 import inspect
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Literal
+from uuid import UUID
+
 import httpx
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
+from fastapi.concurrency import run_in_threadpool
+from google_auth_oauthlib.flow import Flow
+from pydantic import BaseModel, Field
+
+from api.v1.dependencies import (
+    get_effective_plan,
+    get_user_organization_id,
+    require_editor,
+    require_paid_access,
+    validate_team_access,
+)
+from api.v1.error_utils import ApiErrorCode, api_error, raise_http_error
+from connectors.base import ConnectorAuthError, ConnectorTransientError
+from connectors.registry import get_connector_manifest
+from connectors.s3 import S3Connector
+from connectors.sftp import SFTPConnector
+from connectors.web import WebConnector
+from core.config import settings
+from core.db import get_supabase
+from core.exceptions import QuotaExceededError
+from core.ingestion_utils import require_canonical_provider
+from core.rate_limit import limiter
+from core.scopes import get_scope_prefixes
+from core.security import decrypt_token, encrypt_token, get_current_user
+from services.audit import audit_logger, log_connector_sync
+from services.quotas import check_admission, increment_usage
+from services.team_service import team_service
+from services.usage import check_feature_access
+from services.web_crawl import queue_web_crawl
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
@@ -72,9 +82,9 @@ class ConnectorDefinitionOut(BaseModel):
     id: str
     type: str
     name: str
-    description: Optional[str] = None
-    icon_path: Optional[str] = None
-    category: Optional[str] = None
+    description: str | None = None
+    icon_path: str | None = None
+    category: str | None = None
     is_active: bool = True
 
 
@@ -83,15 +93,15 @@ class UserIntegrationOut(BaseModel):
     connector_definition_id: str
     connector_type: str
     connector_name: str
-    connector_icon: Optional[str] = None
-    category: Optional[str] = None
+    connector_icon: str | None = None
+    category: str | None = None
     connected: bool = True
-    last_sync_at: Optional[datetime] = None
+    last_sync_at: datetime | None = None
 
 
 class IngestRequest(BaseModel):
     """Ingestion request with validation."""
-    item_ids: List[str] = Field(..., max_length=100)  # Max 100 items per request
+    item_ids: list[str] = Field(..., max_length=100)  # Max 100 items per request
 
 
 class WebCrawlRequest(BaseModel):
@@ -108,15 +118,15 @@ class SFTPConnectRequest(BaseModel):
     host: str = Field(..., min_length=1, max_length=255)
     port: int = Field(default=22, ge=1, le=65535)
     username: str = Field(..., min_length=1, max_length=128)
-    password: Optional[str] = Field(default=None, max_length=4096)
-    private_key: Optional[str] = Field(default=None, max_length=16384)
+    password: str | None = Field(default=None, max_length=4096)
+    private_key: str | None = Field(default=None, max_length=16384)
     root_path: str = Field(default="/", min_length=1, max_length=1024)
 
 
 class S3ConnectRequest(BaseModel):
     """
     Amazon S3 connection request with IAM credentials.
-    
+
     ENTERPRISE ONLY: This connector requires Enterprise plan.
     """
     access_key_id: str = Field(
@@ -153,8 +163,8 @@ class S3ConnectRequest(BaseModel):
 class MicrosoftExchangeRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=2048)
     target_type: Literal["onedrive", "sharepoint"]
-    site_id: Optional[str] = Field(default=None, max_length=512)
-    code_verifier: Optional[str] = Field(default=None, max_length=256)
+    site_id: str | None = Field(default=None, max_length=512)
+    code_verifier: str | None = Field(default=None, max_length=256)
 
 
 class WebCrawlConfigResponse(BaseModel):
@@ -169,15 +179,15 @@ class WebCrawlConfigResponse(BaseModel):
     total_pages_found: int
     pages_ingested: int
     pages_failed: int
-    error_message: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    error_message: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    completed_at: datetime | None = None
 
 
 class WebCrawlConfigListResponse(BaseModel):
     """Response model for listing web crawl configurations."""
-    items: List[WebCrawlConfigResponse]
+    items: list[WebCrawlConfigResponse]
     total: int
     has_more: bool
 
@@ -201,7 +211,7 @@ async def _resolve_org_and_plan(user_id: str) -> tuple[str, str]:
 # Dynamic Connector Discovery Endpoints
 # =============================================================================
 
-@router.get("/integrations/available", response_model=List[ConnectorDefinitionOut])
+@router.get("/integrations/available", response_model=list[ConnectorDefinitionOut])
 @limiter.limit("100/minute")
 async def get_available_connectors(request: Request):
     """
@@ -209,7 +219,7 @@ async def get_available_connectors(request: Request):
     Frontend uses this to dynamically render available integrations.
     """
     supabase = get_supabase()
-    
+
     try:
         response = supabase.table("connector_definitions").select("*").eq("is_active", True).execute()
         return response.data or []
@@ -218,7 +228,7 @@ async def get_available_connectors(request: Request):
         raise HTTPException(status_code=500, detail="Failed to fetch available connectors")  # ALLOWED: literal
 
 
-@router.get("/integrations/status", response_model=List[UserIntegrationOut])
+@router.get("/integrations/status", response_model=list[UserIntegrationOut])
 @limiter.limit("60/minute")
 async def get_user_integrations(
     request: Request,
@@ -238,7 +248,7 @@ async def get_user_integrations(
             "id, connector_definition_id, last_sync_at, "
             "connector_definitions(type, name, icon_path, category)"
         ).eq("user_id", user_id).range(offset, offset + limit - 1).execute()
-        
+
         # Transform the joined response
         result = []
         for item in response.data or []:
@@ -253,7 +263,7 @@ async def get_user_integrations(
                 "connected": True,
                 "last_sync_at": item.get("last_sync_at")
             })
-        
+
         return result
     except Exception as e:
         logger.error(f"Failed to fetch user integrations: {e}")
@@ -277,7 +287,7 @@ async def exchange_google_token(
     Uses proper upsert with connector_definition_id FK.
     """
     logger.info(f"🔐 [OAuth] Starting Google token exchange for user: {user_id}")
-    
+
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         logger.error("🔐 [OAuth] Google credentials not configured!")
         raise HTTPException(status_code=500, detail="Google credentials not configured")  # ALLOWED: literal
@@ -312,11 +322,11 @@ async def exchange_google_token(
             scopes=['https://www.googleapis.com/auth/drive.readonly'],
             redirect_uri=settings.GOOGLE_REDIRECT_URI
         )
-        
+
         flow.fetch_token(code=body.code)
         creds = flow.credentials
         logger.info(f"🔐 [OAuth] ✅ Got credentials. Has refresh token: {creds.refresh_token is not None}")
-        
+
     except Exception as e:
         logger.error(f"🔐 [OAuth] ❌ Token exchange failed: {str(e)}")
         import traceback
@@ -337,7 +347,7 @@ async def exchange_google_token(
     # Encrypt tokens before storage for security
     encrypted_access_token = encrypt_token(creds.token) if creds.token else None
     encrypted_refresh_token = encrypt_token(creds.refresh_token) if creds.refresh_token else None
-    
+
     data = {
         "user_id": user_id,
         "connector_definition_id": connector_definition_id,
@@ -349,18 +359,18 @@ async def exchange_google_token(
         "status": "active",
         "status_message": None,
     }
-    
-    logger.info(f"🔐 [OAuth] Tokens encrypted before storage")
-    
+
+    logger.info("🔐 [OAuth] Tokens encrypted before storage")
+
     logger.info(f"🔐 [OAuth] Upserting to user_integrations: user_id={user_id}, connector_def={connector_definition_id}")
-    
+
     try:
         # Upsert: insert or update on conflict
         upsert_res = supabase.table("user_integrations").upsert(
             data,
             on_conflict="user_id,connector_definition_id"
         ).execute()
-        
+
         if not upsert_res.data:
             logger.error("🔐 [OAuth] ❌ Upsert returned no data!")
             raise HTTPException(status_code=500, detail="Database upsert returned no data")  # ALLOWED: literal
@@ -378,7 +388,7 @@ async def exchange_google_token(
     # NOTE: We no longer auto-sync on connect to prevent unexpected behavior.
     # User should explicitly select files/folders to ingest via the Drive explorer.
     # This prevents the issue of re-ingesting old files after reconnecting.
-    # 
+    #
     # OLD CODE REMOVED:
     # integration_id = upsert_res.data[0]["id"]
     # try:
@@ -388,7 +398,7 @@ async def exchange_google_token(
     #     logger.info(f"🔐 [OAuth] Scheduled background sync for integration {integration_id}")
     # except Exception as e:
     #     logger.warning(f"🔐 [OAuth] Failed to schedule sync: {e}")
-    
+
     integration_id = upsert_res.data[0]["id"]
 
     audit_logger.log_sync(
@@ -415,11 +425,11 @@ async def exchange_notion_token(
     Uses httpx for async HTTP request to Notion API.
     """
     logger.info(f"🔐 [OAuth] Starting Notion token exchange for user: {user_id}")
-    
+
     if not settings.NOTION_CLIENT_ID or not settings.NOTION_CLIENT_SECRET:
         logger.error("🔐 [OAuth] Notion credentials not configured!")
         raise HTTPException(status_code=500, detail="Notion credentials not configured")  # ALLOWED: literal
-    
+
     if not settings.NOTION_REDIRECT_URI:
         logger.error("🔐 [OAuth] Notion redirect URI not configured!")
         raise HTTPException(status_code=500, detail="Notion redirect URI not configured")  # ALLOWED: literal
@@ -442,7 +452,7 @@ async def exchange_notion_token(
     # 2. Exchange Code for Tokens using httpx
     try:
         logger.info(f"🔐 [OAuth] Redirect URI: {settings.NOTION_REDIRECT_URI}")
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://api.notion.com/v1/oauth/token",
@@ -456,22 +466,22 @@ async def exchange_notion_token(
                     "Content-Type": "application/json"
                 }
             )
-            
+
             if response.status_code != 200:
                 logger.error(f"🔐 [OAuth] ❌ Notion API error: {response.status_code} {response.text}")
                 raise HTTPException(
                     status_code=400,
                     detail="Notion token exchange failed. Please try connecting again."
                 )  # ALLOWED: literal
-            
+
             token_data = response.json()
             access_token = token_data.get("access_token")
             workspace_id = token_data.get("workspace_id")
             workspace_name = token_data.get("workspace_name")
             bot_id = token_data.get("bot_id")
-            
+
             logger.info(f"🔐 [OAuth] ✅ Got Notion tokens. Workspace: {workspace_name} ({workspace_id})")
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -482,7 +492,7 @@ async def exchange_notion_token(
 
     # 3. Encrypt and store token
     encrypted_access_token = encrypt_token(access_token) if access_token else None
-    
+
     data = {
         "user_id": user_id,
         "connector_definition_id": connector_definition_id,
@@ -499,17 +509,17 @@ async def exchange_notion_token(
         "status": "active",
         "status_message": None,
     }
-    
-    logger.info(f"🔐 [OAuth] Token encrypted before storage")
+
+    logger.info("🔐 [OAuth] Token encrypted before storage")
     logger.info(f"🔐 [OAuth] Upserting to user_integrations: user_id={user_id}, connector_def={connector_definition_id}")
-    
+
     try:
         # Upsert: insert or update on conflict
         upsert_res = supabase.table("user_integrations").upsert(
             data,
             on_conflict="user_id,connector_definition_id"
         ).execute()
-        
+
         if not upsert_res.data:
             logger.error("🔐 [OAuth] ❌ Upsert returned no data!")
             raise HTTPException(status_code=500, detail="Database upsert returned no data")  # ALLOWED: literal
@@ -529,7 +539,7 @@ async def exchange_notion_token(
     # 4. Trigger auto-ingestion in background
     # Fetch all accessible pages and start ingestion immediately
     try:
-        
+
         # Fetch all accessible pages to ingest
         items = []
         async with httpx.AsyncClient() as client:
@@ -545,7 +555,7 @@ async def exchange_notion_token(
             if response.status_code == 200:
                 search_data = response.json()
                 items = [p["id"] for p in search_data.get("results", []) if p.get("object") == "page"]
-        
+
         if items:
             org_id, plan_code = await _resolve_org_and_plan(user_id)
             try:
@@ -575,12 +585,12 @@ async def exchange_notion_token(
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
             job_response = supabase.table("ingestion_jobs").insert(job_data).execute()
-            
+
             if job_response.data:
                 job_id = job_response.data[0]["id"]
                 # Queue the unified ingestion task with integration_id for token refresh
                 from worker.tasks import unified_ingest_task
-                
+
                 task = unified_ingest_task.delay(
                     user_id=user_id,
                     job_id=str(job_id),
@@ -604,14 +614,14 @@ async def exchange_notion_token(
                     logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
         else:
             logger.info("📥 [OAuth] No Notion pages found to ingest")
-            
+
     except Exception as e:
         logger.warning(f"🔐 [OAuth] Auto-ingestion failed (non-critical): {e}")
         # Don't fail the OAuth just because auto-ingestion failed
-    
+
     return {
-        "status": "success", 
-        "provider": "notion", 
+        "status": "success",
+        "provider": "notion",
         "integration_id": integration_id,
         "workspace_name": workspace_name
     }
@@ -818,7 +828,7 @@ async def exchange_microsoft_token(
 
 class DropboxExchangeRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=2048)
-    root_path: Optional[str] = Field(default="", max_length=1024)
+    root_path: str | None = Field(default="", max_length=1024)
 
 
 @router.post("/integrations/dropbox/exchange")
@@ -830,7 +840,7 @@ async def exchange_dropbox_token(
 ):
     """
     Exchange Dropbox OAuth code for tokens and persist to user_integrations.
-    
+
     Supports both Personal and Business/Team accounts:
     - Detects Team accounts via root_info.root_namespace_id
     - Stores namespace_id for Dropbox-API-Path-Root header injection
@@ -917,23 +927,23 @@ async def exchange_dropbox_token(
 
             if account_response.status_code == 200:
                 account_info = account_response.json()
-                
+
                 # Extract Team namespace if present
                 root_info = account_info.get("root_info", {})
                 namespace_id = root_info.get("root_namespace_id")
-                
+
                 if namespace_id:
                     credentials["namespace_id"] = namespace_id
                     logger.info(f"🏢 [OAuth] Dropbox Team account detected, namespace: {namespace_id}")
-                    
+
                     # Also store team info if available
                     team = account_info.get("team", {})
                     if team:
                         credentials["team_name"] = team.get("name")
                         credentials["team_id"] = team.get("id")
                 else:
-                    logger.info(f"👤 [OAuth] Dropbox Personal account")
-                
+                    logger.info("👤 [OAuth] Dropbox Personal account")
+
                 # Store display name for UI
                 name = account_info.get("name", {})
                 credentials["display_name"] = name.get("display_name")
@@ -1001,7 +1011,7 @@ class GitHubExchangeRequest(BaseModel):
 
 class GitHubRepoSelectionRequest(BaseModel):
     """Request to save selected repositories for sync."""
-    selected_repositories: List[dict] = Field(..., max_length=100)
+    selected_repositories: list[dict] = Field(..., max_length=100)
 
 
 @router.post("/integrations/github/exchange")
@@ -1013,7 +1023,7 @@ async def exchange_github_token(
 ):
     """
     Exchange GitHub OAuth code for tokens and persist to user_integrations.
-    
+
     GitHub tokens do not expire by default, so no refresh_token handling needed.
     After this, the user must select repositories via /github/repos/select.
     """
@@ -1054,12 +1064,12 @@ async def exchange_github_token(
             raise HTTPException(status_code=400, detail="GitHub token exchange failed")  # ALLOWED: literal
 
         token_data = response.json()
-        
+
         if "error" in token_data:
             error_desc = token_data.get("error_description", token_data.get("error"))
             logger.error(f"🔐 [OAuth] GitHub OAuth error: {error_desc}")
             raise HTTPException(status_code=400, detail="GitHub OAuth exchange failed. Please try connecting again.")  # ALLOWED: literal
-        
+
         access_token = token_data.get("access_token")
         scope = token_data.get("scope", "")
         token_type = token_data.get("token_type", "bearer")
@@ -1155,7 +1165,7 @@ async def list_github_repos(
 ):
     """
     List GitHub repositories the user has access to.
-    
+
     Used by frontend for repository selection UI.
     Returns both personal repos and organization repos.
     """
@@ -1175,7 +1185,7 @@ async def list_github_repos(
 
     # Decrypt token
     access_token = decrypt_token(int_res.data["access_token"])
-    
+
     if not access_token:
         raise HTTPException(status_code=401, detail="GitHub token invalid. Please reconnect.")  # ALLOWED: literal
 
@@ -1186,7 +1196,7 @@ async def list_github_repos(
         repos = await run_in_threadpool(
             lambda: connector.get_available_repositories(access_token)
         )
-        
+
         return {
             "repositories": repos,
             "total": len(repos),
@@ -1218,7 +1228,7 @@ async def select_github_repos(
 ):
     """
     Save selected repositories for GitHub sync.
-    
+
     Expected format for each repo:
     {
         "full_name": "owner/repo",
@@ -1260,7 +1270,7 @@ async def select_github_repos(
         raise HTTPException(status_code=500, detail="Failed to save repository selection")  # ALLOWED: literal
 
     enabled_count = sum(1 for r in body.selected_repositories if r.get("enabled", True))
-    
+
     audit_logger.log_sync(
         user_id=user_id,
         action="connector.configure",
@@ -1298,7 +1308,7 @@ async def exchange_box_token(
 ):
     """
     Exchange Box OAuth code for tokens and persist to user_integrations.
-    
+
     CRITICAL: Box refresh tokens are SINGLE-USE and rotate on each refresh.
     Both access_token AND refresh_token must be stored and updated atomically.
     """
@@ -1339,12 +1349,12 @@ async def exchange_box_token(
             raise HTTPException(status_code=400, detail="Box token exchange failed")  # ALLOWED: literal
 
         token_data = response.json()
-        
+
         if "error" in token_data:
             error_desc = token_data.get("error_description", token_data.get("error"))
             logger.error(f"🔐 [OAuth] Box OAuth error: {error_desc}")
             raise HTTPException(status_code=400, detail="Box OAuth exchange failed. Please try connecting again.")  # ALLOWED: literal
-        
+
         access_token = token_data.get("access_token")
         refresh_token = token_data.get("refresh_token")  # CRITICAL: Box tokens rotate
         expires_in = token_data.get("expires_in")
@@ -1359,7 +1369,7 @@ async def exchange_box_token(
 
     if not access_token:
         raise HTTPException(status_code=400, detail="Box token exchange returned no access token")  # ALLOWED: literal
-    
+
     if not refresh_token:
         logger.warning("⚠️ [OAuth] Box did not return refresh token - may have issues with token refresh")
 
@@ -1554,18 +1564,18 @@ async def connect_s3(
 ):
     """
     Connect Amazon S3 bucket with IAM credentials.
-    
+
     **ENTERPRISE ONLY**: This connector requires an Enterprise plan subscription.
-    
+
     SECURITY NOTES:
     - Credentials are encrypted at rest using Fernet
     - Only read operations (ListBucket, GetObject) are supported
     - Provide a read-only IAM policy for maximum security
-    
+
     COST PROTECTION:
     - Prefix is required to prevent full bucket scans
     - Only supported file extensions are processed
-    
+
     IAM Policy Template (MINIMUM REQUIRED):
     ```json
     {
@@ -1603,12 +1613,12 @@ async def connect_s3(
     # Verify S3 Access
     # =================================================================
     supabase = get_supabase()
-    
+
     # Get S3 connector definition
     conn_def = supabase.table("connector_definitions").select("id").eq(
         "type", "s3"
     ).single().execute()
-    
+
     if not conn_def.data:
         raise HTTPException(
             status_code=500,
@@ -1712,20 +1722,20 @@ async def get_provider_status(
     """Check if a specific provider is connected for the user."""
     supabase = get_supabase()
     provider = _require_provider(provider)
-    
+
     try:
         # Lookup connector definition by type
         def_res = supabase.table("connector_definitions").select("id").eq("type", provider).single().execute()
         if not def_res.data:
             return {"connected": False, "error": "Unknown provider"}
-        
+
         connector_def_id = def_res.data["id"]
-        
+
         # Check if user has this integration
         int_res = supabase.table("user_integrations").select("id").eq(
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
-        
+
         return {"connected": len(int_res.data or []) > 0}
     except Exception:
         return {"connected": False}
@@ -1745,20 +1755,20 @@ async def disconnect_provider(
     """
     supabase = get_supabase()
     provider = _require_provider(provider)
-    
+
     # Initialize cleanup counters before try block to ensure they're always defined
     deleted_docs = 0
     deleted_identity_docs = 0
     deleted_identity_scopes = 0
     deleted_jobs = 0
     deleted_sync = 0
-    
+
     try:
         # Lookup connector definition by type
         def_res = supabase.table("connector_definitions").select("id").eq("type", provider).single().execute()
         if not def_res.data:
             raise HTTPException(status_code=404, detail="Unknown provider")  # ALLOWED: literal
-        
+
         connector_def_id = def_res.data["id"]
 
         # 1. Fetch credentials before deletion to perform revocation
@@ -1766,11 +1776,11 @@ async def disconnect_provider(
             int_res = supabase.table("user_integrations").select("access_token").eq(
                 "user_id", user_id
             ).eq("connector_definition_id", connector_def_id).single().execute()
-            
+
             if int_res.data and int_res.data.get("access_token"):
                 encrypted_token = int_res.data["access_token"]
                 token = decrypt_token(encrypted_token)
-                
+
                 if token:
                     logger.info(f"🔌 [Disconnect] Attempting to revoke {provider} token...")
                     async with httpx.AsyncClient() as client:
@@ -1781,32 +1791,32 @@ async def disconnect_provider(
                                 params={"token": token},
                                 timeout=5.0
                             )
-                            logger.info(f"🔌 [Disconnect] Google token revoked")
-                            
+                            logger.info("🔌 [Disconnect] Google token revoked")
+
                         elif provider == "notion":
-                            # Notion doesn't have a standardized revoke endpoint for simple OAuth, 
+                            # Notion doesn't have a standardized revoke endpoint for simple OAuth,
                             # but we attempt standard best practices or just log.
                             # Notion revocation usually implies removing the bot from workspace UI.
                             pass
-                            
+
         except Exception as e:
             # Non-blocking failure - continue to delete from our DB
             logger.warning(f"⚠️ [Disconnect] Revocation attempt failed (continuing): {e}")
-        
+
         # =================================================================
         # 2. DEEP CLEAN: Delete all associated data before removing integration
         # =================================================================
         # Map provider to source_type values used in documents table
         source_types = [provider]
-        
+
         logger.info(f"🧹 [Disconnect] Deep cleaning data for {provider} (source_type={source_types})...")
-        
+
         # 2a. Delete Documents (cascades to document_chunks via FK)
         try:
             doc_result = supabase.table("documents").delete().eq(
                 "user_id", user_id
             ).eq("organization_id", organization_id).in_("source_type", source_types).execute()
-            
+
             deleted_docs = len(doc_result.data) if doc_result.data else 0
             logger.info(f"🧹 [Disconnect] Deleted {deleted_docs} documents")
         except Exception as e:
@@ -1846,50 +1856,50 @@ async def disconnect_provider(
                 )
             except Exception as e:
                 logger.warning(f"⚠️ [Disconnect] Identity cleanup failed: {e}")
-        
+
         # 2b. Delete Ingestion Jobs and associated file statuses
         try:
             # First, find all job IDs for this provider
             jobs_res = supabase.table("ingestion_jobs").select("id").eq(
                 "user_id", user_id
             ).eq("organization_id", organization_id).eq("provider", provider).execute()
-            
+
             job_ids = [job["id"] for job in (jobs_res.data or [])]
-            
+
             # Delete file statuses for these jobs
             if job_ids:
                 for job_id in job_ids:
                     supabase.table("ingestion_file_status").delete().eq("job_id", job_id).execute()
                 logger.info(f"🧹 [Disconnect] Deleted file statuses for {len(job_ids)} jobs")
-            
+
             # Then delete the jobs
             job_result = supabase.table("ingestion_jobs").delete().eq(
                 "user_id", user_id
             ).eq("organization_id", organization_id).eq("provider", provider).execute()
-            
+
             deleted_jobs = len(job_result.data) if job_result.data else 0
             logger.info(f"🧹 [Disconnect] Deleted {deleted_jobs} ingestion jobs")
         except Exception as e:
             logger.warning(f"⚠️ [Disconnect] Job cleanup failed: {e}")
-        
+
         # 2c. Delete sync state (cursors, tokens, etc.)
         try:
             sync_result = supabase.table("sync_state").delete().eq(
                 "user_id", user_id
             ).eq("provider", provider).execute()
-            
+
             deleted_sync = len(sync_result.data) if sync_result.data else 0
             logger.info(f"🧹 [Disconnect] Deleted {deleted_sync} sync state records")
         except Exception as e:
             logger.warning(f"⚠️ [Disconnect] Sync state cleanup failed: {e}")
-        
+
         # =================================================================
         # 3. Delete the user integration record
         # =================================================================
         supabase.table("user_integrations").delete().eq(
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
-        
+
         logger.info(f"✅ [Disconnect] {provider} disconnected and all data cleaned for user {user_id}")
 
         audit_logger.log_sync(
@@ -1905,9 +1915,9 @@ async def disconnect_provider(
                 "sync_deleted": deleted_sync,
             },
         )
-        
+
         return {
-            "status": "success", 
+            "status": "success",
             "provider": provider,
             "cleanup": {
                 "documents_deleted": deleted_docs,
@@ -1932,28 +1942,28 @@ from connectors import get_connector
 @router.get("/integrations/{provider}/items")
 async def list_provider_items(
     provider: str,
-    parent_id: Optional[str] = None,
+    parent_id: str | None = None,
     user_id: str = Depends(get_current_user)
 ):
     """
     List items from a connected provider (folders, files, etc.).
-    
+
     Handles both async and sync connectors:
     - Async connectors (Google Drive, Notion, OneDrive, SharePoint): awaited directly
     - Sync connectors (Dropbox, SFTP): offloaded to threadpool to prevent blocking
-    
+
     This prevents the main event loop from being blocked by sync I/O operations.
     """
     try:
         provider = _require_provider(provider)
         connector = get_connector(provider)
         config = {"user_id": user_id, "parent_id": parent_id, "provider": provider}
-        
+
         # =================================================================
         # Async/Sync Bridge: Handle both coroutine and generator connectors
         # =================================================================
         list_files_method = connector.list_files
-        
+
         if inspect.iscoroutinefunction(list_files_method):
             # Async connector (e.g., Google Drive, Notion, OneDrive)
             # Safe to await directly
@@ -1961,7 +1971,7 @@ async def list_provider_items(
         else:
             # Sync connector (e.g., Dropbox, SFTP) - returns generator
             # CRITICAL: Offload to threadpool to prevent blocking the event loop
-            # 
+            #
             # Why this matters:
             # - Dropbox uses synchronous `requests` library
             # - Each API call blocks while waiting for network response
@@ -1971,11 +1981,11 @@ async def list_provider_items(
             # The lambda consumes the generator into a list within the thread,
             # ensuring all network I/O happens off the main event loop.
             raw_items = await run_in_threadpool(lambda: list(list_files_method(config)))
-        
+
         # =================================================================
         # Item Mapping
         # =================================================================
-        def _map_item(item: Any) -> Optional[dict]:
+        def _map_item(item: Any) -> dict | None:
             # Handle dataclass-like objects or dicts
             if hasattr(item, "__dict__"):
                 data = item.__dict__
@@ -2051,13 +2061,13 @@ async def list_provider_items(
 async def list_web_crawl_configs(
     request: Request,
     user_id: str = Depends(get_current_user),
-    status: Optional[str] = None,
+    status: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ):
     """
     List user's web crawl configurations.
-    
+
     Supports filtering by status:
     - pending: Queued for crawling
     - discovering: Finding URLs
@@ -2065,32 +2075,31 @@ async def list_web_crawl_configs(
     - completed: Successfully finished
     - failed: Encountered errors
     - cancelled: Manually cancelled
-    
+
     Results are ordered by created_at descending (newest first).
     """
-    from fastapi import Query
-    
+
     supabase = get_supabase()
-    
+
     try:
         # Build query
         query = supabase.table("web_crawl_configs")\
             .select("*", count="exact")\
             .eq("user_id", user_id)
-        
+
         # Apply status filter if provided
         if status:
             valid_statuses = {"pending", "discovering", "processing", "completed", "failed", "cancelled"}
             if status not in valid_statuses:
                 raise HTTPException(status_code=400, detail="Invalid status. Must be one of: pending, discovering, processing, completed, failed, cancelled")  # ALLOWED: literal
             query = query.eq("status", status)
-        
+
         # Execute with pagination
         result = query\
             .order("created_at", desc=True)\
             .range(offset, offset + limit - 1)\
             .execute()
-        
+
         total = result.count if result.count is not None else 0
         items = [WebCrawlConfigResponse(
             id=str(config["id"]),
@@ -2108,13 +2117,13 @@ async def list_web_crawl_configs(
             updated_at=config.get("updated_at"),
             completed_at=config.get("completed_at"),
         ) for config in (result.data or [])]
-        
+
         return WebCrawlConfigListResponse(
             items=items,
             total=total,
             has_more=(offset + limit) < total
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2122,7 +2131,7 @@ async def list_web_crawl_configs(
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "list_web_crawl_configs")
 
 
-@router.get("/integrations/web/crawl/active", response_model=Optional[WebCrawlConfigResponse])
+@router.get("/integrations/web/crawl/active", response_model=WebCrawlConfigResponse | None)
 @limiter.limit("120/minute")
 async def get_active_web_crawl(
     request: Request,
@@ -2130,14 +2139,14 @@ async def get_active_web_crawl(
 ):
     """
     Get the user's most recent active web crawl (if any).
-    
+
     Active statuses: pending, discovering, processing
-    
+
     Returns None (204) if no active crawl exists.
     Used by frontend to restore crawl state after navigation.
     """
     supabase = get_supabase()
-    
+
     try:
         # Query for active crawls
         result = supabase.table("web_crawl_configs")\
@@ -2147,10 +2156,10 @@ async def get_active_web_crawl(
             .order("created_at", desc=True)\
             .limit(1)\
             .execute()
-        
+
         if not result.data:
             return None
-        
+
         config = result.data[0]
         return WebCrawlConfigResponse(
             id=str(config["id"]),
@@ -2168,7 +2177,7 @@ async def get_active_web_crawl(
             updated_at=config.get("updated_at"),
             completed_at=config.get("completed_at"),
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to get active web crawl: {e}")
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_active_web_crawl")
@@ -2183,11 +2192,11 @@ async def get_web_crawl_config(
 ):
     """
     Get a specific web crawl configuration by ID.
-    
+
     Ensures users can only access their own configurations (RLS enforced).
     """
     supabase = get_supabase()
-    
+
     try:
         result = supabase.table("web_crawl_configs")\
             .select("*")\
@@ -2195,10 +2204,10 @@ async def get_web_crawl_config(
             .eq("user_id", user_id)\
             .maybe_single()\
             .execute()
-        
+
         if not result or not result.data:
             raise HTTPException(status_code=404, detail="Crawl configuration not found")  # ALLOWED: literal
-        
+
         config = result.data
         return WebCrawlConfigResponse(
             id=str(config["id"]),
@@ -2216,7 +2225,7 @@ async def get_web_crawl_config(
             updated_at=config.get("updated_at"),
             completed_at=config.get("completed_at"),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2293,14 +2302,14 @@ async def delete_crawl_config(
 ):
     """
     Delete a web crawl configuration.
-    
+
     This will:
     - Cancel any running crawl task
     - Delete the configuration record
     - Optionally cascade delete associated documents (via FK/trigger)
     """
     supabase = get_supabase()
-    
+
     try:
         # Verify ownership
         config_response = supabase.table("web_crawl_configs")\
@@ -2309,39 +2318,40 @@ async def delete_crawl_config(
             .eq("user_id", user_id)\
             .single()\
             .execute()
-        
+
         if not config_response.data:
             raise HTTPException(status_code=404, detail="Crawl configuration not found")  # ALLOWED: literal
-        
+
         config = config_response.data
-        
+
         # Cancel running task if exists
         if config.get("celery_task_id") and config.get("status") in ["pending", "processing"]:
             try:
                 from celery.result import AsyncResult
+
                 from core.celery_app import celery_app
-                
+
                 result = AsyncResult(config["celery_task_id"], app=celery_app)
                 result.revoke(terminate=True)
                 logger.info(f"🛑 [Crawl] Cancelled task {config['celery_task_id']}")
             except Exception as e:
                 logger.warning(f"⚠️ [Crawl] Failed to cancel task: {e}")
-        
+
         # Delete the configuration
         supabase.table("web_crawl_configs")\
             .delete()\
             .eq("id", config_id)\
             .eq("user_id", user_id)\
             .execute()
-        
+
         logger.info(f"🗑️ [Crawl] Deleted crawl config {config_id}")
-        
+
         return {
             "status": "success",
             "message": "Crawl configuration deleted",
             "config_id": config_id
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2359,7 +2369,7 @@ async def ingest_provider_items(
 ):
     """
     Ingest items from a provider (Download, Parse, Embed, Store).
-    
+
     This endpoint returns 202 Accepted immediately and processes
     files asynchronously via Celery worker. Creates an ingestion job
     for progress tracking.
@@ -2441,12 +2451,12 @@ async def ingest_provider_items(
 
         # 1. Get user's credentials for this provider
         supabase = get_supabase()
-        
+
         # Find connector definition
         conn_def = supabase.table("connector_definitions").select("id").eq("type", provider).single().execute()
         if not conn_def.data:
             raise HTTPException(status_code=400, detail="Unknown or unsupported provider")  # ALLOWED: literal
-        
+
         # Get user's integration
         try:
             integration_res = supabase.table("user_integrations").select(
@@ -2456,13 +2466,13 @@ async def ingest_provider_items(
         except Exception as e:
             logger.warning(f"⚠️ [Ingest] Failed to fetch integration: {e}")
             integration = None
-        
+
         # Prepare credentials based on connector type
         if provider in ["google_drive", "notion", "onedrive", "sharepoint", "dropbox", "github", "box"]:
             # OAuth connectors: Pass integration_id for automatic token refresh
             if not integration or not integration.get('access_token'):
                 raise HTTPException(status_code=401, detail="Not connected to this provider. Please reconnect.")  # ALLOWED: literal
-            
+
             credentials = {
                 "integration_id": str(integration['id'])  # ✅ Pass integration_id for token refresh
             }
@@ -2472,7 +2482,7 @@ async def ingest_provider_items(
             if not integration or not integration.get('credentials'):
                 raise HTTPException(status_code=401, detail="Not connected to this provider")  # ALLOWED: literal
             credentials = integration['credentials']
-        
+
         # 2. Create ingestion job for progress tracking
         from datetime import datetime
         job_data = {
@@ -2485,17 +2495,17 @@ async def ingest_provider_items(
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
-        
+
         job_response = supabase.table("ingestion_jobs").insert(job_data).execute()
         if not job_response.data:
             raise HTTPException(status_code=500, detail="Failed to create ingestion job")  # ALLOWED: literal
 
         job_id = job_response.data[0]["id"]
         logger.info(f"📋 [Ingest] Created job {job_id} for {len(body.item_ids)} items")
-        
+
         # 3. Queue the unified ingestion task
         from worker.tasks import unified_ingest_task
-        
+
         task = unified_ingest_task.delay(
             user_id=user_id,
             job_id=str(job_id),
@@ -2509,7 +2519,7 @@ async def ingest_provider_items(
             increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(body.item_ids)))
         except Exception as exc:
             logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
-        
+
         logger.info(f"📥 [Ingest] Queued task {task.id} for job {job_id}")
         audit_logger.log_sync(
             user_id=user_id,
@@ -2518,7 +2528,7 @@ async def ingest_provider_items(
             resource_id=str(job_id),
             details={"provider": provider, "item_count": len(body.item_ids), "task_id": task.id},
         )
-        
+
         # 4. Return 202 Accepted with job info
         return {
             "status": "accepted",
@@ -2544,7 +2554,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
     """
     supabase = get_supabase()
     org_id, plan_code = await _resolve_org_and_plan(user_id)
-    
+
     try:
         # 1. Update status to processing
         supabase.table("ingestion_jobs").update({
@@ -2565,7 +2575,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             "status_message": "Discovering files...",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", job_id).execute()
-        
+
         # 2. Get Connector
         from connectors import get_connector
         try:
@@ -2578,13 +2588,13 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
         # Handle both async and sync connectors (same pattern as list_provider_items)
         list_files_method = connector.list_files
         sync_config = {"user_id": user_id, "parent_id": None, "provider": provider}
-        
+
         if inspect.iscoroutinefunction(list_files_method):
             root_items = await list_files_method(sync_config)
         else:
             # Sync connector - offload to threadpool
             root_items = await run_in_threadpool(lambda: list(list_files_method(sync_config)))
-        
+
         item_ids = [getattr(item, "id", None) or item.get("id") for item in (root_items or []) if (getattr(item, "id", None) or (isinstance(item, dict) and item.get("id")))]
 
         if not item_ids:
@@ -2659,15 +2669,15 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(item_ids)))
         except Exception as exc:
             logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
-        
+
     except Exception as e:
         logger.error(f"❌ [SyncJob] Failed {job_id}: {e}")
-        
+
         # Determine strict error message
         error_msg = str(e)
         if "invalid_grant" in error_msg or "Token has been expired" in error_msg or "reconnection" in error_msg:
             error_msg = "Authentication failed. Please reconnect integration."
-            
+
             # Since we can't update user_integrations.status (no column), we just log heavily
             # Ideally we would set user_integrations.connected = False or similar if schema allowed
             logger.critical(f"🚨 [SyncJob] Auth failure for provider {provider}. User interaction required.")
@@ -2698,29 +2708,29 @@ async def sync_integration(
     Creates an ingestion job and runs sync in background.
     """
     supabase = get_supabase()
-    
+
     try:
         # 1. Verify ownership and get provider type
         int_res = supabase.table("user_integrations").select(
             "id, connector_definition_id, connector_definitions(type)"
         ).eq("id", integration_id).eq("user_id", user_id).single().execute()
-        
+
         if not int_res.data:
             raise HTTPException(status_code=404, detail="Integration not found")  # ALLOWED: literal
 
         provider = int_res.data["connector_definitions"]["type"]
         org_id, _ = await _resolve_org_and_plan(user_id)
-        
+
         # 2. Rate limit check (simple check for pending jobs)
         existing_jobs = supabase.table("ingestion_jobs").select("id").eq(
             "user_id", user_id
         ).eq("provider", provider).eq("status", "pending").execute()
-        
+
         if len(existing_jobs.data) > 0:
             # Allow retry for debugging, but typically block
             # raise HTTPException(status_code=429, detail="A sync is already pending")
-            pass 
-        
+            pass
+
         # 3. Create ingestion job
         job_data = {
             "user_id": user_id,
@@ -2732,19 +2742,19 @@ async def sync_integration(
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
-        
+
         job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
         if not job_res.data:
             raise HTTPException(status_code=500, detail="Failed to create ingestion job")  # ALLOWED: literal
 
         job_id = job_res.data[0]["id"]
-        
+
         # 4. Dispatch Background Task
         background_tasks.add_task(run_background_sync, job_id, provider, user_id, integration_id)
-        
+
         return {
-            "status": "accepted", 
-            "job_id": job_id, 
+            "status": "accepted",
+            "job_id": job_id,
             "message": f"Sync started for {provider}"
         }
 
@@ -2767,12 +2777,12 @@ async def get_sync_history(
 ):
     """
     Get sync history for an integration.
-    
+
     Returns the sync_state records showing when syncs occurred,
     their status, and any associated metadata.
     """
     supabase = get_supabase()
-    
+
     try:
         # First verify ownership of the integration
         int_check = supabase.table("user_integrations")\
@@ -2781,12 +2791,12 @@ async def get_sync_history(
             .eq("user_id", user_id)\
             .single()\
             .execute()
-        
+
         if not int_check.data:
             raise HTTPException(status_code=404, detail="Integration not found")  # ALLOWED: literal
 
         provider = int_check.data["connector_definitions"]["type"]
-        
+
         # Fetch sync_state records for this user and provider
         sync_response = supabase.table("sync_state")\
             .select("*")\
@@ -2795,13 +2805,13 @@ async def get_sync_history(
             .order("updated_at", desc=True)\
             .limit(limit)\
             .execute()
-        
+
         return {
             "integration_id": integration_id,
             "provider": provider,
             "history": sync_response.data or []
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2816,7 +2826,7 @@ async def get_sync_history(
 class IngestedFilesResponse(BaseModel):
     """Response model for ingested files lookup."""
     source_type: str
-    ingested_ids: List[str]
+    ingested_ids: list[str]
     total_count: int
 
 
@@ -2830,21 +2840,21 @@ async def get_ingested_files(
 ):
     """
     Get list of file IDs that have already been ingested from a specific connector.
-    
+
     Used by FileBrowser to show "already added" indicators for files that
     are already in the knowledge base.
-    
+
     Returns:
         - source_type: Normalized provider name
         - ingested_ids: List of source_id values (original file IDs from the connector)
         - total_count: Total number of ingested files from this source
     """
     supabase = get_supabase()
-    
+
     try:
         # Normalize provider name
         canonical_provider = _require_provider(provider)
-        
+
         # Query documents table for this source type within the organization
         # The source_id field contains the original file ID from the connector
         docs_response = supabase.table("documents")\
@@ -2852,25 +2862,25 @@ async def get_ingested_files(
             .eq("organization_id", organization_id)\
             .eq("source_type", canonical_provider)\
             .execute()
-        
+
         # Extract unique source_ids (filter out None values)
         ingested_ids = list({
-            str(d["source_id"]) 
-            for d in (docs_response.data or []) 
+            str(d["source_id"])
+            for d in (docs_response.data or [])
             if d.get("source_id")
         })
-        
+
         logger.debug(
             f"[IngestedFiles] Found {len(ingested_ids)} ingested files "
             f"for {canonical_provider} in org {organization_id}"
         )
-        
+
         return IngestedFilesResponse(
             source_type=canonical_provider,
             ingested_ids=ingested_ids,
             total_count=len(ingested_ids),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:

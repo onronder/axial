@@ -5,13 +5,14 @@ Provides readiness and liveness probes for container orchestration.
 """
 
 import logging
+
 import psutil
-from typing import Dict, Optional, List
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from core.db import get_supabase
+
 from core.celery_app import celery_app
+from core.db import get_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -36,19 +37,19 @@ class ReadinessResponse(BaseModel):
 
 class LivenessResponse(BaseModel):
     status: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class StartupResponse(BaseModel):
     status: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """
     Basic health check endpoint.
-    
+
     Returns 200 if service is running.
     """
     return {"status": "healthy", "service": "axial-api"}
@@ -58,12 +59,12 @@ async def health_check():
 async def readiness_probe():
     """
     Readiness probe for Kubernetes.
-    
+
     Checks if the service is ready to accept traffic:
     - Database connection
     - Celery connection
     - Memory usage
-    
+
     Returns 200 if ready, 503 if not ready.
     """
     checks = {
@@ -71,7 +72,7 @@ async def readiness_probe():
         "celery": False,
         "memory": False
     }
-    
+
     # Check database connection
     try:
         supabase = get_supabase()
@@ -80,7 +81,7 @@ async def readiness_probe():
         checks["database"] = True
     except Exception as e:
         logger.error(f"Database readiness check failed: {e}")
-    
+
     # Check Celery connection
     try:
         # Ping Celery workers
@@ -88,7 +89,7 @@ async def readiness_probe():
         checks["celery"] = True
     except Exception as e:
         logger.error(f"Celery readiness check failed: {e}")
-    
+
     # Check memory usage
     try:
         memory = psutil.virtual_memory()
@@ -96,10 +97,10 @@ async def readiness_probe():
         checks["memory"] = memory.percent < 90
     except Exception as e:
         logger.error(f"Memory readiness check failed: {e}")
-    
+
     # Service is ready if all checks pass
     all_ready = all(checks.values())
-    
+
     if all_ready:
         return {
             "status": "ready",
@@ -116,16 +117,16 @@ async def readiness_probe():
 async def liveness_probe():
     """
     Liveness probe for Kubernetes.
-    
+
     Checks if the service is alive and should not be restarted.
     This is a lighter check than readiness.
-    
+
     Returns 200 if alive, 503 if dead.
     """
     try:
         # Check if process is responsive
         memory = psutil.virtual_memory()
-        
+
         # Consider dead if memory usage > 95% (likely OOM soon)
         if memory.percent > 95:
             logger.error(f"Liveness check failed: Memory usage at {memory.percent}%")
@@ -133,9 +134,9 @@ async def liveness_probe():
                 content={"status": "unhealthy", "reason": "memory_critical"},
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE
             )
-        
+
         return {"status": "alive"}
-    
+
     except Exception as e:
         logger.error(f"Liveness check failed: {e}")
         return JSONResponse(
@@ -148,19 +149,19 @@ async def liveness_probe():
 async def startup_probe():
     """
     Startup probe for Kubernetes.
-    
+
     Checks if the application has finished starting up.
     More lenient than readiness probe.
-    
+
     Returns 200 when startup is complete.
     """
     try:
         # Check if database is accessible
         supabase = get_supabase()
         supabase.table("ingestion_jobs").select("id").limit(1).execute()
-        
+
         return {"status": "started"}
-    
+
     except Exception as e:
         logger.error(f"Startup check failed: {e}")
         return JSONResponse(

@@ -6,10 +6,10 @@ Tests for:
 - GET /api/v1/admin/audit-logs/actions - Get available actions
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
+import pytest
 
 # =============================================================================
 # Tests for Audit Logs Endpoint
@@ -17,16 +17,16 @@ from datetime import datetime, timedelta
 
 class TestGetAuditLogsEndpoint:
     """Tests for GET /api/v1/admin/audit-logs."""
-    
+
     @pytest.fixture
     def mock_supabase_with_audit_logs(self):
         """Mock Supabase with audit log data."""
         mock = MagicMock()
-        
+
         # Mock team check
         team_response = MagicMock()
         team_response.data = {"user_role": "owner"}
-        
+
         # Mock audit logs response
         logs_response = MagicMock()
         logs_response.data = [
@@ -52,7 +52,7 @@ class TestGetAuditLogsEndpoint:
             }
         ]
         logs_response.count = 2
-        
+
         table = MagicMock()
         table.select.return_value = table
         table.eq.return_value = table
@@ -61,10 +61,10 @@ class TestGetAuditLogsEndpoint:
         table.order.return_value = table
         table.range.return_value = table
         table.execute.return_value = logs_response
-        
+
         mock.table.return_value = table
         return mock
-    
+
     @pytest.mark.unit
     def test_get_audit_logs_returns_paginated_list(self, mock_supabase_with_audit_logs):
         """Should return paginated list of audit logs."""
@@ -73,23 +73,23 @@ class TestGetAuditLogsEndpoint:
             {"id": "log-2", "action": "chat.delete"}
         ]
         assert len(logs) == 2
-    
+
     @pytest.mark.unit
     def test_get_audit_logs_requires_owner_or_admin(self):
         """Only owners and admins can view audit logs."""
         allowed_roles = ["owner", "admin"]
-        
+
         test_cases = [
             ("owner", True),
             ("admin", True),
             ("member", False),
             ("viewer", False),
         ]
-        
+
         for role, expected in test_cases:
             can_view = role in allowed_roles
             assert can_view == expected
-    
+
     @pytest.mark.unit
     def test_get_audit_logs_filters_by_action(self):
         """Should filter logs by action type."""
@@ -99,7 +99,7 @@ class TestGetAuditLogsEndpoint:
         ]
         for log in filtered_logs:
             assert log["action"] == action_filter
-    
+
     @pytest.mark.unit
     def test_get_audit_logs_filters_by_resource_type(self):
         """Should filter logs by resource type."""
@@ -109,35 +109,35 @@ class TestGetAuditLogsEndpoint:
         ]
         for log in filtered_logs:
             assert log["resource_type"] == resource_filter
-    
+
     @pytest.mark.unit
     def test_get_audit_logs_filters_by_date_range(self):
         """Should filter logs by from_date and to_date."""
         from_date = "2024-01-01T00:00:00Z"
         to_date = "2024-01-31T23:59:59Z"
-        
+
         # Should use gte(from_date) and lte(to_date)
         assert from_date < to_date
-    
+
     @pytest.mark.unit
     def test_get_audit_logs_respects_pagination(self):
         """Should respect limit and offset parameters."""
         limit = 50
         offset = 100
-        
+
         # Should call range(offset, offset + limit - 1)
         expected_end = offset + limit - 1
         assert expected_end == 149
-    
+
     @pytest.mark.unit
     def test_get_audit_logs_orders_by_created_at_desc(self):
         """Most recent logs should appear first."""
         order_column = "created_at"
         order_desc = True
-        
+
         assert order_column == "created_at"
         assert order_desc is True
-    
+
     @pytest.mark.unit
     def test_get_audit_logs_returns_total_count(self):
         """Response should include total count for pagination."""
@@ -152,7 +152,7 @@ class TestGetAuditLogsEndpoint:
 
 class TestAuditLogActionsEndpoint:
     """Tests for GET /api/v1/admin/audit-logs/actions."""
-    
+
     @pytest.mark.unit
     def test_get_actions_returns_list(self):
         """Should return list of available action types."""
@@ -166,7 +166,7 @@ class TestAuditLogActionsEndpoint:
         ]
         assert len(actions) > 0
         assert "document.delete" in actions
-    
+
     @pytest.mark.unit
     def test_get_actions_is_static_list(self):
         """Should return static list for efficiency."""
@@ -177,7 +177,7 @@ class TestAuditLogActionsEndpoint:
 
 class TestAuditLogEntry:
     """Tests for AuditLogEntry model."""
-    
+
     @pytest.mark.unit
     def test_audit_log_entry_has_required_fields(self):
         """AuditLogEntry should have all required fields."""
@@ -191,11 +191,11 @@ class TestAuditLogEntry:
             "ip_address": "192.168.1.1",
             "created_at": "2024-01-01T00:00:00Z"
         }
-        
+
         required_fields = ["id", "action", "created_at"]
         for field in required_fields:
             assert field in entry
-    
+
     @pytest.mark.unit
     def test_audit_log_entry_allows_optional_fields(self):
         """Optional fields should default to None/empty."""
@@ -209,7 +209,7 @@ class TestAuditLogEntry:
             "details": {},
             "ip_address": None
         }
-        
+
         assert entry["user_id"] is None
         assert entry["details"] == {}
 
@@ -220,27 +220,27 @@ class TestAuditLogEntry:
 
 class TestAuditLogCleanupTask:
     """Tests for cleanup_old_audit_logs Celery task."""
-    
+
     @pytest.mark.unit
     def test_cleanup_deletes_old_logs(self):
         """Should delete logs older than 90 days."""
         retention_days = 90
         cutoff = datetime.now() - timedelta(days=retention_days)
-        
+
         assert retention_days == 90
-    
+
     @pytest.mark.unit
     def test_cleanup_uses_created_at_for_cutoff(self):
         """Should filter by created_at column."""
         filter_column = "created_at"
         assert filter_column == "created_at"
-    
+
     @pytest.mark.unit
     def test_cleanup_returns_deleted_count(self):
         """Should return count of deleted records."""
         result = {"deleted": 150}
         assert result["deleted"] == 150
-    
+
     @pytest.mark.unit
     def test_cleanup_handles_errors_gracefully(self):
         """Should return error message on failure."""

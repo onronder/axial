@@ -1,10 +1,10 @@
 import asyncio
 import os
 import uuid
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
-from core.db import get_supabase
 from api.v1.settings import get_profile
+from core.db import get_supabase
 
 
 async def verify_orphan_user_recovery(
@@ -18,7 +18,7 @@ async def verify_orphan_user_recovery(
     """
     test_email = f"test_orphan_{uuid.uuid4()}@example.com"
     test_password = "password123"
-    user_id: Optional[str] = None
+    user_id: str | None = None
 
     try:
         user_response = supabase.auth.admin.create_user({
@@ -62,7 +62,7 @@ async def verify_invite_skip_onboarding(
         "email_confirm": True,
     })
     user_id = user_response.user.id
-    team_id: Optional[str] = None
+    team_id: str | None = None
 
     try:
         team_name = f"Team {uuid.uuid4()}"

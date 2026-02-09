@@ -11,24 +11,22 @@ Tests cover:
 - Helper methods
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime, timezone
 import json
+from datetime import datetime, timezone
+from unittest.mock import Mock, patch
 
-from connectors.dropbox import (
-    DropboxConnector,
-    get_dropbox_connector,
-    DROPBOX_API_BASE,
-    DROPBOX_CONTENT_BASE,
-)
+import pytest
+
 from connectors.base import (
     ConnectorAuthError,
     ConnectorRateLimitError,
     ConnectorTransientError,
-    RemoteFile,
 )
-from connectors.enhanced import SourceType, ItemNotFoundError
+from connectors.dropbox import (
+    DropboxConnector,
+    get_dropbox_connector,
+)
+from connectors.enhanced import ItemNotFoundError, SourceType
 
 
 class TestDropboxConnectorBasics:

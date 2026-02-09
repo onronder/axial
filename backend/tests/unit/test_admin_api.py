@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from api.v1 import admin
 
+
 def _make_mock_request(method="GET", path="/api/v1"):
     """Create a mock Starlette Request for testing endpoints with rate limiters."""
     from starlette.requests import Request
@@ -30,6 +31,7 @@ class TestAdminAuditLogs:
         query = MagicMock()
         query.select.return_value = query
         query.eq.return_value = query
+        query.in_.return_value = query
         query.gte.return_value = query
         query.lte.return_value = query
         query.order.return_value = query

@@ -11,7 +11,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class ScopeStats:
     count: int = 0
     score_sum: float = 0.0
     avg_score: float = 0.0
-    docs: List[Dict[str, Any]] = field(default_factory=list)
+    docs: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self):
         if self.count > 0 and self.score_sum > 0:
@@ -42,17 +42,17 @@ class ScopeStats:
 class ScopeAnalysisResult:
     """
     Result of scope distribution analysis.
-    
+
     Used by the Dominance Guard to decide how to handle retrieval results.
     """
     classification: ScopeClassification
-    primary_scope_id: Optional[str] = None
+    primary_scope_id: str | None = None
     dominance_ratio: float = 0.0
-    primary_scope_stats: Optional[ScopeStats] = None
-    secondary_scopes: List[ScopeStats] = field(default_factory=list)
+    primary_scope_stats: ScopeStats | None = None
+    secondary_scopes: list[ScopeStats] = field(default_factory=list)
     total_docs: int = 0
     scoped_docs: int = 0
-    distribution: Dict[str, ScopeStats] = field(default_factory=dict)
+    distribution: dict[str, ScopeStats] = field(default_factory=dict)
 
     @property
     def has_single_dominant_scope(self) -> bool:
@@ -77,25 +77,25 @@ MIN_SCORE_FOR_ANALYSIS = 0.3  # Ignore docs below this relevance score
 
 
 def analyze_scope_distribution(
-    docs: List[Dict[str, Any]],
+    docs: list[dict[str, Any]],
     dominance_threshold: float = DOMINANCE_THRESHOLD,
     contested_threshold: float = CONTESTED_THRESHOLD,
     min_score: float = MIN_SCORE_FOR_ANALYSIS,
 ) -> ScopeAnalysisResult:
     """
     Analyze the scope distribution of retrieved documents.
-    
+
     Implements the Dominance Guard logic:
     - DOMINANT (≥85%): One scope clearly wins → proceed with generation + footnote
     - CONTESTED (60-84%): Primary has majority → proceed with annotation
     - FRAGMENTED (<60%): No clear winner → request clarification
-    
+
     Args:
         docs: List of retrieved documents from hybrid_search
         dominance_threshold: Ratio threshold for DOMINANT classification (default 0.85)
         contested_threshold: Ratio threshold for CONTESTED classification (default 0.60)
         min_score: Minimum relevance score to include in analysis (default 0.3)
-        
+
     Returns:
         ScopeAnalysisResult with classification and scope statistics
     """
@@ -107,33 +107,33 @@ def analyze_scope_distribution(
         )
 
     # Filter to high-relevance docs and group by scope
-    scope_groups: Dict[str, ScopeStats] = defaultdict(lambda: ScopeStats(scope_id=""))
+    scope_groups: dict[str, ScopeStats] = defaultdict(lambda: ScopeStats(scope_id=""))
     scoped_docs = 0
-    
+
     for doc in docs:
         # Get relevance score (hybrid_search uses vector_score, match_documents uses similarity)
         score = doc.get("vector_score") or doc.get("similarity") or doc.get("combined_score", 0)
-        
+
         # Skip low-relevance docs for scope analysis
         if score < min_score:
             continue
-        
+
         # Extract scope_id (from new column or metadata fallback)
         scope_id = doc.get("scope_id")
         if not scope_id:
             metadata = doc.get("metadata") or {}
             scope_id = metadata.get("scope_id")
-        
+
         # Skip docs without scope information
         if not scope_id:
             continue
-        
+
         scoped_docs += 1
-        
+
         # Initialize ScopeStats if first doc for this scope
         if not scope_groups[scope_id].scope_id:
             scope_groups[scope_id] = ScopeStats(scope_id=scope_id)
-        
+
         stats = scope_groups[scope_id]
         stats.count += 1
         stats.score_sum += float(score)
@@ -157,7 +157,7 @@ def analyze_scope_distribution(
 
     primary = scope_list[0]
     secondary = scope_list[1:] if len(scope_list) > 1 else []
-    
+
     # Calculate dominance ratio
     dominance_ratio = primary.count / scoped_docs if scoped_docs > 0 else 0.0
 
@@ -190,21 +190,21 @@ def analyze_scope_distribution(
 def get_scope_candidates_for_clarification(
     analysis: ScopeAnalysisResult,
     max_candidates: int = 5,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Extract scope candidates for clarification response.
-    
+
     Returns simplified scope info suitable for the 300 Multiple Choices response.
-    
+
     Args:
         analysis: ScopeAnalysisResult from analyze_scope_distribution
         max_candidates: Maximum number of candidates to return
-        
+
     Returns:
         List of candidate dicts with id, count, and score_sum
     """
     candidates = []
-    
+
     # Include primary scope
     if analysis.primary_scope_stats:
         candidates.append({
@@ -213,7 +213,7 @@ def get_scope_candidates_for_clarification(
             "score_sum": round(analysis.primary_scope_stats.score_sum, 3),
             "avg_score": round(analysis.primary_scope_stats.avg_score, 3),
         })
-    
+
     # Include secondary scopes
     for scope_stats in analysis.secondary_scopes[:max_candidates - 1]:
         candidates.append({
@@ -222,23 +222,23 @@ def get_scope_candidates_for_clarification(
             "score_sum": round(scope_stats.score_sum, 3),
             "avg_score": round(scope_stats.avg_score, 3),
         })
-    
+
     return candidates
 
 
 def filter_docs_by_scope(
-    docs: List[Dict[str, Any]],
+    docs: list[dict[str, Any]],
     scope_id: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Filter documents to only those from a specific scope.
-    
+
     Used when user selects a scope from clarification options.
-    
+
     Args:
         docs: List of retrieved documents
         scope_id: Canonical scope URI to filter by
-        
+
     Returns:
         Filtered list of documents from the specified scope
     """
@@ -248,8 +248,8 @@ def filter_docs_by_scope(
         if not doc_scope:
             metadata = doc.get("metadata") or {}
             doc_scope = metadata.get("scope_id")
-        
+
         if doc_scope == scope_id:
             filtered.append(doc)
-    
+
     return filtered

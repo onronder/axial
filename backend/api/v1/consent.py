@@ -10,22 +10,30 @@ Compliance Coverage:
 """
 
 import logging
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, status, Query
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from pydantic import BaseModel
 
 from api.v1.dependencies import (
+    get_user_organization_id,
     require_admin,
     require_editor,
-    get_user_organization_id,
     validate_team_access,
 )
+from api.v1.error_utils import ApiErrorCode, api_error
 from core.rate_limit import limiter
-from api.v1.error_utils import api_error, ApiErrorCode
 from services.consent import (
+    ConsentLevel,
     ConsentManager,
     ConsentType,
-    ConsentLevel,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,9 +51,9 @@ class OrgConsentResponse(BaseModel):
     """Organization consent settings."""
     organization_id: str
     allow_ai_learning: bool = False
-    ai_learning_consent_at: Optional[str] = None
+    ai_learning_consent_at: str | None = None
     allow_external_agents: bool = False
-    external_agents_consent_at: Optional[str] = None
+    external_agents_consent_at: str | None = None
 
 
 class OrgConsentUpdate(BaseModel):
@@ -59,10 +67,10 @@ class ScopeConsentResponse(BaseModel):
     scope_id: str
     organization_id: str
     inherit_org_consent: bool = True
-    allow_ai_learning: Optional[bool] = None
-    allow_external_agents: Optional[bool] = None
-    allowed_agent_ids: List[str] = []
-    blocked_agent_ids: List[str] = []
+    allow_ai_learning: bool | None = None
+    allow_external_agents: bool | None = None
+    allowed_agent_ids: list[str] = []
+    blocked_agent_ids: list[str] = []
 
 
 class ScopeConsentUpdate(BaseModel):
@@ -77,10 +85,10 @@ class DocumentConsentResponse(BaseModel):
     document_id: str
     organization_id: str
     inherit_scope_consent: bool = True
-    allow_ai_learning: Optional[bool] = None
-    allow_external_agents: Optional[bool] = None
-    allowed_agent_ids: List[str] = []
-    blocked_agent_ids: List[str] = []
+    allow_ai_learning: bool | None = None
+    allow_external_agents: bool | None = None
+    allowed_agent_ids: list[str] = []
+    blocked_agent_ids: list[str] = []
 
 
 class DocumentConsentUpdate(BaseModel):
@@ -96,30 +104,30 @@ class ConsentAuditEntry(BaseModel):
     consent_level: str
     resource_id: str
     field_changed: str
-    old_value: Optional[str] = None
-    new_value: Optional[str] = None
+    old_value: str | None = None
+    new_value: str | None = None
     changed_by: str
     changed_at: str
-    ip_address: Optional[str] = None
+    ip_address: str | None = None
 
 
 class BulkScopeConsentItem(BaseModel):
     """Single scope consent update for bulk operations."""
     scope_id: str
     consent_type: str  # 'ai_learning' | 'external_agents'
-    allowed: Optional[bool] = None
+    allowed: bool | None = None
 
 
 class BulkScopeConsentRequest(BaseModel):
     """Request to update multiple scope consents at once."""
-    updates: List[BulkScopeConsentItem]
+    updates: list[BulkScopeConsentItem]
 
 
 class BulkScopeConsentResponse(BaseModel):
     """Response from bulk scope consent update."""
     success: int
     failed: int
-    errors: List[dict] = []
+    errors: list[dict] = []
 
 
 class ComplianceReport(BaseModel):
@@ -137,7 +145,7 @@ class ScopeInfo(BaseModel):
     """Scope information for consent UI."""
     id: str
     label: str
-    source_type: Optional[str] = None
+    source_type: str | None = None
     document_count: int = 0
 
 
@@ -145,7 +153,7 @@ class ScopeInfo(BaseModel):
 # Scopes Endpoint (for Consent UI)
 # =============================================================================
 
-@router.get("/scopes", response_model=List[ScopeInfo])
+@router.get("/scopes", response_model=list[ScopeInfo])
 @limiter.limit("30/minute")
 async def list_scopes(
     request: Request,
@@ -342,22 +350,22 @@ async def update_org_consent(
 async def _trigger_gdpr_ai_learning_wipe(
     organization_id: str,
     user_id: str,
-    ip_address: Optional[str] = None,
+    ip_address: str | None = None,
 ):
     """
     GDPR compliance: Wipe AI learning data when consent is revoked.
-    
+
     This background task purges any data that was used for AI learning
     while the consent was active. Per GDPR Article 17 (Right to Erasure).
     """
     from core.db import get_supabase
     from services.audit_service import audit_service
-    
+
     logger.info(f"[GDPR] Starting AI learning data wipe for organization {organization_id}")
-    
+
     try:
         supabase = get_supabase()
-        
+
         # Log the GDPR wipe request
         await audit_service.log_action(
             user_id=user_id,
@@ -369,17 +377,17 @@ async def _trigger_gdpr_ai_learning_wipe(
                 "ip_address": ip_address,
             }
         )
-        
+
         # Delete any AI learning feedback/training data
         # This is where organization-specific AI learning data would be purged
         # The actual implementation depends on how AI learning data is stored
-        
+
         # For now, mark all documents as "not for AI learning" by updating scope consents
         scopes = supabase.table("scopes")\
             .select("id")\
             .eq("organization_id", organization_id)\
             .execute()
-        
+
         if scopes.data:
             for scope in scopes.data:
                 supabase.table("scope_consents")\
@@ -390,7 +398,7 @@ async def _trigger_gdpr_ai_learning_wipe(
                         "inherit_org_consent": True,
                     }, on_conflict="scope_id,organization_id")\
                     .execute()
-        
+
         # Log successful completion
         await audit_service.log_action(
             user_id=user_id,
@@ -401,9 +409,9 @@ async def _trigger_gdpr_ai_learning_wipe(
                 "scopes_updated": len(scopes.data) if scopes.data else 0,
             }
         )
-        
+
         logger.info(f"[GDPR] AI learning data wipe completed for organization {organization_id}")
-        
+
     except Exception as e:
         logger.error(f"[GDPR] AI learning data wipe failed for organization {organization_id}: {e}")
 
@@ -521,7 +529,7 @@ async def bulk_update_scope_consent(
 ):
     """
     Bulk update scope consent settings.
-    
+
     Allows updating multiple scope consents in a single request.
     Only organization admins can perform bulk updates.
     Maximum 50 updates per request.
@@ -531,26 +539,26 @@ async def bulk_update_scope_consent(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximum 50 updates per request"
         )
-    
+
     if len(payload.updates) == 0:
         return BulkScopeConsentResponse(success=0, failed=0, errors=[])
-    
+
     ip_address = None
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         ip_address = forwarded.split(",")[0].strip()
     else:
         ip_address = request.client.host if request.client else None
-    
+
     manager = ConsentManager()
     success_count = 0
     failed_count = 0
     errors = []
-    
+
     for update in payload.updates:
         try:
             consent_type = ConsentType(update.consent_type)
-            
+
             await manager.set_scope_consent(
                 scope_id=update.scope_id,
                 organization_id=organization_id,
@@ -560,7 +568,7 @@ async def bulk_update_scope_consent(
                 ip_address=ip_address,
             )
             success_count += 1
-            
+
         except ValueError:
             failed_count += 1
             errors.append({
@@ -574,7 +582,7 @@ async def bulk_update_scope_consent(
                 "error": str(e)
             })
             logger.error(f"[Consent] Bulk scope update failed for {update.scope_id}: {e}")
-    
+
     return BulkScopeConsentResponse(
         success=success_count,
         failed=failed_count,
@@ -1173,7 +1181,7 @@ async def delete_document_consent(
 # Audit & Reporting Endpoints
 # =============================================================================
 
-@router.get("/consent/audit", response_model=List[ConsentAuditEntry])
+@router.get("/consent/audit", response_model=list[ConsentAuditEntry])
 @limiter.limit("10/minute")
 async def get_consent_audit(
     request: Request,

@@ -1,6 +1,6 @@
-from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock, patch
 import sys
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -147,14 +147,13 @@ class TestCrawlDiscoveryTask:
         with patch("worker.tasks.get_supabase", return_value=supabase), \
              patch("connectors.web.WebConnector", return_value=connector), \
              patch("worker.tasks.create_notification"), \
-             patch("worker.tasks.update_crawl_status"):
-            with pytest.raises(ValueError):
-                tasks.crawl_discovery_task._orig_run.__func__(
-                    task,
-                    "user-1",
-                    "bad-url",
-                    {"crawl_id": "crawl-1", "crawl_type": "single"},
-                )
+             patch("worker.tasks.update_crawl_status"), pytest.raises(ValueError):
+            tasks.crawl_discovery_task._orig_run.__func__(
+                task,
+                "user-1",
+                "bad-url",
+                {"crawl_id": "crawl-1", "crawl_type": "single"},
+            )
 
     @pytest.mark.unit
     def test_crawl_discovery_dedup_adds_raw_url_when_normalize_none(self):
@@ -404,7 +403,7 @@ class TestScheduledCrawls:
     def test_check_scheduled_crawls_triggers(self):
         task = SimpleNamespace(request=SimpleNamespace(id="task-1"))
         supabase = MagicMock()
-        
+
         # Create a more flexible mock that handles all table operations
         def make_table_mock():
             table = MagicMock()
@@ -420,7 +419,7 @@ class TestScheduledCrawls:
             table.single.return_value = table
             table.execute.return_value = MagicMock(data=[])
             return table
-        
+
         crawl_configs_table = make_table_mock()
         # First call to web_crawl_configs returns crawl data
         crawl_configs_table.execute.side_effect = [
@@ -438,14 +437,14 @@ class TestScheduledCrawls:
             MagicMock(data=[]),  # update status
             MagicMock(data=[]),  # update next_crawl_at
         ]
-        
+
         def table_dispatch(name):
             if name == "web_crawl_configs":
                 return crawl_configs_table
             return make_table_mock()
-        
+
         supabase.table.side_effect = table_dispatch
-        
+
         mock_task = SimpleNamespace(id="task-123")
 
         with patch("worker.tasks.get_supabase", return_value=supabase), \

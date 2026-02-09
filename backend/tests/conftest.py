@@ -37,12 +37,10 @@ for key, value in _TEST_ENV_VARS.items():
 # Add backend to path early so module imports resolve during collection.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from fastapi.testclient import TestClient
-import asyncio
-from uuid import uuid4
+from unittest.mock import AsyncMock, Mock
 
+import pytest
+from fastapi.testclient import TestClient
 
 # =============================================================================
 # Rate Limiter Bypass - MUST be applied before importing rate-limited modules
@@ -62,10 +60,10 @@ class _NoopLimiter:
     """Mock limiter that does nothing - for testing rate-limited endpoints."""
     def limit(self, *args, **kwargs):
         return _noop_decorator
-    
+
     def shared_limit(self, *args, **kwargs):
         return _noop_decorator
-    
+
     def exempt(self, func):
         return func
 
@@ -133,16 +131,16 @@ def authenticated_client(client):
 def mock_supabase():
     """Create a mock Supabase client."""
     mock = Mock()
-    
+
     # Mock table operations
     mock.table.return_value.select.return_value.execute.return_value.data = []
     mock.table.return_value.insert.return_value.execute.return_value.data = [{"id": "test-id"}]
     mock.table.return_value.update.return_value.execute.return_value.data = [{"id": "test-id"}]
     mock.table.return_value.delete.return_value.execute.return_value.data = []
-    
+
     # Mock RPC calls
     mock.rpc.return_value.execute.return_value.data = []
-    
+
     return mock
 
 
@@ -239,8 +237,7 @@ def benchmark():
 def mock_request():
     """Create a mock Starlette Request for testing endpoints with rate limiters."""
     from starlette.requests import Request
-    from starlette.testclient import TestClient
-    
+
     scope = {
         "type": "http",
         "method": "GET",
@@ -258,7 +255,7 @@ def mock_request():
 def mock_request_factory():
     """Factory fixture to create mock requests with different paths/methods."""
     from starlette.requests import Request
-    
+
     def _create_request(
         method: str = "GET",
         path: str = "/",
@@ -276,5 +273,5 @@ def mock_request_factory():
             "app": None,
         }
         return Request(scope=scope)
-    
+
     return _create_request

@@ -4,7 +4,6 @@ Tests for core/quotas.py - Plan limits and utilities.
 Note: Actual quota enforcement (check_admission) is tested in test_services_quotas.py
 """
 
-import pytest
 
 from core import quotas
 

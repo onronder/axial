@@ -16,26 +16,25 @@ import argparse
 import os
 import sys
 from datetime import datetime
-from typing import Optional
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from connectors.sftp import SFTPConnector
 from connectors.base import ConnectorAuthError, ConnectorTransientError
+from connectors.sftp import SFTPConnector
 
 
-def _read_private_key(value: Optional[str]) -> Optional[str]:
+def _read_private_key(value: str | None) -> str | None:
     if not value:
         return None
     if os.path.isfile(value):
-        with open(value, "r", encoding="utf-8") as handle:
+        with open(value, encoding="utf-8") as handle:
             return handle.read()
     return value
 
 
-def _parse_since(value: Optional[str]) -> Optional[datetime]:
+def _parse_since(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
@@ -86,7 +85,7 @@ def main() -> int:
 
     args = parser.parse_args()
     config = _build_config(args)
-    
+
     # For local testing: bypass SSRF check if --allow-private is set
     if args.allow_private:
         config["_allow_private"] = True

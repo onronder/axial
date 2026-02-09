@@ -11,8 +11,7 @@ import json
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +81,7 @@ class MandateGenerator:
     """
 
     def __init__(self):
-        self._signing_key: Optional[bytes] = None
+        self._signing_key: bytes | None = None
 
     def _get_signing_key(self) -> bytes:
         """

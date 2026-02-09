@@ -1,7 +1,7 @@
 import json
 import sys
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import BackgroundTasks
@@ -13,10 +13,10 @@ sys.modules.setdefault("botocore", MagicMock())
 sys.modules.setdefault("botocore.config", MagicMock())
 sys.modules.setdefault("botocore.exceptions", MagicMock())
 
+from api.v1.chat import ChatRequest, chat_endpoint
 from core.scopes import build_scope_uri
-from services.scope_identity import synthesize_and_save_identity
 from services.scope_analysis import ScopeAnalysisResult, ScopeClassification, ScopeStats
-from api.v1.chat import chat_endpoint, ChatRequest
+from services.scope_identity import synthesize_and_save_identity
 
 
 def _make_request() -> Request:

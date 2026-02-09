@@ -7,8 +7,9 @@ Verifies:
 3. WebConnector uses trafilatura and returns SourceDocument
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from connectors.enhanced import SourceDocument
 
@@ -148,13 +149,14 @@ class TestWorkerIntegration:
         """Worker should use zero-copy architecture for file ingestion."""
         # This is a structural test - verify the worker code uses the right pattern
         import inspect
+
         from worker import tasks
         source = inspect.getsource(tasks.process_file_task)
-        
+
         # Verify zero-copy architecture components
         assert 'storage' in source.lower(), "Worker should use storage (zero-copy)"
         assert 'download' in source.lower(), "Worker should download from storage"
-        
+
         # Verify embeddings pipeline is used (async embedding via task dispatch)
         assert (
             'rpc' in source.lower()
@@ -163,7 +165,7 @@ class TestWorkerIntegration:
             or 'insert_rows_with_retry' in source
             or 'generate_embeddings_task' in source
         ), "Worker should dispatch embeddings task or use atomic inserts"
-        
+
         # Verify cleanup happens (zero-copy cleanup)
         assert 'finally' in source or 'remove' in source.lower(), \
             "Worker should clean up storage files"

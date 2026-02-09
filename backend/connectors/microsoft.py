@@ -10,24 +10,30 @@ from __future__ import annotations
 import io
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, Optional, AsyncIterator, List
+from collections.abc import AsyncIterator, Iterator
+from datetime import datetime
+from typing import Any
 
 import requests
 from starlette.concurrency import run_in_threadpool
 
 from connectors.base import (
     BaseConnector,
-    RemoteFile,
     ConnectorAuthError,
     ConnectorRateLimitError,
     ConnectorTransientError,
+    RemoteFile,
 )
-from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
+from connectors.enhanced import (
+    EnhancedConnector,
+    ItemNotFoundError,
+    SourceDocument,
+    SourceType,
+)
 from connectors.limits import connector_fetch_limit
 from connectors.utils import load_integration
-from core.sync import SyncManager
 from core.scopes import build_scope_uri
+from core.sync import SyncManager
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
@@ -64,17 +70,14 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         access_token = config.get("access_token")
         integration_id = config.get("integration_id")
         user_id = config.get("user_id")
-        if not access_token and not integration_id and not user_id:
-            return False
-
-        return True
+        return not (not access_token and not integration_id and not user_id)
 
     async def list_files(
-        self, config: Dict[str, Any], since: Optional[datetime] = None
-    ) -> List[RemoteFile]:
+        self, config: dict[str, Any], since: datetime | None = None
+    ) -> list[RemoteFile]:
         return await run_in_threadpool(self._list_files_sync, config, since)
 
-    def iter_files_sync(self, config: Dict[str, Any], since: Optional[datetime] = None) -> Iterator[RemoteFile]:
+    def iter_files_sync(self, config: dict[str, Any], since: datetime | None = None) -> Iterator[RemoteFile]:
         resolved = self._resolve_config(config)
         if not self.validate_config(resolved):
             raise ConnectorAuthError("Invalid Microsoft Graph configuration")
@@ -92,7 +95,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
 
         yield from self._list_children_items(resolved, parent_id)
 
-    def _list_files_sync(self, config: Dict[str, Any], since: Optional[datetime] = None) -> List[RemoteFile]:
+    def _list_files_sync(self, config: dict[str, Any], since: datetime | None = None) -> list[RemoteFile]:
         return list(self.iter_files_sync(config, since))
 
     def fetch_file_content(self, file_id: str, config: dict) -> bytes:
@@ -112,7 +115,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
     async def fetch_documents(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
     ) -> AsyncIterator[SourceDocument]:
         for doc in self.fetch_documents_sync(item_ids, credentials, **kwargs):
@@ -121,12 +124,12 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
     def fetch_documents_sync(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
     ) -> Iterator[SourceDocument]:
         """
         Fetch documents from OneDrive/SharePoint for ingestion pipeline.
-        
+
         Scope ID Format: onedrive://{drive_id}/{item_id} or sharepoint://{drive_id}/{item_id}
         """
         if not item_ids:
@@ -146,7 +149,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         for item_id in item_ids:
             # Generate scope_id using canonical URI builder
             scope_id = build_scope_uri(target_type, {"drive_id": drive_id, "item_id": item_id})
-            
+
             if item_id in (None, "root"):
                 yield from self._walk_folder(resolved, "root", scope_id)
                 continue
@@ -195,7 +198,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
 
         return resolved
 
-    def _load_integration(self, config: dict) -> Dict[str, Any]:
+    def _load_integration(self, config: dict) -> dict[str, Any]:
         """Load integration record from database using shared utility."""
         # Microsoft uses dynamic target_type (onedrive or sharepoint)
         connector_type = config.get("target_type", self.target_type)
@@ -205,7 +208,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             user_id=config.get("user_id"),
         )
 
-    def _resolve_drive_id(self, config: dict) -> tuple[str, Optional[str]]:
+    def _resolve_drive_id(self, config: dict) -> tuple[str, str | None]:
         drive_id = config.get("drive_id")
         site_id = config.get("site_id")
         if drive_id:
@@ -231,7 +234,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
 
         return drive_id, site_id
 
-    def _list_recursive_items(self, config: dict, since: Optional[datetime]) -> Iterator[RemoteFile]:
+    def _list_recursive_items(self, config: dict, since: datetime | None) -> Iterator[RemoteFile]:
         drive_id = config["drive_id"]
         delta_token = self._get_delta_token(config, since)
 
@@ -273,7 +276,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         for item in self._paged_items(config, url):
             yield item
 
-    def _delta_listing(self, config: dict, drive_id: str, delta_token: Optional[str]) -> tuple[List[dict], Optional[str]]:
+    def _delta_listing(self, config: dict, drive_id: str, delta_token: str | None) -> tuple[list[dict], str | None]:
         if delta_token and delta_token.startswith("http"):
             url = delta_token
             params = None
@@ -281,8 +284,8 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             url = f"{GRAPH_BASE_URL}/drives/{drive_id}/root/delta"
             params = {"token": delta_token} if delta_token else None
 
-        items: List[dict] = []
-        delta_link: Optional[str] = None
+        items: list[dict] = []
+        delta_link: str | None = None
 
         while url:
             data = self._get_json(config, url, params=params)
@@ -296,7 +299,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         filtered = [item for item in items if not item.get("deleted")]
         return filtered, delta_link
 
-    def _get_delta_token(self, config: dict, since: Optional[datetime]) -> Optional[str]:
+    def _get_delta_token(self, config: dict, since: datetime | None) -> str | None:
         if isinstance(since, str):
             return since
         delta_token = config.get("delta_token")
@@ -309,7 +312,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         state = manager.get_state()
         return state.last_cursor if state else None
 
-    def _item_to_remote(self, item: dict, include_folders: bool) -> Optional[RemoteFile]:
+    def _item_to_remote(self, item: dict, include_folders: bool) -> RemoteFile | None:
         item_id = item.get("id")
         if not item_id:
             return None
@@ -405,7 +408,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
                 yield item
             url = data.get("@odata.nextLink")
 
-    def _get_json(self, config: dict, url: str, params: Optional[dict] = None) -> dict:
+    def _get_json(self, config: dict, url: str, params: dict | None = None) -> dict:
         headers = self._auth_headers(config)
         with connector_fetch_limit(config.get("target_type", self.target_type)):
             response = self._request_with_retry("GET", url, headers=headers, params=params)
@@ -432,8 +435,8 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         self,
         method: str,
         url: str,
-        headers: Optional[dict] = None,
-        params: Optional[dict] = None,
+        headers: dict | None = None,
+        params: dict | None = None,
         stream: bool = False,
         allow_redirects: bool = True,
     ) -> requests.Response:
@@ -489,7 +492,7 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             return response
 
     @staticmethod
-    def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    def _parse_datetime(value: str | None) -> datetime | None:
         if not value:
             return None
         try:

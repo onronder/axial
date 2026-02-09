@@ -92,9 +92,11 @@ vi.mock('@/lib/sourceType', () => ({
 // =============================================================================
 
 const createWrapper = () => {
-    return ({ children }: { children: React.ReactNode }) => (
-        <QuotaStatusProvider>{children}</QuotaStatusProvider>
-    );
+    function Wrapper({ children }: { children: React.ReactNode }) {
+        return <QuotaStatusProvider>{children}</QuotaStatusProvider>;
+    }
+    Wrapper.displayName = 'TestWrapper';
+    return Wrapper;
 };
 
 // =============================================================================

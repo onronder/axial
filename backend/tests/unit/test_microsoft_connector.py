@@ -1,11 +1,11 @@
-import requests
 from unittest.mock import patch
 
 import pytest
+import requests
 
-from connectors.microsoft import MicrosoftGraphConnector
 from connectors.base import ConnectorAuthError, ConnectorRateLimitError, RemoteFile
 from connectors.enhanced import ItemNotFoundError
+from connectors.microsoft import MicrosoftGraphConnector
 
 
 class FakeResponse:

@@ -6,8 +6,12 @@ Updated to support Universal Connector Architecture (Sync Ingest).
 """
 
 import logging
-from typing import List, Optional, Dict, Any, Iterator, AsyncIterator
-from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, AuthenticationError
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
+
+import requests
+from starlette.concurrency import run_in_threadpool
+
 from connectors.base import (
     BaseConnector,
     ConnectorAuthError,
@@ -15,12 +19,16 @@ from connectors.base import (
     ConnectorTransientError,
     RemoteFile,
 )
-from core.db import get_supabase
-from core.resilience import RATE_LIMIT_STATUS_CODES, with_retry_sync, notion_breaker
-from core.scopes import build_scope_uri
+from connectors.enhanced import (
+    AuthenticationError,
+    EnhancedConnector,
+    SourceDocument,
+    SourceType,
+)
 from connectors.limits import connector_fetch_limit
-import requests
-from starlette.concurrency import run_in_threadpool
+from core.db import get_supabase
+from core.resilience import RATE_LIMIT_STATUS_CODES, notion_breaker, with_retry_sync
+from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
@@ -35,10 +43,10 @@ class NotionConnector(EnhancedConnector, BaseConnector):
     @property
     def connector_type(self) -> SourceType:
         return SourceType.NOTION
-    
+
     NOTION_API_VERSION = "2022-06-28"
     BASE_URL = "https://api.notion.com/v1"
-    
+
     def _get_connector_definition_id(self) -> str:
         """Get the connector_definition_id for notion from the database."""
         supabase = get_supabase()
@@ -48,7 +56,7 @@ class NotionConnector(EnhancedConnector, BaseConnector):
         if not res.data:
             raise ValueError("Notion connector definition not found in database")
         return res.data["id"]
-    
+
     async def authorize(self, user_id: str) -> bool:
         """Async wrapper for authorization check."""
         return await run_in_threadpool(self._authorize_implementation, user_id)
@@ -61,7 +69,7 @@ class NotionConnector(EnhancedConnector, BaseConnector):
             "user_id", user_id
         ).eq("connector_definition_id", connector_def_id).execute()
         return len(res.data) > 0
-    
+
     def _get_access_token(self, user_id: str) -> str:
         """Get the Notion access token for a user with automatic refresh."""
         supabase = get_supabase()
@@ -92,23 +100,23 @@ class NotionConnector(EnhancedConnector, BaseConnector):
 
         except TokenRefreshError as e:
             raise ValueError("Integration requires reconnection") from e
-    
-    def _get_headers(self, access_token: str) -> Dict[str, str]:
+
+    def _get_headers(self, access_token: str) -> dict[str, str]:
         """Get headers for Notion API requests."""
         return {
             "Authorization": f"Bearer {access_token}",
             "Notion-Version": self.NOTION_API_VERSION,
             "Content-Type": "application/json"
         }
-    
+
     @with_retry_sync(max_attempts=3, min_wait=1, max_wait=10, use_retryable=True, jitter=True)
     def _make_request(
         self,
         method: str,
         endpoint: str,
         access_token: str,
-        json_data: Optional[Dict] = None
-    ) -> Dict[str, Any]:
+        json_data: dict | None = None
+    ) -> dict[str, Any]:
         """Make a request to the Notion API with retry logic."""
         url = f"{self.BASE_URL}/{endpoint}"
         headers = self._get_headers(access_token)
@@ -137,19 +145,19 @@ class NotionConnector(EnhancedConnector, BaseConnector):
             raise ConnectorTransientError(f"Notion server error: {response.status_code}")
         response.raise_for_status()
         return response.json()
-    
+
 
 
     async def list_files(
         self,
-        config: Dict[str, Any],
-        since: Optional[str] = None
-    ) -> List[RemoteFile]:
+        config: dict[str, Any],
+        since: str | None = None
+    ) -> list[RemoteFile]:
         """List Notion pages/databases using config dict."""
         user_id = config.get("user_id")
         parent_id = config.get("parent_id")
         access_token = self._get_access_token(user_id)
-        items: List[RemoteFile] = []
+        items: list[RemoteFile] = []
 
         if parent_id == "root":
             parent_id = None
@@ -254,12 +262,12 @@ class NotionConnector(EnhancedConnector, BaseConnector):
         return items
 
 
-    def _extract_text_from_blocks(self, blocks: List[Dict]) -> str:
+    def _extract_text_from_blocks(self, blocks: list[dict]) -> str:
         # ... existing helper ...
         text_parts = []
         for block in blocks:
             block_type = block.get("type")
-            if block_type in ["paragraph", "heading_1", "heading_2", "heading_3", 
+            if block_type in ["paragraph", "heading_1", "heading_2", "heading_3",
                              "bulleted_list_item", "numbered_list_item", "quote", "callout", "toggle"]:
                 rich_text = block.get(block_type, {}).get("rich_text", [])
                 text = "".join([t.get("plain_text", "") for t in rich_text])
@@ -281,14 +289,14 @@ class NotionConnector(EnhancedConnector, BaseConnector):
                 text_parts.append(f"\n```{lang}\n{code}\n```\n")
             elif block_type == "divider":
                 text_parts.append("\n---\n")
-        
+
         return "\n".join(text_parts)
 
 
     async def fetch_documents(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs
     ) -> AsyncIterator[SourceDocument]:
         """Async wrapper for sync fetch."""
@@ -299,12 +307,12 @@ class NotionConnector(EnhancedConnector, BaseConnector):
     def fetch_documents_sync(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs
     ) -> Iterator[SourceDocument]:
         """
         Fetch documents from Notion for ingestion pipeline.
-        
+
         Scope ID Format: notion://{root_page_id}
         All child pages inherit the root page's scope.
         """

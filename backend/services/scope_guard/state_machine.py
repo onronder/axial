@@ -6,12 +6,13 @@ Enforces state transitions and timeout handling.
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
-from datetime import datetime, timezone, timedelta
+from typing import Any
+
 from pydantic import BaseModel
 
-from services.scope_guard.mandate import MandateGenerator, Mandate
+from services.scope_guard.mandate import MandateGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,13 @@ class ApprovalRequest(BaseModel):
     mandate_nonce: str
     mandate_signature: str
     requested_by: str
-    approved_by: Optional[str] = None
+    approved_by: str | None = None
     requested_at: datetime
     expires_at: datetime
-    approved_at: Optional[datetime] = None
-    executed_at: Optional[datetime] = None
-    request_context: Dict[str, Any] = {}
-    execution_result: Dict[str, Any] = {}
+    approved_at: datetime | None = None
+    executed_at: datetime | None = None
+    request_context: dict[str, Any] = {}
+    execution_result: dict[str, Any] = {}
 
 
 class ScopeGuardStateMachine:
@@ -70,7 +71,7 @@ class ScopeGuardStateMachine:
     """
 
     # Actions that require approval
-    APPROVAL_REQUIRED: Set[ActionType] = {
+    APPROVAL_REQUIRED: set[ActionType] = {
         ActionType.DELETE_SCOPE,
         ActionType.BULK_DELETE,
         ActionType.PURGE_ALL,
@@ -93,9 +94,9 @@ class ScopeGuardStateMachine:
         resource_id: str,
         organization_id: str,
         requested_by: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
         ttl_minutes: int = DEFAULT_TTL_MINUTES,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create an approval request and generate mandate.
 
@@ -172,7 +173,7 @@ class ScopeGuardStateMachine:
         approval_id: str,
         organization_id: str,
         approver_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Approve a pending action request.
 
@@ -262,8 +263,8 @@ class ScopeGuardStateMachine:
         approval_id: str,
         organization_id: str,
         rejector_id: str,
-        reason: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        reason: str | None = None,
+    ) -> dict[str, Any]:
         """
         Reject a pending action request.
 
@@ -312,7 +313,7 @@ class ScopeGuardStateMachine:
         organization_id: str,
         executor_id: str,
         mandate_signature: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute an approved action.
 
@@ -417,8 +418,8 @@ class ScopeGuardStateMachine:
         resource_type: str,
         resource_id: str,
         organization_id: str,
-        context: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Execute the approved action.
 
@@ -467,7 +468,7 @@ class ScopeGuardStateMachine:
         organization_id: str,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get pending approval requests for an organization with pagination.
         """
@@ -499,7 +500,7 @@ class ScopeGuardStateMachine:
         self,
         approval_id: str,
         organization_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a specific approval request.
         """

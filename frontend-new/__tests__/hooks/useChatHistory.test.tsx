@@ -665,11 +665,15 @@ describe('Access denial for free plan', () => {
     const createFreePlanWrapper = () => {
         // We need to test with free plan mock
         const queryClient = createTestQueryClient();
-        return ({ children }: { children: ReactNode }) => (
-            <QueryClientProvider client={queryClient}>
-                <ChatHistoryProvider>{children}</ChatHistoryProvider>
-            </QueryClientProvider>
-        );
+        function FreePlanWrapper({ children }: { children: ReactNode }) {
+            return (
+                <QueryClientProvider client={queryClient}>
+                    <ChatHistoryProvider>{children}</ChatHistoryProvider>
+                </QueryClientProvider>
+            );
+        }
+        FreePlanWrapper.displayName = 'FreePlanWrapper';
+        return FreePlanWrapper;
     };
 
     it('should show toast when createNewChat is called without chat access', async () => {

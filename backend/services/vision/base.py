@@ -6,7 +6,6 @@ Abstract base class and data structures for Vision LLM processors.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional
 from enum import Enum
 
 
@@ -43,10 +42,10 @@ class VisionResult:
         metadata: Additional metadata from the analysis
     """
     description: str
-    diagram_type: Optional[DiagramType] = DiagramType.UNKNOWN
-    entities: List[str] = field(default_factory=list)
-    relationships: List[str] = field(default_factory=list)
-    text_content: Optional[str] = None
+    diagram_type: DiagramType | None = DiagramType.UNKNOWN
+    entities: list[str] = field(default_factory=list)
+    relationships: list[str] = field(default_factory=list)
+    text_content: str | None = None
     confidence: float = 0.0
     model_used: str = "unknown"
     metadata: dict = field(default_factory=dict)
@@ -96,7 +95,7 @@ class VisionProcessor(ABC):
         self,
         image_bytes: bytes,
         filename: str,
-        prompt: Optional[str] = None,
+        prompt: str | None = None,
     ) -> VisionResult:
         """
         Analyze an image and return semantic description.

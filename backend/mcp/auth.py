@@ -6,12 +6,12 @@ Provides secure, scoped access tokens for external AI agents.
 """
 
 import hashlib
-import secrets
 import logging
+import secrets
 from datetime import datetime, timezone
-from typing import List, Optional
+
+from fastapi import Header, HTTPException, status
 from pydantic import BaseModel
-from fastapi import HTTPException, Header, status
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +35,16 @@ class MCPApiKey(BaseModel):
     id: str
     organization_id: str
     agent_name: str
-    scopes: List[str]
+    scopes: list[str]
     created_at: datetime
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
 
 
 class MCPApiKeyCreate(BaseModel):
     """Request model for creating a new MCP API key."""
     agent_name: str
-    scopes: List[str] = ["*"]  # Default: access all scopes
-    expires_in_days: Optional[int] = None  # None = never expires
+    scopes: list[str] = ["*"]  # Default: access all scopes
+    expires_in_days: int | None = None  # None = never expires
 
 
 class MCPApiKeyResponse(BaseModel):
@@ -52,9 +52,9 @@ class MCPApiKeyResponse(BaseModel):
     id: str
     key: str  # Only shown once at creation time
     agent_name: str
-    scopes: List[str]
+    scopes: list[str]
     created_at: datetime
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
 
 
 # =============================================================================
@@ -134,7 +134,7 @@ async def verify_mcp_api_key(
         .execute()
 
     if not result.data:
-        logger.warning(f"[MCP Auth] Invalid API key attempted")
+        logger.warning("[MCP Auth] Invalid API key attempted")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or revoked API key",
@@ -181,8 +181,8 @@ async def verify_mcp_api_key(
 async def create_mcp_api_key(
     organization_id: str,
     agent_name: str,
-    scopes: List[str],
-    expires_in_days: Optional[int] = None,
+    scopes: list[str],
+    expires_in_days: int | None = None,
 ) -> MCPApiKeyResponse:
     """
     Create a new MCP API key.
@@ -196,8 +196,9 @@ async def create_mcp_api_key(
     Returns:
         MCPApiKeyResponse with the plaintext key (only shown once)
     """
-    from core.db import get_supabase
     from datetime import timedelta
+
+    from core.db import get_supabase
 
     # Generate key
     key = generate_api_key()
@@ -304,8 +305,9 @@ async def rotate_mcp_api_key(
     Returns:
         MCPApiKeyRotateResponse with new key and old key expiration
     """
-    from core.db import get_supabase
     from datetime import timedelta
+
+    from core.db import get_supabase
 
     supabase = get_supabase()
 
@@ -356,7 +358,7 @@ async def rotate_mcp_api_key(
 
 async def list_mcp_api_keys(
     organization_id: str,
-) -> List[MCPApiKey]:
+) -> list[MCPApiKey]:
     """
     List all MCP API keys for an organization.
 

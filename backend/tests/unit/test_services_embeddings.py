@@ -6,10 +6,12 @@ import builtins
 import importlib
 import sys
 import types
+from unittest.mock import Mock, patch
 
 import pytest
-from unittest.mock import Mock, patch
+
 from services.embeddings import generate_embedding, generate_embeddings_batch_sync
+
 
 class TestEmbeddingsService:
     @pytest.mark.unit
@@ -39,7 +41,7 @@ class TestEmbeddingsService:
     def test_generate_embeddings_batch_handles_mixed_content(self):
         """Should handle mix of valid and empty strings correctly."""
         texts = ["hello", "", "  ", "world"]
-        
+
         # We need to mock the internal model call
         with patch('services.embeddings.get_embeddings_model') as mock_get_model:
             mock_model = Mock()

@@ -6,8 +6,8 @@ for better debugging and error tracking across the application.
 """
 
 import logging
-from typing import Any, Dict, Optional
 from functools import wraps
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +24,11 @@ def add_breadcrumb(
     message: str,
     category: str = "general",
     level: str = "info",
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 ) -> None:
     """
     Add a breadcrumb for debugging.
-    
+
     Args:
         message: Description of the action
         category: Category for grouping (e.g., 'task', 'api', 'db', 'external')
@@ -48,10 +48,10 @@ def add_breadcrumb(
         logger.log(log_level, f"[{category}] {message}", extra=data or {})
 
 
-def set_user_context(user_id: str, email: Optional[str] = None) -> None:
+def set_user_context(user_id: str, email: str | None = None) -> None:
     """
     Set user context for error tracking.
-    
+
     Args:
         user_id: User's unique identifier
         email: User's email (optional, for better identification)
@@ -69,7 +69,7 @@ def set_tag(key: str, value: str) -> None:
         sentry_sdk.set_tag(key, value)
 
 
-def set_context(name: str, data: Dict[str, Any]) -> None:
+def set_context(name: str, data: dict[str, Any]) -> None:
     """Set additional context for debugging."""
     if SENTRY_AVAILABLE:
         sentry_sdk.set_context(name, data)
@@ -90,7 +90,7 @@ def task_started(task_name: str, task_id: str, **kwargs: Any) -> None:
     set_tag("task_name", task_name)
 
 
-def task_completed(task_name: str, task_id: str, result: Optional[Any] = None) -> None:
+def task_completed(task_name: str, task_id: str, result: Any | None = None) -> None:
     """Log successful task completion."""
     add_breadcrumb(
         message=f"Task completed: {task_name}",
@@ -110,7 +110,7 @@ def task_failed(task_name: str, task_id: str, error: str) -> None:
     )
 
 
-def api_request(endpoint: str, method: str, user_id: Optional[str] = None) -> None:
+def api_request(endpoint: str, method: str, user_id: str | None = None) -> None:
     """Log API endpoint access."""
     add_breadcrumb(
         message=f"{method} {endpoint}",
@@ -120,7 +120,7 @@ def api_request(endpoint: str, method: str, user_id: Optional[str] = None) -> No
     )
 
 
-def db_operation(operation: str, table: str, count: Optional[int] = None) -> None:
+def db_operation(operation: str, table: str, count: int | None = None) -> None:
     """Log database operation."""
     add_breadcrumb(
         message=f"DB: {operation} on {table}",
@@ -140,7 +140,7 @@ def external_call(service: str, endpoint: str, success: bool = True) -> None:
     )
 
 
-def file_processing(filename: str, stage: str, progress: Optional[int] = None) -> None:
+def file_processing(filename: str, stage: str, progress: int | None = None) -> None:
     """Log file processing progress."""
     add_breadcrumb(
         message=f"File: {filename} - {stage}",
@@ -157,7 +157,7 @@ def file_processing(filename: str, stage: str, progress: Optional[int] = None) -
 def with_breadcrumbs(category: str = "task"):
     """
     Decorator to automatically add start/complete/error breadcrumbs.
-    
+
     Usage:
         @with_breadcrumbs("task")
         def my_task():
@@ -196,7 +196,7 @@ def with_breadcrumbs(category: str = "task"):
 def with_breadcrumbs_async(category: str = "task"):
     """
     Async decorator for automatic breadcrumbs.
-    
+
     Usage:
         @with_breadcrumbs_async("api")
         async def my_handler():

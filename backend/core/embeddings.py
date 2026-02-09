@@ -8,10 +8,10 @@ This module provides a tiered embedding strategy to optimize cost/performance:
 
 Usage:
     from core.embeddings import EmbeddingFactory, EmbeddingTier
-    
+
     # Explicit tier selection
     embeddings = EmbeddingFactory.get_embeddings(EmbeddingTier.LOCAL)
-    
+
     # Automatic tier selection based on volume and priority
     tier = EmbeddingFactory.auto_select(doc_count=500, priority="normal")
     embeddings = EmbeddingFactory.get_embeddings(tier)
@@ -19,7 +19,7 @@ Usage:
 
 import logging
 from enum import Enum
-from typing import Optional
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -35,23 +35,23 @@ class EmbeddingTier(Enum):
 class EmbeddingFactory:
     """
     Factory for creating embedding models based on tier selection.
-    
+
     Cost Comparison (approx):
     - LOCAL: Free (runs on CPU)
     - STANDARD: ~$0.10 per 1M tokens (Mistral)
     - PREMIUM: ~$0.02 per 1K tokens (OpenAI)
     """
-    
+
     _cached_local_model = None
-    
+
     @classmethod
     def get_embeddings(cls, tier: EmbeddingTier = EmbeddingTier.PREMIUM):
         """
         Get an embedding model for the specified tier.
-        
+
         Args:
             tier: The embedding tier to use
-            
+
         Returns:
             A LangChain-compatible embedding model
         """
@@ -61,7 +61,7 @@ class EmbeddingFactory:
             return cls._get_standard_embeddings()
         else:
             return cls._get_premium_embeddings()
-    
+
     @classmethod
     def _get_local_embeddings(cls):
         """
@@ -83,14 +83,14 @@ class EmbeddingFactory:
                 logger.warning("🔢 [Embeddings] HuggingFace not available, falling back to OpenAI")
                 return cls._get_premium_embeddings()
         return cls._cached_local_model
-    
+
     @classmethod
     def _get_standard_embeddings(cls):
         """
         Get standard-tier embeddings (Mistral or fallback to OpenAI).
         """
         mistral_key = getattr(settings, 'MISTRAL_API_KEY', None)
-        
+
         if mistral_key:
             try:
                 from langchain_mistralai import MistralAIEmbeddings
@@ -101,11 +101,11 @@ class EmbeddingFactory:
                 )
             except ImportError:
                 logger.warning("🔢 [Embeddings] Mistral SDK not installed, falling back to OpenAI")
-        
+
         # Fallback to OpenAI if Mistral not available
         logger.info("🔢 [Embeddings] Mistral not configured, using OpenAI (standard tier)")
         return cls._get_premium_embeddings()
-    
+
     @classmethod
     def _get_premium_embeddings(cls):
         """
@@ -117,7 +117,7 @@ class EmbeddingFactory:
             model="text-embedding-3-small",
             api_key=settings.OPENAI_API_KEY
         )
-    
+
     @staticmethod
     def auto_select(
         doc_count: int = 1,
@@ -126,42 +126,42 @@ class EmbeddingFactory:
     ) -> EmbeddingTier:
         """
         Automatically select the optimal embedding tier based on context.
-        
+
         Args:
             doc_count: Number of documents to embed
             priority: "low", "normal", or "high"
             force_local: If True, always use local embeddings
-            
+
         Returns:
             The recommended EmbeddingTier
         """
         if force_local:
             return EmbeddingTier.LOCAL
-        
+
         # High priority always gets premium
         if priority == "high":
-            logger.info(f"🔢 [Embeddings] High priority → PREMIUM tier")
+            logger.info("🔢 [Embeddings] High priority → PREMIUM tier")
             return EmbeddingTier.PREMIUM
-        
+
         # Large batches use local to save cost
         if doc_count > 1000:
             logger.info(f"🔢 [Embeddings] Large batch ({doc_count} docs) → LOCAL tier")
             return EmbeddingTier.LOCAL
-        
+
         # Medium batches use standard
         if doc_count > 100:
             logger.info(f"🔢 [Embeddings] Medium batch ({doc_count} docs) → STANDARD tier")
             return EmbeddingTier.STANDARD
-        
+
         # Small batches use premium for best quality
         logger.info(f"🔢 [Embeddings] Small batch ({doc_count} docs) → PREMIUM tier")
         return EmbeddingTier.PREMIUM
-    
+
     @staticmethod
     def get_embedding_dimension(tier: EmbeddingTier) -> int:
         """
         Get the embedding dimension for a given tier.
-        
+
         Important: All models should output the same dimension for compatibility
         with the vector database. If using mixed models, you may need to
         re-embed documents when switching tiers.

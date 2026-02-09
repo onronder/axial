@@ -49,7 +49,7 @@ async def test_update_team_invalid_slug():
         "api.v1.team.team_service.get_user_team",
         new=AsyncMock(return_value={"id": "team-1", "is_owner": True}),
     ):
-        from api.v1.team import update_team, TeamUpdate
+        from api.v1.team import TeamUpdate, update_team
 
         with pytest.raises(HTTPException) as exc:
             await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(slug="Bad Slug"), user_id="user-1")
@@ -68,7 +68,7 @@ async def test_update_team_success():
 
     with patch("api.v1.team.get_supabase", return_value=supabase), \
          patch("api.v1.team.team_service.get_user_team", new=AsyncMock(side_effect=[team_initial, team_updated])):
-        from api.v1.team import update_team, TeamUpdate
+        from api.v1.team import TeamUpdate, update_team
 
         result = await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="New"), user_id="user-1")
         assert result["name"] == "New"
@@ -86,7 +86,7 @@ async def test_update_team_slug_success():
 
     with patch("api.v1.team.get_supabase", return_value=supabase), \
          patch("api.v1.team.team_service.get_user_team", new=AsyncMock(side_effect=[team_initial, team_updated])):
-        from api.v1.team import update_team, TeamUpdate
+        from api.v1.team import TeamUpdate, update_team
 
         result = await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(slug="new-slug"), user_id="user-1")
         assert result["slug"] == "new-slug"
@@ -188,7 +188,7 @@ async def test_invite_team_member_upgrade_required():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": False, "code": "UPGRADE_REQUIRED", "error": "Upgrade"}),
     ):
-        from api.v1.team import invite_team_member, InviteRequest
+        from api.v1.team import InviteRequest, invite_team_member
 
         with pytest.raises(HTTPException) as exc:
             await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
@@ -201,7 +201,7 @@ async def test_invite_team_member_success():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": True, "member": {"id": "m-1"}}),
     ):
-        from api.v1.team import invite_team_member, InviteRequest
+        from api.v1.team import InviteRequest, invite_team_member
 
         result = await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
         assert result.success is True
@@ -239,7 +239,7 @@ async def test_invite_team_member_legacy_conflict():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": False, "code": "ALREADY_EXISTS"}),
     ):
-        from api.v1.team import invite_team_member_legacy, TeamMemberCreate
+        from api.v1.team import TeamMemberCreate, invite_team_member_legacy
 
         with pytest.raises(HTTPException) as exc:
             await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
@@ -253,7 +253,7 @@ async def test_invite_team_member_legacy_success():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": True, "member": member}),
     ):
-        from api.v1.team import invite_team_member_legacy, TeamMemberCreate
+        from api.v1.team import TeamMemberCreate, invite_team_member_legacy
 
         result = await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
 
@@ -262,7 +262,7 @@ async def test_invite_team_member_legacy_success():
 
 @pytest.mark.asyncio
 async def test_update_team_member_invalid_role():
-    from api.v1.team import update_team_member, TeamMemberUpdate
+    from api.v1.team import TeamMemberUpdate, update_team_member
 
     with pytest.raises(HTTPException) as exc:
         await update_team_member(
@@ -284,7 +284,7 @@ async def test_update_team_member_success():
     supabase.table.return_value = table
 
     with patch("api.v1.team.get_supabase", return_value=supabase):
-        from api.v1.team import update_team_member, TeamMemberUpdate
+        from api.v1.team import TeamMemberUpdate, update_team_member
 
         result = await update_team_member(
             request=_make_mock_request(method="PATCH"),
@@ -305,7 +305,7 @@ async def test_update_team_member_updates_name():
     supabase.table.return_value = table
 
     with patch("api.v1.team.get_supabase", return_value=supabase):
-        from api.v1.team import update_team_member, TeamMemberUpdate
+        from api.v1.team import TeamMemberUpdate, update_team_member
 
         result = await update_team_member(
             request=_make_mock_request(method="PATCH"),
@@ -327,7 +327,7 @@ async def test_update_team_member_updates_status():
     supabase.table.return_value = table
 
     with patch("api.v1.team.get_supabase", return_value=supabase):
-        from api.v1.team import update_team_member, TeamMemberUpdate
+        from api.v1.team import TeamMemberUpdate, update_team_member
 
         result = await update_team_member(
             request=_make_mock_request(method="PATCH"),
@@ -391,7 +391,7 @@ async def test_accept_invite_invalid_token():
     supabase.table.return_value = table
 
     with patch("api.v1.team.get_supabase", return_value=supabase):
-        from api.v1.team import accept_invite, AcceptInviteRequest
+        from api.v1.team import AcceptInviteRequest, accept_invite
 
         with pytest.raises(HTTPException) as exc:
             await accept_invite(request=_make_mock_request(method="POST"), payload=AcceptInviteRequest(token="bad"), user_id="user-1")
@@ -410,7 +410,7 @@ async def test_accept_invite_success():
 
     with patch("api.v1.team.get_supabase", return_value=supabase), \
          patch("api.v1.team.team_service.invalidate_plan_cache") as invalidate_cache:
-        from api.v1.team import accept_invite, AcceptInviteRequest
+        from api.v1.team import AcceptInviteRequest, accept_invite
 
         result = await accept_invite(request=_make_mock_request(method="POST"), payload=AcceptInviteRequest(token="m-1"), user_id="user-1")
         assert result.success is True
@@ -420,7 +420,7 @@ async def test_accept_invite_success():
 @pytest.mark.asyncio
 async def test_update_team_missing_team():
     with patch("api.v1.team.team_service.get_user_team", new=AsyncMock(return_value=None)):
-        from api.v1.team import update_team, TeamUpdate
+        from api.v1.team import TeamUpdate, update_team
 
         with pytest.raises(HTTPException) as exc:
             await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="Name"), user_id="user-1")
@@ -433,7 +433,7 @@ async def test_update_team_non_owner():
         "api.v1.team.team_service.get_user_team",
         new=AsyncMock(return_value={"id": "team-1", "is_owner": False}),
     ):
-        from api.v1.team import update_team, TeamUpdate
+        from api.v1.team import TeamUpdate, update_team
 
         with pytest.raises(HTTPException) as exc:
             await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="Name"), user_id="user-1")
@@ -446,7 +446,7 @@ async def test_update_team_no_fields():
         "api.v1.team.team_service.get_user_team",
         new=AsyncMock(return_value={"id": "team-1", "is_owner": True}),
     ):
-        from api.v1.team import update_team, TeamUpdate
+        from api.v1.team import TeamUpdate, update_team
 
         with pytest.raises(HTTPException) as exc:
             await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(), user_id="user-1")
@@ -465,7 +465,7 @@ async def test_update_team_update_failed():
              "api.v1.team.team_service.get_user_team",
              new=AsyncMock(return_value={"id": "team-1", "is_owner": True}),
          ):
-        from api.v1.team import update_team, TeamUpdate
+        from api.v1.team import TeamUpdate, update_team
 
         with pytest.raises(HTTPException) as exc:
             await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="New"), user_id="user-1")
@@ -482,7 +482,7 @@ async def test_update_team_handles_exception():
              "api.v1.team.team_service.get_user_team",
              new=AsyncMock(return_value={"id": "team-1", "is_owner": True}),
          ):
-        from api.v1.team import update_team, TeamUpdate
+        from api.v1.team import TeamUpdate, update_team
 
         with pytest.raises(HTTPException) as exc:
             await update_team(request=_make_mock_request(method="PATCH"), payload=TeamUpdate(name="New"), user_id="user-1")
@@ -576,7 +576,7 @@ async def test_invite_team_member_already_exists():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": False, "code": "ALREADY_EXISTS", "error": "Exists"}),
     ):
-        from api.v1.team import invite_team_member, InviteRequest
+        from api.v1.team import InviteRequest, invite_team_member
 
         with pytest.raises(HTTPException) as exc:
             await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
@@ -589,7 +589,7 @@ async def test_invite_team_member_seat_limit():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": False, "code": "SEAT_LIMIT", "error": "limit"}),
     ):
-        from api.v1.team import invite_team_member, InviteRequest
+        from api.v1.team import InviteRequest, invite_team_member
 
         with pytest.raises(HTTPException) as exc:
             await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
@@ -602,7 +602,7 @@ async def test_invite_team_member_generic_error():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": False, "code": "OTHER", "error": "bad"}),
     ):
-        from api.v1.team import invite_team_member, InviteRequest
+        from api.v1.team import InviteRequest, invite_team_member
 
         with pytest.raises(HTTPException) as exc:
             await invite_team_member(request=_make_mock_request(method="POST"), payload=InviteRequest(email="a@b.com"), user_id="user-1")
@@ -630,7 +630,7 @@ async def test_invite_team_member_legacy_upgrade_required():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": False, "code": "UPGRADE_REQUIRED", "error": "Upgrade"}),
     ):
-        from api.v1.team import invite_team_member_legacy, TeamMemberCreate
+        from api.v1.team import TeamMemberCreate, invite_team_member_legacy
 
         with pytest.raises(HTTPException) as exc:
             await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
@@ -643,7 +643,7 @@ async def test_invite_team_member_legacy_generic_error():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": False, "code": "OTHER", "error": "bad"}),
     ):
-        from api.v1.team import invite_team_member_legacy, TeamMemberCreate
+        from api.v1.team import TeamMemberCreate, invite_team_member_legacy
 
         with pytest.raises(HTTPException) as exc:
             await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
@@ -656,7 +656,7 @@ async def test_invite_team_member_legacy_missing_member():
         "api.v1.team.team_service.invite_member",
         new=AsyncMock(return_value={"success": True}),
     ):
-        from api.v1.team import invite_team_member_legacy, TeamMemberCreate
+        from api.v1.team import TeamMemberCreate, invite_team_member_legacy
 
         with pytest.raises(HTTPException) as exc:
             await invite_team_member_legacy(request=_make_mock_request(method="POST"), payload=TeamMemberCreate(email="a@b.com"), user_id="user-1")
@@ -665,7 +665,7 @@ async def test_invite_team_member_legacy_missing_member():
 
 @pytest.mark.asyncio
 async def test_update_team_member_invalid_status():
-    from api.v1.team import update_team_member, TeamMemberUpdate
+    from api.v1.team import TeamMemberUpdate, update_team_member
 
     with pytest.raises(HTTPException) as exc:
         await update_team_member(
@@ -679,7 +679,7 @@ async def test_update_team_member_invalid_status():
 
 @pytest.mark.asyncio
 async def test_update_team_member_no_fields():
-    from api.v1.team import update_team_member, TeamMemberUpdate
+    from api.v1.team import TeamMemberUpdate, update_team_member
 
     with pytest.raises(HTTPException) as exc:
         await update_team_member(
@@ -699,7 +699,7 @@ async def test_update_team_member_not_found():
     supabase.table.return_value = table
 
     with patch("api.v1.team.get_supabase", return_value=supabase):
-        from api.v1.team import update_team_member, TeamMemberUpdate
+        from api.v1.team import TeamMemberUpdate, update_team_member
 
         with pytest.raises(HTTPException) as exc:
             await update_team_member(
@@ -719,7 +719,7 @@ async def test_update_team_member_handles_exception():
     supabase.table.return_value = table
 
     with patch("api.v1.team.get_supabase", return_value=supabase):
-        from api.v1.team import update_team_member, TeamMemberUpdate
+        from api.v1.team import TeamMemberUpdate, update_team_member
 
         with pytest.raises(HTTPException) as exc:
             await update_team_member(
@@ -770,7 +770,7 @@ async def test_accept_invite_update_failure():
     supabase.table.return_value = table
 
     with patch("api.v1.team.get_supabase", return_value=supabase):
-        from api.v1.team import accept_invite, AcceptInviteRequest
+        from api.v1.team import AcceptInviteRequest, accept_invite
 
         with pytest.raises(HTTPException) as exc:
             await accept_invite(request=_make_mock_request(method="POST"), payload=AcceptInviteRequest(token="m-1"), user_id="user-1")
@@ -785,7 +785,7 @@ async def test_accept_invite_handles_exception():
     supabase.table.return_value = table
 
     with patch("api.v1.team.get_supabase", return_value=supabase):
-        from api.v1.team import accept_invite, AcceptInviteRequest
+        from api.v1.team import AcceptInviteRequest, accept_invite
 
         with pytest.raises(HTTPException) as exc:
             await accept_invite(request=_make_mock_request(method="POST"), payload=AcceptInviteRequest(token="m-1"), user_id="user-1")

@@ -12,30 +12,29 @@ Endpoints:
 - GET  /compliance/pending            - List pending deletion requests
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any
 
-from core.security import get_current_user
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
+
+from api.v1.dependencies import (
+    get_user_organization_id,
+    require_paid_access,
+    validate_team_access,
+)
+from api.v1.error_utils import ApiErrorCode, api_error
 from core.db import get_supabase
 from core.rate_limit import limiter
-from api.v1.dependencies import (
-    validate_team_access,
-    require_editor,
-    require_paid_access,
-    get_user_organization_id,
-)
-from api.v1.error_utils import api_error, ApiErrorCode
+from core.security import get_current_user
+from services.audit import audit_logger
 from services.compliance_switch import (
-    compliance_switch,
     ComplianceType,
     ResourceType,
-    Tombstone,
+    compliance_switch,
 )
-from services.audit import audit_logger
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +85,7 @@ class DeletionRequest(BaseModel):
         default=ComplianceTypeEnum.GDPR_ART17,
         description="Regulation driving this request"
     )
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         None,
         max_length=1000,
         description="Optional reason for deletion (for audit trail)"
@@ -99,13 +98,13 @@ class ADMTOptoutRequest(BaseModel):
 
     Prevents data from being used in AI/ML decisions.
     """
-    scope_ids: List[str] = Field(
+    scope_ids: list[str] = Field(
         ...,
         min_items=1,
         max_items=100,
         description="List of scope IDs to opt out of ADMT"
     )
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         None,
         max_length=1000,
         description="Optional reason for opt-out"
@@ -122,7 +121,7 @@ class TombstoneResponse(BaseModel):
     compliance_type: str
     status: str
     created_at: str
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
 
 
 class DeletionResponse(BaseModel):
@@ -133,7 +132,7 @@ class DeletionResponse(BaseModel):
     message: str
     document_count: int
     access_revoked_at: str
-    timeline: Dict[str, Any]
+    timeline: dict[str, Any]
 
 
 class ComplianceReportResponse(BaseModel):
@@ -147,9 +146,9 @@ class ComplianceReportResponse(BaseModel):
     compliant_requests: int
     overdue_requests: int
     compliance_rate: float
-    avg_time_to_revoke_ms: Optional[float] = None
-    avg_time_to_complete_hours: Optional[float] = None
-    by_request_type: Optional[Dict[str, int]] = None
+    avg_time_to_revoke_ms: float | None = None
+    avg_time_to_complete_hours: float | None = None
+    by_request_type: dict[str, int] | None = None
     generated_at: str
 
 
@@ -382,12 +381,12 @@ async def ccpa_admt_optout(
 
 @router.get(
     "/tombstones",
-    response_model=List[TombstoneResponse],
+    response_model=list[TombstoneResponse],
 )
 @limiter.limit("30/minute")
 async def list_tombstones(
     request: Request,
-    status_filter: Optional[str] = None,
+    status_filter: str | None = None,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
 ):
@@ -490,7 +489,7 @@ async def get_compliance_report(
 
 @router.get(
     "/pending",
-    response_model=List[PendingRequestResponse],
+    response_model=list[PendingRequestResponse],
 )
 @limiter.limit("30/minute")
 async def get_pending_requests(

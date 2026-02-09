@@ -6,26 +6,33 @@ Provides AI agent access to the Axio Hub knowledge base.
 """
 
 import logging
-from typing import List, Optional
-from fastapi import APIRouter, Depends, Request, Response, HTTPException, status, BackgroundTasks
-from pydantic import BaseModel
 
-from mcp.server import MCPServer, JSONRPCRequest, JSONRPCResponse
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
+
+from api.v1.dependencies import get_user_organization_id, require_admin
+from core.rate_limit import limiter
 from mcp.auth import (
     MCPApiKey,
     MCPApiKeyCreate,
     MCPApiKeyResponse,
     MCPApiKeyRotateRequest,
     MCPApiKeyRotateResponse,
-    verify_mcp_api_key,
     create_mcp_api_key,
+    list_mcp_api_keys,
     revoke_mcp_api_key,
     rotate_mcp_api_key,
-    list_mcp_api_keys,
+    verify_mcp_api_key,
 )
+from mcp.server import JSONRPCRequest, JSONRPCResponse, MCPServer
 from mcp.zero_retention import MCPZeroRetention
-from api.v1.dependencies import require_admin, get_user_organization_id
-from core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -148,13 +155,13 @@ async def create_api_key(
     return key_response
 
 
-@router.get("/mcp/api-keys", response_model=List[MCPApiKey])
+@router.get("/mcp/api-keys", response_model=list[MCPApiKey])
 @limiter.limit("30/minute")
 async def list_api_keys(
     request: Request,
     user_id: str = Depends(require_admin),
     organization_id: str = Depends(get_user_organization_id),
-) -> List[MCPApiKey]:
+) -> list[MCPApiKey]:
     """
     List all MCP API keys for the organization.
 

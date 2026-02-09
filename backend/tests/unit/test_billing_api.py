@@ -187,7 +187,7 @@ async def test_fix_customer_id_already_present():
 @pytest.mark.asyncio
 async def test_submit_enterprise_inquiry_success():
     with patch("services.email.email_service.send_enterprise_inquiry", return_value=True):
-        from api.v1.billing import submit_enterprise_inquiry, EnterpriseInquiryRequest
+        from api.v1.billing import EnterpriseInquiryRequest, submit_enterprise_inquiry
 
         result = await submit_enterprise_inquiry(
             request=_make_mock_request(method="POST"),

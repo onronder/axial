@@ -12,11 +12,13 @@ Ghost Protocol ensures:
 - Strict mode rejects unencrypted content retrieval
 """
 
-from fastapi import Security, HTTPException, status, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
-import os
 import logging
+import os
+
+import jwt
+from fastapi import HTTPException, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from core.config import settings
 
 # =============================================================================
@@ -100,7 +102,7 @@ security = HTTPBearer()
 # METRICS INTEGRATION
 # =============================================================================
 try:
-    from core.metrics import encryption_operations, METRICS_ENABLED
+    from core.metrics import METRICS_ENABLED, encryption_operations
 except ImportError:
     METRICS_ENABLED = False
     class _DummyMetric:
@@ -121,7 +123,7 @@ class EncryptionError(Exception):
 class UnencryptedContentError(Exception):
     """
     Raised when attempting to decrypt plaintext in strict mode.
-    
+
     This indicates a policy violation - all content should be encrypted
     in Ghost Protocol deployments.
     """
@@ -131,23 +133,23 @@ class UnencryptedContentError(Exception):
 def encrypt_token(token: str) -> str:
     """
     Encrypt a token using Fernet symmetric encryption.
-    
+
     Args:
         token: Plain text token to encrypt
-        
+
     Returns:
         Encrypted token string, or original token if encryption unavailable
     """
     if not token:
         return token
-    
+
     if not HAS_ENCRYPTION or not cipher_suite:
         if settings.ENVIRONMENT not in ("test", "development"):
             logger.error("[Security] ENCRYPTION_KEY not set in non-dev environment — token stored in plain text!")
         else:
             logger.warning("[Security] ENCRYPTION_KEY not set, storing token in plain text (dev mode)")
         return token
-    
+
     try:
         encrypted = cipher_suite.encrypt(token.encode()).decode()
         logger.debug("[Security] Token encrypted successfully")
@@ -160,21 +162,21 @@ def encrypt_token(token: str) -> str:
 def decrypt_token(token: str) -> str:
     """
     Decrypt a token using Fernet symmetric encryption.
-    
+
     Args:
         token: Encrypted or plain text token
-        
+
     Returns:
         Decrypted token string
     """
     if not token:
         return token
-    
+
     suites = cipher_suites or ([cipher_suite] if cipher_suite else [])
     if not HAS_ENCRYPTION or not suites:
         # No encryption configured, return as-is
         return token
-    
+
     try:
         # Attempt decryption with all configured keys
         for suite in suites:
@@ -197,19 +199,19 @@ def decrypt_token(token: str) -> str:
 def encrypt_text(data: str) -> str:
     """
     Encrypt text content using Fernet (AES-256) for Ghost Protocol.
-    
+
     This function encrypts document chunk content before storage in the database.
     In production, encryption is mandatory - storing plaintext is blocked.
-    
+
     Args:
         data: Plaintext string to encrypt
-        
+
     Returns:
         Base64-encoded encrypted string (Fernet token format)
-        
+
     Raises:
         EncryptionError: If encryption key is not configured in production
-        
+
     Example:
         >>> encrypted = encrypt_text("sensitive document content")
         >>> encrypted.startswith("gAAAAA")  # Fernet token prefix
@@ -217,7 +219,7 @@ def encrypt_text(data: str) -> str:
     """
     if not data:
         return data
-    
+
     if not HAS_CHUNK_ENCRYPTION or not _chunk_cipher:
         if ENVIRONMENT == "production":
             raise EncryptionError(
@@ -229,7 +231,7 @@ def encrypt_text(data: str) -> str:
             "storing PLAINTEXT (dev/test only)"
         )
         return data
-    
+
     try:
         encrypted = _chunk_cipher.encrypt(data.encode("utf-8")).decode("utf-8")
         encryption_operations.labels(operation="encrypt", result="success").inc()
@@ -244,29 +246,29 @@ def encrypt_text(data: str) -> str:
 def decrypt_text(token: str) -> str:
     """
     Decrypt text content using Fernet (AES-256) for Ghost Protocol.
-    
+
     This function decrypts document chunk content retrieved from the database.
-    
+
     KEY ROTATION SUPPORT:
     - Tries all configured keys (CHUNK_ENCRYPTION_KEY can be comma-separated)
     - Allows seamless key rotation without data re-encryption
     - Example: CHUNK_ENCRYPTION_KEY="new_key,old_key,older_key"
-    
+
     STRICT MODE (default for greenfield):
     - Raises UnencryptedContentError if content appears to be plaintext
     - This prevents accidentally serving unencrypted data from misconfigured systems
     - Controlled by settings.STRICT_ENCRYPTION_MODE
-    
+
     Args:
         token: Encrypted Fernet token or plaintext string
-        
+
     Returns:
         Decrypted plaintext string
-        
+
     Raises:
         UnencryptedContentError: If content is plaintext and strict mode is enabled
         EncryptionError: If decryption fails for other reasons
-        
+
     Example:
         >>> encrypted = encrypt_text("hello world")
         >>> decrypt_text(encrypted)
@@ -274,7 +276,7 @@ def decrypt_text(token: str) -> str:
     """
     if not token:
         return token
-    
+
     if not HAS_CHUNK_ENCRYPTION or not _chunk_ciphers:
         if ENVIRONMENT == "production":
             raise EncryptionError(
@@ -283,7 +285,7 @@ def decrypt_text(token: str) -> str:
             )
         # In dev/test without encryption, return as-is
         return token
-    
+
     # Try all configured keys for decryption (key rotation support)
     last_error = None
     for cipher in _chunk_ciphers:
@@ -299,7 +301,7 @@ def decrypt_text(token: str) -> str:
             encryption_operations.labels(operation="decrypt", result="failure").inc()
             logger.error(f"[Security] Content decryption failed: {type(e).__name__}")
             raise EncryptionError(f"Content decryption failed: {type(e).__name__}") from e
-    
+
     # All keys failed - content is NOT encrypted (or uses unknown key)
     # This is a policy violation in strict mode
     strict_mode = getattr(settings, 'STRICT_ENCRYPTION_MODE', True)
@@ -310,7 +312,7 @@ def decrypt_text(token: str) -> str:
             "Ghost Protocol requires all content to be encrypted. "
             "Set STRICT_ENCRYPTION_MODE=false for legacy data migration."
         )
-    
+
     # Legacy mode: return plaintext with warning
     encryption_operations.labels(operation="decrypt", result="unencrypted_legacy").inc()
     logger.warning(
@@ -330,16 +332,16 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
         # Verify signature using SUPABASE_JWT_SECRET
         # Algorithms should be explicitly set to HS256 for Supabase default
         payload = jwt.decode(
-            token, 
-            settings.SUPABASE_JWT_SECRET, 
-            algorithms=["HS256"], 
+            token,
+            settings.SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
             audience="authenticated"
         )
         user_id = payload.get("sub")
-        
+
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token payload")
-            
+
         return user_id
     except Exception as e:
         logger.warning(f"Auth error: {type(e).__name__}")  # Don't log token details
@@ -357,9 +359,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
 def get_encryption_key_count() -> int:
     """
     Get the number of configured chunk encryption keys.
-    
+
     Useful for monitoring key rotation status.
-    
+
     Returns:
         Number of keys configured (0 = no encryption)
     """
@@ -369,14 +371,14 @@ def get_encryption_key_count() -> int:
 def generate_new_encryption_key() -> str:
     """
     Generate a new Fernet encryption key for key rotation.
-    
+
     Usage:
         1. Generate new key: new_key = generate_new_encryption_key()
         2. Update env: CHUNK_ENCRYPTION_KEY="new_key,old_key"
         3. Deploy and verify
         4. (Optional) Re-encrypt old data with new key
         5. Remove old key after migration
-    
+
     Returns:
         Base64-encoded Fernet key (32 bytes)
     """
@@ -388,16 +390,16 @@ def generate_new_encryption_key() -> str:
 def re_encrypt_content(encrypted_content: str) -> str:
     """
     Re-encrypt content with the current primary key.
-    
+
     Use this during key rotation to migrate old data encrypted
     with deprecated keys to the new primary key.
-    
+
     Args:
         encrypted_content: Content encrypted with any configured key
-        
+
     Returns:
         Content re-encrypted with the primary (first) key
-        
+
     Raises:
         EncryptionError: If decryption or re-encryption fails
     """

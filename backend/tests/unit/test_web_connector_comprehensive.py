@@ -10,11 +10,11 @@ Tests advanced web crawling functionality:
 - Domain matching with subdomains
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from types import SimpleNamespace
-import sys
 import os
+import sys
+from unittest.mock import Mock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -48,7 +48,7 @@ class TestBrightDataConfig:
 
         # Import and test the fallback path directly
         from connectors.web import _get_brightdata_config
-        
+
         # The function should work with or without settings available
         config = _get_brightdata_config()
         # Just verify it returns a dict with the expected keys
@@ -126,7 +126,7 @@ class TestYouTubeProxyConfig:
         """Should return safe defaults."""
         from connectors.web import _get_youtube_proxy_config
         config = _get_youtube_proxy_config()
-        
+
         # Verify the config has expected keys regardless of settings availability
         assert "enabled" in config
         assert "direct_fallback" in config
@@ -138,9 +138,9 @@ class TestBuildProxyDict:
     def test_build_proxy_dict_http(self):
         """Should build proxy dict for HTTP proxy."""
         from connectors.web import _build_proxy_dict
-        
+
         result = _build_proxy_dict("http://proxy.example.com:8080")
-        
+
         assert result == {
             "http": "http://proxy.example.com:8080",
             "https": "http://proxy.example.com:8080"
@@ -149,21 +149,21 @@ class TestBuildProxyDict:
     def test_build_proxy_dict_socks5(self):
         """Should accept SOCKS5 proxies."""
         from connectors.web import _build_proxy_dict
-        
+
         result = _build_proxy_dict("socks5://user:pass@proxy.example.com:1080")
-        
+
         assert "socks5://" in result["http"]
 
     def test_build_proxy_dict_invalid_scheme(self):
         """Should return None for invalid schemes."""
         from connectors.web import _build_proxy_dict
-        
+
         assert _build_proxy_dict("ftp://invalid") is None
 
     def test_build_proxy_dict_empty(self):
         """Should return None for empty string."""
         from connectors.web import _build_proxy_dict
-        
+
         assert _build_proxy_dict("") is None
         assert _build_proxy_dict(None) is None
 
@@ -174,9 +174,9 @@ class TestYouTubeProxyError:
     def test_exception_properties(self):
         """Should carry IP blocked info."""
         from connectors.web import YouTubeProxyError
-        
+
         exc = YouTubeProxyError("blocked", is_ip_blocked=True, original_error=ValueError("orig"))
-        
+
         assert exc.is_ip_blocked is True
         assert exc.original_error is not None
 
@@ -187,34 +187,34 @@ class TestFetchFileContent:
     def test_fetch_file_content_success(self):
         """Should fetch and encode content."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "_enforce_public_endpoint"), \
              patch.object(connector, "fetch_html", return_value="<html>Content</html>"):
             content = connector.fetch_file_content("https://example.com/page", {})
-        
+
         assert content == b"<html>Content</html>"
 
     def test_fetch_file_content_unsafe_url_raises(self):
         """Should raise ConnectorAuthError for unsafe URLs."""
-        from connectors.web import WebConnector
         from connectors.base import ConnectorAuthError
-        
+        from connectors.web import WebConnector
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=False):
             with pytest.raises(ConnectorAuthError):
                 connector.fetch_file_content("http://127.0.0.1", {})
 
     def test_fetch_file_content_fetch_failure_raises(self):
         """Should raise ConnectorTransientError on fetch failure."""
-        from connectors.web import WebConnector
         from connectors.base import ConnectorTransientError
-        
+        from connectors.web import WebConnector
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "_enforce_public_endpoint"), \
              patch.object(connector, "fetch_html", return_value=None):
@@ -228,9 +228,9 @@ class TestEnforcePublicEndpoint:
     def test_allows_public_url(self):
         """Should not raise for public URLs."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=True):
             # Should not raise
             connector._enforce_public_endpoint("https://example.com")
@@ -238,9 +238,9 @@ class TestEnforcePublicEndpoint:
     def test_blocks_private_url(self):
         """Should raise for private URLs."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=False):
             with pytest.raises(ValueError) as exc:
                 connector._enforce_public_endpoint("http://192.168.1.1")
@@ -253,27 +253,27 @@ class TestValidateConfig:
     def test_validate_config_valid_url(self):
         """Should return True for valid public URL."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=True):
             assert connector.validate_config({"url": "https://example.com"}) is True
 
     def test_validate_config_missing_url(self):
         """Should return False if URL missing."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         assert connector.validate_config({}) is False
         assert connector.validate_config({"url": ""}) is False
 
     def test_validate_config_unsafe_url(self):
         """Should return False for unsafe URL."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=False):
             assert connector.validate_config({"url": "http://localhost"}) is False
 
@@ -284,45 +284,45 @@ class TestNormalizeUrlEdgeCases:
     def test_removes_default_port_80(self):
         """Should remove default HTTP port 80."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         normalized = connector.normalize_url("http://example.com:80/path")
         assert ":80" not in normalized
 
     def test_removes_default_port_443(self):
         """Should remove default HTTPS port 443."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         normalized = connector.normalize_url("https://example.com:443/path")
         assert ":443" not in normalized
 
     def test_preserves_non_default_port(self):
         """Should preserve non-default ports."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         normalized = connector.normalize_url("https://example.com:8443/path")
         assert ":8443" in normalized
 
     def test_removes_fragment(self):
         """Should remove URL fragments."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         normalized = connector.normalize_url("https://example.com/page#section")
         assert "#section" not in normalized
 
     def test_removes_multiple_tracking_params(self):
         """Should remove all tracking params."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         normalized = connector.normalize_url(
             "https://example.com/page?keep=1&utm_source=google&utm_medium=cpc&gclid=abc&fbclid=def"
         )
@@ -339,35 +339,35 @@ class TestDomainMatching:
     def test_is_allowed_domain_exact_match(self):
         """Exact domain match should always be allowed."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         assert connector.is_allowed_domain("example.com", "example.com", allow_subdomains=False) is True
         assert connector.is_allowed_domain("Example.COM", "example.com", allow_subdomains=False) is True
 
     def test_is_allowed_domain_subdomain_allowed(self):
         """Subdomains allowed when flag is True."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         assert connector.is_allowed_domain("sub.example.com", "example.com", allow_subdomains=True) is True
         assert connector.is_allowed_domain("deep.sub.example.com", "example.com", allow_subdomains=True) is True
 
     def test_is_allowed_domain_subdomain_blocked(self):
         """Subdomains blocked when flag is False."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         assert connector.is_allowed_domain("sub.example.com", "example.com", allow_subdomains=False) is False
 
     def test_is_allowed_domain_different_domain(self):
         """Different domain should be blocked."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         assert connector.is_allowed_domain("malicious.com", "example.com", allow_subdomains=False) is False
         assert connector.is_allowed_domain("example.com.evil.com", "example.com", allow_subdomains=False) is False
 
@@ -378,25 +378,25 @@ class TestNormalizeHostname:
     def test_strips_www_prefix(self):
         """Should strip www. prefix."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         assert connector._normalize_hostname("www.example.com") == "example.com"
 
     def test_strips_trailing_dot(self):
         """Should strip trailing dot."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         assert connector._normalize_hostname("example.com.") == "example.com"
 
     def test_lowercases_hostname(self):
         """Should lowercase hostname."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         assert connector._normalize_hostname("EXAMPLE.COM") == "example.com"
 
 
@@ -405,12 +405,12 @@ class TestIsSafeHost:
 
     def test_private_ip_blocked(self):
         """Private IP addresses should be blocked."""
+
         from connectors.web import WebConnector
-        import socket
-        
+
         connector = WebConnector()
         connector._is_safe_host.cache_clear()
-        
+
         # Mock DNS resolution to return private IP
         with patch("connectors.web.socket.getaddrinfo", return_value=[(None, None, None, None, ("192.168.1.1", 0))]):
             assert connector._is_safe_host("internal.example.com") is False
@@ -418,31 +418,32 @@ class TestIsSafeHost:
     def test_loopback_blocked(self):
         """Loopback addresses should be blocked."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
         connector._is_safe_host.cache_clear()
-        
+
         with patch("connectors.web.socket.getaddrinfo", return_value=[(None, None, None, None, ("127.0.0.1", 0))]):
             assert connector._is_safe_host("localhost") is False
 
     def test_public_ip_allowed(self):
         """Public IP addresses should be allowed."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
         connector._is_safe_host.cache_clear()
-        
+
         with patch("connectors.web.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 0))]):
             assert connector._is_safe_host("example.com") is True
 
     def test_dns_failure_blocked(self):
         """DNS resolution failure should block."""
-        from connectors.web import WebConnector
         import socket
-        
+
+        from connectors.web import WebConnector
+
         connector = WebConnector()
         connector._is_safe_host.cache_clear()
-        
+
         with patch("connectors.web.socket.getaddrinfo", side_effect=socket.gaierror()):
             assert connector._is_safe_host("nonexistent.invalid") is False
 
@@ -453,34 +454,34 @@ class TestSitemapPreflightChecks:
     def test_sitemap_preflight_rejects_html(self):
         """Should reject HTML responses masquerading as sitemaps."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "text/html"}
         mock_response.text = "<!DOCTYPE html><html><head></head><body></body></html>"
-        
+
         with patch.object(connector.session, "get", return_value=mock_response):
             urls = connector.parse_sitemap("https://example.com/sitemap.xml")
-        
+
         # Should return empty list due to HTML content
         assert urls == []
 
     def test_sitemap_preflight_rejects_4xx_status(self):
         """Should return empty on 4xx status."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         mock_response = Mock()
         mock_response.status_code = 404
         mock_response.headers = {}
         mock_response.text = ""
-        
+
         with patch.object(connector.session, "get", return_value=mock_response):
             urls = connector.parse_sitemap("https://example.com/sitemap.xml")
-        
+
         assert urls == []
 
 
@@ -490,36 +491,36 @@ class TestFetchDocumentsSyncBehavior:
     def test_empty_item_ids_returns_empty(self):
         """Empty item_ids should return empty."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         docs = list(connector.fetch_documents_sync([]))
         assert docs == []
 
     def test_respects_robots_txt_when_enabled(self):
         """Should skip URLs blocked by robots.txt."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "check_robots_txt", return_value=False):
             docs = list(connector.fetch_documents_sync(["https://example.com"], respect_robots=True))
-        
+
         assert docs == []
 
     def test_ignores_robots_txt_when_disabled(self):
         """Should not check robots.txt when disabled."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         with patch.object(connector, "_is_safe_url", return_value=True), \
              patch.object(connector, "check_robots_txt") as mock_robots, \
              patch.object(connector, "is_youtube_url", return_value=False), \
              patch.object(connector, "fetch_html", return_value=None):
             list(connector.fetch_documents_sync(["https://example.com"], respect_robots=False))
-        
+
         mock_robots.assert_not_called()
 
 
@@ -528,11 +529,11 @@ class TestConnectorType:
 
     def test_connector_type_is_web(self):
         """Should return WEB source type."""
-        from connectors.web import WebConnector
         from connectors.enhanced import SourceType
-        
+        from connectors.web import WebConnector
+
         connector = WebConnector()
-        
+
         assert connector.connector_type == SourceType.WEB
 
 
@@ -542,20 +543,20 @@ class TestGetYouTubeMetadata:
     def test_extracts_video_id(self):
         """Should extract video ID and build metadata."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         metadata = connector.get_youtube_metadata("https://youtube.com/watch?v=dQw4w9WgXcQ")
-        
+
         assert metadata["source"] == "youtube"
         assert "dQw4w9WgXcQ" in metadata.get("source_url", "")
 
     def test_handles_short_url(self):
         """Should handle youtu.be short URLs."""
         from connectors.web import WebConnector
-        
+
         connector = WebConnector()
-        
+
         metadata = connector.get_youtube_metadata("https://youtu.be/dQw4w9WgXcQ")
-        
+
         assert metadata["source"] == "youtube"

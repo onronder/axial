@@ -5,17 +5,17 @@ Provides endpoints for managing user notifications.
 Tracks operation lifecycle events (success, warning, error, info).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from typing import Optional, List
-from datetime import datetime, timezone
 import json
-from api.v1.dependencies import validate_team_access, require_paid_access
-from core.security import get_current_user
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from api.v1.dependencies import require_paid_access, validate_team_access
+from api.v1.error_utils import ApiErrorCode, api_error
 from core.db import get_supabase
 from core.rate_limit import limiter
-from models import NotificationResponse, NotificationListResponse, UnreadCountResponse
-from api.v1.error_utils import api_error, ApiErrorCode
-import logging
+from core.security import get_current_user
+from models import NotificationListResponse, NotificationResponse, UnreadCountResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
@@ -27,7 +27,6 @@ router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_
 
 # Import from centralized service to avoid duplication
 from services.notification_service import create_notification  # noqa: F401
-
 
 # =============================================================================
 # API Endpoints
@@ -44,11 +43,11 @@ async def list_notifications(
 ):
     """
     List user's notifications with pagination.
-    
+
     Returns notifications sorted by created_at desc.
     """
     supabase = get_supabase()
-    
+
     try:
         # Build query
         query = supabase.table("notifications")\
@@ -57,27 +56,27 @@ async def list_notifications(
             .order("created_at", desc=True)\
             .limit(limit)\
             .offset(offset)
-        
+
         if unread_only:
             query = query.eq("is_read", False)
-        
+
         response = query.execute()
-        
+
         # Get unread count
         unread_response = supabase.table("notifications")\
             .select("id", count="exact")\
             .eq("user_id", user_id)\
             .eq("is_read", False)\
             .execute()
-        
-        def parse_extra_data(data: Optional[str]) -> Optional[dict]:
+
+        def parse_extra_data(data: str | None) -> dict | None:
             if not data:
                 return None
             try:
                 return json.loads(data)
             except (json.JSONDecodeError, TypeError):
                 return None
-        
+
         notifications = [
             NotificationResponse(
                 id=str(n["id"]),
@@ -90,13 +89,13 @@ async def list_notifications(
             )
             for n in (response.data or [])
         ]
-        
+
         return NotificationListResponse(
             notifications=notifications,
             total=response.count or len(notifications),
             unread_count=unread_response.count or 0
         )
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_notifications")
 
@@ -106,20 +105,20 @@ async def list_notifications(
 async def get_unread_count(request: Request, user_id: str = Depends(get_current_user)):
     """
     Lightweight endpoint for unread notification count.
-    
+
     Optimized for frequent polling (every 30s).
     """
     supabase = get_supabase()
-    
+
     try:
         response = supabase.table("notifications")\
             .select("id", count="exact")\
             .eq("user_id", user_id)\
             .eq("is_read", False)\
             .execute()
-        
+
         return UnreadCountResponse(count=response.count or 0)
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_unread_count")
 
@@ -133,7 +132,7 @@ async def mark_as_read(
 ):
     """Mark a specific notification as read."""
     supabase = get_supabase()
-    
+
     try:
         # Update notification
         response = supabase.table("notifications")\
@@ -141,12 +140,12 @@ async def mark_as_read(
             .eq("id", notification_id)\
             .eq("user_id", user_id)\
             .execute()
-        
+
         if not response.data:
             raise HTTPException(status_code=404, detail="Notification not found")
-        
+
         n = response.data[0]
-        
+
         # Parse extra_data JSON
         extra_data_parsed = None
         if n.get("extra_data"):
@@ -154,7 +153,7 @@ async def mark_as_read(
                 extra_data_parsed = json.loads(n["extra_data"])
             except (json.JSONDecodeError, TypeError):
                 pass
-        
+
         return NotificationResponse(
             id=str(n["id"]),
             title=n["title"],
@@ -164,7 +163,7 @@ async def mark_as_read(
             metadata=extra_data_parsed,
             created_at=n.get("created_at")
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -176,16 +175,16 @@ async def mark_as_read(
 async def mark_all_as_read(request: Request, user_id: str = Depends(get_current_user)):
     """Mark all notifications as read."""
     supabase = get_supabase()
-    
+
     try:
         supabase.table("notifications")\
             .update({"is_read": True})\
             .eq("user_id", user_id)\
             .eq("is_read", False)\
             .execute()
-        
+
         return {"status": "success", "message": "All notifications marked as read"}
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "mark_notification_read")
 
@@ -195,15 +194,15 @@ async def mark_all_as_read(request: Request, user_id: str = Depends(get_current_
 async def clear_all_notifications(request: Request, user_id: str = Depends(get_current_user)):
     """Delete all notifications for the user."""
     supabase = get_supabase()
-    
+
     try:
         supabase.table("notifications")\
             .delete()\
             .eq("user_id", user_id)\
             .execute()
-        
+
         return {"status": "success", "message": "All notifications cleared"}
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "clear_notifications")
 
@@ -217,19 +216,19 @@ async def delete_notification(
 ):
     """Delete a specific notification."""
     supabase = get_supabase()
-    
+
     try:
         response = supabase.table("notifications")\
             .delete()\
             .eq("id", notification_id)\
             .eq("user_id", user_id)\
             .execute()
-        
+
         if not response.data:
             raise HTTPException(status_code=404, detail="Notification not found")
-        
+
         return {"status": "success", "message": "Notification deleted"}
-        
+
     except HTTPException:
         raise
     except Exception as e:

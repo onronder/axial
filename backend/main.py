@@ -6,20 +6,21 @@ for Supabase + Railway + Vercel deployment.
 """
 
 # Suppress third-party deprecation warnings (MUST be first import)
-import core.suppress_warnings  # noqa: F401
-
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.gzip import GZipMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from core.db import check_connection, get_supabase
+from slowapi.util import get_remote_address
+from starlette.middleware.gzip import GZipMiddleware
+
+import core.suppress_warnings  # noqa: F401
 from core.config import settings
+from core.db import check_connection, get_supabase
 from core.shutdown import register_cleanup_handlers
 
 # Configure logging
@@ -35,18 +36,19 @@ logger = logging.getLogger(__name__)
 def init_sentry() -> None:
     if settings.SENTRY_DSN and settings.ENVIRONMENT != "test":
         try:
-            import sentry_sdk
             import logging as py_logging  # Explicit alias to avoid NameError
+
+            import sentry_sdk
             from sentry_sdk.integrations.fastapi import FastApiIntegration
-            from sentry_sdk.integrations.starlette import StarletteIntegration
             from sentry_sdk.integrations.logging import LoggingIntegration
-            
+            from sentry_sdk.integrations.starlette import StarletteIntegration
+
             # Enable Sentry logging integration
             logging_integration = LoggingIntegration(
                 level=py_logging.INFO,        # Capture INFO and above as breadcrumbs
                 event_level=py_logging.ERROR  # Send ERROR and above as events
             )
-            
+
             sentry_sdk.init(
                 dsn=settings.SENTRY_DSN,
                 # Performance Monitoring
@@ -78,10 +80,10 @@ def init_sentry() -> None:
 init_sentry()
 
 # Import routers
-from api.v1.uploads import router as uploads_router
-from api.v1.search import router as search_router
 from api.v1.chat import router as chat_router
 from api.v1.documents import router as documents_router
+from api.v1.search import router as search_router
+from api.v1.uploads import router as uploads_router
 
 
 @asynccontextmanager
@@ -157,7 +159,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 def configure_cors() -> list[str]:
     """
     Configure CORS origins with production-grade security.
-    
+
     Rules:
     1. PRODUCTION: Requires ALLOWED_ORIGINS, fails if not set
     2. DEVELOPMENT: Allows localhost fallback
@@ -165,18 +167,18 @@ def configure_cors() -> list[str]:
     """
     environment = settings.ENVIRONMENT
     allowed_origins_env = settings.ALLOWED_ORIGINS
-    
+
     origins: list[str] = []
-    
+
     # Parse comma-separated origins from environment
     if allowed_origins_env:
         origins = [
-            origin.strip() 
-            for origin in allowed_origins_env.split(",") 
+            origin.strip()
+            for origin in allowed_origins_env.split(",")
             if origin.strip()
         ]
         logger.info(f"🔒 CORS: Loaded {len(origins)} origin(s) from ALLOWED_ORIGINS")
-    
+
     # Environment-specific handling
     if environment == "production":
         # PRODUCTION: Strict validation
@@ -187,20 +189,20 @@ def configure_cors() -> list[str]:
             )
             logger.error(f"🔴 {error_msg}")
             raise RuntimeError(error_msg)
-        
+
         # Validate no wildcards in production
         if "*" in origins:
             error_msg = "CRITICAL: Wildcard (*) CORS origins not allowed in production!"
             logger.error(f"🔴 {error_msg}")
             raise RuntimeError(error_msg)
-        
+
         # Validate all origins use HTTPS in production
         for origin in origins:
             if not origin.startswith("https://"):
                 logger.warning(f"⚠️ Non-HTTPS origin in production: {origin}")
-        
+
         logger.info(f"🔒 CORS: Production mode - {len(origins)} strict origin(s)")
-        
+
     else:
         # DEVELOPMENT: Allow localhost fallback
         if not origins:
@@ -211,7 +213,7 @@ def configure_cors() -> list[str]:
                 "http://127.0.0.1:3001",
             ]
             logger.info("🔓 CORS: Development mode - using localhost origins")
-        
+
         # Add specific Vercel preview URL (not wildcard)
         vercel_env = os.getenv("VERCEL_ENV")
         if vercel_env in ("preview", "development"):
@@ -226,7 +228,7 @@ def configure_cors() -> list[str]:
                 logger.info("🔓 CORS: Added Vercel preview origin(s)")
             else:
                 logger.warning("⚠️ CORS: VERCEL_ENV is set but VERCEL_URL is empty — no preview origin added")
-    
+
     return origins
 
 
@@ -255,6 +257,7 @@ app.add_middleware(
 
 # Add request tracing middleware
 from core.tracing import RequestTracingMiddleware
+
 app.add_middleware(RequestTracingMiddleware)
 
 # Add GZip compression for responses > 500 bytes
@@ -282,16 +285,18 @@ app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(documents_router, prefix="/api/v1", tags=["documents"])
 
 from api.v1.integrations import router as integrations_router
+
 app.include_router(integrations_router, prefix="/api/v1", tags=["integrations"])
 
-from api.v1.settings import router as settings_router
-from api.v1.team import router as team_router
 from api.v1.billing import router as billing_router
-from api.v1.stream import router as stream_router
 from api.v1.jobs import router as jobs_router
 from api.v1.notifications import router as notifications_router
+from api.v1.settings import router as settings_router
+from api.v1.stream import router as stream_router
+from api.v1.team import router as team_router
 from api.v1.usage import router as usage_router
 from api.v1.webhooks import router as webhooks_router
+
 app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
 app.include_router(team_router, prefix="/api/v1", tags=["team"])
 app.include_router(billing_router, prefix="/api/v1/billing", tags=["billing"])
@@ -302,24 +307,31 @@ app.include_router(usage_router, prefix="/api/v1", tags=["usage"])
 app.include_router(webhooks_router, prefix="/api/v1", tags=["webhooks"])
 
 from api.v1.admin import router as admin_router
+
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 
 from api.v1.dlq import router as dlq_router
+
 app.include_router(dlq_router, prefix="/api/v1/dlq", tags=["Dead Letter Queue"])
 
 from api.v1.feedback import router as feedback_router
+
 app.include_router(feedback_router, prefix="/api/v1", tags=["feedback"])
 
 from api.v1.mcp import router as mcp_router
+
 app.include_router(mcp_router, prefix="/api/v1", tags=["mcp"])
 
 from api.v1.approvals import router as approvals_router
+
 app.include_router(approvals_router, prefix="/api/v1", tags=["approvals"])
 
 from api.v1.consent import router as consent_router
+
 app.include_router(consent_router, prefix="/api/v1", tags=["consent"])
 
 from api.v1.compliance import router as compliance_router
+
 app.include_router(compliance_router, prefix="/api/v1", tags=["compliance"])
 
 
@@ -330,11 +342,11 @@ app.include_router(compliance_router, prefix="/api/v1", tags=["compliance"])
 async def health_check():
     """
     Enhanced health check endpoint for Railway/load balancer monitoring.
-    
+
     Checks connectivity to:
     - Database (PostgreSQL via Supabase)
     - Redis (Celery broker)
-    
+
     Rules:
     - Database DOWN -> 503 Service Unavailable (Critical)
     - Redis DOWN -> 200 OK (Degraded - Chat/Read APIs still work)
@@ -349,7 +361,7 @@ async def health_check():
         },
         "issues": []
     }
-    
+
     # 1. Check Database (CRITICAL)
     db_healthy = False
     try:
@@ -362,7 +374,7 @@ async def health_check():
         status["services"]["database"] = "down"
         status["status"] = "unhealthy"
         logger.error(f"❌ Health check - Database: {e}")
-    
+
     # 2. Check Redis (NON-CRITICAL for Read API)
     redis_healthy = False
     r = None
@@ -386,12 +398,12 @@ async def health_check():
                 r.close()
             except Exception as e:
                 logger.debug(f"[Health] Failed to close Redis connection: {e}")
-    
+
     # Decision Matrix:
     # DB Down -> 503 (Unhealthy)
     # DB Up + Redis Down -> 200 (Degraded)
     # DB Up + Redis Up -> 200 (Healthy)
-    
+
     if db_healthy:
         return status  # Returns 200 even if degraded
     else:

@@ -1,10 +1,16 @@
-from fastapi import BackgroundTasks
-from starlette.requests import Request
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import BackgroundTasks
+from starlette.requests import Request
 
-from services.audit import AuditLogger, log_chat_delete, log_connector_sync, log_document_delete, log_settings_update
+from services.audit import (
+    AuditLogger,
+    log_chat_delete,
+    log_connector_sync,
+    log_document_delete,
+    log_settings_update,
+)
 
 
 def _make_request(headers=None, client_host="127.0.0.1"):

@@ -7,9 +7,9 @@ All ingestion connectors must implement BaseConnector for consistent behavior an
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterator, Optional
 
 
 # Standard exceptions for connector implementations
@@ -33,11 +33,11 @@ class ConnectorTransientError(ConnectorError):
 class RemoteFile:
     id: str
     name: str
-    mime_type: Optional[str]
-    size: Optional[int]
-    modified_at: Optional[datetime]
-    parent_id: Optional[str] = None
-    web_view_url: Optional[str] = None
+    mime_type: str | None
+    size: int | None
+    modified_at: datetime | None
+    parent_id: str | None = None
+    web_view_url: str | None = None
 
 
 class BaseConnector(ABC):

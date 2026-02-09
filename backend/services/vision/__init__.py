@@ -11,9 +11,9 @@ Components:
 - circuit.py: Vision-specific circuit breakers
 """
 
-from services.vision.base import VisionProcessor, VisionResult, DiagramType
-from services.vision.openai_vision import GPT4VisionProcessor
+from services.vision.base import DiagramType, VisionProcessor, VisionResult
 from services.vision.gemini_vision import GeminiVisionProcessor
+from services.vision.openai_vision import GPT4VisionProcessor
 
 __all__ = [
     'VisionProcessor',

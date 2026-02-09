@@ -7,11 +7,22 @@ from __future__ import annotations
 import logging
 import random
 import time
-from typing import Any, Iterable, Tuple
+from collections.abc import Iterable
+from typing import Any
 
-from core.resilience import SUPABASE_RETRY_CONFIG, RATE_LIMIT_STATUS_CODES, is_retryable_error
+from core.resilience import (
+    RATE_LIMIT_STATUS_CODES,
+    SUPABASE_RETRY_CONFIG,
+    is_retryable_error,
+)
+
 try:
-    from core.metrics import retry_total, retry_success, retry_failure, operation_duration
+    from core.metrics import (
+        operation_duration,
+        retry_failure,
+        retry_success,
+        retry_total,
+    )
 except Exception:
     retry_total = None
     retry_success = None
@@ -42,7 +53,7 @@ def insert_rows_with_retry(
     rows: Iterable[dict],
     context: str,
     max_attempts: int = 3,
-) -> Tuple[Any, float]:
+) -> tuple[Any, float]:
     """
     Insert rows into a Supabase table with retry + jitter.
 
@@ -117,7 +128,7 @@ def delete_rows_with_retry(
     filter_value: Any,
     context: str,
     max_attempts: int = 3,
-) -> Tuple[Any, float]:
+) -> tuple[Any, float]:
     """
     Delete rows from a Supabase table with retry + jitter.
 

@@ -13,25 +13,19 @@ Following best practices:
 Coverage Target: 95%+
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch, PropertyMock
-from datetime import datetime, timezone
-import json
+from unittest.mock import Mock, patch
 
-from connectors.box import (
-    BoxConnector,
-    BOX_API_BASE,
-    ROOT_FOLDER_ID,
-    PAGE_SIZE,
-)
+import pytest
+
 from connectors.base import (
-    RemoteFile,
     ConnectorAuthError,
     ConnectorRateLimitError,
     ConnectorTransientError,
 )
-from connectors.enhanced import SourceType, ItemNotFoundError, FileTooLargeError
-
+from connectors.box import (
+    BoxConnector,
+)
+from connectors.enhanced import ItemNotFoundError, SourceType
 
 # =============================================================================
 # Fixtures
@@ -302,7 +296,7 @@ class TestRequestWithRetry:
         mock_request.side_effect = [rate_limit_response, success_response]
 
         result = connector._request_with_retry("GET", "http://test.com")
-        
+
         assert result == success_response
         mock_sleep.assert_called()
 
@@ -364,7 +358,7 @@ class TestListFiles:
         }
 
         files = list(connector.list_files({}))
-        
+
         assert len(files) == 2
         assert files[0].name == "file1.txt"
         assert files[1].name == "file2.pdf"
@@ -374,7 +368,7 @@ class TestListFiles:
     def test_list_files_with_pagination(self, mock_request, mock_resolve, connector):
         """Should handle pagination correctly."""
         mock_resolve.return_value = {"access_token": "test"}
-        
+
         # First page has 1000 items (max), second page has remaining
         mock_request.side_effect = [
             {
@@ -392,7 +386,7 @@ class TestListFiles:
         ]
 
         files = list(connector.list_files({}))
-        
+
         assert len(files) == 1500
         assert mock_request.call_count == 2
 
@@ -407,7 +401,7 @@ class TestListFiles:
         }
 
         files = list(connector.list_files({}))
-        
+
         # Verify at least one folder is in the results
         folders = [f for f in files if f.mime_type == "inode/directory"]
         assert len(folders) >= 1
@@ -424,7 +418,7 @@ class TestListFiles:
         }
 
         files = list(connector.list_files({"parent_id": "123"}))
-        
+
         # Should call with folder ID 123
         call_args = mock_request.call_args[0]
         assert "/folders/123/items" in call_args[1]
@@ -440,7 +434,7 @@ class TestItemToRemoteFile:
     def test_file_item_conversion(self, connector, mock_file_entry):
         """Should correctly convert file item."""
         result = connector._item_to_remote_file(mock_file_entry)
-        
+
         # Box connector uses canonical source IDs like box://file/ID
         assert "12345678901" in result.id
         assert result.name == "test-document.pdf"
@@ -450,7 +444,7 @@ class TestItemToRemoteFile:
     def test_folder_item_conversion(self, connector, mock_folder_entry):
         """Should correctly convert folder item."""
         result = connector._item_to_remote_file(mock_folder_entry)
-        
+
         assert "987654321" in result.id
         assert result.name == "Documents"
         # Box connector may use different mime type for folders
@@ -479,9 +473,9 @@ class TestFileDownload:
         """Should download file content successfully."""
         mock_resolve.return_value = {"access_token": "test"}
         mock_download.return_value = b"file content here"
-        
+
         result = connector.fetch_file_content("123", {"access_token": "test"})
-        
+
         assert result == b"file content here"
 
 
@@ -536,9 +530,9 @@ class TestResolveConfig:
     def test_resolve_with_access_token(self, mock_verify, connector):
         """Should use provided access token directly."""
         mock_verify.return_value = {"id": "user-1"}
-        
+
         result = connector._resolve_config({"access_token": "direct-token"})
-        
+
         assert result["access_token"] == "direct-token"
 
     @patch.object(BoxConnector, '_load_integration')
@@ -552,7 +546,7 @@ class TestResolveConfig:
         }
 
         result = connector._resolve_config({"integration_id": "int-123"})
-        
+
         assert result["access_token"] == "refreshed-token"
 
     @patch.object(BoxConnector, '_load_integration')
@@ -560,7 +554,7 @@ class TestResolveConfig:
     def test_resolve_refresh_error_raises_auth(self, mock_creds, mock_load, connector):
         """Should raise ConnectorAuthError on token refresh failure."""
         from services.oauth_token_manager import TokenRefreshError
-        
+
         mock_load.return_value = {"id": "int-123"}
         mock_creds.side_effect = TokenRefreshError("Token refresh failed")
 
@@ -589,7 +583,7 @@ class TestFetchDocuments:
         mock_sync.return_value = iter([mock_doc])
 
         docs = [doc async for doc in connector.fetch_documents(["123"], {})]
-        
+
         assert len(docs) == 1
         assert docs[0].filename == "test.pdf"
 
@@ -601,5 +595,5 @@ class TestFetchDocuments:
         mock_request.side_effect = ItemNotFoundError("File not found")
 
         docs = [doc async for doc in connector.fetch_documents(["missing"], {})]
-        
+
         assert docs == []

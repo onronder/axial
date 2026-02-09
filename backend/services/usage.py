@@ -8,13 +8,13 @@ vs. what they have consumed.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
+
 from pydantic import BaseModel
 
 from core.db import get_supabase
 from core.exceptions import QuotaExceededError
-from core.quotas import PlanLimits, get_plan_limits, format_bytes
+from core.quotas import PlanLimits, format_bytes, get_plan_limits
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class UserUsage(BaseModel):
     """
     Current usage statistics for a user (organization-scoped).
-    
+
     Attributes:
         user_id: The user's UUID
         files: Number of documents/files in the org
@@ -42,7 +42,7 @@ class UserUsage(BaseModel):
 class UsageWithLimits(BaseModel):
     """
     Usage data combined with plan limits for easy comparison.
-    
+
     Attributes:
         usage: Current usage statistics
         limits: Plan limits for comparison
@@ -64,32 +64,32 @@ class UsageWithLimits(BaseModel):
 async def get_user_usage(user_id: UUID) -> UserUsage:
     """
     Get the current usage statistics for a user.
-    
+
     Strategy: Query documents table directly with SUM/COUNT for accuracy.
     Usage is calculated at the organization scope to reflect shared quotas.
     This is safer than cached columns for MVP to avoid sync issues.
-    Consider migrating to cached columns (user_profiles.file_count, 
+    Consider migrating to cached columns (user_profiles.file_count,
     total_storage_bytes) if performance becomes an issue.
-    
+
     Args:
         user_id: The user's UUID
-        
+
     Returns:
         UserUsage with current file count, storage, and plan
     """
     supabase = get_supabase()
-    
+
     # Default values
     plan = "free"
     subscription_status = "active"
-    
+
     # Get user's plan from user_profiles (subscription_status comes from subscriptions table)
     # Wrap in try/except to handle race condition where profile doesn't exist yet (PGRST116)
     try:
         profile_result = supabase.table("user_profiles").select("plan").eq(
             "user_id", str(user_id)
         ).single().execute()
-        
+
         if profile_result.data:
             plan = profile_result.data.get("plan", "free")
     except Exception as e:
@@ -106,11 +106,11 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
                 plan="free",
                 subscription_status="inactive"
             )
-        
+
         # Re-raise other unexpected errors
         logger.error(f"Error fetching user profile for {user_id}: {e}")
         raise e
-    
+
     organization_id = str(user_id)
     team_id = None
 
@@ -151,7 +151,7 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
         except Exception as e:
             # Non-critical - default to active if we can't fetch subscription
             logger.warning(f"Could not fetch subscription status for {user_id}: {e}")
-    
+
     # Resolve effective plan from team/subscription (best source of truth)
     try:
         effective_plan = await team_service.get_effective_plan(str(user_id))
@@ -171,21 +171,21 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
         .neq("source_type", "scope_identity")
         .execute()
     )
-    
+
     file_count = 0
     total_bytes = 0
-    
+
     if docs_result.data:
         file_count = len(docs_result.data)
         total_bytes = sum(
-            doc.get("file_size_bytes", 0) or 0 
+            doc.get("file_size_bytes", 0) or 0
             for doc in docs_result.data
         )
-    
+
     logger.debug(
         f"User {user_id} usage: {file_count} files, {total_bytes} bytes, plan: {plan}"
     )
-    
+
     return UserUsage(
         user_id=str(user_id),
         files=file_count,
@@ -199,21 +199,21 @@ async def get_user_usage(user_id: UUID) -> UserUsage:
 async def get_user_usage_with_limits(user_id: UUID) -> UsageWithLimits:
     """
     Get usage statistics with plan limits for comparison.
-    
+
     Useful for UI display and quota enforcement decisions.
-    
+
     Args:
         user_id: The user's UUID
-        
+
     Returns:
         UsageWithLimits with usage, limits, and derived quota info
     """
     usage = await get_user_usage(user_id)
     limits = get_plan_limits(usage.plan)
-    
+
     files_remaining = max(0, limits.max_files - usage.files)
     storage_remaining = max(0, limits.max_storage_bytes - usage.storage_bytes)
-    
+
     return UsageWithLimits(
         usage=usage,
         limits=limits,
@@ -226,18 +226,18 @@ async def get_user_usage_with_limits(user_id: UUID) -> UsageWithLimits:
 
 
 async def check_can_upload(
-    user_id: UUID, 
-    file_size_bytes: int, 
+    user_id: UUID,
+    file_size_bytes: int,
     file_count: int = 1
 ) -> dict:
     """
     Check if a user can upload a file based on their quota.
-    
+
     Args:
         user_id: The user's UUID
         file_size_bytes: Size of the file to upload in bytes
         file_count: Number of files being uploaded (default 1)
-        
+
     Returns:
         dict with:
             - allowed: bool indicating if upload is permitted
@@ -248,7 +248,7 @@ async def check_can_upload(
     usage_with_limits = await get_user_usage_with_limits(user_id)
     usage = usage_with_limits.usage
     limits = usage_with_limits.limits
-    
+
     # Check file count limit
     if usage.files + file_count > limits.max_files:
         return {
@@ -258,7 +258,7 @@ async def check_can_upload(
             "usage": usage.model_dump(),
             "limits": limits.model_dump()
         }
-    
+
     # Check storage limit
     if usage.storage_bytes + file_size_bytes > limits.max_storage_bytes:
         return {
@@ -293,7 +293,7 @@ async def _get_org_llm_usage(supabase, org_id: str) -> int:
         raise
 
 
-async def _get_org_llm_balance_override(supabase, org_id: str) -> Optional[int]:
+async def _get_org_llm_balance_override(supabase, org_id: str) -> int | None:
     try:
         res = (
             supabase.table("teams")
@@ -312,7 +312,7 @@ async def _get_org_llm_balance_override(supabase, org_id: str) -> Optional[int]:
         raise
 
 
-async def get_org_llm_balance(org_id: str, plan_code: Optional[str]) -> dict:
+async def get_org_llm_balance(org_id: str, plan_code: str | None) -> dict:
     """
     Return remaining LLM tokens for an org.
 
@@ -347,8 +347,8 @@ async def get_org_llm_balance(org_id: str, plan_code: Optional[str]) -> dict:
 
 async def check_llm_quota(
     org_id: str,
-    plan_code: Optional[str],
-    required_tokens: Optional[int] = None,
+    plan_code: str | None,
+    required_tokens: int | None = None,
 ) -> dict:
     """
     Ensure the org has remaining LLM token balance before calling any model.
@@ -374,7 +374,7 @@ async def check_llm_quota(
 
 async def reserve_llm_tokens(
     org_id: str,
-    plan_code: Optional[str],
+    plan_code: str | None,
     tokens_to_reserve: int,
 ) -> dict:
     """
@@ -480,7 +480,7 @@ async def release_reserved_tokens(
 
 async def _reserve_tokens_fallback(
     org_id: str,
-    plan_code: Optional[str],
+    plan_code: str | None,
     tokens_to_reserve: int,
 ) -> dict:
     """
@@ -498,7 +498,7 @@ async def _reserve_tokens_fallback(
 
 def check_per_request_token_limit(
     estimated_tokens: int,
-    max_tokens_per_request: Optional[int] = None,
+    max_tokens_per_request: int | None = None,
 ) -> None:
     """
     Enforce per-request token limit to prevent single requests from consuming
@@ -530,13 +530,13 @@ def check_per_request_token_limit(
 async def record_llm_usage(
     org_id: str,
     tokens_used: int,
-    plan_code: Optional[str] = None,
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
+    plan_code: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> None:
     """
     Atomically increment LLM token usage for the org and decrement balance overrides.
-    
+
     RACE CONDITION FIX: Uses database RPC for atomic increment instead of
     read-modify-write pattern which could cause token drift under concurrent requests.
     """
@@ -557,7 +557,7 @@ async def record_llm_usage(
                 "p_model": model,
             }
         ).execute()
-        
+
         # Extract new total from result
         new_total = None
         previous_total = None
@@ -566,7 +566,7 @@ async def record_llm_usage(
             row = result.data[0] if isinstance(result.data, list) else result.data
             new_total = row.get("new_total") if isinstance(row, dict) else None
             previous_total = row.get("previous_total") if isinstance(row, dict) else None
-        
+
         logger.info(
             "✅ [Usage] LLM usage org=%s tokens+=%s total=%s->%s provider=%s model=%s",
             org_id,
@@ -596,11 +596,11 @@ async def record_llm_usage(
                 "p_tokens": tokens_used,
             }
         ).execute()
-        
+
         # Result is NULL if no balance override exists, which is fine
         if result.data is not None:
             logger.debug("✅ [Usage] Decremented LLM balance for %s by %s", org_id, tokens_used)
-            
+
     except Exception as exc:
         error_msg = str(exc)
         if "function" in error_msg.lower() and "does not exist" in error_msg.lower():
@@ -615,12 +615,12 @@ async def _record_llm_usage_fallback(
     supabase,
     org_id: str,
     tokens_used: int,
-    provider: Optional[str],
-    model: Optional[str],
+    provider: str | None,
+    model: str | None,
 ) -> None:
     """
     Fallback for record_llm_usage when atomic RPC is not available.
-    
+
     NOTE: This has a race condition - use only as fallback during migration.
     """
     current_used = await _get_org_llm_usage(supabase, org_id)
@@ -634,7 +634,7 @@ async def _record_llm_usage_fallback(
         },
         on_conflict="org_id",
     ).execute()
-    
+
     logger.warning(
         "⚠️ [Usage] LLM usage (FALLBACK) org=%s tokens+=%s provider=%s model=%s",
         org_id,
@@ -651,7 +651,7 @@ async def _decrement_llm_balance_fallback(
 ) -> None:
     """
     Fallback for balance decrement when atomic RPC is not available.
-    
+
     NOTE: This has a race condition - use only as fallback during migration.
     """
     balance_override = await _get_org_llm_balance_override(supabase, org_id)
@@ -666,11 +666,11 @@ async def _decrement_llm_balance_fallback(
 async def check_feature_access(user_id: UUID, feature: str) -> dict:
     """
     Check if a user has access to a specific feature.
-    
+
     Args:
         user_id: The user's UUID
         feature: Feature name to check (e.g., 'web_crawl')
-        
+
     Returns:
         dict with:
             - allowed: bool indicating if feature is accessible
@@ -679,7 +679,7 @@ async def check_feature_access(user_id: UUID, feature: str) -> dict:
     """
     usage = await get_user_usage(user_id)
     limits = get_plan_limits(usage.plan)
-    
+
     feature_checks = {
         "web_crawl": {
             "allowed": limits.allow_web_crawl,
@@ -694,7 +694,7 @@ async def check_feature_access(user_id: UUID, feature: str) -> dict:
             "reason": "Premium AI models are available on Pro and Enterprise plans."
         }
     }
-    
+
     if feature not in feature_checks:
         logger.warning(f"Unknown feature check requested: {feature}")
         return {
@@ -702,7 +702,7 @@ async def check_feature_access(user_id: UUID, feature: str) -> dict:
             "reason": None,
             "plan": usage.plan
         }
-    
+
     check = feature_checks[feature]
     return {
         "allowed": check["allowed"],

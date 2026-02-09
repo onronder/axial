@@ -7,7 +7,7 @@ Tracks retry attempts, timeouts, circuit breaker states, and memory usage.
 import logging
 
 try:
-    from prometheus_client import Counter, Histogram, Gauge, Info
+    from prometheus_client import Counter, Gauge, Histogram, Info
     METRICS_ENABLED = True
 except Exception:
     METRICS_ENABLED = False

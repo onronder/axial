@@ -14,15 +14,15 @@ class TestConnectorRegistry:
     def test_s3_connector_registered(self):
         """S3 connector should be registered in CONNECTORS dict."""
         from connectors import CONNECTORS
-        
+
         assert "s3" in CONNECTORS
-        
+
     @pytest.mark.unit
     def test_s3_connector_class_type(self):
         """S3 connector should be the correct class type."""
         from connectors import CONNECTORS
         from connectors.s3 import S3Connector
-        
+
         assert CONNECTORS["s3"] == S3Connector
 
     @pytest.mark.unit
@@ -30,7 +30,7 @@ class TestConnectorRegistry:
         """get_connector should return S3Connector instance for 's3'."""
         from connectors import get_connector
         from connectors.s3 import S3Connector
-        
+
         connector = get_connector("s3")
         assert isinstance(connector, S3Connector)
 
@@ -38,7 +38,7 @@ class TestConnectorRegistry:
     def test_get_connector_raises_for_unknown(self):
         """get_connector should raise ValueError for unknown type."""
         from connectors import get_connector
-        
+
         with pytest.raises(ValueError, match="Unknown connector type"):
             get_connector("nonexistent_connector")
 
@@ -46,7 +46,7 @@ class TestConnectorRegistry:
     def test_all_connectors_registered(self):
         """All expected connectors should be registered."""
         from connectors import CONNECTORS
-        
+
         expected_connectors = [
             "file_upload",
             "google_drive",
@@ -60,7 +60,7 @@ class TestConnectorRegistry:
             "web",
             "s3",  # Newly added
         ]
-        
+
         for connector_type in expected_connectors:
             assert connector_type in CONNECTORS, f"Missing connector: {connector_type}"
 
@@ -69,7 +69,7 @@ class TestConnectorRegistry:
         """Box connector should be registered."""
         from connectors import CONNECTORS
         from connectors.box import BoxConnector
-        
+
         assert "box" in CONNECTORS
         assert CONNECTORS["box"] == BoxConnector
 
@@ -78,7 +78,7 @@ class TestConnectorRegistry:
         """SFTP connector should be registered."""
         from connectors import CONNECTORS
         from connectors.sftp import SFTPConnector
-        
+
         assert "sftp" in CONNECTORS
         assert CONNECTORS["sftp"] == SFTPConnector
 
@@ -90,7 +90,7 @@ class TestConnectorManifest:
     def test_s3_manifest_exists(self):
         """S3 should have a manifest entry."""
         from connectors.registry import get_connector_manifest
-        
+
         manifest = get_connector_manifest("s3")
         assert manifest is not None
         assert manifest["id"] == "s3"
@@ -100,7 +100,7 @@ class TestConnectorManifest:
     def test_s3_manifest_has_enterprise_flag(self):
         """S3 manifest should indicate enterprise-only."""
         from connectors.registry import get_connector_manifest
-        
+
         manifest = get_connector_manifest("s3")
         assert manifest.get("enterprise_only") is True
 
@@ -108,7 +108,7 @@ class TestConnectorManifest:
     def test_s3_manifest_has_auth_type(self):
         """S3 manifest should specify form auth type."""
         from connectors.registry import get_connector_manifest
-        
+
         manifest = get_connector_manifest("s3")
         assert manifest.get("auth_type") == "form"
 
@@ -116,10 +116,10 @@ class TestConnectorManifest:
     def test_s3_manifest_has_capabilities(self):
         """S3 manifest should specify capabilities."""
         from connectors.registry import get_connector_manifest
-        
+
         manifest = get_connector_manifest("s3")
         capabilities = manifest.get("capabilities", [])
-        
+
         assert "binary_content" in capabilities
         assert "glacier_aware" in capabilities
 
@@ -131,7 +131,7 @@ class TestSourceTypeEnum:
     def test_source_type_has_s3(self):
         """SourceType enum should include S3."""
         from connectors.enhanced import SourceType
-        
+
         assert hasattr(SourceType, "S3")
         assert SourceType.S3.value == "s3"
 
@@ -139,6 +139,6 @@ class TestSourceTypeEnum:
     def test_source_type_has_box(self):
         """SourceType enum should include BOX."""
         from connectors.enhanced import SourceType
-        
+
         assert hasattr(SourceType, "BOX")
         assert SourceType.BOX.value == "box"

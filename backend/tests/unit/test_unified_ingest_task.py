@@ -9,13 +9,14 @@ Tests cover:
 - Celery integration
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
+
+import pytest
 from celery.exceptions import Retry
 
+from connectors.enhanced import QuotaExceededError, SourceDocument, SourceType
 from worker.tasks import unified_ingest_task
-from connectors.enhanced import SourceDocument, SourceType, QuotaExceededError
 
 
 @pytest.fixture
@@ -51,13 +52,13 @@ def test_unified_ingest_task_file_upload(
     mock_supabase
 ):
     """Test unified_ingest_task with file upload connector."""
-    
+
     # Setup
     user_id = str(uuid4())
     job_id = str(uuid4())
     storage_path = "uploads/user/uuid/test.pdf"
     scope_id = f"file_upload://{storage_path}"
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(item_ids, credentials=None, **kwargs):
@@ -72,7 +73,7 @@ def test_unified_ingest_task_file_upload(
         )
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     with patch("worker.tasks.process_file_task") as mock_task, \
          patch("celery.group") as mock_group:
         mock_task.s.return_value = "sig"
@@ -87,7 +88,7 @@ def test_unified_ingest_task_file_upload(
             credentials=None,
             plan_code="starter",
         )
-    
+
     # Verify
     assert result["status"] == "dispatched"
     mock_get_connector.assert_called_once_with("file_upload")
@@ -99,12 +100,12 @@ def test_unified_ingest_task_google_drive(
     mock_supabase
 ):
     """Test unified_ingest_task with Google Drive connector."""
-    
+
     user_id = str(uuid4())
     job_id = str(uuid4())
     file_ids = ["drive-file-1", "drive-file-2"]
     credentials = {"integration_id": "int-1"}
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(item_ids, creds, **kwargs):
@@ -126,7 +127,7 @@ def test_unified_ingest_task_google_drive(
             )
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     with patch("worker.tasks.process_file_task") as mock_task, \
          patch("celery.group") as mock_group:
         mock_task.s.return_value = "sig"
@@ -141,7 +142,7 @@ def test_unified_ingest_task_google_drive(
             credentials=credentials,
             plan_code="starter",
         )
-    
+
     # Verify
     assert result["status"] == "dispatched"
     mock_get_connector.assert_called_once_with("google_drive")
@@ -152,12 +153,12 @@ def test_unified_ingest_task_notion(
     mock_supabase
 ):
     """Test unified_ingest_task with Notion connector."""
-    
+
     user_id = str(uuid4())
     job_id = str(uuid4())
     page_ids = ["notion-page-1", "notion-page-2"]
     credentials = {"integration_id": "int-1"}
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(item_ids, creds, **kwargs):
@@ -178,7 +179,7 @@ def test_unified_ingest_task_notion(
             )
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     with patch("worker.tasks.process_file_task") as mock_task, \
          patch("celery.group") as mock_group:
         mock_task.s.return_value = "sig"
@@ -193,7 +194,7 @@ def test_unified_ingest_task_notion(
             credentials=credentials,
             plan_code="starter",
         )
-    
+
     # Verify
     assert result["status"] == "dispatched"
     mock_get_connector.assert_called_once_with("notion")
@@ -204,11 +205,11 @@ def test_unified_ingest_task_web(
     mock_supabase
 ):
     """Test unified_ingest_task with web crawler."""
-    
+
     user_id = str(uuid4())
     job_id = str(uuid4())
     url = "https://example.com"
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(item_ids, creds, **kwargs):
@@ -223,7 +224,7 @@ def test_unified_ingest_task_web(
         )
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     with patch("worker.tasks.process_file_task") as mock_task, \
          patch("celery.group") as mock_group:
         mock_task.s.return_value = "sig"
@@ -238,7 +239,7 @@ def test_unified_ingest_task_web(
             credentials=None,
             plan_code="starter",
         )
-    
+
     # Verify
     assert result["status"] == "dispatched"
     mock_get_connector.assert_called_once_with("web")
@@ -249,9 +250,9 @@ def test_unified_ingest_task_invalid_connector(
     mock_supabase
 ):
     """Test error handling for invalid connector type."""
-    
+
     mock_get_connector.side_effect = ValueError("Unknown connector type: invalid")
-    
+
     with pytest.raises(ValueError, match="Unknown connector type"):
         unified_ingest_task(
             user_id=str(uuid4()),
@@ -268,14 +269,14 @@ def test_unified_ingest_task_connector_failure(
     mock_supabase
 ):
     """Test error handling when connector fails."""
-    
+
     # Mock connector that raises exception
     connector = Mock()
     def failing_fetch_sync(*args, **kwargs):
         raise Exception("Connector failed to fetch documents")
     connector.fetch_documents_sync = failing_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     # Execute - should handle error gracefully
     with pytest.raises(Exception, match="Connector failed"):
         unified_ingest_task(
@@ -293,7 +294,7 @@ def test_unified_ingest_task_pipeline_failure(
     mock_supabase
 ):
     """Test error handling when pipeline fails."""
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(*args, **kwargs):
@@ -308,7 +309,7 @@ def test_unified_ingest_task_pipeline_failure(
         )
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     # Simulate dispatch failure
     with patch("worker.tasks.process_file_task") as mock_task:
         mock_task.s.side_effect = Exception("Pipeline error")
@@ -328,7 +329,7 @@ def test_unified_ingest_task_quota_exceeded(
     mock_supabase
 ):
     """Test handling of quota exceeded errors."""
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(*args, **kwargs):
@@ -343,7 +344,7 @@ def test_unified_ingest_task_quota_exceeded(
         )
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     with patch("worker.tasks.process_file_task") as mock_task:
         mock_task.s.side_effect = QuotaExceededError("Storage quota exceeded")
         with pytest.raises(QuotaExceededError):
@@ -362,7 +363,7 @@ def test_unified_ingest_task_job_status_updates(
     mock_supabase
 ):
     """Test that job status is updated correctly."""
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(*args, **kwargs):
@@ -377,7 +378,7 @@ def test_unified_ingest_task_job_status_updates(
         )
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     with patch("worker.tasks.process_file_task") as mock_task, \
          patch("celery.group") as mock_group:
         mock_task.s.return_value = "sig"
@@ -393,7 +394,7 @@ def test_unified_ingest_task_job_status_updates(
             credentials=None,
             plan_code="starter",
         )
-    
+
     # Verify job status was updated
     assert mock_supabase.return_value.table.called
     # Should update job with completed status
@@ -404,14 +405,14 @@ def test_unified_ingest_task_empty_item_ids(
     mock_supabase
 ):
     """Test handling of empty item_ids list."""
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(*args, **kwargs):
         return []
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     # Execute
     result = unified_ingest_task(
         user_id=str(uuid4()),
@@ -421,7 +422,7 @@ def test_unified_ingest_task_empty_item_ids(
         credentials=None,
         plan_code="starter",
     )
-    
+
     # Verify
     assert result["status"] == "completed"
     assert "No documents" in result["message"]
@@ -522,17 +523,17 @@ def test_unified_ingest_task_retry_on_connection_error(
     mock_supabase
 ):
     """Test that task retries on connection errors."""
-    
+
     # Mock connector to raise connection error
     connector = Mock()
     def failing_fetch_sync(*args, **kwargs):
         raise ConnectionError("Network error")
     connector.fetch_documents_sync = failing_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     # Configure retry
     mock_retry.side_effect = Retry()
-    
+
     # Execute - should trigger retry
     with pytest.raises(Retry):
         unified_ingest_task(
@@ -543,7 +544,7 @@ def test_unified_ingest_task_retry_on_connection_error(
             credentials=None,
             plan_code="starter",
         )
-    
+
     # Verify retry was called
     assert mock_retry.called
 
@@ -553,7 +554,7 @@ def test_unified_ingest_task_multiple_files(
     mock_supabase
 ):
     """Test processing multiple files in one task."""
-    
+
     # Mock connector
     connector = Mock()
     def mock_fetch_sync(item_ids, *args, **kwargs):
@@ -569,12 +570,12 @@ def test_unified_ingest_task_multiple_files(
             )
     connector.fetch_documents_sync = mock_fetch_sync
     mock_get_connector.return_value = connector
-    
+
     with patch("worker.tasks.process_file_task") as mock_task, \
          patch("celery.group") as mock_group:
         mock_task.s.return_value = "sig"
         mock_group.return_value.apply_async.return_value = Mock(id="group-6")
-        
+
         # Execute
         result = unified_ingest_task(
             user_id=str(uuid4()),
@@ -584,7 +585,7 @@ def test_unified_ingest_task_multiple_files(
             credentials=None,
             plan_code="starter",
         )
-    
+
     # Verify
     assert result["status"] == "dispatched"
     assert result["total_files"] == 3

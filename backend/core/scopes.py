@@ -9,10 +9,10 @@ All connectors MUST use build_scope_uri() to generate scope IDs.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
-SCOPE_PREFIX_BY_PROVIDER: Dict[str, Tuple[str, ...]] = {
+SCOPE_PREFIX_BY_PROVIDER: dict[str, tuple[str, ...]] = {
     "box": ("box://",),
     "dropbox": ("dropbox://",),
     "file_upload": ("upload://", "file_upload://"),
@@ -30,21 +30,21 @@ SCOPE_PREFIX_BY_PROVIDER: Dict[str, Tuple[str, ...]] = {
     "web": ("web://",),
 }
 
-CANONICAL_PROVIDER_BY_ALIAS: Dict[str, str] = {
+CANONICAL_PROVIDER_BY_ALIAS: dict[str, str] = {
     "drive": "google_drive",
     "gdrive": "google_drive",
     "upload": "file_upload",
     "file": "file_upload",
 }
 
-UPLOAD_PROVIDER_ALIASES: Tuple[str, ...] = tuple(
+UPLOAD_PROVIDER_ALIASES: tuple[str, ...] = tuple(
     provider
     for provider, prefixes in SCOPE_PREFIX_BY_PROVIDER.items()
     if "upload://" in prefixes or "file_upload://" in prefixes
 )
 
 
-def _require(metadata: Dict[str, Any], *keys: str) -> str:
+def _require(metadata: dict[str, Any], *keys: str) -> str:
     for key in keys:
         value = metadata.get(key)
         if value:
@@ -52,7 +52,7 @@ def _require(metadata: Dict[str, Any], *keys: str) -> str:
     raise ValueError(f"Missing required metadata field(s): {', '.join(keys)}")
 
 
-def _optional(metadata: Dict[str, Any], *keys: str) -> Optional[str]:
+def _optional(metadata: dict[str, Any], *keys: str) -> str | None:
     """Get optional value from metadata, return None if not found."""
     for key in keys:
         value = metadata.get(key)
@@ -67,14 +67,14 @@ def _normalize_source_type(source_type: str) -> str:
     return str(source_type).strip().lower().replace(" ", "_").replace("-", "_")
 
 
-def canonicalize_provider(provider: Optional[str]) -> Optional[str]:
+def canonicalize_provider(provider: str | None) -> str | None:
     if not provider:
         return None
     normalized = _normalize_source_type(provider)
     return CANONICAL_PROVIDER_BY_ALIAS.get(normalized, normalized)
 
 
-def get_scope_prefixes(provider: Optional[str]) -> Tuple[str, ...]:
+def get_scope_prefixes(provider: str | None) -> tuple[str, ...]:
     if not provider:
         return tuple()
     normalized = _normalize_source_type(provider)
@@ -103,10 +103,10 @@ def _extract_domain(url: str) -> str:
     return domain
 
 
-def build_scope_uri(source_type: str, metadata: Dict[str, Any]) -> str:
+def build_scope_uri(source_type: str, metadata: dict[str, Any]) -> str:
     """
     Build a canonical scope URI for a given source type.
-    
+
     THIS IS THE SINGLE SOURCE OF TRUTH FOR SCOPE URI GENERATION.
     All connectors MUST use this function.
 
@@ -169,7 +169,7 @@ def build_scope_uri(source_type: str, metadata: Dict[str, Any]) -> str:
         folder_id = _optional(metadata, "folder_id", "dropbox_id", "id")
         path = _optional(metadata, "path", "path_display", "path_lower")
         namespace_id = _optional(metadata, "namespace_id")
-        
+
         if folder_id:
             return f"dropbox://{folder_id}"
         elif namespace_id and path:
@@ -240,14 +240,14 @@ def build_scope_uri(source_type: str, metadata: Dict[str, Any]) -> str:
 def infer_scope_type(scope_id: str) -> str:
     """
     Infer the scope type from a scope URI.
-    
+
     Returns the source type string for identity type inference.
     """
     if not scope_id:
         return "unknown"
-    
+
     scheme = scope_id.split("://")[0].lower() if "://" in scope_id else ""
-    
+
     type_map = {
         "github": "github",
         "s3": "s3",
@@ -263,5 +263,5 @@ def infer_scope_type(scope_id: str) -> str:
         "upload": "file_upload",
         "file_upload": "file_upload",
     }
-    
+
     return type_map.get(scheme, "unknown")

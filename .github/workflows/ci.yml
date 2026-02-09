@@ -47,7 +47,7 @@ jobs:
           fi
       - name: Check for bare except clauses
         run: |
-          if grep -rn "except:" backend/ --include="*.py" | grep -v "except Exception" | grep -v "# ALLOWED"; then
+          if grep -rn "except:" backend/ --include="*.py" --exclude-dir=.venv --exclude-dir=.venv-py311 | grep -v "except Exception" | grep -v "# ALLOWED"; then
             echo "::error::Bare 'except:' found. Use 'except Exception as e:' instead."
             exit 1
           fi

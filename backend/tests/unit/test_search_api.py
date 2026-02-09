@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -45,7 +45,7 @@ class TestSearchDocuments:
         with patch("api.v1.search.get_supabase", return_value=supabase), \
              patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
             result = await search_documents(
-                request=_make_mock_request(), 
+                request=_make_mock_request(),
                 payload=SearchRequest(query="hello", limit=5, threshold=0.2),
                 user_id="user-1",
             )
@@ -63,7 +63,7 @@ class TestSearchDocuments:
              patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
             with pytest.raises(HTTPException) as excinfo:
                 await search_documents(
-                    request=_make_mock_request(), 
+                    request=_make_mock_request(),
                     payload=SearchRequest(query="hello"),
                     user_id="user-1",
                 )
@@ -82,7 +82,7 @@ class TestSearchDocuments:
              patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
             with pytest.raises(HTTPException) as excinfo:
                 await search_documents(
-                    request=_make_mock_request(), 
+                    request=_make_mock_request(),
                     payload=SearchRequest(query="hello"),
                     user_id="user-1",
                 )

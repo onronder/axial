@@ -10,13 +10,16 @@ Now uses threading.Lock for thread-safe lazy initialization.
 
 import logging
 import random
-import time
 import threading
-from typing import List, Optional, Sequence
+import time
+from collections.abc import Sequence
+
 from langchain_openai import OpenAIEmbeddings
+
 from core.config import settings
 from core.resilience import with_retry_sync
 from services.quotas import get_plan_max_tpm
+
 try:
     from core.metrics import embeddings_generated, operation_duration, retry_failure
 except Exception:
@@ -71,7 +74,7 @@ class _TpmRegulator:
         self._state: dict = {}
         self._lock = threading.Lock()
 
-    def throttle(self, plan_code: str, tokens: int, max_tpm: Optional[int]) -> None:
+    def throttle(self, plan_code: str, tokens: int, max_tpm: int | None) -> None:
         if not max_tpm or max_tpm <= 0 or tokens <= 0:
             return
 
@@ -107,7 +110,7 @@ class _TpmRegulator:
 _TPM_REGULATOR = _TpmRegulator()
 
 # Thread-safe singleton embeddings model instance (Issue #14)
-_embeddings_model: Optional[OpenAIEmbeddings] = None
+_embeddings_model: OpenAIEmbeddings | None = None
 _embeddings_lock = threading.Lock()
 
 
@@ -151,20 +154,20 @@ def reset_embeddings_model() -> None:
 
 
 @with_retry_sync(max_attempts=3, min_wait=2, max_wait=10, use_retryable=True, jitter=True)
-def generate_embedding(text: str) -> Optional[List[float]]:
+def generate_embedding(text: str) -> list[float] | None:
     """
     Generate an embedding vector for a single text string.
-    
+
     Args:
         text: The text to embed
-        
+
     Returns:
         List of floats representing the embedding vector, or None if text is empty.
     """
     if not text or not text.strip():
         logger.warning("📊 [Embeddings] Empty text provided, returning None")
         return None
-    
+
     try:
         model = get_embeddings_model()
         embedding = model.embed_query(text)
@@ -175,11 +178,11 @@ def generate_embedding(text: str) -> Optional[List[float]]:
 
 
 async def generate_embeddings_batch(
-    texts: List[str],
-    token_counts: Optional[Sequence[int]] = None,
-    max_tokens_per_batch: Optional[int] = None,
-    plan_code: Optional[str] = None,
-) -> List[Optional[List[float]]]:
+    texts: list[str],
+    token_counts: Sequence[int] | None = None,
+    max_tokens_per_batch: int | None = None,
+    plan_code: str | None = None,
+) -> list[list[float] | None]:
     """
     Async-compatible wrapper for legacy callers.
 
@@ -202,18 +205,18 @@ def _estimate_token_count(text: str) -> int:
 
 def _build_batches(
     texts: Sequence[str],
-    token_counts: Optional[Sequence[int]],
+    token_counts: Sequence[int] | None,
     batch_size: int,
-    max_tokens_per_batch: Optional[int],
-) -> List[List[str]]:
+    max_tokens_per_batch: int | None,
+) -> list[list[str]]:
     if not texts:
         return []
 
     if not token_counts or not max_tokens_per_batch or max_tokens_per_batch <= 0:
         return [list(texts[i:i + batch_size]) for i in range(0, len(texts), batch_size)]
 
-    batches: List[List[str]] = []
-    current: List[str] = []
+    batches: list[list[str]] = []
+    current: list[str] = []
     current_tokens = 0
 
     for text, tokens in zip(texts, token_counts):
@@ -242,11 +245,11 @@ def _build_batches(
 
 
 def generate_embeddings_batch_sync(
-    texts: List[str],
-    token_counts: Optional[Sequence[int]] = None,
-    max_tokens_per_batch: Optional[int] = None,
-    plan_code: Optional[str] = None,
-) -> List[Optional[List[float]]]:
+    texts: list[str],
+    token_counts: Sequence[int] | None = None,
+    max_tokens_per_batch: int | None = None,
+    plan_code: str | None = None,
+) -> list[list[float] | None]:
     """
     Synchronous batch embeddings helper.
 
@@ -261,8 +264,8 @@ def generate_embeddings_batch_sync(
         return []
 
     # Filter out empty texts and track indices
-    valid_texts: List[str] = []
-    valid_indices: List[int] = []
+    valid_texts: list[str] = []
+    valid_indices: list[int] = []
     for i, text in enumerate(texts):
         if text and text.strip():
             valid_texts.append(text)
@@ -278,21 +281,21 @@ def generate_embeddings_batch_sync(
     sleep_interval = max(0.0, settings.EMBEDDING_SLEEP_INTERVAL)
     max_tokens = max_tokens_per_batch or settings.EMBEDDING_MAX_TOKENS_PER_REQUEST
 
-    valid_token_counts: Optional[List[int]] = None
+    valid_token_counts: list[int] | None = None
     if token_counts and len(token_counts) == len(texts):
         valid_token_counts = [token_counts[i] for i in valid_indices]
     elif max_tokens and max_tokens > 0:
         valid_token_counts = [_estimate_token_count(text) for text in valid_texts]
 
     @with_retry_sync(max_attempts=3, min_wait=2, max_wait=10, use_retryable=True, jitter=True)
-    def embed_batch(batch_texts: List[str]) -> List[List[float]]:
+    def embed_batch(batch_texts: list[str]) -> list[list[float]]:
         return model.embed_documents(batch_texts)
 
     batches = _build_batches(valid_texts, valid_token_counts, batch_size, max_tokens)
     plan_label = (plan_code or settings.PLAN_STARTER).lower()
     plan_max_tpm = get_plan_max_tpm(plan_code)
 
-    all_embeddings: List[List[float]] = []
+    all_embeddings: list[list[float]] = []
     total_duration = 0.0
     rate_limit_hits = 0
     error_batches = 0
@@ -355,7 +358,7 @@ def generate_embeddings_batch_sync(
             if sleep_seconds > 0:
                 time.sleep(sleep_seconds)
 
-    result: List[Optional[List[float]]] = [None for _ in texts]
+    result: list[list[float] | None] = [None for _ in texts]
     for i, emb in zip(valid_indices, all_embeddings):
         result[i] = emb
 

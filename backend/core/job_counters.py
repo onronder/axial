@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Dict, Optional
 
 from core.config import settings
 
@@ -25,7 +24,7 @@ def _hash_item_id(item_id: str) -> str:
     return hashlib.sha1(item_id.encode("utf-8")).hexdigest()
 
 
-def _normalize_item_id(item_id: str) -> Optional[str]:
+def _normalize_item_id(item_id: str) -> str | None:
     if not item_id:
         return None
     return _hash_item_id(str(item_id))
@@ -46,7 +45,7 @@ def _finalize_key(namespace: str, job_id: str) -> str:
     return f"{namespace}:finalize:{job_id}"
 
 
-def _to_int(value: Optional[str]) -> int:
+def _to_int(value: str | None) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -90,7 +89,7 @@ def init_job_counters(namespace: str, job_id: str, total: int) -> bool:
         return False
 
 
-def get_job_counters(namespace: str, job_id: str, client=None) -> Optional[Dict[str, int]]:
+def get_job_counters(namespace: str, job_id: str, client=None) -> dict[str, int] | None:
     if not job_id:
         return None
     if client is None:
@@ -134,7 +133,7 @@ def record_job_outcome(
     job_id: str,
     item_id: str,
     outcome: str,
-) -> Optional[Dict[str, int]]:
+) -> dict[str, int] | None:
     if not job_id or not item_id:
         return None
     client = _get_redis_client()
@@ -185,7 +184,7 @@ def record_job_update(namespace: str, job_id: str, field: str) -> None:
         logger.warning("[Counters] Failed to record update for %s: %s", job_id, exc)
 
 
-def increment_job_total(namespace: str, job_id: str, increment: int) -> Optional[int]:
+def increment_job_total(namespace: str, job_id: str, increment: int) -> int | None:
     if not job_id or increment <= 0:
         return None
     client = _get_redis_client()
@@ -265,11 +264,11 @@ def init_ingest_job_counters(job_id: str, total_files: int) -> bool:
     return init_job_counters(INGEST_NAMESPACE, job_id, total_files)
 
 
-def record_ingest_outcome(job_id: str, file_status_id: str, outcome: str) -> Optional[Dict[str, int]]:
+def record_ingest_outcome(job_id: str, file_status_id: str, outcome: str) -> dict[str, int] | None:
     return record_job_outcome(INGEST_NAMESPACE, job_id, file_status_id, outcome)
 
 
-def increment_ingest_job_total(job_id: str, increment: int) -> Optional[int]:
+def increment_ingest_job_total(job_id: str, increment: int) -> int | None:
     return increment_job_total(INGEST_NAMESPACE, job_id, increment)
 
 
@@ -281,7 +280,7 @@ def is_ingest_job_discovery_done(job_id: str) -> bool:
     return is_job_discovery_done(INGEST_NAMESPACE, job_id)
 
 
-def get_ingest_job_counters(job_id: str) -> Optional[Dict[str, int]]:
+def get_ingest_job_counters(job_id: str) -> dict[str, int] | None:
     return get_job_counters(INGEST_NAMESPACE, job_id)
 
 
@@ -309,11 +308,11 @@ def record_crawl_job_update(crawl_id: str) -> None:
     record_job_update(CRAWL_NAMESPACE, crawl_id, "job_status_updates")
 
 
-def record_crawl_outcome(crawl_id: str, url: str, outcome: str) -> Optional[Dict[str, int]]:
+def record_crawl_outcome(crawl_id: str, url: str, outcome: str) -> dict[str, int] | None:
     return record_job_outcome(CRAWL_NAMESPACE, crawl_id, url, outcome)
 
 
-def get_crawl_counters(crawl_id: str) -> Optional[Dict[str, int]]:
+def get_crawl_counters(crawl_id: str) -> dict[str, int] | None:
     return get_job_counters(CRAWL_NAMESPACE, crawl_id)
 
 

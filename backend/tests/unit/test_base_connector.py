@@ -1,17 +1,16 @@
-import pytest
 
 from connectors.base import BaseConnector
 
 
 class BaseConnectorHarness(BaseConnector):
     """Test harness implementing all abstract methods."""
-    
+
     def list_files(self, config: dict, parent_id=None):
         return iter([])
-    
+
     def fetch_file_content(self, file_id: str, config: dict) -> bytes:
         return b""
-    
+
     def validate_config(self, config: dict) -> bool:
         return True
 

@@ -27,27 +27,28 @@ Usage:
 
 import logging
 import threading
-from typing import Optional, Dict, Tuple
-from langchain_openai import ChatOpenAI
+
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_openai import ChatOpenAI
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Thread-safe client pool for LLM instances
 # Key format: (provider, model_name, streaming)
-_llm_client_pool: Dict[Tuple[str, str, bool], BaseChatModel] = {}
+_llm_client_pool: dict[tuple[str, str, bool], BaseChatModel] = {}
 _llm_pool_lock = threading.Lock()
 
 
 class LLMFactory:
     """
     Factory class to instantiate LLM models based on provider configuration.
-    
+
     Supported Providers:
     - openai: GPT-4o, GPT-3.5-turbo, etc.
     - groq: Llama 3.3 70B, Llama 3.1 8B (ultra-fast inference)
-    
+
     Example:
         llm = LLMFactory.get_model("openai", "gpt-4o", streaming=True)
     """
@@ -61,17 +62,17 @@ class LLMFactory:
         requested_tier: str = "fast", # "fast" or "smart"
         temperature: float = 0,
         streaming: bool = False,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         allow_override: bool = False,
     ) -> tuple[BaseChatModel, dict]:
         """
         Smart Router: Returns (LLM, Metadata)
-        
+
         Args:
             user_plan: 'free', 'starter', 'pro', 'enterprise'
             user_role: 'admin', 'member', 'viewer'
             requested_tier: 'fast' (Axio Fast) or 'smart' (Axio Pro)
-            
+
         Returns:
             (llm_instance, metadata_dict)
             metadata example: {"upsell": True, "actual_tier": "fast"}
@@ -89,18 +90,18 @@ class LLMFactory:
         }
         if plan_code not in allowed_plans:
             plan_code = "free"
-        
+
         # --- 1. RESOLVE TIER & ENFORCE LIMITS ---
-        
+
         target_tier = requested_tier
-        
+
         # RULE: 'Viewer' role MUST use Fast model (Field Staff constraint)
         if user_role == "viewer":
             if target_tier == settings.MODEL_ALIAS_SMART:
-                logger.info(f"🔒 [LLMFactory] Viewer Role Constraint: Downgrading to Fast")
+                logger.info("🔒 [LLMFactory] Viewer Role Constraint: Downgrading to Fast")
                 target_tier = settings.MODEL_ALIAS_FAST
                 metadata["actual_tier"] = "fast"
-        
+
         # RULE: Free/Starter plans MUST use Fast model
         if plan_code in {"free", settings.PLAN_STARTER}:
             if target_tier == settings.MODEL_ALIAS_SMART:
@@ -111,9 +112,9 @@ class LLMFactory:
                 target_tier = settings.MODEL_ALIAS_FAST
                 metadata["upsell"] = True
                 metadata["actual_tier"] = "fast"
-                
+
         # --- 2. MAP TIER TO PROVIDER/ID ---
-        
+
         final_provider = provider
         final_model = model_name
         explicit_override = allow_override and final_provider and final_model
@@ -129,11 +130,11 @@ class LLMFactory:
                 # Fallback if specific model requested directly (Legacy support)
                 if not final_provider or not final_model:
                     # Default to Fast if unknown
-                    final_provider = settings.SECONDARY_MODEL_PROVIDER 
+                    final_provider = settings.SECONDARY_MODEL_PROVIDER
                     final_model = settings.SECONDARY_MODEL_NAME
 
         # --- 3. INSTANTIATE ---
-        
+
         try:
             if final_provider == "openai":
                 llm = LLMFactory._create_openai(final_model, temperature, streaming, max_tokens)
@@ -151,12 +152,12 @@ class LLMFactory:
         except Exception as e:
             logger.error(f"❌ [LLMFactory] Failed to initialize {final_provider}/{final_model}: {e}")
             raise
-            
+
     # CLIENT POOLING: Create or retrieve pooled LLM instances
     # Temperature and max_tokens are set per-request via model.bind() if needed
 
     @staticmethod
-    def _get_pool_key(provider: str, model_name: str, streaming: bool) -> Tuple[str, str, bool]:
+    def _get_pool_key(provider: str, model_name: str, streaming: bool) -> tuple[str, str, bool]:
         """Generate cache key for client pool."""
         return (provider.lower(), model_name.lower(), streaming)
 
@@ -260,7 +261,7 @@ class LLMFactory:
         return base_client.bind(**bind_kwargs) if bind_kwargs else base_client
 
 
-def get_llm_pool_stats() -> Dict[str, int]:
+def get_llm_pool_stats() -> dict[str, int]:
     """Get statistics about the LLM client pool."""
     with _llm_pool_lock:
         return {

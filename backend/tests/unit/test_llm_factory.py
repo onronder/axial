@@ -2,8 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from services.llm_factory import LLMFactory
 from core.config import settings
+from services.llm_factory import LLMFactory
 
 
 def test_get_model_downgrades_viewer_to_fast(monkeypatch):

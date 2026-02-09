@@ -6,9 +6,11 @@ subscription status and team access validation.
 """
 
 import logging
+
 from fastapi import Depends, HTTPException, status
-from core.security import get_current_user
+
 from core.db import get_supabase
+from core.security import get_current_user
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
@@ -17,36 +19,36 @@ logger = logging.getLogger(__name__)
 async def validate_team_access(user_id: str = Depends(get_current_user)) -> str:
     """
     Dependency to validate team access before allowing endpoint access.
-    
+
     Checks:
     1. User's team membership status
     2. Owner's subscription status
     3. Owner's plan allows team members
-    
+
     If user is blocked (owner downgraded or subscription inactive),
     raises 403 Forbidden.
-    
+
     Usage:
         @router.post("/endpoint")
         async def endpoint(user_id: str = Depends(validate_team_access)):
             ...
-    
+
     Returns:
         user_id if access is allowed
-        
+
     Raises:
         HTTPException(403): If team access is blocked
     """
     access = await team_service.verify_team_access(user_id)
-    
+
     if not access.get("allowed", False):
         reason = access.get("reason", "unknown")
         message = access.get("message", "Access denied")
-        
+
         logger.warning(
             f"[Dependencies] Access denied for user {user_id[:8]}...: {reason}"
         )
-        
+
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -55,17 +57,17 @@ async def validate_team_access(user_id: str = Depends(get_current_user)) -> str:
                 "message": message
             }
         )
-    
+
     return user_id
 
 
 async def get_effective_plan(user_id: str = Depends(get_current_user)) -> str:
     """
     Dependency to get user's effective plan.
-    
+
     Returns the plan inherited from team owner, with
     subscription status enforcement.
-    
+
     Usage:
         @router.get("/endpoint")
         async def endpoint(plan: str = Depends(get_effective_plan)):
@@ -77,7 +79,7 @@ async def get_effective_plan(user_id: str = Depends(get_current_user)) -> str:
 async def require_plan(required_plans: list[str]):
     """
     Factory for creating plan requirement dependencies.
-    
+
     Usage:
         @router.post("/endpoint", dependencies=[Depends(require_plan(["pro", "enterprise"]))])
         async def endpoint():
@@ -104,12 +106,12 @@ async def require_paid_access(user_id: str = Depends(validate_team_access)) -> s
 
     Blocks users with 'none' or 'free' plans from core application endpoints.
     These users should see the paywall and subscribe via Polar.
-    
+
     Plan hierarchy:
     - 'none': New users who haven't selected a plan yet (shows paywall)
     - 'free': Users after trial ends or subscription cancellation (shows paywall)
     - 'starter', 'pro', 'enterprise': Paid plans with full access
-    
+
     Allowed endpoints for free/none users:
     - /billing/* (to subscribe)
     - /usage (to see current status)
@@ -123,7 +125,7 @@ async def require_paid_access(user_id: str = Depends(validate_team_access)) -> s
         plan = "none"
 
     plan_lower = plan.lower() if plan else "none"
-    
+
     # Block both 'none' (new users) and 'free' (post-trial/canceled users)
     if plan_lower in ("none", "free"):
         raise HTTPException(
@@ -140,29 +142,29 @@ async def require_paid_access(user_id: str = Depends(validate_team_access)) -> s
 async def require_admin(user_id: str = Depends(validate_team_access)) -> str:
     """
     Dependency to require admin privileges.
-    
+
     Checks if the user has admin role in their team or is a system admin.
-    
+
     Usage:
         @router.post("/admin-only")
         async def admin_endpoint(user_id: str = Depends(require_admin)):
             ...
-    
+
     Returns:
         user_id if admin access is granted
-        
+
     Raises:
         HTTPException(403): If user is not an admin
     """
     try:
         supabase = get_supabase()
-        
+
         # Check if user is a team owner (owners are admins of their team)
         result = supabase.table("teams").select("id, owner_id").eq("owner_id", user_id).execute()
-        
+
         if result.data and len(result.data) > 0:
             return user_id  # User is a team owner, grant admin access
-        
+
         # Check if user has admin role in team_members
         member_result = (
             supabase.table("team_members")
@@ -171,10 +173,10 @@ async def require_admin(user_id: str = Depends(validate_team_access)) -> str:
             .eq("role", "admin")
             .execute()
         )
-        
+
         if member_result.data and len(member_result.data) > 0:
             return user_id  # User has admin role
-        
+
         # If neither, deny access
         logger.warning(f"[require_admin] Admin access denied for user {user_id[:8]}...")
         raise HTTPException(
@@ -184,7 +186,7 @@ async def require_admin(user_id: str = Depends(validate_team_access)) -> str:
                 "message": "This endpoint requires admin privileges"
             }
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -198,7 +200,7 @@ async def require_admin(user_id: str = Depends(validate_team_access)) -> str:
 async def require_editor(user_id: str = Depends(validate_team_access)) -> str:
     """
     Require an editor or admin role (team owner counts as admin).
-    
+
     Blocks viewers from performing write actions while allowing
     solo users and team owners/admins.
     """
@@ -240,16 +242,16 @@ async def require_editor(user_id: str = Depends(validate_team_access)) -> str:
 async def get_user_organization_id(user_id: str = Depends(validate_team_access)) -> str:
     """
     Get the user's organization_id (team_id).
-    
+
     This is the canonical way to get the organization context for org-scoped
     queries. Falls back to user_id if user has no team (solo user).
-    
+
     Usage:
         @router.get("/documents")
         async def list_docs(org_id: str = Depends(get_user_organization_id)):
             # Query by org_id instead of user_id
             ...
-    
+
     Returns:
         organization_id (team_id) if user has a team, otherwise user_id
     """
@@ -257,11 +259,11 @@ async def get_user_organization_id(user_id: str = Depends(validate_team_access))
         team = await team_service.get_user_team(user_id)
         if team and team.get("id"):
             return str(team["id"])
-        
+
         # For solo users (no team), use user_id as organization_id
         # This maintains compatibility for users before team feature
         return user_id
-        
+
     except Exception as e:
         logger.warning(f"[get_user_organization_id] Failed for {user_id[:8]}...: {e}")
         # Fail open - use user_id

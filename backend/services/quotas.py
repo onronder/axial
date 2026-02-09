@@ -12,8 +12,8 @@ deciding whether a new job should be accepted.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
+from typing import Any
 
 from core.config import QUOTA_LIMITS, settings
 from core.db import get_supabase
@@ -22,7 +22,7 @@ from core.exceptions import QuotaExceededError
 logger = logging.getLogger(__name__)
 
 
-def _resolve_plan_limits(plan_code: Optional[str]) -> Dict[str, Any]:
+def _resolve_plan_limits(plan_code: str | None) -> dict[str, Any]:
     plan_key = (plan_code or settings.PLAN_STARTER).lower()
     if plan_key == "enterprise":
         plan_key = "enterprise_medium"
@@ -33,7 +33,7 @@ def _resolve_plan_limits(plan_code: Optional[str]) -> Dict[str, Any]:
     return limits
 
 
-def _fetch_org_usage(supabase, org_id: str) -> Dict[str, Any]:
+def _fetch_org_usage(supabase, org_id: str) -> dict[str, Any]:
     try:
         res = (
             supabase.table("org_usage")
@@ -52,8 +52,8 @@ def _fetch_org_usage(supabase, org_id: str) -> Dict[str, Any]:
         return {"storage_used_mb": 0.0, "job_count_cycle": 0}
 
 
-def _get_org_user_ids(supabase, org_id: str) -> List[str]:
-    user_ids: List[str] = []
+def _get_org_user_ids(supabase, org_id: str) -> list[str]:
+    user_ids: list[str] = []
     try:
         owner_res = supabase.table("teams").select("owner_id").eq("id", org_id).limit(1).execute()
         if owner_res.data:
@@ -78,7 +78,7 @@ def _get_org_user_ids(supabase, org_id: str) -> List[str]:
     return list({uid for uid in user_ids if uid})
 
 
-def _count_active_jobs(supabase, user_ids: List[str]) -> int:
+def _count_active_jobs(supabase, user_ids: list[str]) -> int:
     if not user_ids:
         return 0
     try:
@@ -95,7 +95,7 @@ def _count_active_jobs(supabase, user_ids: List[str]) -> int:
         return 0
 
 
-def _to_mb(file_size_bytes: Optional[int]) -> float:
+def _to_mb(file_size_bytes: int | None) -> float:
     if not file_size_bytes or file_size_bytes <= 0:
         return 0.0
     return file_size_bytes / (1024 * 1024)
@@ -103,10 +103,10 @@ def _to_mb(file_size_bytes: Optional[int]) -> float:
 
 def check_admission(
     org_id: str,
-    plan_code: Optional[str],
-    file_size_bytes: Optional[int] = None,
+    plan_code: str | None,
+    file_size_bytes: int | None = None,
     job_count_increment: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Admission control for ingestion requests.
 
@@ -192,14 +192,14 @@ def check_admission(
     }
 
 
-def get_plan_max_tpm(plan_code: Optional[str]) -> Optional[int]:
+def get_plan_max_tpm(plan_code: str | None) -> int | None:
     limits = _resolve_plan_limits(plan_code)
     return limits.get("max_tpm")
 
 
 def increment_usage(
     org_id: str,
-    storage_bytes: Optional[int] = None,
+    storage_bytes: int | None = None,
     job_count_increment: int = 1,
 ) -> None:
     """Increment org usage counters after admission is granted."""

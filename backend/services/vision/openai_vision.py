@@ -5,11 +5,10 @@ Implements Vision LLM analysis using OpenAI's GPT-4o model.
 """
 
 import base64
-import logging
 import json
-from typing import Optional
+import logging
 
-from services.vision.base import VisionProcessor, VisionResult, DiagramType
+from services.vision.base import DiagramType, VisionProcessor, VisionResult
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ Output your analysis in JSON format with these fields:
         self,
         image_bytes: bytes,
         filename: str,
-        prompt: Optional[str] = None,
+        prompt: str | None = None,
     ) -> VisionResult:
         """
         Analyze image using GPT-4o Vision.
@@ -77,6 +76,7 @@ Output your analysis in JSON format with these fields:
             VisionResult with description and metadata
         """
         from openai import AsyncOpenAI
+
         from core.config import settings
 
         if not self.is_available():

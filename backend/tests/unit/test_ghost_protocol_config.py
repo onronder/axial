@@ -9,10 +9,6 @@ Tests for Zero-Retention security settings in config.py including:
 """
 
 import importlib
-import os
-import sys
-
-import pytest
 
 
 def _reload_config(monkeypatch, **env):
@@ -40,7 +36,7 @@ class TestGhostProtocolConfigDefaults:
             ENVIRONMENT="test",
             CHUNK_ENCRYPTION_KEY=test_key,
         )
-        assert config.settings.CHUNK_ENCRYPTION_KEY == test_key
+        assert test_key == config.settings.CHUNK_ENCRYPTION_KEY
 
     def test_max_ram_process_limit_default_is_10mb(self, monkeypatch):
         """MAX_RAM_PROCESS_LIMIT should default to 10MB."""
@@ -82,7 +78,7 @@ class TestGhostProtocolConfigCustomValues:
             ENVIRONMENT="test",
             CHUNK_ENCRYPTION_KEY=test_key,
         )
-        assert config.settings.CHUNK_ENCRYPTION_KEY == test_key
+        assert test_key == config.settings.CHUNK_ENCRYPTION_KEY
 
     def test_max_ram_process_limit_can_be_customized(self, monkeypatch):
         """MAX_RAM_PROCESS_LIMIT can be set to custom value."""
@@ -93,7 +89,7 @@ class TestGhostProtocolConfigCustomValues:
             ENVIRONMENT="test",
             MAX_RAM_PROCESS_LIMIT=str(custom_limit),
         )
-        assert config.settings.MAX_RAM_PROCESS_LIMIT == custom_limit
+        assert custom_limit == config.settings.MAX_RAM_PROCESS_LIMIT
 
     def test_secure_wipe_passes_can_be_set_to_dod_mode(self, monkeypatch):
         """SECURE_WIPE_PASSES can be set to 3 (DoD compliant)."""
@@ -179,4 +175,4 @@ class TestGhostProtocolConfigEdgeCases:
             ENVIRONMENT="test",
             MAX_RAM_PROCESS_LIMIT=str(large_limit),
         )
-        assert config.settings.MAX_RAM_PROCESS_LIMIT == large_limit
+        assert large_limit == config.settings.MAX_RAM_PROCESS_LIMIT

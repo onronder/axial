@@ -6,19 +6,20 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from services.parsers import (
-    CodeProcessor,
-    MarkdownProcessor,
-    PlainTextProcessor,
-    CSVProcessor,
-    HTMLProcessor,
-    PDFProcessor,
-    DocxProcessor,
-    ImageProcessor,
-    DocumentProcessorFactory,
-    DocumentParser,
     BaseProcessor,
+    CodeProcessor,
+    CSVProcessor,
+    DocumentParser,
+    DocumentProcessorFactory,
+    DocxProcessor,
+    HTMLProcessor,
+    ImageProcessor,
+    MarkdownProcessor,
     OCRNotAvailableException,
+    PDFProcessor,
+    PlainTextProcessor,
 )
 
 
@@ -389,7 +390,7 @@ def test_docx_processor_returns_empty_on_blank_text(monkeypatch):
     monkeypatch.setitem(sys.modules, "docx2txt", module)
     monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", None)
     # Mock OCR to return empty
-    with patch.object(processor, "_process_with_embedded_image_ocr", 
+    with patch.object(processor, "_process_with_embedded_image_ocr",
                       return_value=SimpleNamespace(chunks=[], total_tokens=0)):
         result = processor.process(b"data", "file.docx")
     assert result.chunks == []
@@ -402,7 +403,7 @@ def test_docx_processor_triggers_ocr_on_low_content(monkeypatch):
     module = SimpleNamespace(process=MagicMock(return_value="short"))
     monkeypatch.setitem(sys.modules, "docx2txt", module)
     monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", None)
-    
+
     # Mock OCR to return good content
     ocr_result = SimpleNamespace(
         chunks=[SimpleNamespace(content="OCR text", metadata={}, token_count=100, chunk_index=0)],
@@ -411,19 +412,20 @@ def test_docx_processor_triggers_ocr_on_low_content(monkeypatch):
     )
     with patch.object(processor, "_process_with_embedded_image_ocr", return_value=ocr_result) as mock_ocr:
         result = processor.process(b"data", "file.docx")
-    
+
     mock_ocr.assert_called_once()
     assert result.total_tokens == 100
 
 
 def test_docx_processor_embedded_image_ocr(monkeypatch):
     """Test OCR of embedded images from DOCX."""
-    import zipfile
     import io as io_module
+    import zipfile
+
     from PIL import Image
-    
+
     processor = DocxProcessor()
-    
+
     # Create a minimal DOCX (ZIP) with an embedded image
     docx_buffer = io_module.BytesIO()
     with zipfile.ZipFile(docx_buffer, 'w') as zf:
@@ -432,27 +434,28 @@ def test_docx_processor_embedded_image_ocr(monkeypatch):
         img = Image.new('RGB', (100, 100), color='white')
         img.save(img_buffer, format='PNG')
         zf.writestr('word/media/image1.png', img_buffer.getvalue())
-    
+
     docx_content = docx_buffer.getvalue()
-    
+
     # Mock pytesseract
     mock_pytesseract = SimpleNamespace(image_to_string=MagicMock(return_value="Extracted OCR text from image"))
     monkeypatch.setitem(sys.modules, "pytesseract", mock_pytesseract)
-    
+
     result = processor._process_with_embedded_image_ocr(docx_content, "test.docx")
-    
+
     assert result.chunks
     assert "Extracted OCR text" in result.chunks[0].content
 
 
 def test_docx_processor_skips_small_images(monkeypatch):
     """Test that small images (icons/bullets) are skipped."""
-    import zipfile
     import io as io_module
+    import zipfile
+
     from PIL import Image
-    
+
     processor = DocxProcessor()
-    
+
     # Create a DOCX with a very small image (should be skipped)
     docx_buffer = io_module.BytesIO()
     with zipfile.ZipFile(docx_buffer, 'w') as zf:
@@ -460,15 +463,15 @@ def test_docx_processor_skips_small_images(monkeypatch):
         img = Image.new('RGB', (20, 20), color='white')  # Very small
         img.save(img_buffer, format='PNG')
         zf.writestr('word/media/image1.png', img_buffer.getvalue())
-    
+
     docx_content = docx_buffer.getvalue()
-    
+
     # Mock pytesseract (should not be called for small images)
     mock_pytesseract = SimpleNamespace(image_to_string=MagicMock(return_value="text"))
     monkeypatch.setitem(sys.modules, "pytesseract", mock_pytesseract)
-    
+
     result = processor._process_with_embedded_image_ocr(docx_content, "test.docx")
-    
+
     # Small images should be skipped, so no OCR text
     assert result.total_tokens == 0
 
@@ -476,13 +479,13 @@ def test_docx_processor_skips_small_images(monkeypatch):
 def test_docx_processor_ocr_fallback_to_llamaparse(monkeypatch):
     """Test that LlamaParse is tried when OCR also fails."""
     processor = DocxProcessor()
-    
+
     # Tier 1: Empty text
     module = SimpleNamespace(process=MagicMock(return_value=""))
     monkeypatch.setitem(sys.modules, "docx2txt", module)
-    
+
     # Tier 2: OCR fails
-    with patch.object(processor, "_process_with_embedded_image_ocr", 
+    with patch.object(processor, "_process_with_embedded_image_ocr",
                       return_value=SimpleNamespace(chunks=[], total_tokens=0)):
         # Tier 3: LlamaParse succeeds
         monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "test-key")
@@ -491,26 +494,26 @@ def test_docx_processor_ocr_fallback_to_llamaparse(monkeypatch):
             total_tokens=100,
             file_type="docx"
         )
-        
+
         with patch("services.parsers.LlamaParseProcessor") as mock_llama:
             mock_instance = MagicMock()
             mock_instance.process.return_value = llamaparse_result
             mock_llama.return_value = mock_instance
-            
+
             with patch("services.parsers.LLAMAPARSE_CIRCUIT") as mock_circuit:
                 mock_circuit.can_execute.return_value = (True, "closed")
                 result = processor.process(b"data", "file.docx")
-        
+
         assert result.total_tokens == 100
 
 
 def test_docx_processor_clean_ocr_text():
     """Test OCR text cleaning."""
     processor = DocxProcessor()
-    
+
     noisy_text = "\n\n\nHello  world.\n\n\n\n\n@#$%\nActual content here\n---"
     cleaned = processor._clean_ocr_text(noisy_text)
-    
+
     assert "Hello world." in cleaned
     assert "Actual content here" in cleaned
     assert "\n\n\n\n" not in cleaned
@@ -519,11 +522,11 @@ def test_docx_processor_clean_ocr_text():
 def test_docx_processor_invalid_zip(monkeypatch):
     """Test handling of invalid DOCX (not a valid ZIP)."""
     from services.parsers import OCRNotAvailableException
-    
+
     processor = DocxProcessor()
     mock_pytesseract = SimpleNamespace(image_to_string=MagicMock())
     monkeypatch.setitem(sys.modules, "pytesseract", mock_pytesseract)
-    
+
     with pytest.raises(OCRNotAvailableException):
         processor._process_with_embedded_image_ocr(b"not a zip file", "invalid.docx")
 
@@ -719,25 +722,26 @@ def test_pdf_processor_fallback_handles_reader_error(monkeypatch):
 
 def test_image_processor_tesseract_success(monkeypatch):
     """Test ImageProcessor with successful Tesseract OCR."""
-    from PIL import Image
     import io as io_module
-    
+
+    from PIL import Image
+
     processor = ImageProcessor()
-    
+
     # Create a test image
     img_buffer = io_module.BytesIO()
     img = Image.new('RGB', (100, 100), color='white')
     img.save(img_buffer, format='PNG')
     img_content = img_buffer.getvalue()
-    
+
     # Mock pytesseract to return good text
     mock_pytesseract = SimpleNamespace(
         image_to_string=MagicMock(return_value="This is OCR extracted text from the image.")
     )
     monkeypatch.setitem(sys.modules, "pytesseract", mock_pytesseract)
-    
+
     result = processor._process_with_tesseract(img_content, "test.png")
-    
+
     assert result.chunks
     assert result.metadata.get("parser") == "tesseract_ocr"
     assert "OCR extracted text" in result.chunks[0].content
@@ -745,23 +749,24 @@ def test_image_processor_tesseract_success(monkeypatch):
 
 def test_image_processor_tesseract_empty_result(monkeypatch):
     """Test ImageProcessor when Tesseract returns empty text."""
-    from PIL import Image
     import io as io_module
-    
+
+    from PIL import Image
+
     processor = ImageProcessor()
-    
+
     # Create a test image
     img_buffer = io_module.BytesIO()
     img = Image.new('RGB', (100, 100), color='white')
     img.save(img_buffer, format='PNG')
     img_content = img_buffer.getvalue()
-    
+
     # Mock pytesseract to return empty text
     mock_pytesseract = SimpleNamespace(image_to_string=MagicMock(return_value="   "))
     monkeypatch.setitem(sys.modules, "pytesseract", mock_pytesseract)
-    
+
     result = processor._process_with_tesseract(img_content, "test.png")
-    
+
     assert result.chunks == []
     assert result.total_tokens == 0
 
@@ -769,9 +774,9 @@ def test_image_processor_tesseract_empty_result(monkeypatch):
 def test_image_processor_fallback_to_llamaparse(monkeypatch):
     """Test ImageProcessor falls back to LlamaParse when Tesseract fails."""
     processor = ImageProcessor()
-    
+
     # Tier 1: Tesseract fails
-    with patch.object(processor, "_process_with_tesseract", 
+    with patch.object(processor, "_process_with_tesseract",
                       return_value=SimpleNamespace(chunks=[], total_tokens=0)):
         # Tier 2: LlamaParse succeeds
         monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", "test-key")
@@ -780,16 +785,16 @@ def test_image_processor_fallback_to_llamaparse(monkeypatch):
             total_tokens=100,
             file_type="image"
         )
-        
+
         with patch("services.parsers.LlamaParseProcessor") as mock_llama:
             mock_instance = MagicMock()
             mock_instance.process.return_value = llamaparse_result
             mock_llama.return_value = mock_instance
-            
+
             with patch("services.parsers.LLAMAPARSE_CIRCUIT") as mock_circuit:
                 mock_circuit.can_execute.return_value = (True, "closed")
                 result = processor.process(b"image data", "test.png")
-        
+
         assert result.total_tokens == 100
 
 
@@ -797,36 +802,37 @@ def test_image_processor_ocr_not_available(monkeypatch):
     """Test ImageProcessor when OCR dependencies are missing."""
     processor = ImageProcessor()
     monkeypatch.setattr("core.config.settings.LLAMA_CLOUD_API_KEY", None)
-    
+
     # Mock import error for pytesseract
-    with patch.object(processor, "_process_with_tesseract", 
+    with patch.object(processor, "_process_with_tesseract",
                       side_effect=OCRNotAvailableException("pytesseract not installed")):
         result = processor.process(b"image data", "test.png")
-    
+
     assert result.chunks == []
 
 
 def test_image_processor_handles_rgba_images(monkeypatch):
     """Test ImageProcessor handles RGBA images with transparency."""
-    from PIL import Image
     import io as io_module
-    
+
+    from PIL import Image
+
     processor = ImageProcessor()
-    
+
     # Create a RGBA image with transparency
     img_buffer = io_module.BytesIO()
     img = Image.new('RGBA', (100, 100), color=(255, 255, 255, 128))
     img.save(img_buffer, format='PNG')
     img_content = img_buffer.getvalue()
-    
+
     # Mock pytesseract
     mock_pytesseract = SimpleNamespace(
         image_to_string=MagicMock(return_value="Text from RGBA image")
     )
     monkeypatch.setitem(sys.modules, "pytesseract", mock_pytesseract)
-    
+
     result = processor._process_with_tesseract(img_content, "test.png")
-    
+
     assert result.chunks
     assert "Text from RGBA image" in result.chunks[0].content
 
@@ -834,34 +840,35 @@ def test_image_processor_handles_rgba_images(monkeypatch):
 def test_image_processor_clean_ocr_text():
     """Test ImageProcessor OCR text cleaning."""
     processor = ImageProcessor()
-    
+
     noisy_text = "\n\n\n!@#\nActual text content\n---\n\n\n"
     cleaned = processor._clean_ocr_text(noisy_text)
-    
+
     assert "Actual text content" in cleaned
     assert "\n\n\n" not in cleaned
 
 
 def test_image_processor_full_flow(monkeypatch):
     """Test full ImageProcessor flow with local Tesseract success."""
-    from PIL import Image
     import io as io_module
-    
+
+    from PIL import Image
+
     processor = ImageProcessor()
-    
+
     # Create a test image
     img_buffer = io_module.BytesIO()
     img = Image.new('RGB', (200, 200), color='white')
     img.save(img_buffer, format='JPEG')
     img_content = img_buffer.getvalue()
-    
+
     # Mock pytesseract with enough text to pass threshold
     long_text = "This is extracted text from the image. " * 10
     mock_pytesseract = SimpleNamespace(image_to_string=MagicMock(return_value=long_text))
     monkeypatch.setitem(sys.modules, "pytesseract", mock_pytesseract)
-    
+
     result = processor.process(img_content, "test.jpg")
-    
+
     assert result.chunks
     assert result.file_type == "image"
     assert result.metadata.get("parser") == "tesseract_ocr"

@@ -8,11 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
+from starlette.requests import Request
 
 from api.v1.integrations import (
     ExchangeRequest,
-    MicrosoftExchangeRequest,
     IngestRequest,
+    MicrosoftExchangeRequest,
     WebCrawlRequest,
     _require_provider,
     crawl_web,
@@ -29,7 +30,6 @@ from api.v1.integrations import (
     run_background_sync,
     sync_integration,
 )
-from starlette.requests import Request
 
 
 def build_table(execute_data=None):
@@ -807,7 +807,7 @@ class TestSyncHistoryEndpoint:
         assert result["provider"] == "google_drive"
 
 
-class TestDisconnectProvider:
+class TestDisconnectProviderCleanup:
     @pytest.mark.asyncio
     async def test_disconnect_provider_unknown(self):
         supabase = build_supabase({"connector_definitions": build_table(None)})
@@ -1033,13 +1033,13 @@ class TestListProviderItemsErrors:
 class TestSyncConnectorThreadOffloading:
     """
     Tests for the async/sync connector bridge pattern.
-    
+
     Ensures that:
     - Async connectors (Google Drive, Notion) are awaited directly
     - Sync connectors (Dropbox, SFTP) are offloaded to threadpool
     - Generator-based connectors work correctly
     """
-    
+
     @pytest.mark.asyncio
     async def test_sync_generator_connector_uses_threadpool(self):
         """
@@ -1050,25 +1050,25 @@ class TestSyncConnectorThreadOffloading:
         def sync_generator_list_files(config):
             yield {"id": "file-1", "name": "doc.pdf", "mime_type": "application/pdf"}
             yield {"id": "file-2", "name": "image.png", "mime_type": "image/png"}
-        
+
         connector = MagicMock()
         connector.list_files = sync_generator_list_files  # NOT AsyncMock - a real sync function
-        
+
         with patch("api.v1.integrations.get_connector", return_value=connector), \
              patch("api.v1.integrations.run_in_threadpool") as mock_threadpool:
             # Make run_in_threadpool call the lambda and return result
             mock_threadpool.side_effect = lambda fn: fn()
-            
+
             result = await list_provider_items("dropbox", user_id="user-1")
-        
+
         # Verify run_in_threadpool was called (sync connector detection works)
         mock_threadpool.assert_called_once()
-        
+
         # Verify results are correct
         assert len(result) == 2
         assert result[0]["id"] == "file-1"
         assert result[1]["id"] == "file-2"
-    
+
     @pytest.mark.asyncio
     async def test_async_connector_does_not_use_threadpool(self):
         """
@@ -1079,35 +1079,35 @@ class TestSyncConnectorThreadOffloading:
         connector.list_files = AsyncMock(return_value=[
             {"id": "file-1", "name": "doc.pdf", "mime_type": "application/pdf"}
         ])
-        
+
         with patch("api.v1.integrations.get_connector", return_value=connector), \
              patch("api.v1.integrations.run_in_threadpool") as mock_threadpool:
             result = await list_provider_items("google_drive", user_id="user-1")
-        
+
         # Verify run_in_threadpool was NOT called
         mock_threadpool.assert_not_called()
-        
+
         # Verify the async connector was awaited directly
         connector.list_files.assert_awaited_once()
         assert len(result) == 1
-    
+
     @pytest.mark.asyncio
     async def test_sync_connector_errors_propagate_correctly(self):
         """
         Errors from sync connectors must propagate through the threadpool wrapper.
         """
         from connectors.base import ConnectorAuthError
-        
+
         def failing_sync_list_files(config):
             raise ConnectorAuthError("Dropbox token expired")
-        
+
         connector = MagicMock()
         connector.list_files = failing_sync_list_files
-        
+
         with patch("api.v1.integrations.get_connector", return_value=connector):
             with pytest.raises(HTTPException) as exc:
                 await list_provider_items("dropbox", user_id="user-1")
-        
+
         # Auth errors should return 401, not 500
         assert exc.value.status_code == 401
         assert exc.value.detail["error"] == "INTEGRATION_AUTH_FAILED"
@@ -1986,11 +1986,10 @@ class TestMicrosoftOAuth:
              patch(
                  "api.v1.integrations.httpx.AsyncClient",
                  return_value=FakeAsyncClient([token_response]),
-             ):
-            with pytest.raises(HTTPException) as exc:
-                await exchange_microsoft_token(
-                    MicrosoftExchangeRequest(code="code", target_type="onedrive"),
-                    user_id="user-1",
-                )
+             ), pytest.raises(HTTPException) as exc:
+            await exchange_microsoft_token(
+                MicrosoftExchangeRequest(code="code", target_type="onedrive"),
+                user_id="user-1",
+            )
 
         assert exc.value.status_code == 400

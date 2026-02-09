@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Union, BinaryIO
+from typing import BinaryIO
 
 
-def compute_sha256_stream(source: Union[bytes, str, Path, BinaryIO], chunk_size: int = 1024 * 1024) -> str:
+def compute_sha256_stream(source: bytes | str | Path | BinaryIO, chunk_size: int = 1024 * 1024) -> str:
     """
     Compute SHA-256 for bytes, file path, or file-like stream using chunked reads.
     """

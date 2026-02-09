@@ -14,14 +14,12 @@ Ghost Protocol Features:
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
-from uuid import UUID
+from typing import Any
 
-from core.config import settings
 from core.db import get_supabase
 from core.ingestion_utils import normalize_source_type
 from core.scopes import UPLOAD_PROVIDER_ALIASES
-from services.secure_cleanup import cleanup_staging_file, secure_wipe
+from services.secure_cleanup import cleanup_staging_file
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +31,11 @@ class ActiveIngestionError(RuntimeError):
 class AccountCleanupService:
     """
     Service for complete, irreversible account deletion.
-    
+
     Implements GDPR Article 17 "Right to Erasure" and CCPA deletion rights.
     Removes user data from all systems in the correct order.
     """
-    
+
     def __init__(self, supabase=None):
         self._supabase = supabase
 
@@ -46,23 +44,23 @@ class AccountCleanupService:
         if self._supabase is None:
             self._supabase = get_supabase()
         return self._supabase
-    
+
     async def execute_account_deletion(self, user_id: str) -> dict:
         """
         Execute complete account deletion across all systems.
-        
+
         Order of operations:
         1. Vector store - Delete all embeddings (right to be forgotten)
         2. Storage - Delete all uploaded files
         3. Database - Delete user record (cascades to related tables)
         4. Auth - Delete from Supabase Auth
-        
+
         Args:
             user_id: The UUID of the user to delete
-        
+
         Returns:
             dict with deletion results for each system
-        
+
         Raises:
             Exception: If any critical deletion step fails
         """
@@ -73,29 +71,29 @@ class AccountCleanupService:
             "database": {"status": "pending"},
             "auth": {"status": "pending"},
         }
-        
+
         logger.info(f"🗑️ [AccountCleanup] Starting deletion for user: {user_id}")
-        
+
         try:
             # Step 1: Delete vectors (embeddings)
             results["vector_store"] = await self._cleanup_vectors(user_id)
             logger.info(f"🗑️ [AccountCleanup] Vector cleanup: {results['vector_store']}")
-            
+
             # Step 2: Delete storage files
             results["storage"] = await self._cleanup_storage(user_id)
             logger.info(f"🗑️ [AccountCleanup] Storage cleanup: {results['storage']}")
-            
+
             # Step 3: Delete database records
             results["database"] = await self._cleanup_database(user_id)
             logger.info(f"🗑️ [AccountCleanup] Database cleanup: {results['database']}")
-            
+
             # Step 4: Delete from Auth (must be last)
             results["auth"] = await self._cleanup_auth(user_id)
             logger.info(f"🗑️ [AccountCleanup] Auth cleanup: {results['auth']}")
-            
+
             logger.info(f"✅ [AccountCleanup] Complete deletion finished for user: {user_id}")
             return results
-            
+
         except Exception as e:
             logger.error(f"❌ [AccountCleanup] Deletion failed for user {user_id}: {e}")
             raise
@@ -144,10 +142,10 @@ class AccountCleanupService:
     async def anonymize_user_data(self, user_id: str, reason: str = "user_request") -> dict:
         """
         GDPR-compliant data anonymization.
-        
+
         This implements GDPR Article 17 "Right to Erasure" as an alternative to hard deletion.
         Replaces PII with anonymized placeholders while preserving system integrity.
-        
+
         Process:
         1. Log GDPR request to audit trail
         2. Anonymize user profile (names, avatar)
@@ -156,19 +154,19 @@ class AccountCleanupService:
         5. Anonymize feedback records
         6. Anonymize auth account
         7. Log completion to audit trail
-        
+
         Args:
             user_id: UUID of the user requesting anonymization
             reason: Reason for request (user_request, admin_action, legal_request)
-            
+
         Returns:
             dict with anonymization results for each system
         """
         from services.audit import audit_logger
-        
+
         timestamp = datetime.now(timezone.utc).isoformat()
         anonymized_email = f"anonymized+{user_id[:8]}@deleted.local"
-        
+
         results = {
             "user_id": user_id,
             "request_type": "gdpr_anonymization",
@@ -181,9 +179,9 @@ class AccountCleanupService:
             "auth": "pending",
             "audit_logged": False,
         }
-        
+
         logger.info(f"🔒 [GDPR] Starting anonymization for user: {user_id}")
-        
+
         # Step 1: Log GDPR request to audit trail
         try:
             audit_logger.log_sync(
@@ -198,10 +196,10 @@ class AccountCleanupService:
                 }
             )
             results["audit_logged"] = True
-            logger.info(f"📋 [GDPR] Audit log created for anonymization request")
+            logger.info("📋 [GDPR] Audit log created for anonymization request")
         except Exception as e:
             logger.warning(f"⚠️ [GDPR] Failed to create audit log: {e}")
-        
+
         # Step 2: Anonymize user profile
         try:
             self.supabase.table("user_profiles").update(
@@ -213,7 +211,7 @@ class AccountCleanupService:
                 }
             ).eq("user_id", user_id).execute()
             results["profile"] = "success"
-            logger.info(f"✅ [GDPR] Profile anonymized")
+            logger.info("✅ [GDPR] Profile anonymized")
         except Exception as e:
             logger.error(f"❌ [GDPR] Failed to anonymize profile: {e}")
             results["profile"] = f"error: {str(e)}"
@@ -227,7 +225,7 @@ class AccountCleanupService:
                     "name": "Deleted User",
                 }
             ).eq("member_user_id", user_id).execute()
-            
+
             # Update records where user is an owner
             self.supabase.table("team_members").update(
                 {
@@ -235,9 +233,9 @@ class AccountCleanupService:
                     "name": "Deleted User",
                 }
             ).eq("owner_user_id", user_id).execute()
-            
+
             results["team_members"] = "success"
-            logger.info(f"✅ [GDPR] Team membership anonymized")
+            logger.info("✅ [GDPR] Team membership anonymized")
         except Exception as e:
             logger.warning(f"⚠️ [GDPR] Failed to anonymize team members: {e}")
             results["team_members"] = f"error: {str(e)}"
@@ -260,7 +258,7 @@ class AccountCleanupService:
                 }
             ).eq("user_id", user_id).execute()
             results["feedback"] = "success"
-            logger.info(f"✅ [GDPR] Feedback records anonymized")
+            logger.info("✅ [GDPR] Feedback records anonymized")
         except Exception as e:
             # Feedback table might not exist or user might not have feedback
             logger.warning(f"⚠️ [GDPR] Feedback anonymization skipped: {e}")
@@ -276,7 +274,7 @@ class AccountCleanupService:
                 },
             )
             results["auth"] = "success"
-            logger.info(f"✅ [GDPR] Auth account anonymized")
+            logger.info("✅ [GDPR] Auth account anonymized")
         except Exception as e:
             logger.warning(f"⚠️ [GDPR] Failed to anonymize auth user: {e}")
             results["auth"] = f"error: {str(e)}"
@@ -293,7 +291,7 @@ class AccountCleanupService:
                     "completed_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
-            logger.info(f"📋 [GDPR] Anonymization completion logged")
+            logger.info("📋 [GDPR] Anonymization completion logged")
         except Exception as e:
             logger.warning(f"⚠️ [GDPR] Failed to log completion: {e}")
 
@@ -304,17 +302,17 @@ class AccountCleanupService:
     ) -> dict:
         """
         Delete a single document atomically (Vectors -> Storage -> DB).
-        
+
         Args:
             doc_id: Document UUID
             user_id: User UUID (for audit/logging)
             organization_id: Organization UUID (for org-scoped deletion)
-            
+
         Returns:
             dict with cleanup status
         """
         logger.info(f"🗑️ [DocCleanup] Deleting document {doc_id} for user {user_id}")
-        
+
         try:
             # 1. Get document metadata to find storage path
             # Use organization_id for org-scoped access if provided
@@ -323,7 +321,7 @@ class AccountCleanupService:
                 query = query.eq("organization_id", organization_id)
             else:
                 query = query.eq("user_id", user_id)
-            
+
             # Use maybe_single() to gracefully handle 0 rows (already deleted)
             # Note: execute() can return None on HTTP errors, so check both
             doc = query.maybe_single().execute()
@@ -331,16 +329,16 @@ class AccountCleanupService:
                 # Document already deleted or doesn't exist - consider success
                 logger.info(f"📄 [DocCleanup] Document {doc_id} not found (already deleted)")
                 return {"status": "success", "id": doc_id, "already_deleted": True}
-                
+
             doc_data = doc.data
             storage_path = None
-            
+
             # Try to find storage path in metadata or source_url
             if normalize_source_type(doc_data.get("source_type")) in UPLOAD_PROVIDER_ALIASES:
                 # Check metadata first
                 meta = doc_data.get("metadata") or {}
                 storage_path = meta.get("storage_path")
-                
+
                 # Fallback: if source_url looks like a storage path (user_id/...)
                 if not storage_path and doc_data.get("source_url"):
                     url = doc_data.get("source_url")
@@ -353,7 +351,7 @@ class AccountCleanupService:
                 .delete()\
                 .eq("document_id", doc_id)\
                 .execute()
-                
+
             # 3. Delete from Storage using Ghost Protocol (Soft Fail)
             # Uses cleanup_staging_file for proper metrics tracking
             wipe_verified = False
@@ -393,15 +391,15 @@ class AccountCleanupService:
             )
 
             return {"status": "success", "id": doc_id, "wipe_verified": wipe_verified}
-            
+
         except Exception as e:
             logger.error(f"❌ [DocCleanup] Failed for {doc_id}: {e}")
             raise e
-    
+
     async def _cleanup_vectors(self, user_id: str) -> dict:
         """
         Delete all vector embeddings belonging to the user.
-        
+
         This implements the "Right to be Forgotten" - AI cannot remember
         anything about documents that belonged to this user.
         """
@@ -423,7 +421,7 @@ class AccountCleanupService:
                         .in_("document_id", batch)\
                         .execute()
                     deleted_count += len(response.data) if response.data else 0
-            
+
             return {
                 "deleted": deleted_count,
                 "status": "success"
@@ -435,18 +433,18 @@ class AccountCleanupService:
                 "status": "error",
                 "error": str(e)
             }
-    
+
     async def _cleanup_storage(self, user_id: str) -> dict:
         """
         Delete all files from the user's storage bucket.
         """
         try:
             deleted_count = 0
-            
+
             # List all files in the user's folder
             try:
                 files = self.supabase.storage.from_("uploads").list(user_id)
-                
+
                 if files:
                     # Delete each file
                     file_paths = [f"{user_id}/{f['name']}" for f in files]
@@ -456,7 +454,7 @@ class AccountCleanupService:
             except Exception as storage_error:
                 # Storage bucket might not exist or be empty - that's OK
                 logger.warning(f"📁 [StorageCleanup] No files or bucket: {storage_error}")
-            
+
             return {
                 "deleted": deleted_count,
                 "status": "success"
@@ -468,14 +466,14 @@ class AccountCleanupService:
                 "status": "error",
                 "error": str(e)
             }
-    
+
     async def _cleanup_database(self, user_id: str) -> dict:
         """
         Delete user from database.
-        
+
         Relies on ON DELETE CASCADE to clean up related tables:
         - documents
-        - document_chunks  
+        - document_chunks
         - conversations
         - messages
         - notifications
@@ -490,65 +488,65 @@ class AccountCleanupService:
                 .delete()\
                 .eq("user_id", user_id)\
                 .execute()
-            
+
             # Delete conversations (cascades to messages)
             self.supabase.table("conversations")\
                 .delete()\
                 .eq("user_id", user_id)\
                 .execute()
-            
+
             # Delete notifications
             self.supabase.table("notifications")\
                 .delete()\
                 .eq("user_id", user_id)\
                 .execute()
-            
+
             # Delete user integrations
             self.supabase.table("user_integrations")\
                 .delete()\
                 .eq("user_id", user_id)\
                 .execute()
-            
+
             # Delete user profiles
             self.supabase.table("user_profiles")\
                 .delete()\
                 .eq("user_id", user_id)\
                 .execute()
-            
+
             # Delete notification settings
             self.supabase.table("user_notification_settings")\
                 .delete()\
                 .eq("user_id", user_id)\
                 .execute()
-            
+
             # Delete ingestion jobs
             self.supabase.table("ingestion_jobs")\
                 .delete()\
                 .eq("user_id", user_id)\
                 .execute()
-            
+
             return {"status": "success"}
-            
+
         except Exception as e:
             logger.error(f"❌ [DatabaseCleanup] Failed: {e}")
             return {
                 "status": "error",
                 "error": str(e)
             }
-    
+
     async def _cleanup_auth(self, user_id: str) -> dict:
         """
         Delete user from Supabase Auth.
-        
+
         This is the final step - must be last because once deleted,
         the user cannot authenticate to perform any other operations.
         """
         try:
             # Use admin API to delete user from Auth
             response = self.supabase.auth.admin.delete_user(user_id)
-            
+
             return {"status": "success"}
-            
+
         except Exception as e:
             logger.error(f"❌ [AuthCleanup] Failed: {e}")
             return {
@@ -562,12 +560,12 @@ class AccountCleanupService:
         event_type: str,
         resource_id: str,
         resource_name: str,
-        organization_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        wipe_pattern: Optional[str] = None,
+        organization_id: str | None = None,
+        user_id: str | None = None,
+        wipe_pattern: str | None = None,
         wipe_verified: bool = False,
         duration_ms: int = 0,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """
         Log security event to audit trail (Ghost Protocol).

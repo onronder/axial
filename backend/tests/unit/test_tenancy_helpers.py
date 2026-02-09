@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from test_tenancy import (
-    verify_orphan_user_recovery,
-    verify_invite_skip_onboarding,
     run_manual_checks,
+    verify_invite_skip_onboarding,
+    verify_orphan_user_recovery,
 )
 
 

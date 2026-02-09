@@ -1,6 +1,7 @@
-import pytest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from core.exceptions import QuotaExceededError
 from services import usage as usage_service
@@ -60,21 +61,21 @@ async def test_check_llm_quota_allows_with_plan_balance():
 async def test_record_llm_usage_updates_usage_and_balance():
     """Test that record_llm_usage calls the increment RPC functions."""
     supabase = MagicMock()
-    
+
     # Mock the RPC calls (new atomic implementation)
     increment_rpc_result = MagicMock()
     increment_rpc_result.execute.return_value = MagicMock(data=[{"new_total": 15, "previous_total": 10}])
-    
+
     decrement_rpc_result = MagicMock()
     decrement_rpc_result.execute.return_value = MagicMock(data=[{"new_balance": 45}])
-    
+
     def rpc_side_effect(name, params):
         if name == "increment_llm_tokens":
             return increment_rpc_result
         elif name == "decrement_llm_balance":
             return decrement_rpc_result
         return MagicMock()
-    
+
     supabase.rpc.side_effect = rpc_side_effect
 
     with patch("services.usage.get_supabase", return_value=supabase):
@@ -82,7 +83,7 @@ async def test_record_llm_usage_updates_usage_and_balance():
 
     # Verify both RPC calls were made
     assert supabase.rpc.call_count == 2
-    
+
     # Verify increment_llm_tokens was called with correct params
     increment_call = [c for c in supabase.rpc.call_args_list if c[0][0] == "increment_llm_tokens"][0]
     assert increment_call[0][1]["p_tokens"] == 5

@@ -10,14 +10,14 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Dict, Tuple, Iterator
 
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_LIMITERS: Dict[str, Tuple[int, threading.BoundedSemaphore]] = {}
+_LIMITERS: dict[str, tuple[int, threading.BoundedSemaphore]] = {}
 
 
 def _normalize_connector_type(connector_type: str) -> str:

@@ -6,9 +6,8 @@ Implements Vision LLM analysis using Google's Gemini Pro Vision model.
 
 import json
 import logging
-from typing import Optional
 
-from services.vision.base import VisionProcessor, VisionResult, DiagramType
+from services.vision.base import DiagramType, VisionProcessor, VisionResult
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +52,11 @@ Focus on:
     def is_available(self) -> bool:
         """Check if Google API is configured."""
         try:
-            import google.generativeai as genai
             # Check if API key is configured
             # Gemini uses GOOGLE_API_KEY environment variable
             import os
+
+            import google.generativeai as genai  # noqa: F401
             return bool(os.environ.get('GOOGLE_API_KEY'))
         except ImportError:
             return False
@@ -65,7 +65,7 @@ Focus on:
         self,
         image_bytes: bytes,
         filename: str,
-        prompt: Optional[str] = None,
+        prompt: str | None = None,
     ) -> VisionResult:
         """
         Analyze image using Gemini Pro Vision.

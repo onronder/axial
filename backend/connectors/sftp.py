@@ -13,19 +13,25 @@ import logging
 import posixpath
 import socket
 import stat
+from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, Optional, AsyncIterator
+from typing import Any
 
 import paramiko
 
 from connectors.base import (
     BaseConnector,
-    RemoteFile,
     ConnectorAuthError,
     ConnectorTransientError,
+    RemoteFile,
 )
-from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType, ItemNotFoundError
+from connectors.enhanced import (
+    EnhancedConnector,
+    ItemNotFoundError,
+    SourceDocument,
+    SourceType,
+)
 from core.db import get_supabase
 from core.scopes import build_scope_uri
 from core.security import decrypt_token
@@ -167,7 +173,7 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
     async def fetch_documents(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
     ) -> AsyncIterator[SourceDocument]:
         for doc in self.fetch_documents_sync(item_ids, credentials, **kwargs):
@@ -176,12 +182,12 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
     def fetch_documents_sync(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
     ) -> Iterator[SourceDocument]:
         """
         Fetch documents from SFTP server for ingestion pipeline.
-        
+
         Scope ID Format: sftp://{host}/{root_path}
         """
         if not item_ids:
@@ -193,7 +199,7 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
 
         root_path = self._normalize_root(resolved.get("root_path", "/"))
         host = resolved.get("host")
-        
+
         # Generate scope_id using canonical URI builder
         scope_id = build_scope_uri("sftp", {"host": host, "root_path": root_path})
 
@@ -349,7 +355,7 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
             raise ConnectorAuthError("SFTP authentication failed") from exc
         except paramiko.SSHException as exc:
             raise ConnectorTransientError(f"SFTP SSH error: {exc}") from exc
-        except (socket.timeout, socket.error) as exc:
+        except (TimeoutError, OSError) as exc:
             raise ConnectorTransientError(f"SFTP connection error: {exc}") from exc
         finally:
             try:
@@ -452,7 +458,7 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
         )
 
     @staticmethod
-    def _to_datetime(timestamp: float | int | None) -> Optional[datetime]:
+    def _to_datetime(timestamp: float | int | None) -> datetime | None:
         if not timestamp:
             return None
         return datetime.fromtimestamp(timestamp, tz=timezone.utc)

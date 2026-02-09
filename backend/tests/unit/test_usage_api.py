@@ -9,14 +9,14 @@ These tests ensure accurate usage reporting for frontend progress bars
 and quota enforcement.
 """
 
-import pytest
-from unittest.mock import patch, Mock, AsyncMock
-from uuid import uuid4, UUID
+from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
 
-from pydantic import BaseModel
+import pytest
 from starlette.requests import Request
-from core.quotas import QUOTA_LIMITS, PlanLimits, format_bytes
+
 from api.v1.usage import _format_bytes
+from core.quotas import QUOTA_LIMITS, format_bytes
 
 
 def _make_mock_request(method="GET", path="/api/v1/usage"):
@@ -40,12 +40,12 @@ TEST_USER_UUID = "12345678-1234-5678-1234-567812345678"
 
 class TestUsageResponseModel:
     """Tests for usage response schema validation."""
-    
+
     @pytest.mark.unit
     def test_usage_response_has_required_fields(self):
         """Usage response must have plan, files, storage, features, model_tier."""
-        from api.v1.usage import UsageResponse, UsageCount, StorageUsage, FeatureAccess
-        
+        from api.v1.usage import FeatureAccess, StorageUsage, UsageCount, UsageResponse
+
         response = UsageResponse(
             plan="free",
             files=UsageCount(used=3, limit=5, percent=60.0),
@@ -64,7 +64,7 @@ class TestUsageResponseModel:
             model_tier="basic",
             subscription_status="active"
         )
-        
+
         assert response.plan == "free"
         assert response.files.used == 3
         assert response.files.limit == 5
@@ -72,24 +72,24 @@ class TestUsageResponseModel:
         assert response.features.web_crawl is False
         assert response.model_tier == "basic"
         assert response.subscription_status == "active"
-    
+
     @pytest.mark.unit
     def test_usage_count_percentage_calculation(self):
         """UsageCount percent should be 0-100 scale."""
         from api.v1.usage import UsageCount
-        
+
         count = UsageCount(used=40, limit=50, percent=80.0)
         assert count.percent == 80.0
-        
+
         # At limit
         at_limit = UsageCount(used=50, limit=50, percent=100.0)
         assert at_limit.percent == 100.0
-    
+
     @pytest.mark.unit
     def test_storage_usage_has_display_strings(self):
         """StorageUsage must include human-readable display strings."""
         from api.v1.usage import StorageUsage
-        
+
         storage = StorageUsage(
             used_bytes=104_857_600,  # 100 MB
             used_display="100 MB",
@@ -97,14 +97,14 @@ class TestUsageResponseModel:
             limit_display="2 GB",
             percent=4.9
         )
-        
+
         assert "MB" in storage.used_display
         assert "GB" in storage.limit_display
 
 
 class TestUsageEndpointWithMocks:
     """Tests for GET /api/v1/usage endpoint using mocks."""
-    
+
     @pytest.fixture
     def mock_usage_with_limits_free(self):
         """Create a mock UsageWithLimits response for free plan."""
@@ -118,7 +118,7 @@ class TestUsageEndpointWithMocks:
         mock.usage.subscription_status = "active"
         mock.limits = QUOTA_LIMITS["free"]
         return mock
-    
+
     @pytest.fixture
     def mock_usage_with_limits_pro(self):
         """Create a mock UsageWithLimits response for pro plan."""
@@ -132,24 +132,24 @@ class TestUsageEndpointWithMocks:
         mock.usage.subscription_status = "active"
         mock.limits = QUOTA_LIMITS["pro"]
         return mock
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_usage_endpoint_returns_correct_structure(self, mock_usage_with_limits_free):
         """GET /usage should return properly structured response."""
-        from api.v1.usage import get_usage, UsageResponse
-        
+        from api.v1.usage import UsageResponse, get_usage
+
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_usage_with_limits_free
-            
+
             result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
-            
+
             assert isinstance(result, UsageResponse)
             assert result.plan == "free"
             assert result.files.used == 4
             assert result.files.limit == QUOTA_LIMITS["free"].max_files
             assert result.storage.used_bytes == 45_000_000
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_usage_endpoint_calculates_percentages(self):
@@ -167,18 +167,18 @@ class TestUsageEndpointWithMocks:
             )
             mock_usage.limits = QUOTA_LIMITS["starter"]
             mock_get.return_value = mock_usage
-            
+
             result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
-            
+
             # 4/50 files = 8%
             assert result.files.percent == 8.0
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_usage_endpoint_caps_percentage_at_100(self):
         """Percentages should be capped at 100% even if over limit."""
         from api.v1.usage import get_usage
-        
+
         # User over their limit
         mock_over_limit = Mock()
         mock_over_limit.usage = Mock()
@@ -189,60 +189,61 @@ class TestUsageEndpointWithMocks:
         mock_over_limit.usage.plan = "starter"
         mock_over_limit.usage.subscription_status = "active"
         mock_over_limit.limits = QUOTA_LIMITS["starter"]
-        
+
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_over_limit
-            
+
             result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
-            
+
             # Should be capped at 100
             assert result.files.percent == 100.0
             assert result.storage.percent == 100.0
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_usage_endpoint_feature_flags_free_plan(self, mock_usage_with_limits_free):
         """Free plan should have limited features."""
         from api.v1.usage import get_usage
-        
+
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_usage_with_limits_free
-            
+
             result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
-            
+
             assert result.features.web_crawl is False
             assert result.features.team is False
             assert result.features.premium_models is False
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_usage_endpoint_feature_flags_pro_plan(self, mock_usage_with_limits_pro):
         """Pro plan should have more features."""
         from api.v1.usage import get_usage
-        
+
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_usage_with_limits_pro
-            
+
             result = await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
-            
+
             assert result.plan == "pro"
             assert result.features.web_crawl is True
             assert result.features.premium_models is True
             assert result.model_tier == "premium"
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_usage_endpoint_error_handling(self):
         """Usage endpoint should handle errors gracefully."""
-        from api.v1.usage import get_usage
         from fastapi import HTTPException
-        
+
+        from api.v1.usage import get_usage
+
         with patch("api.v1.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.side_effect = Exception("Database connection failed")
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 await get_usage(request=_make_mock_request(), user_id=TEST_USER_UUID)
-            
+
             assert exc_info.value.status_code == 500
             # Error format changed to structured dict
             detail = exc_info.value.detail
@@ -251,44 +252,44 @@ class TestUsageEndpointWithMocks:
 
 class TestPlansEndpoint:
     """Tests for GET /api/v1/plans endpoint."""
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_plans_endpoint_returns_all_plans(self):
         """GET /plans should return all available plans."""
         from api.v1.usage import get_plans
-        
+
         result = await get_plans(request=_make_mock_request())
-        
+
         assert "plans" in result.model_dump()
         plans = result.plans
-        
+
         # Should have all plans
         assert "free" in plans
         assert "starter" in plans
         assert "pro" in plans
         assert "enterprise" in plans
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_plans_endpoint_includes_limits(self):
         """Each plan should include its limits."""
         from api.v1.usage import get_plans
-        
+
         result = await get_plans(request=_make_mock_request())
-        
+
         free_plan = result.plans["free"]
         assert "max_files" in free_plan
         # assert "model_tier" in free_plan  # model_tier might not be in response, check if implementation returns it
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_plans_endpoint_has_human_readable_storage(self):
         """Plans should include human-readable storage limits."""
         from api.v1.usage import get_plans
-        
+
         result = await get_plans(request=_make_mock_request())
-        
+
         # Check that max_storage is formatted (e.g., "50 MB", not just bytes)
         free_plan = result.plans["free"]
         if "max_storage" in free_plan:
@@ -297,20 +298,20 @@ class TestPlansEndpoint:
 
 class TestUsageServiceWithMocks:
     """Tests for the usage service layer with properly mocked dependencies."""
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_get_user_usage_returns_usage_object(self):
         """get_user_usage should return UserUsage object."""
-        from services.usage import get_user_usage, UserUsage
-        
+        from services.usage import UserUsage, get_user_usage
+
         mock_supabase = Mock()
-        
+
         # Mock profile lookup - chained calls need proper setup
         profile_mock = Mock()
         profile_mock.data = {"plan": "starter", "subscription_status": "trialing"}
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = profile_mock
-        
+
         # Mock documents lookup
         docs_mock = Mock()
         docs_mock.data = [
@@ -320,22 +321,22 @@ class TestUsageServiceWithMocks:
         docs_query = mock_supabase.table.return_value.select.return_value.eq.return_value
         docs_query.neq.return_value = docs_query
         docs_query.execute.return_value = docs_mock
-        
+
         with patch("services.usage.get_supabase", return_value=mock_supabase), \
              patch("services.usage.team_service.get_effective_plan", new=AsyncMock(return_value="starter")):
             result = await get_user_usage(uuid4())
-            
+
             assert isinstance(result, UserUsage)
             assert result.files == 2
             assert result.plan == "starter"
             # assert result.subscription_status == "trialing" # Mock chain might fallback to default
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_check_can_upload_allows_within_limits(self):
         """check_can_upload should allow uploads within limits."""
-        from services.usage import check_can_upload, UserUsage, UsageWithLimits
-        
+        from services.usage import UsageWithLimits, UserUsage, check_can_upload
+
         mock_usage_with_limits = UsageWithLimits(
             usage=UserUsage(
                 user_id="test-user-123",
@@ -352,22 +353,22 @@ class TestUsageServiceWithMocks:
             at_file_limit=False,
             at_storage_limit=False
         )
-        
+
         with patch("services.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_usage_with_limits
-            
+
             # Upload a 5MB file
             result = await check_can_upload(uuid4(), file_size_bytes=5_000_000)
-            
+
             assert result["allowed"] is True
             assert result["reason"] is None
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_check_can_upload_blocks_over_file_limit(self):
         """check_can_upload should block when file limit exceeded."""
-        from services.usage import check_can_upload, UserUsage, UsageWithLimits
-        
+        from services.usage import UsageWithLimits, UserUsage, check_can_upload
+
         mock_at_limit = UsageWithLimits(
             usage=UserUsage(
                 user_id="test-user-123",
@@ -384,21 +385,21 @@ class TestUsageServiceWithMocks:
             at_file_limit=True,
             at_storage_limit=False
         )
-        
+
         with patch("services.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_at_limit
-            
+
             result = await check_can_upload(uuid4(), file_size_bytes=1_000_000)
-            
+
             assert result["allowed"] is False
             assert "limit" in result["reason"].lower()
-    
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_check_can_upload_blocks_over_storage_limit(self):
         """check_can_upload should block when storage limit exceeded."""
-        from services.usage import check_can_upload, UserUsage, UsageWithLimits
-        
+        from services.usage import UsageWithLimits, UserUsage, check_can_upload
+
         mock_near_limit = UsageWithLimits(
             usage=UserUsage(
                 user_id="test-user-123",
@@ -415,43 +416,43 @@ class TestUsageServiceWithMocks:
             at_file_limit=False,
             at_storage_limit=False
         )
-        
+
         with patch("services.usage.get_user_usage_with_limits", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_near_limit
-            
+
             # Try to upload 5MB (exceeds remaining)
             result = await check_can_upload(uuid4(), file_size_bytes=5_000_000)
-            
+
             assert result["allowed"] is False
             assert "storage" in result["reason"].lower()
 
 
 class TestFormatBytes:
     """Tests for format_bytes utility function."""
-    
+
     @pytest.mark.unit
     def test_format_bytes_bytes(self):
         """Small values should display as bytes."""
         assert format_bytes(500) == "500.0 B"
-    
+
     @pytest.mark.unit
     def test_format_bytes_kilobytes(self):
         """KB values should use KB unit."""
         result = format_bytes(2048)
         assert "KB" in result
-    
+
     @pytest.mark.unit
     def test_format_bytes_megabytes(self):
         """MB values should use MB unit."""
         result = format_bytes(50 * 1024 * 1024)
         assert "MB" in result
-    
+
     @pytest.mark.unit
     def test_format_bytes_gigabytes(self):
         """GB values should use GB unit."""
         result = format_bytes(2 * 1024 * 1024 * 1024)
         assert "GB" in result
-    
+
     @pytest.mark.unit
     def test_format_bytes_zero(self):
         """Zero bytes should display correctly."""
@@ -480,7 +481,7 @@ class TestUsageFormatBytesHelper:
 
 class TestPlanLimitsConsistency:
     """Tests to ensure all plans have valid limits."""
-    
+
     @pytest.mark.unit
     def test_all_plans_have_positive_file_limits(self):
         """Every plan should have positive max_files."""
@@ -488,7 +489,7 @@ class TestPlanLimitsConsistency:
             if plan_name in {"none", "free"}:
                 continue
             assert limits.max_files > 0, f"Plan {plan_name} has invalid max_files"
-    
+
     @pytest.mark.unit
     def test_all_plans_have_positive_storage_limits(self):
         """Every plan should have positive max_storage_bytes."""
@@ -496,18 +497,18 @@ class TestPlanLimitsConsistency:
             if plan_name in {"none", "free"}:
                 continue
             assert limits.max_storage_bytes > 0, f"Plan {plan_name} has invalid max_storage_bytes"
-    
+
     @pytest.mark.unit
     def test_higher_plans_have_higher_limits(self):
         """Higher tier plans should have more generous limits."""
         assert QUOTA_LIMITS["starter"].max_files >= QUOTA_LIMITS["free"].max_files
         assert QUOTA_LIMITS["pro"].max_files > QUOTA_LIMITS["starter"].max_files
         assert QUOTA_LIMITS["enterprise"].max_files > QUOTA_LIMITS["pro"].max_files
-        
+
         assert QUOTA_LIMITS["starter"].max_storage_bytes >= QUOTA_LIMITS["free"].max_storage_bytes
         assert QUOTA_LIMITS["pro"].max_storage_bytes > QUOTA_LIMITS["starter"].max_storage_bytes
         assert QUOTA_LIMITS["enterprise"].max_storage_bytes > QUOTA_LIMITS["pro"].max_storage_bytes
-    
+
     @pytest.mark.unit
     def test_web_crawl_on_starter_and_above(self):
         """Web crawl should be enabled for Starter and higher."""
@@ -515,7 +516,7 @@ class TestPlanLimitsConsistency:
         assert QUOTA_LIMITS["starter"].allow_web_crawl is True
         assert QUOTA_LIMITS["pro"].allow_web_crawl is True
         assert QUOTA_LIMITS["enterprise"].allow_web_crawl is True
-    
+
     @pytest.mark.unit
     def test_model_tier_progression(self):
         """Model tiers should progress with plan level."""

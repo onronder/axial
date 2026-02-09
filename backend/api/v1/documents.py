@@ -1,19 +1,34 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Query
-from typing import List, Optional, Dict, Any
-from datetime import datetime
-from pydantic import BaseModel, Field
-from core.security import get_current_user
-from core.db import get_supabase
-from core.rate_limit import limiter
-from core.ingestion_utils import normalize_provider, canonicalize_provider_name
-from core.scopes import get_scope_prefixes
-from services.audit import log_document_delete
-from api.v1.dependencies import validate_team_access, require_editor, require_paid_access, get_user_organization_id
-from api.v1.error_utils import api_error, ApiErrorCode
-from services.cleanup import cleanup_service
-from services.team_service import team_service
-from services.scope_guard import ScopeGuardStateMachine, ActionType
 import logging
+from datetime import datetime
+from typing import Any
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
+from pydantic import BaseModel, Field
+
+from api.v1.dependencies import (
+    get_user_organization_id,
+    require_editor,
+    require_paid_access,
+    validate_team_access,
+)
+from api.v1.error_utils import ApiErrorCode, api_error
+from core.db import get_supabase
+from core.ingestion_utils import canonicalize_provider_name, normalize_provider
+from core.rate_limit import limiter
+from core.scopes import get_scope_prefixes
+from core.security import get_current_user
+from services.audit import log_document_delete
+from services.cleanup import cleanup_service
+from services.scope_guard import ActionType, ScopeGuardStateMachine
+from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
 
@@ -39,22 +54,22 @@ class DocumentDTO(BaseModel):
     id: str
     title: str
     source_type: str
-    source_url: Optional[str] = None
+    source_url: str | None = None
     # Path/location within the source (e.g., folder path in Drive, S3 key, etc.)
-    path: Optional[str] = None
+    path: str | None = None
     created_at: str
     status: str = "indexed"
     # Documents only exist after successful ingestion, so default to completed
     indexing_status: str = "completed"
-    size: Optional[int] = 0
-    file_size_bytes: Optional[int] = 0
-    metadata: Dict[str, Any]
+    size: int | None = 0
+    file_size_bytes: int | None = 0
+    metadata: dict[str, Any]
 
 
-def _extract_path_from_document(doc: Dict[str, Any]) -> Optional[str]:
+def _extract_path_from_document(doc: dict[str, Any]) -> str | None:
     """
     Extract path/location from document metadata based on source type.
-    
+
     Different connectors store path info in different metadata fields:
     - Google Drive: path, file_path
     - Dropbox: path, path_display, path_lower
@@ -68,7 +83,7 @@ def _extract_path_from_document(doc: Dict[str, Any]) -> Optional[str]:
     """
     meta = doc.get("metadata") or {}
     source_type = (doc.get("source_type") or "").lower()
-    
+
     # Try common path fields in order of preference
     path = (
         meta.get("path") or
@@ -80,23 +95,23 @@ def _extract_path_from_document(doc: Dict[str, Any]) -> Optional[str]:
         meta.get("storage_path") or  # File upload
         None
     )
-    
+
     # For Box, construct path from folder_name
     if not path and source_type == "box":
         folder_name = meta.get("folder_name")
         if folder_name:
             path = f"/{folder_name}"
-    
+
     # For GitHub, the path field should contain the file path (e.g., src/main.py)
     # Already handled above
-    
+
     # Clean up storage paths for file uploads (remove user ID prefix)
     if path and source_type == "file_upload" and path.startswith("uploads/"):
         # Format: uploads/{user_id}/{hash}/{filename} -> just show filename or short path
         parts = path.split("/")
         if len(parts) >= 4:
             path = parts[-1]  # Just filename
-    
+
     return path
 
 
@@ -105,14 +120,14 @@ class DocumentStatsDTO(BaseModel):
     total_documents: int
     failed_documents: int = 0
     pending_documents: int = 0
-    last_updated: Optional[str] = None
+    last_updated: str | None = None
 
 
 class DocumentUpdate(BaseModel):
     """Request model for updating document metadata."""
-    title: Optional[str] = Field(None, max_length=500)
-    description: Optional[str] = Field(None, max_length=2000)
-    tags: Optional[List[str]] = Field(None, max_length=50)
+    title: str | None = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=2000)
+    tags: list[str] | None = Field(None, max_length=50)
 
 
 class DocumentChunkDTO(BaseModel):
@@ -121,16 +136,16 @@ class DocumentChunkDTO(BaseModel):
     document_id: str
     content: str
     chunk_index: int
-    metadata: Dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
 
 
 class BulkDeleteRequest(BaseModel):
     """Payload for bulk document deletion."""
-    document_ids: Optional[List[str]] = None
-    source_type: Optional[str] = None
+    document_ids: list[str] | None = None
+    source_type: str | None = None
     # Ghost Protocol: ScopeGuard approval credentials
-    approval_id: Optional[str] = None
-    mandate_signature: Optional[str] = None
+    approval_id: str | None = None
+    mandate_signature: str | None = None
     # Skip approval for small deletes (internal use)
     force: bool = False
 
@@ -148,10 +163,10 @@ async def get_document_stats(
 ):
     """
     Get lightweight document statistics for the organization.
-    
+
     Uses efficient count queries - O(1) performance instead of O(n) data transfer.
     Used by frontend to check if team needs onboarding.
-    
+
     Returns:
         - total_documents: Successfully indexed documents
         - failed_documents: Files that failed ingestion
@@ -159,7 +174,7 @@ async def get_document_stats(
         - last_updated: Timestamp of most recent document
     """
     supabase = get_supabase()
-    
+
     try:
         # Count successful documents (org-wide)
         count_response = supabase.table("documents")\
@@ -168,9 +183,9 @@ async def get_document_stats(
             .neq("source_type", "identity")\
             .neq("source_type", "scope_identity")\
             .execute()
-        
+
         total = count_response.count if count_response.count is not None else 0
-        
+
         # Count failed files from ingestion_file_status (org-wide)
         failed_count = 0
         pending_count = 0
@@ -182,7 +197,7 @@ async def get_document_stats(
                 .is_("document_id", "null")\
                 .execute()
             failed_count = failed_response.count if failed_response.count is not None else 0
-            
+
             # Count pending/processing files
             pending_response = supabase.table("ingestion_file_status")\
                 .select("id", count="exact")\
@@ -194,7 +209,7 @@ async def get_document_stats(
         except Exception as e:
             # Don't fail if ingestion_file_status query fails
             logger.warning(f"Failed to count failed/pending files: {e}")
-        
+
         # Get last updated (most recent document in org)
         last_updated = None
         if total > 0:
@@ -206,17 +221,17 @@ async def get_document_stats(
                 .order("created_at", desc=True)\
                 .limit(1)\
                 .execute()
-            
+
             if latest_response.data:
                 last_updated = latest_response.data[0].get("created_at")
-        
+
         return DocumentStatsDTO(
             total_documents=total,
             failed_documents=failed_count,
             pending_documents=pending_count,
             last_updated=last_updated
         )
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_stats")
 
@@ -228,7 +243,8 @@ async def get_document_stats(
 
 from fastapi import Response
 
-@router.get("/documents", response_model=List[DocumentDTO])
+
+@router.get("/documents", response_model=list[DocumentDTO])
 @limiter.limit("60/minute")
 async def list_documents(
     request: Request,
@@ -237,11 +253,11 @@ async def list_documents(
     organization_id: str = Depends(get_user_organization_id),  # Org-scoped query
     limit: int = 50,
     offset: int = 0,
-    q: Optional[str] = None,
+    q: str | None = None,
     include_failed: bool = True  # New param to include failed files
 ):
     supabase = get_supabase()
-    
+
     try:
         # Build query for completed documents (org-scoped for team visibility)
         query = supabase.table("documents")\
@@ -249,21 +265,21 @@ async def list_documents(
             .eq("organization_id", organization_id)\
             .neq("source_type", "identity")\
             .neq("source_type", "scope_identity")  # Org-wide access
-            
+
         # Apply search filter
         if q and q.strip():
             query = query.ilike("title", f"%{q.strip()}%")
-            
+
         # Execute with pagination
         db_res = query\
             .order("created_at", desc=True)\
             .range(offset, offset + limit - 1)\
             .execute()
-            
+
         # Set pagination header
         if db_res.count is not None:
              response.headers["X-Total-Count"] = str(db_res.count)
-            
+
         # Enrich completed documents with status and path
         docs = []
         for d in db_res.data:
@@ -280,9 +296,9 @@ async def list_documents(
                 file_size = meta.get('file_size') or meta.get('size') or meta.get('file_size_bytes') or 0
             d["file_size_bytes"] = file_size or 0
             d["size"] = file_size or 0
-                
+
             docs.append(d)
-        
+
         # Also fetch failed files from ingestion_file_status (not yet in documents)
         # Organization-wide: Show failed files from all team members
         if include_failed:
@@ -293,15 +309,15 @@ async def list_documents(
                     .eq("organization_id", organization_id)\
                     .eq("status", "failed")\
                     .is_("document_id", "null")
-                
+
                 if q and q.strip():
                     failed_query = failed_query.ilike("filename", f"%{q.strip()}%")
-                
+
                 failed_res = failed_query\
                     .order("created_at", desc=True)\
                     .limit(limit)\
                     .execute()
-                
+
                 failed_files = failed_res.data or []
                 provider_map = {}
                 job_ids = {str(f.get("job_id")) for f in failed_files if f.get("job_id")}
@@ -347,10 +363,10 @@ async def list_documents(
                 # Don't fail entire request if failed files query fails
                 import logging
                 logging.warning(f"Failed to fetch failed files: {failed_err}")
-        
+
         # Sort combined list by created_at
         docs.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-            
+
         return docs
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_documents")
@@ -382,7 +398,7 @@ async def bulk_delete_documents(
     if not payload.document_ids and not payload.source_type:
         raise HTTPException(status_code=400, detail="Provide document_ids or source_type to delete.")
 
-    doc_ids: List[str] = []
+    doc_ids: list[str] = []
 
     if payload.document_ids:
         doc_ids.extend(payload.document_ids)
@@ -497,8 +513,8 @@ async def bulk_delete_documents(
             except Exception as e:
                 raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "request_approval")
 
-    deleted: List[str] = []
-    failed: List[Dict[str, str]] = []
+    deleted: list[str] = []
+    failed: list[dict[str, str]] = []
 
     for doc_id in doc_ids:
         try:
@@ -561,7 +577,7 @@ async def delete_document(
 ):
     """Delete a document. Org-scoped: team editors can delete shared docs."""
     supabase = get_supabase()
-    
+
     try:
         team = await team_service.get_user_team(user_id)
         if team and team.get("user_role") == "viewer":
@@ -582,16 +598,16 @@ async def delete_document(
             raise HTTPException(status_code=404, detail="Document not found")
 
         doc_title = doc_response.data.get("title", "Unknown")
-        
+
         # Delete using cleanup service (Atomic: Vector -> Storage -> DB)
         # Pass organization_id for org-scoped deletion
         await cleanup_service.delete_single_document(doc_id, user_id, organization_id=organization_id)
-            
 
-        
+
+
         # Audit log (async, non-blocking)
         log_document_delete(background_tasks, user_id, doc_id, doc_title, request)
-        
+
         return {"status": "success", "id": doc_id}
     except HTTPException as he:
         raise he
@@ -615,21 +631,21 @@ async def update_document(
 ):
     """
     Update document metadata (title, description, tags).
-    
+
     Org-scoped: Team members with editor/admin role can update shared documents.
     """
     from services.audit import audit_logger
-    
+
     supabase = get_supabase()
-    
+
     try:
         team = await team_service.get_user_team(user_id)
         if team and team.get("user_role") == "viewer":
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="Viewers cannot update documents."
             )
-        
+
         # Check document exists in organization (org-scoped access)
         doc_response = supabase.table("documents")\
             .select("*")\
@@ -637,17 +653,17 @@ async def update_document(
             .eq("organization_id", organization_id)\
             .single()\
             .execute()
-        
+
         if not doc_response.data:
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         old_doc = doc_response.data
-        
+
         # Build update payload
         update_data = {}
         if update.title is not None:
             update_data["title"] = update.title
-        
+
         # Store description and tags in metadata
         if update.description is not None or update.tags is not None:
             existing_metadata = old_doc.get("metadata", {}) or {}
@@ -656,23 +672,23 @@ async def update_document(
             if update.tags is not None:
                 existing_metadata["tags"] = update.tags
             update_data["metadata"] = existing_metadata
-        
+
         if not update_data:
             raise HTTPException(status_code=400, detail="No update fields provided")
-        
+
         # Perform update (org-scoped)
         result = supabase.table("documents")\
             .update(update_data)\
             .eq("id", document_id)\
             .eq("organization_id", organization_id)\
             .execute()
-        
+
         if not result.data:
             raise HTTPException(status_code=500, detail="Update failed")
-        
+
         updated_doc = result.data[0]
         updated_doc["source_type"] = normalize_provider(updated_doc.get("source_type")) or updated_doc.get("source_type")
-        
+
         # Audit log
         audit_logger.log(
             background_tasks,
@@ -686,7 +702,7 @@ async def update_document(
             },
             request=request
         )
-        
+
         # Return updated document
         updated_doc['status'] = updated_doc.get('status', 'indexed')
         updated_doc['indexing_status'] = 'completed'
@@ -698,9 +714,9 @@ async def update_document(
             file_size = meta.get('file_size') or meta.get('size') or meta.get('file_size_bytes') or 0
         updated_doc["file_size_bytes"] = file_size or 0
         updated_doc['size'] = file_size or 0
-        
+
         return updated_doc
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -711,7 +727,7 @@ async def update_document(
 # Document Chunks Endpoint (for debugging/display)
 # =============================================================================
 
-@router.get("/documents/{document_id}/chunks", response_model=List[DocumentChunkDTO])
+@router.get("/documents/{document_id}/chunks", response_model=list[DocumentChunkDTO])
 @limiter.limit("30/minute")
 async def get_document_chunks(
     document_id: str,
@@ -723,16 +739,16 @@ async def get_document_chunks(
 ):
     """
     Get chunks for a document with pagination.
-    
+
     Org-scoped: Team members can view chunks of shared documents.
-    
+
     GHOST PROTOCOL: Content is decrypted before returning.
     In strict mode, unencrypted content will raise an error.
     """
-    from core.security import decrypt_text, UnencryptedContentError, EncryptionError
-    
+    from core.security import EncryptionError, UnencryptedContentError, decrypt_text
+
     supabase = get_supabase()
-    
+
     try:
         # Verify document exists in organization (org-scoped access)
         doc_check = supabase.table("documents")\
@@ -741,10 +757,10 @@ async def get_document_chunks(
             .eq("organization_id", organization_id)\
             .single()\
             .execute()
-        
+
         if not doc_check.data:
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         # Fetch chunks
         chunks_response = supabase.table("document_chunks")\
             .select("id, document_id, content, chunk_index")\
@@ -752,7 +768,7 @@ async def get_document_chunks(
             .order("chunk_index", desc=False)\
             .range(offset, offset + limit - 1)\
             .execute()
-        
+
         # GHOST PROTOCOL: Decrypt content before returning
         chunks = chunks_response.data or []
         for chunk in chunks:
@@ -772,9 +788,9 @@ async def get_document_chunks(
             # Add empty metadata dict if not present
             if "metadata" not in chunk:
                 chunk["metadata"] = {}
-        
+
         return chunks
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -795,11 +811,11 @@ async def get_document_content(
 ):
     """
     BLOCKED: Original document content retrieval.
-    
+
     Ghost Protocol enforces Zero-Retention: original files are processed
     and destroyed immediately after vectorization. Only embeddings and
     encrypted text chunks are retained.
-    
+
     This endpoint always returns 403 Forbidden.
     """
     raise HTTPException(
@@ -875,8 +891,8 @@ class WipeStatusResponse(BaseModel):
     passProgress: float  # 0-100 progress within current pass
     isComplete: bool
     startedAt: str
-    estimatedCompletion: Optional[str] = None
-    error: Optional[str] = None
+    estimatedCompletion: str | None = None
+    error: str | None = None
     # Additional backend fields
     wipeId: str
     status: str  # "pending" | "pass_1" | "pass_2" | "pass_3" | "verifying" | "completed" | "failed"
@@ -905,9 +921,10 @@ async def initiate_wipe(
     The tombstone immediately blocks the document from search results.
     Actual data deletion happens asynchronously.
     """
-    from services.audit import audit_logger
-    from datetime import datetime, timezone
     import uuid
+    from datetime import timezone
+
+    from services.audit import audit_logger
 
     supabase = get_supabase()
 
@@ -1126,9 +1143,10 @@ async def _execute_secure_wipe(
     Uses cleanup_service which performs DoD 5220.22-M compliant deletion.
     Updates the compliance tombstone on completion.
     """
-    from datetime import datetime, timezone
-    from services.audit import log_security_wipe
     import time
+    from datetime import timezone
+
+    from services.audit import log_security_wipe
 
     supabase = get_supabase()
     start_time = time.time()

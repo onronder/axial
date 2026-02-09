@@ -12,16 +12,20 @@ Supports:
 The connector provides discovery capabilities; looping logic is in the Celery worker.
 """
 
-import re
-import os
-import time
-import logging
 import ipaddress
+import logging
+import os
+import re
 import socket
+import time
+from collections.abc import AsyncIterator, Iterator
 from functools import lru_cache
-from typing import List, Dict, Any, Optional, Set, Iterator, AsyncIterator
-from urllib.parse import urlparse, urljoin, urlunparse, parse_qsl, urlencode
-from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
+from typing import Any
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+
+import requests
+import trafilatura
+
 from connectors.base import (
     BaseConnector,
     ConnectorAuthError,
@@ -29,18 +33,21 @@ from connectors.base import (
     ConnectorTransientError,
     RemoteFile,
 )
-import trafilatura
-import requests
+from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
 from connectors.limits import connector_fetch_limit
 from core.scopes import build_scope_uri
-from core.url_utils import is_youtube_url, extract_youtube_video_id, YOUTUBE_URL_PATTERNS
+from core.url_utils import (
+    YOUTUBE_URL_PATTERNS,
+    extract_youtube_video_id,
+    is_youtube_url,
+)
 
 logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Bright Data Unlocker API Configuration
 # =============================================================================
-# YouTube aggressively blocks cloud provider IPs. We use Bright Data's 
+# YouTube aggressively blocks cloud provider IPs. We use Bright Data's
 # Unlocker API to bypass this restriction with residential IP routing.
 #
 # API Docs: https://docs.brightdata.com/scraping-automation/web-unlocker/web-unlocker-api
@@ -48,10 +55,10 @@ logger = logging.getLogger(__name__)
 BRIGHTDATA_API_URL = "https://api.brightdata.com/request"
 
 
-def _get_brightdata_config() -> Dict[str, Any]:
+def _get_brightdata_config() -> dict[str, Any]:
     """
     Load Bright Data Unlocker API configuration from settings.
-    
+
     Returns a dict with API settings. Lazy-loaded to avoid import cycles.
     """
     try:
@@ -76,36 +83,36 @@ def _get_brightdata_config() -> Dict[str, Any]:
         }
 
 
-def _fetch_via_brightdata_unlocker(url: str, config: Dict[str, Any]) -> Optional[str]:
+def _fetch_via_brightdata_unlocker(url: str, config: dict[str, Any]) -> str | None:
     """
     Fetch a URL's content via Bright Data Unlocker API.
-    
+
     Args:
         url: Target URL to fetch
         config: Bright Data configuration dict
-        
+
     Returns:
         Response content as string, or None on failure
     """
     api_key = config.get("api_key")
     zone = config.get("zone", "axio_unlocker")
     timeout = config.get("timeout", 60)
-    
+
     if not api_key:
         logger.warning("⚠️ [BrightData] API key not configured")
         return None
-    
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
-    
+
     payload = {
         "zone": zone,
         "url": url,
         "format": "raw",
     }
-    
+
     try:
         response = requests.post(
             BRIGHTDATA_API_URL,
@@ -113,7 +120,7 @@ def _fetch_via_brightdata_unlocker(url: str, config: Dict[str, Any]) -> Optional
             json=payload,
             timeout=timeout
         )
-        
+
         if response.status_code == 200:
             logger.debug(f"✅ [BrightData] Successfully fetched: {url}")
             return response.text
@@ -122,7 +129,7 @@ def _fetch_via_brightdata_unlocker(url: str, config: Dict[str, Any]) -> Optional
                 f"⚠️ [BrightData] Request failed ({response.status_code}): {url} - {response.text[:200]}"
             )
             return None
-            
+
     except requests.Timeout:
         logger.warning(f"⚠️ [BrightData] Request timed out ({timeout}s): {url}")
         return None
@@ -133,7 +140,7 @@ def _fetch_via_brightdata_unlocker(url: str, config: Dict[str, Any]) -> Optional
 
 class YouTubeProxyError(Exception):
     """Raised when YouTube transcript fetch fails due to proxy/IP issues."""
-    
+
     def __init__(self, message: str, is_ip_blocked: bool = False, original_error: Exception = None):
         super().__init__(message)
         self.is_ip_blocked = is_ip_blocked
@@ -141,7 +148,7 @@ class YouTubeProxyError(Exception):
 
 
 # Legacy proxy support (deprecated in favor of Unlocker API)
-def _get_youtube_proxy_config() -> Dict[str, Any]:
+def _get_youtube_proxy_config() -> dict[str, Any]:
     """Legacy proxy config - kept for backwards compatibility."""
     try:
         from core.config import settings
@@ -164,7 +171,7 @@ def _get_youtube_proxy_config() -> Dict[str, Any]:
         }
 
 
-def _build_proxy_dict(proxy_url: str) -> Optional[Dict[str, str]]:
+def _build_proxy_dict(proxy_url: str) -> dict[str, str] | None:
     """Build a proxies dict for requests library (legacy)."""
     if not proxy_url:
         return None
@@ -183,7 +190,7 @@ YOUTUBE_PATTERNS = YOUTUBE_URL_PATTERNS
 class WebConnector(EnhancedConnector, BaseConnector):
     """
     Advanced Web Connector with sitemap, recursion, and YouTube support.
-    
+
     Implements the discovery and extraction capabilities.
     The recursive crawling loop is handled by the Celery worker.
     """
@@ -191,7 +198,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
     @property
     def connector_type(self) -> SourceType:
         return SourceType.WEB
-    
+
     # User-Agent for polite crawling
     USER_AGENT = "AxioBot/1.0 (+https://axiohub.io/bot)"
     DEFAULT_HEADERS = {
@@ -233,7 +240,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
         url = config.get("url")
         return bool(url) and self._is_safe_url(url)
 
-    async def list_files(self, config: dict, since: Optional[str] = None) -> List[RemoteFile]:
+    async def list_files(self, config: dict, since: str | None = None) -> list[RemoteFile]:
         """
         Treat list_files as discovery: accept a root URL and return it as a RemoteFile entry.
         """
@@ -270,19 +277,19 @@ class WebConnector(EnhancedConnector, BaseConnector):
     # =========================================================================
     # DISCOVERY METHODS
     # =========================================================================
-    
-    def parse_sitemap(self, sitemap_url: str) -> List[str]:
+
+    def parse_sitemap(self, sitemap_url: str) -> list[str]:
         """
         Parse a sitemap.xml and extract all page URLs.
-        
+
         Handles:
         - Standard sitemaps
         - Sitemap index files (nested sitemaps)
         - Compressed sitemaps (.gz)
-        
+
         Args:
             sitemap_url: URL to sitemap.xml or sitemap index
-            
+
         Returns:
             List of page URLs found in the sitemap
         """
@@ -323,21 +330,21 @@ class WebConnector(EnhancedConnector, BaseConnector):
         except Exception as e:
             logger.error(f"❌ [Web] Sitemap parsing failed for {sitemap_url}: {e}")
             return []
-    
-    def _parse_sitemap_basic(self, sitemap_url: str) -> List[str]:
+
+    def _parse_sitemap_basic(self, sitemap_url: str) -> list[str]:
         """Basic sitemap parser fallback using BeautifulSoup."""
         try:
             from bs4 import BeautifulSoup
-            
+
             with connector_fetch_limit("web"):
                 response = self.session.get(
                     sitemap_url,
                     timeout=(10, 30)
                 )
             response.raise_for_status()
-            
+
             soup = BeautifulSoup(response.content, "lxml-xml")
-            
+
             # Check for sitemap index
             sitemaps = soup.find_all("sitemap")
             if sitemaps:
@@ -348,50 +355,50 @@ class WebConnector(EnhancedConnector, BaseConnector):
                         # Recursively parse nested sitemap
                         urls.extend(self._parse_sitemap_basic(loc.text.strip()))
                 return urls
-            
+
             # Regular sitemap - extract URLs
             urls = []
             for url_tag in soup.find_all("url"):
                 loc = url_tag.find("loc")
                 if loc:
                     urls.append(loc.text.strip())
-            
+
             return urls
-            
+
         except Exception as e:
             logger.error(f"❌ [Web] Basic sitemap parsing failed: {e}")
             return []
-    
+
     def extract_links(
         self,
         html_content: str,
         base_url: str,
         *,
-        base_domain: Optional[str] = None,
+        base_domain: str | None = None,
         allow_subdomains: bool = False
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Extract internal links from HTML content.
-        
+
         Only returns links on the same domain as base_url.
         Filters out anchors, javascript:, mailto:, etc.
-        
+
         Args:
             html_content: Raw HTML string
             base_url: The page's URL (for resolving relative links)
-            
+
         Returns:
             List of absolute URLs on the same domain
         """
         try:
             from bs4 import BeautifulSoup
-            
+
             soup = BeautifulSoup(html_content, "html.parser")
             base_parsed = urlparse(base_url)
             base_domain = base_domain or self._normalize_hostname(base_parsed.hostname or "")
-            
-            links: Set[str] = set()
-            
+
+            links: set[str] = set()
+
             for a_tag in soup.find_all("a", href=True):
                 rel = a_tag.get("rel") or []
                 if isinstance(rel, str):
@@ -400,37 +407,37 @@ class WebConnector(EnhancedConnector, BaseConnector):
                     continue
 
                 href = a_tag["href"]
-                
+
                 # Skip non-HTTP links
                 if href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
                     continue
-                
+
                 # Resolve relative URLs
                 absolute_url = urljoin(base_url, href)
                 normalized = self.normalize_url(absolute_url)
                 if not normalized:
                     continue
                 parsed = urlparse(normalized)
-                
+
                 # Only include same-domain links
                 if self._is_allowed_domain(parsed.hostname or "", base_domain, allow_subdomains):
                     links.add(normalized)
-            
+
             logger.debug(f"🔗 [Web] Extracted {len(links)} internal links from {base_url}")
             return list(links)
-            
+
         except Exception as e:
             logger.error(f"❌ [Web] Link extraction failed for {base_url}: {e}")
             return []
-    
+
     def check_robots_txt(self, url: str, user_agent: str = "*") -> bool:
         """
         Check if a URL is allowed by robots.txt.
-        
+
         Args:
             url: The URL to check
             user_agent: User-agent to check rules for
-            
+
         Returns:
             True if allowed to crawl, False if disallowed
         """
@@ -444,7 +451,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
             logger.warning(f"⚠️ [Web] robots.txt check failed for {url}: {e}")
             return True
 
-    def get_crawl_delay(self, url: str, user_agent: str = "*") -> Optional[float]:
+    def get_crawl_delay(self, url: str, user_agent: str = "*") -> float | None:
         """Return crawl-delay from robots.txt if provided."""
         try:
             parsed = urlparse(url)
@@ -456,37 +463,37 @@ class WebConnector(EnhancedConnector, BaseConnector):
             return max(float(delay), 0.0)
         except Exception:
             return None
-    
+
     # =========================================================================
     # YOUTUBE SUPPORT
     # =========================================================================
-    
+
     def _is_youtube_url(self, url: str) -> bool:
         """Check if a URL is a YouTube video. Uses shared utility."""
         return is_youtube_url(url)
-    
+
     # Backward-compatible alias
     is_youtube_url = _is_youtube_url
-    
-    def _extract_youtube_video_id(self, url: str) -> Optional[str]:
+
+    def _extract_youtube_video_id(self, url: str) -> str | None:
         """Extract video ID from a YouTube URL. Uses shared utility."""
         return extract_youtube_video_id(url)
-    
+
     # Backward-compatible alias
     extract_youtube_video_id = _extract_youtube_video_id
-    
-    def fetch_youtube_transcript(self, video_url: str) -> Optional[str]:
+
+    def fetch_youtube_transcript(self, video_url: str) -> str | None:
         """
         Fetch transcript from a YouTube video using Bright Data Unlocker API.
-        
+
         This method handles YouTube's aggressive IP blocking of cloud providers by:
         1. Using Bright Data Unlocker API (primary method)
         2. Falling back to direct connection if Unlocker fails (configurable)
         3. Implementing retry logic with exponential backoff
-        
+
         Args:
             video_url: YouTube video URL
-            
+
         Returns:
             Full transcript text or None if not available
         """
@@ -494,13 +501,13 @@ class WebConnector(EnhancedConnector, BaseConnector):
         if not video_id:
             logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
             return None
-        
+
         # Load Bright Data configuration
         bd_config = _get_brightdata_config()
         retry_count = bd_config["retry_count"]
         retry_delay = bd_config["retry_delay"]
         direct_fallback = bd_config["direct_fallback"]
-        
+
         # Attempt 1: Try Bright Data Unlocker API
         if bd_config.get("api_key"):
             logger.info(f"🔒 [YouTube] Attempting transcript fetch via Bright Data Unlocker: {video_id}")
@@ -509,8 +516,8 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 return result
             logger.warning(f"⚠️ [YouTube] Bright Data Unlocker failed for {video_id}")
         else:
-            logger.info(f"ℹ️ [YouTube] Bright Data API key not configured, using direct connection")
-        
+            logger.info("ℹ️ [YouTube] Bright Data API key not configured, using direct connection")
+
         # Attempt 2: Direct connection fallback
         if direct_fallback:
             logger.info(f"🔄 [YouTube] Attempting direct connection fallback: {video_id}")
@@ -524,45 +531,43 @@ class WebConnector(EnhancedConnector, BaseConnector):
             )
             if result is not None:
                 return result
-        
+
         # All attempts failed
         logger.error(f"❌ [YouTube] All transcript fetch attempts failed for {video_url}")
         return None
-    
+
     def _fetch_transcript_via_unlocker(
         self,
         video_id: str,
         video_url: str,
-        config: Dict[str, Any],
-    ) -> Optional[str]:
+        config: dict[str, Any],
+    ) -> str | None:
         """
         Fetch YouTube transcript using Bright Data Unlocker API.
-        
+
         This method extracts the embedded captions data from the YouTube page
         HTML, which YouTube includes as JSON in the page source.
-        
+
         Args:
             video_id: YouTube video ID
             video_url: Full YouTube URL
             config: Bright Data configuration dict
-            
+
         Returns:
             Transcript text or None if not available
         """
-        import json
-        import html
-        
+
         retry_count = config.get("retry_count", 3)
         retry_delay = config.get("retry_delay", 2.0)
-        
+
         for attempt in range(retry_count):
             try:
                 # Canonical YouTube URL for consistency
                 canonical_url = f"https://www.youtube.com/watch?v={video_id}"
-                
+
                 # Fetch page via Bright Data Unlocker API
                 page_html = _fetch_via_brightdata_unlocker(canonical_url, config)
-                
+
                 if not page_html:
                     if attempt < retry_count - 1:
                         delay = retry_delay * (2 ** attempt)
@@ -573,21 +578,21 @@ class WebConnector(EnhancedConnector, BaseConnector):
                         time.sleep(delay)
                         continue
                     return None
-                
+
                 # Extract captions from page HTML
                 transcript_text = self._extract_captions_from_html(page_html, video_id)
-                
+
                 if transcript_text:
                     logger.info(
                         f"✅ [YouTube/Unlocker] Fetched transcript: "
                         f"{len(transcript_text)} chars from {video_id}"
                     )
                     return transcript_text
-                
+
                 # Page fetched but no captions found
                 logger.warning(f"⚠️ [YouTube/Unlocker] No captions found in page for: {video_id}")
                 return None
-                
+
             except Exception as e:
                 if attempt < retry_count - 1:
                     delay = retry_delay * (2 ** attempt)
@@ -598,64 +603,63 @@ class WebConnector(EnhancedConnector, BaseConnector):
                     time.sleep(delay)
                 else:
                     logger.error(f"❌ [YouTube/Unlocker] Failed after {retry_count} attempts: {e}")
-        
+
         return None
-    
-    def _extract_captions_from_html(self, page_html: str, video_id: str) -> Optional[str]:
+
+    def _extract_captions_from_html(self, page_html: str, video_id: str) -> str | None:
         """
         Extract captions/transcript from YouTube page HTML.
-        
+
         YouTube embeds caption data as JSON in the page source within
         the ytInitialPlayerResponse variable.
-        
+
         Args:
             page_html: Raw HTML of YouTube video page
             video_id: Video ID for logging
-            
+
         Returns:
             Transcript text or None if not found
         """
         import json
-        import html as html_module
         import re
-        
+
         try:
             # Look for ytInitialPlayerResponse JSON in the page
             pattern = r'var ytInitialPlayerResponse\s*=\s*(\{.+?\});'
             match = re.search(pattern, page_html)
-            
+
             if not match:
                 # Try alternative pattern (sometimes it's in a different format)
                 pattern = r'ytInitialPlayerResponse\s*=\s*(\{.+?\});'
                 match = re.search(pattern, page_html)
-            
+
             if not match:
                 logger.warning(f"⚠️ [YouTube] Could not find ytInitialPlayerResponse for {video_id}")
                 return None
-            
+
             player_response = json.loads(match.group(1))
-            
+
             # Check for playability issues
             playability = player_response.get("playabilityStatus", {})
             status = playability.get("status")
-            
+
             if status == "ERROR":
                 reason = playability.get("reason", "Unknown error")
                 logger.warning(f"⚠️ [YouTube] Video unavailable: {video_id} - {reason}")
                 return None
-            
+
             if status == "LOGIN_REQUIRED":
                 logger.warning(f"⚠️ [YouTube] Video requires login: {video_id}")
                 return None
-            
+
             # Get captions info
             captions = player_response.get("captions", {})
             caption_tracks = captions.get("playerCaptionsTracklistRenderer", {}).get("captionTracks", [])
-            
+
             if not caption_tracks:
                 logger.warning(f"⚠️ [YouTube] No caption tracks available for: {video_id}")
                 return None
-            
+
             # Prefer English, then any available language
             selected_track = None
             for track in caption_tracks:
@@ -666,71 +670,71 @@ class WebConnector(EnhancedConnector, BaseConnector):
                         selected_track = track
                         if track.get("kind") != "asr":
                             break  # Found manual English, stop looking
-            
+
             if not selected_track and caption_tracks:
                 selected_track = caption_tracks[0]  # Fallback to first available
-            
+
             if not selected_track:
                 return None
-            
+
             # Fetch the actual captions
             captions_url = selected_track.get("baseUrl")
             if not captions_url:
                 logger.warning(f"⚠️ [YouTube] No captions URL for: {video_id}")
                 return None
-            
+
             # Fetch captions XML via Bright Data
             bd_config = _get_brightdata_config()
             captions_xml = _fetch_via_brightdata_unlocker(captions_url, bd_config)
-            
+
             if not captions_xml:
                 logger.warning(f"⚠️ [YouTube] Failed to fetch captions XML for: {video_id}")
                 return None
-            
+
             # Parse captions XML
             return self._parse_captions_xml(captions_xml, video_id)
-            
+
         except json.JSONDecodeError as e:
             logger.warning(f"⚠️ [YouTube] Failed to parse player response JSON: {e}")
             return None
         except Exception as e:
             logger.error(f"❌ [YouTube] Error extracting captions from HTML: {e}")
             return None
-    
-    def _parse_captions_xml(self, xml_content: str, video_id: str) -> Optional[str]:
+
+    def _parse_captions_xml(self, xml_content: str, video_id: str) -> str | None:
         """
         Parse YouTube captions XML format.
-        
+
         YouTube returns captions in XML format like:
         <transcript>
             <text start="0.12" dur="2.34">Caption text here</text>
             ...
         </transcript>
-        
+
         Args:
             xml_content: Raw XML captions content
             video_id: Video ID for logging
-            
+
         Returns:
             Combined transcript text
         """
         import html as html_module
-        
+
         try:
             from bs4 import BeautifulSoup
-            
+
             soup = BeautifulSoup(xml_content, "lxml-xml")
             text_elements = soup.find_all("text")
-            
+
             if not text_elements:
                 # Try HTML parser as fallback
                 soup = BeautifulSoup(xml_content, "html.parser")
                 text_elements = soup.find_all("text")
-            
+
             if not text_elements:
                 logger.warning(f"⚠️ [YouTube] No text elements in captions XML for: {video_id}")
                 return None
-            
+
             text_parts = []
             for elem in text_elements:
                 text = elem.get_text() if hasattr(elem, 'get_text') else str(elem.string or "")
@@ -738,31 +742,31 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 text = html_module.unescape(text)
                 if text.strip():
                     text_parts.append(text.strip())
-            
+
             if not text_parts:
                 return None
-            
+
             return " ".join(text_parts)
-            
+
         except Exception as e:
             logger.error(f"❌ [YouTube] Error parsing captions XML for {video_id}: {e}")
             return None
-    
+
     def _fetch_transcript_with_retry(
         self,
         video_id: str,
         video_url: str,
-        proxies: Optional[Dict[str, str]],
+        proxies: dict[str, str] | None,
         retry_count: int,
         retry_delay: float,
         attempt_name: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Fetch transcript with retry logic and exponential backoff (direct connection).
-        
+
         Note: This is the fallback method using youtube-transcript-api directly.
         For proxy support, use the Bright Data Unlocker API method instead.
-        
+
         Args:
             video_id: YouTube video ID
             video_url: Full YouTube URL (for logging)
@@ -770,21 +774,21 @@ class WebConnector(EnhancedConnector, BaseConnector):
             retry_count: Number of retry attempts
             retry_delay: Base delay between retries
             attempt_name: Name of this attempt for logging
-            
+
         Returns:
             Transcript text or None if all retries failed
         """
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
             from youtube_transcript_api._errors import (
-                TranscriptsDisabled,
                 NoTranscriptFound,
+                TranscriptsDisabled,
                 VideoUnavailable,
             )
         except ImportError:
             logger.error("❌ [YouTube] youtube-transcript-api not installed")
             return None
-        
+
         # IP block error signatures
         IP_BLOCK_SIGNATURES = [
             "YouTube is blocking requests from your IP",
@@ -794,56 +798,56 @@ class WebConnector(EnhancedConnector, BaseConnector):
             "too many requests",
             "blocked by YouTube",
         ]
-        
+
         for attempt in range(retry_count):
             try:
                 # Create API instance (direct connection only - proxies not supported in newer API)
                 ytt_api = YouTubeTranscriptApi()
-                
+
                 # Try to get transcript list (no proxy support in current API version)
                 transcript_list = ytt_api.list(video_id)
-                
+
                 # Prefer manual transcripts, fall back to auto-generated
                 transcript = self._select_best_transcript(transcript_list)
-                
+
                 if not transcript:
                     logger.warning(f"⚠️ [YouTube] No transcript available for: {video_id}")
                     return None
-                
+
                 # Fetch and combine transcript segments
                 segments = transcript.fetch()
                 full_text = self._extract_transcript_text(segments, video_id)
-                
+
                 proxy_status = "via proxy" if proxies else "direct"
                 logger.info(
                     f"✅ [YouTube] Fetched transcript ({proxy_status}): "
                     f"{len(full_text)} chars from {video_id}"
                 )
                 return full_text
-                
+
             except (TranscriptsDisabled, NoTranscriptFound) as e:
                 # These are permanent failures - no point retrying
                 logger.warning(f"⚠️ [YouTube] Transcript not available for {video_id}: {e}")
                 return None
-                
+
             except VideoUnavailable as e:
                 # Video is private, deleted, or region-locked
                 logger.warning(f"⚠️ [YouTube] Video unavailable {video_id}: {e}")
                 return None
-                
+
             except Exception as e:
                 error_str = str(e)
-                
+
                 # Check if this is an IP block error
                 is_ip_blocked = any(sig.lower() in error_str.lower() for sig in IP_BLOCK_SIGNATURES)
-                
+
                 if is_ip_blocked:
                     logger.warning(
                         f"⚠️ [YouTube] IP blocked ({attempt_name}, attempt {attempt + 1}/{retry_count}): {video_id}"
                     )
                     # Don't retry IP blocks - they need different approach
                     return None
-                
+
                 # Log retry attempt
                 if attempt < retry_count - 1:
                     delay = retry_delay * (2 ** attempt)  # Exponential backoff
@@ -857,21 +861,21 @@ class WebConnector(EnhancedConnector, BaseConnector):
                         f"❌ [YouTube] Transcript fetch failed for {video_url} "
                         f"({attempt_name}, {retry_count} attempts): {e}"
                     )
-        
+
         return None
-    
-    def _select_best_transcript(self, transcript_list) -> Optional[Any]:
+
+    def _select_best_transcript(self, transcript_list) -> Any | None:
         """
         Select the best available transcript from the list.
-        
+
         Preference order:
         1. Manual English transcript
         2. Auto-generated English transcript
         3. Any available transcript (first available language)
-        
+
         Args:
             transcript_list: TranscriptList from youtube-transcript-api
-            
+
         Returns:
             Selected Transcript object or None
         """
@@ -886,31 +890,31 @@ class WebConnector(EnhancedConnector, BaseConnector):
             return transcript_list.find_generated_transcript(['en', 'en-US', 'en-GB'])
         except Exception:
             pass  # Expected: auto-generated EN transcript not available, try next
-        
+
         # Fallback: any available language
         try:
             for transcript in transcript_list:
                 return transcript
         except Exception as e:
             logger.debug(f"[YouTube] No transcripts available: {e}")
-        
+
         return None
-    
+
     def _extract_transcript_text(self, segments, video_id: str) -> str:
         """
         Extract text from transcript segments.
-        
+
         Handles both legacy dict format and new object format (v1.2.0+).
-        
+
         Args:
             segments: List of transcript segments
             video_id: Video ID for logging
-            
+
         Returns:
             Combined transcript text
         """
         text_parts = []
-        
+
         for seg in segments:
             if isinstance(seg, dict):
                 # Legacy dict format: {"text": "...", "start": ..., "duration": ...}
@@ -922,10 +926,10 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 # Fallback: convert to string
                 logger.warning(f"⚠️ [YouTube] Unknown segment type for {video_id}: {type(seg).__name__}")
                 text_parts.append(str(seg))
-        
+
         return " ".join(text_parts)
-    
-    def get_youtube_metadata(self, video_url: str) -> Dict[str, str]:
+
+    def get_youtube_metadata(self, video_url: str) -> dict[str, str]:
         """Get basic metadata for a YouTube video."""
         video_id = self._extract_youtube_video_id(video_url)
         return {
@@ -933,7 +937,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
             "video_id": video_id or "unknown",
             "source_url": video_url,
         }
-    
+
     # =========================================================================
     # INGESTION
     # =========================================================================
@@ -941,7 +945,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
     async def fetch_documents(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs
     ) -> AsyncIterator[SourceDocument]:
         """Async wrapper for sync fetch."""
@@ -951,12 +955,12 @@ class WebConnector(EnhancedConnector, BaseConnector):
     def fetch_documents_sync(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs
     ) -> Iterator[SourceDocument]:
         """
         Fetch documents from web pages for ingestion pipeline.
-        
+
         Scope ID Format: web://{domain}
         All pages from the same domain share a scope for quota/retrieval purposes.
         """
@@ -972,7 +976,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 if respect_robots and not self.check_robots_txt(url, self.USER_AGENT):
                     logger.info(f"🚫 [Web] Blocked by robots.txt: {url}")
                     continue
-                
+
                 # Generate scope_id using canonical URI builder
                 scope_id = build_scope_uri("web", {"url": url})
 
@@ -1032,11 +1036,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 logger.error(f"❌ [Web] Failed to scrape {url}: {e}")
 
         logger.info("📥 [WebConnector] Fetch stream ended")
-    
-    def fetch_html(self, url: str, max_bytes: int = None) -> Optional[str]:
+
+    def fetch_html(self, url: str, max_bytes: int = None) -> str | None:
         """
         Fetch raw HTML content for link extraction.
-        
+
         Used by the worker for recursive crawling.
         """
         try:
@@ -1097,7 +1101,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
                     return False
             return True
 
-    def normalize_url(self, url: str) -> Optional[str]:
+    def normalize_url(self, url: str) -> str | None:
         """Normalize URL for deduplication and safe comparisons."""
         if not url:
             return None

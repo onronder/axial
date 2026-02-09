@@ -4,13 +4,13 @@ Backend Models
 Defines Pydantic and SQLModel schemas for the application.
 """
 
-from pydantic import BaseModel, ConfigDict
-from sqlmodel import SQLModel, Field
-from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
 from enum import Enum
+from typing import Any
+from uuid import UUID, uuid4
 
+from pydantic import BaseModel, ConfigDict
+from sqlmodel import Field, SQLModel
 
 # =============================================================================
 # SQLModel Table Definitions (ORM)
@@ -22,15 +22,15 @@ class ConnectorDefinition(SQLModel, table=True):
     This table is seeded via migration and rarely changes.
     """
     __tablename__ = "connector_definitions"
-    
+
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     type: str = Field(unique=True, index=True)  # 'google_drive', 'notion', 'web'
     name: str  # 'Google Drive', 'Notion'
-    description: Optional[str] = None
-    icon_path: Optional[str] = None
-    category: Optional[str] = None  # 'Cloud Storage', 'Knowledge Base', 'Web'
+    description: str | None = None
+    icon_path: str | None = None
+    category: str | None = None  # 'Cloud Storage', 'Knowledge Base', 'Web'
     is_active: bool = Field(default=True)
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class UserIntegration(SQLModel, table=True):
@@ -39,16 +39,16 @@ class UserIntegration(SQLModel, table=True):
     Uses connector_definition_id FK to link to connector type.
     """
     __tablename__ = "user_integrations"
-    
+
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(index=True)
     connector_definition_id: UUID = Field(foreign_key="connector_definitions.id", index=True)
-    access_token: Optional[str] = None
-    refresh_token: Optional[str] = None
-    expires_at: Optional[datetime] = None
-    last_sync_at: Optional[datetime] = None
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    access_token: str | None = None
+    refresh_token: str | None = None
+    expires_at: datetime | None = None
+    last_sync_at: datetime | None = None
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # =============================================================================
@@ -69,9 +69,9 @@ class ConnectorDefinitionResponse(BaseModel):
     id: str
     type: str
     name: str
-    description: Optional[str] = None
-    icon_path: Optional[str] = None
-    category: Optional[str] = None
+    description: str | None = None
+    icon_path: str | None = None
+    category: str | None = None
     is_active: bool = True
 
     model_config = ConfigDict(from_attributes=True)
@@ -81,20 +81,20 @@ class UserIntegrationResponse(BaseModel):
     """API response for a user's connected integration."""
     id: str
     connector_definition_id: str
-    connector_type: Optional[str] = None
-    connector_name: Optional[str] = None
-    connector_icon: Optional[str] = None
-    category: Optional[str] = None
+    connector_type: str | None = None
+    connector_name: str | None = None
+    connector_icon: str | None = None
+    category: str | None = None
     connected: bool = True
-    last_sync_at: Optional[datetime] = None
+    last_sync_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class IntegrationStatusResponse(BaseModel):
     """API response for integration status check."""
-    available: List[ConnectorDefinitionResponse]
-    connected: List[UserIntegrationResponse]
+    available: list[ConnectorDefinitionResponse]
+    connected: list[UserIntegrationResponse]
 
 
 # =============================================================================
@@ -106,7 +106,7 @@ class IngestRequest(BaseModel):
     client_id: str
     filename: str
     content: str
-    metadata: Optional[Dict[str, Any]] = {}
+    metadata: dict[str, Any] | None = {}
 
 
 class IngestResponse(BaseModel):
@@ -137,16 +137,16 @@ class IngestionJob(SQLModel, table=True):
     Used for polling-based progress updates to the frontend.
     """
     __tablename__ = "ingestion_jobs"
-    
+
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(index=True)
     provider: str
     total_files: int = Field(default=0)
     processed_files: int = Field(default=0)
     status: str = Field(default="pending")  # pending, processing, completed, failed, cancelled
-    error_message: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    error_message: str | None = None
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class IngestionJobResponse(BaseModel):
@@ -157,9 +157,9 @@ class IngestionJobResponse(BaseModel):
     processed_files: int
     status: str
     percent: float  # Calculated: (processed_files / total_files) * 100
-    error_message: Optional[str] = None
-    created_at: Optional[datetime] = None
-    
+    error_message: str | None = None
+    created_at: datetime | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -181,34 +181,34 @@ class Notification(SQLModel, table=True):
     Tracks success, warning, error, and info events.
     """
     __tablename__ = "notifications"
-    
+
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(index=True)
     title: str
-    message: Optional[str] = None
+    message: str | None = None
     type: str = Field(default="info")  # info, success, warning, error
     is_read: bool = Field(default=False)
     # Note: renamed from 'metadata' to avoid shadowing SQLModel.metadata attribute
-    extra_data: Optional[str] = Field(default=None)  # JSON string for metadata
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    extra_data: str | None = Field(default=None)  # JSON string for metadata
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class NotificationResponse(BaseModel):
     """API response for a notification."""
     id: str
     title: str
-    message: Optional[str] = None
+    message: str | None = None
     type: str
     is_read: bool
-    metadata: Optional[Dict[str, Any]] = None
-    created_at: Optional[datetime] = None
-    
+    metadata: dict[str, Any] | None = None
+    created_at: datetime | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
 class NotificationListResponse(BaseModel):
     """API response for notification list."""
-    notifications: List["NotificationResponse"]
+    notifications: list["NotificationResponse"]
     total: int
     unread_count: int
 
@@ -254,10 +254,10 @@ class WebCrawlConfig(SQLModel, table=True):
     Supports scheduled re-crawling for living knowledge.
     """
     __tablename__ = "web_crawl_configs"
-    
+
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(index=True)
-    
+
     # Crawl Configuration
     root_url: str                                    # Starting URL
     crawl_type: str = Field(default="single")        # single, recursive, sitemap
@@ -265,28 +265,28 @@ class WebCrawlConfig(SQLModel, table=True):
     max_pages: int = Field(default=500)              # Max pages per crawl (1-10000)
     allow_subdomains: bool = Field(default=False)    # Allow subdomains when recursive
     respect_robots_txt: bool = Field(default=True)   # Respect robots.txt
-    
+
     # Progress Tracking
     status: str = Field(default="pending")           # pending, discovering, processing, completed, failed
     total_pages_found: int = Field(default=0)        # URLs discovered
     pages_ingested: int = Field(default=0)           # URLs successfully processed
     pages_failed: int = Field(default=0)             # URLs that failed
-    
+
     # Scheduled Re-crawling (Living Knowledge)
     refresh_interval: str = Field(default="never")   # never, daily, weekly, monthly
-    next_crawl_at: Optional[datetime] = None         # When to re-crawl next
-    last_crawl_at: Optional[datetime] = None         # When last crawl completed
-    
+    next_crawl_at: datetime | None = None         # When to re-crawl next
+    last_crawl_at: datetime | None = None         # When last crawl completed
+
     # Error Handling
-    error_message: Optional[str] = None
-    
+    error_message: str | None = None
+
     # Timestamps
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
-    
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: datetime | None = None
+
     # Task Reference
-    celery_task_id: Optional[str] = None
+    celery_task_id: str | None = None
 
 
 class WebCrawlConfigResponse(BaseModel):
@@ -302,8 +302,8 @@ class WebCrawlConfigResponse(BaseModel):
     pages_ingested: int
     pages_failed: int
     percent: float  # Calculated: (pages_ingested / total_pages_found) * 100
-    error_message: Optional[str] = None
-    created_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    
+    error_message: str | None = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+
     model_config = ConfigDict(from_attributes=True)

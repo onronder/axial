@@ -5,12 +5,12 @@ Endpoints for administrative functions including audit logs.
 """
 
 import logging
-from typing import Optional, List
-from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from api.v1.dependencies import validate_team_access, require_admin, require_paid_access
-from api.v1.error_utils import api_error, ApiErrorCode
+
+from api.v1.dependencies import require_admin, require_paid_access, validate_team_access
+from api.v1.error_utils import ApiErrorCode, api_error
 from core.db import get_supabase
 from core.rate_limit import limiter
 from services.team_service import team_service
@@ -26,20 +26,20 @@ router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_
 class AuditLogEntry(BaseModel):
     """Response model for audit log entries."""
     id: str
-    user_id: Optional[str] = None
-    user_email: Optional[str] = None
-    user_name: Optional[str] = None
+    user_id: str | None = None
+    user_email: str | None = None
+    user_name: str | None = None
     action: str
-    resource_type: Optional[str] = None
-    resource_id: Optional[str] = None
+    resource_type: str | None = None
+    resource_id: str | None = None
     details: dict = {}
-    ip_address: Optional[str] = None
+    ip_address: str | None = None
     created_at: str
 
 
 class AuditLogListResponse(BaseModel):
     """Paginated audit log response."""
-    items: List[AuditLogEntry]
+    items: list[AuditLogEntry]
     total: int
     has_more: bool
 
@@ -55,10 +55,10 @@ async def get_audit_logs(
     user_id: str = Depends(require_admin),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
-    action: Optional[str] = None,
-    resource_type: Optional[str] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    action: str | None = None,
+    resource_type: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None
 ):
     """
     Get audit logs for the user's team/account.
@@ -101,7 +101,7 @@ async def get_audit_logs(
         query = supabase.table("audit_logs")\
             .select("*", count="exact")\
             .in_("user_id", team_member_ids)
-        
+
         # Apply filters
         if action:
             query = query.eq("action", action)
@@ -111,21 +111,21 @@ async def get_audit_logs(
             query = query.gte("created_at", from_date)
         if to_date:
             query = query.lte("created_at", to_date)
-        
+
         # Execute with pagination
         result = query\
             .order("created_at", desc=True)\
             .range(offset, offset + limit - 1)\
             .execute()
-        
+
         total = result.count if result.count is not None else 0
-        
+
         # Fetch user profiles for display names
         user_ids = list(set(
-            log.get("user_id") for log in (result.data or []) 
+            log.get("user_id") for log in (result.data or [])
             if log.get("user_id")
         ))
-        
+
         user_profiles: dict = {}
         if user_ids:
             try:
@@ -143,7 +143,7 @@ async def get_audit_logs(
                     }
             except Exception as profile_error:
                 logger.warning(f"Failed to fetch user profiles: {profile_error}")
-        
+
         # Build response items with user info
         items = []
         for log in (result.data or []):
@@ -160,13 +160,13 @@ async def get_audit_logs(
                 ip_address=log.get("ip_address"),
                 created_at=log["created_at"]
             ))
-        
+
         return AuditLogListResponse(
             items=items,
             total=total,
             has_more=(offset + limit) < total
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -231,7 +231,7 @@ class SecurityEventEntry(BaseModel):
 
 class SecurityLogResponse(BaseModel):
     """Paginated security log response."""
-    items: List[SecurityEventEntry]
+    items: list[SecurityEventEntry]
     total: int
     has_more: bool
 
@@ -256,10 +256,10 @@ async def get_security_log(
     user_id: str = Depends(require_admin),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
-    event_type: Optional[str] = None,
-    search: Optional[str] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    event_type: str | None = None,
+    search: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None
 ):
     """
     Get security-related audit logs (wipes, deletions, purges).

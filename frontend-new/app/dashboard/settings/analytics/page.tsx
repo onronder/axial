@@ -257,7 +257,26 @@ export default function FeedbackAnalyticsPage() {
     const handleLoadMore = useCallback(() => {
         setFeedbackLimit(prev => prev + 20);
     }, []);
-    
+
+    const summary = feedbackData?.summary;
+
+    const feedbackItems = feedbackData?.items;
+    const trendData = useMemo(
+        () => (feedbackItems ? aggregateFeedbackByDay(feedbackItems) : []),
+        [feedbackItems]
+    );
+
+    const ratingDistData = useMemo(
+        () =>
+            summary
+                ? [
+                      { name: 'Positive', count: summary.positive_count, fill: 'var(--color-green-500, #22c55e)' },
+                      { name: 'Negative', count: summary.negative_count, fill: 'var(--color-red-500, #ef4444)' },
+                  ]
+                : [],
+        [summary]
+    );
+
     // Loading state while checking authorization
     if (profileLoading) {
         return (
@@ -266,7 +285,7 @@ export default function FeedbackAnalyticsPage() {
             </div>
         );
     }
-    
+
     // Authorization check - show access denied for non-admins
     if (!isAuthorized) {
         return (
@@ -281,24 +300,6 @@ export default function FeedbackAnalyticsPage() {
             </div>
         );
     }
-    
-    const summary = feedbackData?.summary;
-
-    const trendData = useMemo(
-        () => (feedbackData?.items ? aggregateFeedbackByDay(feedbackData.items) : []),
-        [feedbackData?.items]
-    );
-
-    const ratingDistData = useMemo(
-        () =>
-            summary
-                ? [
-                      { name: 'Positive', count: summary.positive_count, fill: 'var(--color-green-500, #22c55e)' },
-                      { name: 'Negative', count: summary.negative_count, fill: 'var(--color-red-500, #ef4444)' },
-                  ]
-                : [],
-        [summary]
-    );
 
     return (
         <div className="space-y-8">

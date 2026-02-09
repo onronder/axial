@@ -7,8 +7,6 @@ Errors are logged but never raised to callers - email is secondary to core funct
 
 import logging
 from pathlib import Path
-from typing import Optional
-from datetime import datetime, timezone
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -28,17 +26,17 @@ TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 class EmailService:
     """
     Resend-based email service for transactional notifications.
-    
+
     All methods are fail-safe: errors are logged but never raised.
     This ensures email failures don't crash worker processes.
     """
-    
+
     def __init__(self):
         self.api_key = settings.RESEND_API_KEY
         self.from_email = settings.EMAILS_FROM_EMAIL
         self.app_url = settings.APP_URL
         self.enabled = bool(self.api_key and resend)
-        
+
         if self.enabled:
             resend.api_key = self.api_key
             logger.info("📧 EmailService initialized with Resend API")
@@ -50,13 +48,13 @@ class EmailService:
                 warning_msgs.append("resend package not installed (pip install resend)")
             if not self.api_key:
                 warning_msgs.append("RESEND_API_KEY environment variable not set")
-            
+
             warning_detail = "; ".join(warning_msgs)
             logger.warning(
                 f"⚠️ [STARTUP] EmailService DISABLED - {warning_detail}. "
                 f"Email notifications (ingestion complete, team invites, etc.) will not be sent."
             )
-        
+
         # Initialize Jinja2 environment
         if TEMPLATES_DIR.exists():
             self.jinja_env = Environment(
@@ -66,11 +64,11 @@ class EmailService:
         else:
             self.jinja_env = None
             logger.warning(f"📧 EmailService: Templates directory not found at {TEMPLATES_DIR}")
-    
-    def _render_template(self, template_name: str, **context) -> Optional[str]:
+
+    def _render_template(self, template_name: str, **context) -> str | None:
         """
         Render an HTML template with context.
-        
+
         Automatically injects global branding variables:
         - logo_url: Official Axio Hub logo
         - app_url: Application URL
@@ -78,24 +76,24 @@ class EmailService:
         - current_year: Current year for copyright
         """
         if not self.jinja_env:
-            logger.error(f"📧 Cannot render template: Jinja environment not initialized")
+            logger.error("📧 Cannot render template: Jinja environment not initialized")
             return None
-        
+
         try:
             from datetime import datetime
-            
+
             # Global context injection - available to all templates
             context.setdefault("logo_url", settings.LOGO_URL if hasattr(settings, 'LOGO_URL') else "")
             context.setdefault("app_url", self.app_url)
             context.setdefault("company_name", "Axio Hub")
             context.setdefault("current_year", datetime.now().year)
-            
+
             template = self.jinja_env.get_template(template_name)
             return template.render(**context)
         except Exception as e:
             logger.error(f"📧 Failed to render template {template_name}: {e}")
             return None
-    
+
     def send_ingestion_complete(
         self,
         to_email: str,
@@ -104,19 +102,19 @@ class EmailService:
     ) -> bool:
         """
         Send notification when document ingestion is complete.
-        
+
         Args:
             to_email: Recipient email address
             name: User's display name
             total_files: Number of files processed
-        
+
         Returns:
             True if sent successfully, False otherwise
         """
         if not self.enabled:
             logger.debug("📧 Email not sent: service not enabled")
             return False
-        
+
         try:
             # Render HTML template
             html_content = self._render_template(
@@ -125,7 +123,7 @@ class EmailService:
                 total_files=total_files,
                 app_url=self.app_url
             )
-            
+
             if not html_content:
                 # Fallback to plain text if template fails
                 html_content = f"""
@@ -134,7 +132,7 @@ class EmailService:
                 <p>Your AI assistant has digested this new information and is ready to answer your questions.</p>
                 <p><a href="{self.app_url}/dashboard">Go to Dashboard</a></p>
                 """
-            
+
             # Send via Resend API
             params = {
                 "from": f"Axio Hub <{self.from_email}>",
@@ -142,60 +140,60 @@ class EmailService:
                 "subject": "✨ Your AI Assistant Just Got Smarter",
                 "html": html_content,
             }
-            
+
             response = resend.Emails.send(params)
             logger.info(f"📧 Sent ingestion complete email to {to_email}, id={response.get('id', 'unknown')}")
             return True
-            
+
         except Exception as e:
             # CRITICAL: Log but never raise - email is secondary functionality
             logger.error(f"📧 Failed to send ingestion complete email to {to_email}: {e}")
             return False
-    
+
     def send_welcome_email(self, to_email: str, name: str) -> bool:
         """
         Send welcome email to new users.
-        
+
         Args:
             to_email: Recipient email address
             name: User's display name
-        
+
         Returns:
             True if sent successfully, False otherwise
         """
         if not self.enabled:
             logger.debug("📧 Email not sent: service not enabled")
             return False
-        
+
         try:
             html_content = self._render_template(
                 "welcome.html",
                 name=name,
                 app_url=self.app_url
             )
-            
+
             if not html_content:
                 html_content = f"""
                 <p>Hello {name},</p>
                 <p>Welcome to Axio Hub! Your AI-powered knowledge assistant is ready.</p>
                 <p><a href="{self.app_url}/dashboard">Get Started</a></p>
                 """
-            
+
             params = {
                 "from": f"Axio Hub <{self.from_email}>",
                 "to": [to_email],
                 "subject": "Welcome to Axio Hub! 🎉",
                 "html": html_content,
             }
-            
+
             response = resend.Emails.send(params)
             logger.info(f"📧 Sent welcome email to {to_email}, id={response.get('id', 'unknown')}")
             return True
-            
+
         except Exception as e:
             logger.error(f"📧 Failed to send welcome email to {to_email}: {e}")
             return False
-    
+
     def send_ingestion_failed(
         self,
         to_email: str,
@@ -205,24 +203,24 @@ class EmailService:
     ) -> bool:
         """
         Send notification when document ingestion fails.
-        
+
         Args:
             to_email: Recipient email address
             name: User's display name
             filename: Name of the file that failed
             error_message: Error details (truncated for safety)
-        
+
         Returns:
             True if sent successfully, False otherwise
         """
         if not self.enabled:
             logger.debug("📧 Email not sent: service not enabled")
             return False
-        
+
         try:
             # Truncate error message for safety
             safe_error = str(error_message)[:500] if error_message else "Unknown error"
-            
+
             html_content = self._render_template(
                 "ingestion_failed.html",
                 name=name,
@@ -230,7 +228,7 @@ class EmailService:
                 error_message=safe_error,
                 app_url=self.app_url
             )
-            
+
             if not html_content:
                 # Fallback if template fails
                 html_content = f"""
@@ -238,18 +236,18 @@ class EmailService:
                 <p>Processing failed for: {filename}</p>
                 <p>Reason: {safe_error}</p>
                 """
-            
+
             params = {
                 "from": f"Axio Hub <{self.from_email}>",
                 "to": [to_email],
                 "subject": f"⚠️ Ingestion Failed: {filename[:50]}",
                 "html": html_content,
             }
-            
+
             response = resend.Emails.send(params)
             logger.info(f"📧 Sent ingestion failed email to {to_email}, id={response.get('id', 'unknown')}")
             return True
-            
+
         except Exception as e:
             logger.error(f"📧 Failed to send ingestion failed email to {to_email}: {e}")
             return False
@@ -260,7 +258,7 @@ class EmailService:
         to_email: str,
         name: str,
         task_name: str,
-        next_retry_at: Optional[str] = None,
+        next_retry_at: str | None = None,
     ) -> bool:
         """
         Send notification when a failed task is scheduled for retry.
@@ -409,7 +407,7 @@ class EmailService:
                 invite_link=invite_link,
                 app_url=self.app_url
             )
-            
+
             if not html_content:
                 # Fallback to plain text if template fails
                 html_content = f"""
@@ -417,7 +415,7 @@ class EmailService:
                 <p>You have been invited to join the team <strong>{team_name}</strong> on Axio Hub.</p>
                 <p><a href="{invite_link}">Click here to join</a></p>
                 """
-            
+
             # Helper to wrap sync resend call if we wanted true async, but for now simple awaitable wrapper
             # Use self.send_email equivalent logic
             params = {
@@ -426,11 +424,11 @@ class EmailService:
                 "subject": f"🤝 You've been invited to join {team_name}",
                 "html": html_content,
             }
-            
+
             response = resend.Emails.send(params)
             logger.info(f"📧 Sent team invite to {to_email}, id={response.get('id', 'unknown')}")
             return True
-            
+
         except Exception as e:
             logger.error(f"📧 Failed to send team invite to {to_email}: {e}")
             return False
@@ -446,7 +444,7 @@ class EmailService:
     ) -> bool:
         """
         Send enterprise inquiry email to sales team.
-        
+
         Args:
             from_name: Name of the person inquiring
             from_email: Their email address
@@ -458,10 +456,10 @@ class EmailService:
         if not self.enabled:
             logger.warning("📧 Email service not enabled - enterprise inquiry not sent")
             return False
-        
+
         try:
             from datetime import datetime
-            
+
             html_content = self._render_template(
                 "enterprise_lead.html",
                 name=from_name,
@@ -472,7 +470,7 @@ class EmailService:
                 user_id=user_id[:8] + "..." if user_id else "Unknown",
                 submitted_at=datetime.now().strftime("%Y-%m-%d %H:%M UTC")
             )
-            
+
             if not html_content:
                 # Fallback if template fails
                 html_content = f"""
@@ -482,7 +480,7 @@ class EmailService:
                 <p><strong>Company:</strong> {company}</p>
                 <p><strong>Message:</strong> {message or 'None'}</p>
                 """
-            
+
             params = {
                 "from": self.from_email,
                 "to": ["sales@axiohub.io"],  # Send to sales team
@@ -490,11 +488,11 @@ class EmailService:
                 "subject": f"🏢 Enterprise Inquiry from {from_name} at {company}",
                 "html": html_content
             }
-            
+
             response = resend.Emails.send(params)
             logger.info(f"📧 Sent enterprise inquiry from {from_email}, id={response.get('id', 'unknown')}")
             return True
-            
+
         except Exception as e:
             logger.error(f"📧 Failed to send enterprise inquiry: {e}")
             return False

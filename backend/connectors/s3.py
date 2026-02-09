@@ -36,37 +36,37 @@ import logging
 import mimetypes
 import os
 import time
+from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, Optional, AsyncIterator, Set
+from typing import Any
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import (
     ClientError,
-    NoCredentialsError,
-    EndpointConnectionError,
-    ReadTimeoutError,
     ConnectTimeoutError,
+    EndpointConnectionError,
+    NoCredentialsError,
+    ReadTimeoutError,
 )
 from fastapi.concurrency import run_in_threadpool
 
 from connectors.base import (
     BaseConnector,
-    RemoteFile,
     ConnectorAuthError,
     ConnectorRateLimitError,
     ConnectorTransientError,
+    RemoteFile,
 )
 from connectors.enhanced import (
     EnhancedConnector,
+    ItemNotFoundError,
     SourceDocument,
     SourceType,
-    ItemNotFoundError,
-    FileTooLargeError,
 )
-from connectors.utils import load_integration, build_config_from_kwargs
-from core.security import decrypt_token
+from connectors.utils import build_config_from_kwargs, load_integration
 from core.scopes import build_scope_uri
+from core.security import decrypt_token
 
 logger = logging.getLogger(__name__)
 
@@ -137,9 +137,9 @@ SKIP_PATTERNS = frozenset({
 class S3Connector(EnhancedConnector, BaseConnector):
     """
     Amazon S3 connector for unified ingestion pipeline.
-    
+
     ENTERPRISE ONLY - Requires Enterprise plan subscription.
-    
+
     Features:
     - IAM credential authentication with Fernet encryption
     - Mandatory prefix requirement for cost control
@@ -148,7 +148,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
     - Suffix filtering for supported document types
     - Object count limits to prevent bill shock
     - Deterministic source IDs for delete reconciliation
-    
+
     Security:
     - Read-only operations only (ListBucket, GetObject, HeadObject)
     - Credentials encrypted at rest
@@ -174,14 +174,14 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def validate_config(self, config: dict) -> bool:
         """
         Validate S3 configuration.
-        
+
         Validation Steps:
         1. Check required fields (access_key, secret, region, bucket)
         2. Validate prefix is non-empty (COST PROTECTION - raises ValueError)
         3. Attempt HEAD bucket to verify credentials and bucket access
-        
+
         Cost: 1 HEAD request (essentially free)
-        
+
         Raises:
             ValueError: If prefix is missing (cost protection)
         """
@@ -216,17 +216,17 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def _verify_access(self, config: dict) -> dict:
         """
         Verify S3 access using HEAD bucket request.
-        
+
         This is the cheapest way to verify:
         - Credentials are valid
         - Bucket exists
         - User has ListBucket permission
-        
+
         Cost: HEAD request is essentially free
-        
+
         Returns:
             Status dict
-            
+
         Raises:
             ConnectorAuthError: Invalid credentials or access denied
             ConnectorTransientError: Network/service issues
@@ -272,7 +272,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def _get_s3_client(self, config: dict):
         """
         Create boto3 S3 client with proper configuration.
-        
+
         Features:
         - Automatic credential decryption
         - Adaptive retry mode (exponential backoff)
@@ -282,7 +282,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
         # Decrypt credentials if encrypted
         access_key = config.get("access_key_id", "")
         secret_key = config.get("secret_access_key", "")
-        
+
         # Attempt decryption (will return as-is if not encrypted)
         try:
             access_key = decrypt_token(access_key)
@@ -317,11 +317,11 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def list_files(
         self,
         config: dict,
-        since: Optional[datetime] = None,
+        since: datetime | None = None,
     ) -> Iterator[RemoteFile]:
         """
         List files from S3 bucket with pagination.
-        
+
         Features:
         - Prefix-filtered listing (REQUIRED for cost protection)
         - Suffix filtering for supported extensions
@@ -329,13 +329,13 @@ class S3Connector(EnhancedConnector, BaseConnector):
         - Object count limit (MAX_OBJECTS_PER_SYNC)
         - Incremental sync support via `since` parameter
         - Deterministic IDs for delete reconciliation
-        
+
         Cost: $0.005 per 1,000 objects listed
-        
+
         Args:
             config: S3 configuration dict
             since: Optional datetime for incremental sync
-            
+
         Yields:
             RemoteFile objects for each accessible document
         """
@@ -426,11 +426,11 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def _object_to_remote_file(self, obj: dict, bucket: str) -> RemoteFile:
         """
         Convert S3 object to RemoteFile with deterministic ID.
-        
+
         CRITICAL: Uses s3://bucket/key format for delete reconciliation.
         """
         key = obj["Key"]
-        
+
         return RemoteFile(
             id=self._build_canonical_source_id(bucket, key),  # DETERMINISTIC!
             name=os.path.basename(key),
@@ -444,9 +444,9 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def _build_canonical_source_id(self, bucket: str, key: str) -> str:
         """
         Build deterministic source ID for delete reconciliation.
-        
+
         Format: s3://bucket-name/path/to/file.pdf
-        
+
         This ID MUST be:
         - Deterministic (same input = same output)
         - Unique across all sources
@@ -457,7 +457,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def _should_process_object(self, key: str) -> bool:
         """
         Check if object should be processed based on extension and patterns.
-        
+
         Returns False for:
         - Unsupported file extensions
         - System files and backups
@@ -493,32 +493,32 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def fetch_file_content(self, file_id: str, config: dict) -> bytes:
         """
         Fetch raw file bytes from S3.
-        
+
         Args:
             file_id: S3 object key or canonical ID (s3://bucket/key)
             config: Configuration with credentials
-            
+
         Returns:
             Raw file content as bytes
         """
         resolved = self._resolve_config(config)
         client = self._get_s3_client(resolved)
         bucket = resolved["bucket_name"]
-        
+
         # Handle canonical ID format
         key = self._extract_key_from_id(file_id, bucket)
-        
+
         return self._download_object(client, bucket, key)
 
     async def fetch_documents(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
     ) -> AsyncIterator[SourceDocument]:
         """
         Async wrapper for fetch_documents_sync.
-        
+
         Uses thread pool to avoid blocking the event loop.
         """
         # Run blocking boto3 calls in thread pool
@@ -534,25 +534,25 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def fetch_documents_sync(
         self,
         item_ids: list[str],
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
     ) -> Iterator[SourceDocument]:
         """
         Fetch documents from S3 for ingestion pipeline.
-        
+
         PRODUCTION SAFEGUARDS:
         - Checks StorageClass before download (Glacier trap prevention)
         - Uses Range requests for large files (resumable downloads)
         - Continues on individual file errors (doesn't fail entire job)
-        
+
         Args:
             item_ids: List of S3 object keys or canonical IDs
             credentials: S3 credentials dict
             **kwargs: Additional params including user_id
-            
+
         Yields:
             SourceDocument for each successfully fetched file
-            
+
         Cost: $0.0004 per GET request + data transfer
         """
         if not item_ids:
@@ -573,7 +573,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
 
         for item_id in item_ids:
             key = self._extract_key_from_id(item_id, bucket)
-            
+
             try:
                 # GLACIER TRAP PREVENTION: Check storage class first
                 # HEAD request is cheap ($0.0004 per 1000)
@@ -585,9 +585,9 @@ class S3Connector(EnhancedConnector, BaseConnector):
                         logger.warning(f"⚠️ [S3] Object not found: {key}")
                         continue
                     raise
-                
+
                 storage_class = head_response.get("StorageClass", "STANDARD")
-                
+
                 if storage_class in ARCHIVED_STORAGE_CLASSES:
                     skipped_archived += 1
                     logger.warning(
@@ -596,24 +596,24 @@ class S3Connector(EnhancedConnector, BaseConnector):
                         "Restore from Glacier required before access."
                     )
                     continue
-                
+
                 content_length = head_response.get("ContentLength", 0)
                 content_type = head_response.get("ContentType", "application/octet-stream")
                 last_modified = head_response.get("LastModified")
                 etag = head_response.get("ETag", "").strip('"')
-                
+
                 # Check size limit
                 if content_length > MAX_FILE_SIZE:
                     logger.warning(
                         f"⚠️ [S3] Skipping large file: {key} ({content_length:,} bytes)"
                     )
                     continue
-                
+
                 # Download with appropriate strategy
                 content = self._download_object(
                     client, bucket, key, content_length
                 )
-                
+
                 # Build source document with deterministic ID
                 metadata = {
                     "source": "s3",
@@ -638,7 +638,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
                     size_bytes=len(content),
                     parent_id=os.path.dirname(key) or None,
                 )
-                
+
                 processed_count += 1
 
             except ClientError as e:
@@ -656,7 +656,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
                     failed_count += 1
                     logger.error(f"❌ [S3] Failed to fetch {key}: {error_code}")
                 continue
-                
+
             except Exception as e:
                 failed_count += 1
                 logger.error(f"❌ [S3] Unexpected error fetching {key}: {e}")
@@ -672,11 +672,11 @@ class S3Connector(EnhancedConnector, BaseConnector):
         client,
         bucket: str,
         key: str,
-        content_length: Optional[int] = None,
+        content_length: int | None = None,
     ) -> bytes:
         """
         Download object with appropriate strategy based on size.
-        
+
         - Small files (<50MB): Standard streaming download
         - Large files (>=50MB): Chunked Range requests for resilience
         """
@@ -687,11 +687,11 @@ class S3Connector(EnhancedConnector, BaseConnector):
                 content_length = head.get("ContentLength", 0)
             except ClientError:
                 content_length = 0
-        
+
         # Use Range requests for large files
         if content_length >= LARGE_FILE_THRESHOLD:
             return self._download_large_object(client, bucket, key, content_length)
-        
+
         # Standard streaming download for smaller files
         return self._download_small_object(client, bucket, key)
 
@@ -702,15 +702,15 @@ class S3Connector(EnhancedConnector, BaseConnector):
         try:
             response = client.get_object(Bucket=bucket, Key=key)
             body = response["Body"]
-            
+
             # Stream in chunks
             buffer = io.BytesIO()
             for chunk in body.iter_chunks(chunk_size=1024 * 1024):  # 1MB chunks
                 buffer.write(chunk)
-            
+
             body.close()
             return buffer.getvalue()
-            
+
         except (ReadTimeoutError, ConnectTimeoutError) as e:
             raise ConnectorTransientError(f"S3 download timeout: {e}")
 
@@ -723,7 +723,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
     ) -> bytes:
         """
         Download large object using Range requests for resilience.
-        
+
         If a chunk fails, we retry that specific chunk, not the whole file.
         This prevents wasting bandwidth on partial downloads.
         """
@@ -748,7 +748,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
                     )
                     chunk_data = response["Body"].read()
                     response["Body"].close()
-                    
+
                     buffer.write(chunk_data)
                     downloaded += len(chunk_data)
                     break
@@ -758,7 +758,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
                         raise ConnectorTransientError(
                             f"Failed to download chunk {range_header} after {MAX_RETRIES} attempts: {e}"
                         )
-                    
+
                     delay = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
                     logger.warning(
                         f"⏳ [S3] Chunk download failed, retrying in {delay}s "
@@ -772,7 +772,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
     def _extract_key_from_id(self, item_id: str, bucket: str) -> str:
         """
         Extract S3 key from item ID.
-        
+
         Handles both formats:
         - Canonical: s3://bucket/path/to/file.pdf
         - Raw key: path/to/file.pdf
@@ -786,7 +786,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
             # Different bucket in ID - just extract key portion
             parts = item_id[5:].split("/", 1)
             return parts[1] if len(parts) > 1 else parts[0]
-        
+
         return item_id
 
     # =========================================================================
@@ -795,9 +795,9 @@ class S3Connector(EnhancedConnector, BaseConnector):
 
     def _build_config(
         self,
-        credentials: Optional[Dict[str, Any]] = None,
+        credentials: dict[str, Any] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build configuration dict by merging credentials with kwargs."""
         return build_config_from_kwargs(
             credentials,
@@ -818,11 +818,11 @@ class S3Connector(EnhancedConnector, BaseConnector):
         # Load from user_integrations if user_id provided
         user_id = resolved.get("user_id")
         integration_id = resolved.get("integration_id")
-        
+
         if user_id or integration_id:
             integration = self._load_integration(resolved)
             creds = integration.get("credentials", {})
-            
+
             # Merge stored credentials
             resolved["access_key_id"] = creds.get("access_key_id")
             resolved["secret_access_key"] = creds.get("secret_access_key")
@@ -832,7 +832,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
 
         return resolved
 
-    def _load_integration(self, config: dict) -> Dict[str, Any]:
+    def _load_integration(self, config: dict) -> dict[str, Any]:
         """Load integration record from database using shared utility."""
         return load_integration(
             "s3",
@@ -874,7 +874,7 @@ class S3Connector(EnhancedConnector, BaseConnector):
     @staticmethod
     def _guess_mime_type(
         filename: str,
-        content_type: Optional[str] = None,
+        content_type: str | None = None,
     ) -> str:
         """
         Guess MIME type from filename, falling back to content_type.
@@ -883,10 +883,10 @@ class S3Connector(EnhancedConnector, BaseConnector):
             guessed, _ = mimetypes.guess_type(filename)
             if guessed:
                 return guessed
-        
+
         if content_type and content_type != "application/octet-stream":
             return content_type
-        
+
         return "application/octet-stream"
 
 

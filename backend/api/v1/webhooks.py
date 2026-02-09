@@ -8,17 +8,18 @@ Features:
 - Comprehensive error handling and logging
 """
 
-import logging
 import json
-import redis.asyncio as redis
+import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, HTTPException, Depends, Query
-from typing import Optional
+
+import redis.asyncio as redis
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+from api.v1.dependencies import require_admin
 from core.config import settings
 from core.db import get_supabase
 from core.rate_limit import limiter
 from services.subscription import subscription_service
-from api.v1.dependencies import require_admin
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class WebhookDLQ:
     Dead Letter Queue for webhook events that fail processing.
     Stores failed events in database for later retry.
     """
-    
+
     @staticmethod
     def store_failed_event(
         event_id: str,
@@ -40,20 +41,20 @@ class WebhookDLQ:
     ) -> bool:
         """
         Store a failed webhook event in the DLQ table.
-        
+
         Args:
             event_id: Webhook event ID
             event_type: Type of event (e.g., subscription.created)
             payload: Full event payload
             error_message: Error message from failed processing
             source: Source of webhook (e.g., polar)
-            
+
         Returns:
             True if stored successfully
         """
         try:
             supabase = get_supabase()
-            
+
             dlq_entry = {
                 "event_id": event_id,
                 "event_type": event_type,
@@ -65,15 +66,15 @@ class WebhookDLQ:
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
-            
+
             supabase.table("webhook_dlq").upsert(
                 dlq_entry,
                 on_conflict="event_id,source"
             ).execute()
-            
+
             logger.info(f"📥 [DLQ] Stored failed event: {event_id} ({event_type})")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ [DLQ] Failed to store event {event_id}: {e}")
             return False
@@ -82,16 +83,16 @@ class WebhookDLQ:
     async def retry_pending_events(max_events: int = 10) -> int:
         """
         Retry pending events from the DLQ.
-        
+
         Args:
             max_events: Maximum number of events to retry
-            
+
         Returns:
             Number of successfully processed events
         """
         try:
             supabase = get_supabase()
-            
+
             # Get pending events with retry_count < 5
             result = supabase.table("webhook_dlq")\
                 .select("*")\
@@ -100,44 +101,44 @@ class WebhookDLQ:
                 .order("created_at")\
                 .limit(max_events)\
                 .execute()
-            
+
             if not result.data:
                 return 0
-            
+
             success_count = 0
-            
+
             for event in result.data:
                 try:
                     payload = json.loads(event["payload"])
-                    
+
                     # Attempt to process
                     await subscription_service.handle_webhook(payload)
-                    
+
                     # Mark as processed
                     supabase.table("webhook_dlq").update({
                         "status": "processed",
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     }).eq("id", event["id"]).execute()
-                    
+
                     success_count += 1
                     logger.info(f"✅ [DLQ] Retry succeeded: {event['event_id']}")
-                    
+
                 except Exception as e:
                     # Increment retry count
                     new_count = event["retry_count"] + 1
                     status = "failed" if new_count >= 5 else "pending"
-                    
+
                     supabase.table("webhook_dlq").update({
                         "retry_count": new_count,
                         "status": status,
                         "error_message": str(e)[:2000],
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     }).eq("id", event["id"]).execute()
-                    
+
                     logger.warning(f"⚠️ [DLQ] Retry failed for {event['event_id']}: {e}")
-            
+
             return success_count
-            
+
         except Exception as e:
             logger.error(f"❌ [DLQ] Retry batch failed: {e}")
             return 0
@@ -146,11 +147,11 @@ class WebhookDLQ:
 async def check_idempotency(redis_client: redis.Redis, wh_id: str) -> tuple[bool, bool]:
     """
     Check if webhook has already been processed.
-    
+
     Args:
         redis_client: Redis async client
         wh_id: Webhook ID
-        
+
     Returns:
         Tuple of (is_duplicate, redis_available)
     """
@@ -167,11 +168,11 @@ async def check_idempotency(redis_client: redis.Redis, wh_id: str) -> tuple[bool
 async def mark_processed(redis_client: redis.Redis, wh_id: str) -> bool:
     """
     Mark webhook as processed in Redis.
-    
+
     Args:
         redis_client: Redis async client
         wh_id: Webhook ID
-        
+
     Returns:
         True if successfully marked
     """
@@ -188,24 +189,24 @@ async def mark_processed(redis_client: redis.Redis, wh_id: str) -> bool:
 async def polar_webhook(request: Request):
     """
     Handle Polar.sh webhooks with production-grade reliability.
-    
+
     Security:
     - Standard Webhooks (Svix) signature verification
     - Fail-closed behavior for Redis failures
     - Idempotency guarantees
-    
+
     Reliability:
     - Dead Letter Queue for failed events
     - Automatic retry mechanism
     """
-    redis_client: Optional[redis.Redis] = None
-    wh_id: Optional[str] = None
-    event_data: Optional[dict] = None
-    
+    redis_client: redis.Redis | None = None
+    wh_id: str | None = None
+    event_data: dict | None = None
+
     try:
         # 1. Get RAW Body Bytes (Critical for signature verification)
         payload_bytes = await request.body()
-        
+
         # 2. Get Headers (Standard Webhooks / Svix Style)
         wh_signature = request.headers.get("webhook-signature")
         wh_timestamp = request.headers.get("webhook-timestamp")
@@ -225,28 +226,28 @@ async def polar_webhook(request: Request):
         if wh_id:
             try:
                 redis_client = redis.from_url(
-                    settings.REDIS_URL, 
-                    encoding="utf-8", 
+                    settings.REDIS_URL,
+                    encoding="utf-8",
                     decode_responses=True,
                     socket_timeout=5.0,
                     socket_connect_timeout=5.0
                 )
-                
+
                 is_duplicate, redis_available = await check_idempotency(redis_client, wh_id)
-                
+
                 if not redis_available:
                     # FAIL-CLOSED: Redis unavailable, return 503 so Polar retries
                     logger.error("[Webhooks] Redis unavailable - returning 503 for retry")
                     raise HTTPException(
-                        status_code=503, 
+                        status_code=503,
                         detail="Service temporarily unavailable - please retry"
                     )
-                
+
                 if is_duplicate:
                     logger.info(f"[Webhooks] Idempotent success: {wh_id} already processed.")
                     await redis_client.aclose()
                     return {"status": "received", "idempotent": True}
-                
+
             except HTTPException:
                 raise
             except redis.ConnectionError as e:
@@ -282,14 +283,14 @@ async def polar_webhook(request: Request):
         event_data = json.loads(payload_bytes)
         event_type = event_data.get('type', 'unknown')
         logger.info(f"[Webhooks] Processing Polar event: {event_type}")
-        
+
         # 5. Process Event
         try:
             await subscription_service.handle_webhook(event_data)
         except Exception as process_error:
             # Processing failed - store in DLQ for retry
             logger.error(f"[Webhooks] Event processing failed: {process_error}")
-            
+
             if wh_id and event_data:
                 WebhookDLQ.store_failed_event(
                     event_id=wh_id,
@@ -298,13 +299,13 @@ async def polar_webhook(request: Request):
                     error_message=str(process_error),
                     source="polar"
                 )
-            
+
             # Still mark as "received" in Redis to prevent duplicate processing attempts
             # The DLQ will handle retries
             if wh_id and redis_client:
                 await mark_processed(redis_client, wh_id)
                 await redis_client.aclose()
-            
+
             # Return 200 to acknowledge receipt - DLQ handles retry
             return {"status": "received", "queued_for_retry": True}
 
@@ -354,23 +355,23 @@ async def dlq_stats(_: str = Depends(require_admin)):
     """
     try:
         supabase = get_supabase()
-        
+
         # Count by status
         pending = supabase.table("webhook_dlq")\
             .select("id", count="exact")\
             .eq("status", "pending")\
             .execute()
-        
+
         failed = supabase.table("webhook_dlq")\
             .select("id", count="exact")\
             .eq("status", "failed")\
             .execute()
-        
+
         processed = supabase.table("webhook_dlq")\
             .select("id", count="exact")\
             .eq("status", "processed")\
             .execute()
-        
+
         return {
             "pending": pending.count or 0,
             "failed": failed.count or 0,
@@ -388,7 +389,7 @@ async def webhook_health():
     Checks Redis connectivity.
     """
     redis_status = "unknown"
-    
+
     try:
         redis_client = redis.from_url(
             settings.REDIS_URL,
@@ -402,7 +403,7 @@ async def webhook_health():
         await redis_client.aclose()
     except Exception as e:
         redis_status = f"unhealthy: {str(e)[:100]}"
-    
+
     return {
         "status": "healthy" if redis_status == "healthy" else "degraded",
         "service": "webhooks",

@@ -5,19 +5,18 @@ Provides usage statistics for the frontend to display progress bars
 and quota information.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
-from typing import Optional
+import logging
 from uuid import UUID
 
-from core.security import get_current_user
-from core.rate_limit import limiter
-from api.v1.dependencies import validate_team_access
-from api.v1.error_utils import api_error, ApiErrorCode
-from services.usage import get_user_usage_with_limits
-from core.quotas import QUOTA_LIMITS, format_bytes
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 
-import logging
+from api.v1.dependencies import validate_team_access
+from api.v1.error_utils import ApiErrorCode, api_error
+from core.quotas import QUOTA_LIMITS, format_bytes
+from core.rate_limit import limiter
+from core.security import get_current_user
+from services.usage import get_user_usage_with_limits
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access)])
@@ -60,7 +59,7 @@ class UsageResponse(BaseModel):
     features: FeatureAccess
     model_tier: str
     subscription_status: str
-    
+
     # Fix Pydantic warning: 'model_tier' conflicts with protected 'model_' namespace
     model_config = {"protected_namespaces": ()}
 
@@ -82,7 +81,7 @@ async def get_usage(
 ):
     """
     Get current usage statistics for the authenticated user's organization.
-    
+
     Returns org-wide file count, storage usage, and feature access
     based on the effective plan.
     """
@@ -90,11 +89,11 @@ async def get_usage(
         usage_with_limits = await get_user_usage_with_limits(UUID(user_id))
         usage = usage_with_limits.usage
         limits = usage_with_limits.limits
-        
+
         # Calculate percentages (capped at 100)
         files_percent = min(100.0, (usage.files / limits.max_files * 100)) if limits.max_files > 0 else 0.0
         storage_percent = min(100.0, (usage.storage_bytes / limits.max_storage_bytes * 100)) if limits.max_storage_bytes > 0 else 0.0
-        
+
         return UsageResponse(
             plan=usage.plan,
             files=UsageCount(
@@ -117,7 +116,7 @@ async def get_usage(
             model_tier=limits.model_tier,
             subscription_status=usage.subscription_status
         )
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_usage")
 
@@ -127,7 +126,7 @@ async def get_usage(
 async def get_plans(request: Request):
     """
     Get available plans and their limits (public endpoint).
-    
+
     Returns all plan definitions for pricing page display.
     """
     plans_info = {}
@@ -138,7 +137,7 @@ async def get_plans(request: Request):
             "max_storage_mb": limits.max_storage_mb,
             "max_team_seats": limits.max_team_seats
         }
-    
+
     return PlansResponse(plans=plans_info)
 
 

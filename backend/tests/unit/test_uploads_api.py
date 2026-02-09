@@ -10,15 +10,14 @@ Focuses on:
 
 import itertools
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-import api.v1.uploads as uploads_module
 import api.v1.integrations as integrations_module
-
+import api.v1.uploads as uploads_module
 
 TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 _REQUEST_COUNTER = itertools.count(1)
@@ -359,7 +358,7 @@ class TestPresignedUploadFlow:
 
 class TestDuplicateDetection:
     """Tests for duplicate file detection feature."""
-    
+
     @pytest.mark.asyncio
     async def test_check_duplicates_no_match(self):
         """No existing document with matching hash returns is_duplicate=False."""
@@ -369,17 +368,17 @@ class TestDuplicateDetection:
             filename="report.pdf",
             file_size=1234567,
         )
-        
+
         supabase = MagicMock()
         supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = Mock(data=[])
-        
+
         with patch("api.v1.uploads.get_supabase", return_value=supabase):
             response = await uploads_module.check_duplicates(request, body, user_id=TEST_USER_ID)
-        
+
         assert response.is_duplicate is False
         assert response.existing_document is None
         assert response.action_required == "none"
-    
+
     @pytest.mark.asyncio
     async def test_check_duplicates_found_match(self):
         """Existing document with matching hash returns is_duplicate=True."""
@@ -389,7 +388,7 @@ class TestDuplicateDetection:
             filename="report.pdf",
             file_size=1234567,
         )
-        
+
         supabase = MagicMock()
         supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = Mock(
             data=[{
@@ -399,21 +398,21 @@ class TestDuplicateDetection:
                 "file_size_bytes": 1234567,
             }]
         )
-        
+
         with patch("api.v1.uploads.get_supabase", return_value=supabase):
             response = await uploads_module.check_duplicates(request, body, user_id=TEST_USER_ID)
-        
+
         assert response.is_duplicate is True
         assert response.existing_document is not None
         assert response.existing_document.id == "doc-123"
         assert response.existing_document.title == "old_report.pdf"
         assert response.action_required == "confirm_overwrite"
-    
+
     @pytest.mark.asyncio
     async def test_check_duplicates_invalid_hash_length(self):
         """Hash with wrong length raises ValidationError at Pydantic level."""
         from pydantic import ValidationError
-        
+
         # Pydantic validates at model instantiation time, not at API boundary
         with pytest.raises(ValidationError) as exc:
             uploads_module.DuplicateCheckRequest(
@@ -421,10 +420,10 @@ class TestDuplicateDetection:
                 filename="report.pdf",
                 file_size=1234567,
             )
-        
+
         # Verify the error mentions string length
         assert "64 characters" in str(exc.value) or "string_too_short" in str(exc.value)
-    
+
     @pytest.mark.asyncio
     async def test_check_duplicates_invalid_hash_hex(self):
         """Hash with invalid hex characters raises HTTPException."""
@@ -434,14 +433,14 @@ class TestDuplicateDetection:
             filename="report.pdf",
             file_size=1234567,
         )
-        
+
         with patch("api.v1.uploads.get_supabase", return_value=MagicMock()):
             with pytest.raises(HTTPException) as exc:
                 await uploads_module.check_duplicates(request, body, user_id=TEST_USER_ID)
-        
+
         assert exc.value.status_code == 400
         assert "hexadecimal" in exc.value.detail
-    
+
     @pytest.mark.asyncio
     async def test_check_duplicates_db_error_fails_open(self):
         """Database error returns is_duplicate=False (fail open)."""
@@ -451,17 +450,17 @@ class TestDuplicateDetection:
             filename="report.pdf",
             file_size=1234567,
         )
-        
+
         supabase = MagicMock()
         supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.side_effect = Exception("DB error")
-        
+
         with patch("api.v1.uploads.get_supabase", return_value=supabase):
             response = await uploads_module.check_duplicates(request, body, user_id=TEST_USER_ID)
-        
+
         # Fail open - allow upload if check fails
         assert response.is_duplicate is False
         assert response.action_required == "none"
-    
+
     @pytest.mark.asyncio
     async def test_generate_upload_url_uses_content_hash_for_path(self):
         """When content_hash is provided, uses it for stable path segment."""
@@ -473,20 +472,20 @@ class TestDuplicateDetection:
             content_hash="d" * 64,
             force_overwrite=False,
         )
-        
+
         supabase = MagicMock()
         supabase.storage.from_.return_value.create_signed_upload_url.return_value = {
             "signed_url": "https://signed.example.com",
         }
-        
+
         with patch("api.v1.uploads.get_supabase", return_value=supabase), \
              patch("api.v1.uploads.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
             response = await uploads_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
-        
+
         # Path should contain first 12 chars of hash instead of UUID
         assert "dddddddddddd" in response.storage_path
         assert response.storage_path.startswith(f"uploads/{TEST_USER_ID}/")
-    
+
     @pytest.mark.asyncio
     async def test_generate_upload_url_falls_back_to_uuid(self):
         """When content_hash is not provided, uses UUID for path segment."""
@@ -498,16 +497,16 @@ class TestDuplicateDetection:
             content_hash=None,  # No hash provided
             force_overwrite=False,
         )
-        
+
         supabase = MagicMock()
         supabase.storage.from_.return_value.create_signed_upload_url.return_value = {
             "signed_url": "https://signed.example.com",
         }
-        
+
         with patch("api.v1.uploads.get_supabase", return_value=supabase), \
              patch("api.v1.uploads.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
             response = await uploads_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
-        
+
         # Path should contain a UUID-like segment (36 chars with dashes)
         parts = response.storage_path.split("/")
         assert len(parts) >= 3

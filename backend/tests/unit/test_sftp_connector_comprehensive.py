@@ -11,24 +11,20 @@ Following best practices:
 Coverage Target: 95%+
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime, timezone
-import socket
 import stat
+from datetime import datetime, timezone
+from unittest.mock import MagicMock, Mock, patch
 
-from connectors.sftp import (
-    SFTPConnector,
-    SFTP_DEFAULT_PORT,
-    SFTP_TIMEOUT_SECONDS,
-)
+import pytest
+
 from connectors.base import (
-    RemoteFile,
     ConnectorAuthError,
     ConnectorTransientError,
 )
-from connectors.enhanced import SourceType, ItemNotFoundError
-
+from connectors.enhanced import ItemNotFoundError, SourceType
+from connectors.sftp import (
+    SFTPConnector,
+)
 
 # =============================================================================
 # Fixtures
@@ -218,21 +214,21 @@ class TestListFiles:
     def test_list_files_non_recursive(self, mock_resolve, mock_conn, connector, valid_config):
         """Should list files non-recursively when parent_id is 'root'."""
         mock_resolve.return_value = valid_config
-        
+
         # Create mock file attributes
         file_attr = MagicMock()
         file_attr.filename = "test.txt"
         file_attr.st_size = 1024
         file_attr.st_mtime = 1704067200  # 2024-01-01
         file_attr.st_mode = stat.S_IFREG
-        
+
         mock_sftp = MagicMock()
         mock_sftp.listdir_attr.return_value = [file_attr]
         mock_conn.return_value.__enter__ = Mock(return_value=mock_sftp)
         mock_conn.return_value.__exit__ = Mock(return_value=False)
-        
+
         files = list(connector.list_files({**valid_config, "parent_id": "root"}))
-        
+
         assert len(files) == 1
         assert files[0].name == "test.txt"
         assert files[0].size == 1024
@@ -242,19 +238,19 @@ class TestListFiles:
     def test_list_files_includes_directories(self, mock_resolve, mock_conn, connector, valid_config):
         """Should include directories in listing."""
         mock_resolve.return_value = valid_config
-        
+
         dir_attr = MagicMock()
         dir_attr.filename = "subdir"
         dir_attr.st_mtime = 1704067200
         dir_attr.st_mode = stat.S_IFDIR
-        
+
         mock_sftp = MagicMock()
         mock_sftp.listdir_attr.return_value = [dir_attr]
         mock_conn.return_value.__enter__ = Mock(return_value=mock_sftp)
         mock_conn.return_value.__exit__ = Mock(return_value=False)
-        
+
         files = list(connector.list_files({**valid_config, "parent_id": "root"}))
-        
+
         assert len(files) == 1
         assert files[0].name == "subdir"
         assert files[0].mime_type == "inode/directory"
@@ -264,20 +260,20 @@ class TestListFiles:
     def test_list_files_skips_dot_entries(self, mock_resolve, mock_conn, connector, valid_config):
         """Should skip . and .. entries."""
         mock_resolve.return_value = valid_config
-        
+
         dot_attr = MagicMock()
         dot_attr.filename = "."
-        
+
         dotdot_attr = MagicMock()
         dotdot_attr.filename = ".."
-        
+
         mock_sftp = MagicMock()
         mock_sftp.listdir_attr.return_value = [dot_attr, dotdot_attr]
         mock_conn.return_value.__enter__ = Mock(return_value=mock_sftp)
         mock_conn.return_value.__exit__ = Mock(return_value=False)
-        
+
         files = list(connector.list_files({**valid_config, "parent_id": "root"}))
-        
+
         assert len(files) == 0
 
     @patch.object(SFTPConnector, '_sftp_connection')
@@ -285,27 +281,27 @@ class TestListFiles:
     def test_list_files_since_filter(self, mock_resolve, mock_conn, connector, valid_config):
         """Should filter files by modification time."""
         mock_resolve.return_value = valid_config
-        
+
         old_file = MagicMock()
         old_file.filename = "old.txt"
         old_file.st_size = 100
         old_file.st_mtime = 1640995200  # 2022-01-01
         old_file.st_mode = stat.S_IFREG
-        
+
         new_file = MagicMock()
         new_file.filename = "new.txt"
         new_file.st_size = 200
         new_file.st_mtime = 1704067200  # 2024-01-01
         new_file.st_mode = stat.S_IFREG
-        
+
         mock_sftp = MagicMock()
         mock_sftp.listdir_attr.return_value = [old_file, new_file]
         mock_conn.return_value.__enter__ = Mock(return_value=mock_sftp)
         mock_conn.return_value.__exit__ = Mock(return_value=False)
-        
+
         since = datetime(2023, 1, 1, tzinfo=timezone.utc)
         files = list(connector.list_files({**valid_config, "parent_id": "root"}, since=since))
-        
+
         assert len(files) == 1
         assert files[0].name == "new.txt"
 
@@ -322,18 +318,18 @@ class TestFetchFileContent:
     def test_fetch_file_content_success(self, mock_resolve, mock_conn, connector, valid_config):
         """Should fetch file content successfully."""
         mock_resolve.return_value = valid_config
-        
+
         mock_sftp = MagicMock()
         mock_file = MagicMock()
         mock_file.read.return_value = b"file content here"
         mock_sftp.open.return_value.__enter__ = Mock(return_value=mock_file)
         mock_sftp.open.return_value.__exit__ = Mock(return_value=False)
-        
+
         mock_conn.return_value.__enter__ = Mock(return_value=mock_sftp)
         mock_conn.return_value.__exit__ = Mock(return_value=False)
-        
+
         result = connector.fetch_file_content("/data/test.txt", valid_config)
-        
+
         assert result == b"file content here"
 
     @patch.object(SFTPConnector, '_sftp_connection')
@@ -341,13 +337,13 @@ class TestFetchFileContent:
     def test_fetch_file_not_found(self, mock_resolve, mock_conn, connector, valid_config):
         """Should raise ItemNotFoundError when file doesn't exist."""
         mock_resolve.return_value = valid_config
-        
+
         mock_sftp = MagicMock()
-        mock_sftp.open.side_effect = IOError("No such file")
-        
+        mock_sftp.open.side_effect = OSError("No such file")
+
         mock_conn.return_value.__enter__ = Mock(return_value=mock_sftp)
         mock_conn.return_value.__exit__ = Mock(return_value=False)
-        
+
         with pytest.raises(ItemNotFoundError):
             connector.fetch_file_content("/data/missing.txt", valid_config)
 
@@ -367,10 +363,10 @@ class TestConnectionManagement:
         mock_transport.return_value = mock_transport_instance
         mock_sftp = MagicMock()
         mock_sftp_client.return_value = mock_sftp
-        
+
         with connector._sftp_connection(valid_config) as sftp:
             assert sftp == mock_sftp
-        
+
         mock_transport_instance.connect.assert_called_once()
 
     @patch('connectors.sftp.paramiko.Transport')
@@ -383,15 +379,15 @@ class TestConnectionManagement:
         mock_sftp = MagicMock()
         mock_sftp_client.return_value = mock_sftp
         mock_key.return_value = MagicMock()
-        
+
         with connector._sftp_connection(key_config) as sftp:
             assert sftp == mock_sftp
 
     @patch('connectors.sftp.paramiko.Transport')
     def test_connection_timeout(self, mock_transport, connector, valid_config):
         """Should raise error on connection timeout."""
-        mock_transport.side_effect = socket.timeout("Connection timed out")
-        
+        mock_transport.side_effect = TimeoutError("Connection timed out")
+
         with pytest.raises(ConnectorTransientError):
             with connector._sftp_connection(valid_config):
                 pass
@@ -403,7 +399,7 @@ class TestConnectionManagement:
         mock_transport_instance = MagicMock()
         mock_transport.return_value = mock_transport_instance
         mock_transport_instance.connect.side_effect = paramiko.AuthenticationException("Auth failed")
-        
+
         with pytest.raises(ConnectorAuthError):
             with connector._sftp_connection(valid_config):
                 pass
@@ -464,7 +460,7 @@ class TestAsyncFetchDocuments:
     async def test_fetch_documents_single_file(self, mock_conn, mock_resolve, connector, valid_config):
         """Should fetch single file as document."""
         mock_resolve.return_value = valid_config
-        
+
         mock_sftp = MagicMock()
         # Mock stat for file info
         file_stat = MagicMock()
@@ -472,16 +468,16 @@ class TestAsyncFetchDocuments:
         file_stat.st_mtime = 1704067200
         file_stat.st_mode = stat.S_IFREG
         mock_sftp.stat.return_value = file_stat
-        
+
         # Mock file content
         mock_file = MagicMock()
         mock_file.read.return_value = b"content"
         mock_sftp.open.return_value.__enter__ = Mock(return_value=mock_file)
         mock_sftp.open.return_value.__exit__ = Mock(return_value=False)
-        
+
         mock_conn.return_value.__enter__ = Mock(return_value=mock_sftp)
         mock_conn.return_value.__exit__ = Mock(return_value=False)
-        
+
         docs = [doc async for doc in connector.fetch_documents(["/data/test.txt"], valid_config)]
-        
+
         assert len(docs) == 1

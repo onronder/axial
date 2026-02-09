@@ -1,4 +1,3 @@
-import base64
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 

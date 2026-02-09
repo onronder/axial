@@ -15,10 +15,10 @@ Components:
 """
 
 from services.consent.manager import (
+    ConsentDecision,
+    ConsentLevel,
     ConsentManager,
     ConsentType,
-    ConsentLevel,
-    ConsentDecision,
 )
 
 __all__ = [

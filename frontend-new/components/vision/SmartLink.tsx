@@ -121,10 +121,10 @@ export function SmartText({ text, documentId, onReferenceClick }: SmartTextProps
   let lastIndex = 0;
   let match;
 
-  // Reset regex state
-  REFERENCE_PATTERN.lastIndex = 0;
+  // Use a local regex to avoid mutating the global REFERENCE_PATTERN.lastIndex
+  const pattern = new RegExp(REFERENCE_PATTERN.source, REFERENCE_PATTERN.flags);
 
-  while ((match = REFERENCE_PATTERN.exec(text)) !== null) {
+  while ((match = pattern.exec(text)) !== null) {
     // Add text before the match
     if (match.index > lastIndex) {
       parts.push({ text: text.slice(lastIndex, match.index), isReference: false });

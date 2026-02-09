@@ -1,6 +1,7 @@
-import pytest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pytest
 
 from services.cleanup import AccountCleanupService, ActiveIngestionError
 

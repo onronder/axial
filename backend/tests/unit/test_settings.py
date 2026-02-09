@@ -4,9 +4,9 @@ Test Suite for Settings API
 Exercises profile creation/update and notification settings flows.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 

@@ -11,14 +11,14 @@ Components:
 - executor.py: Approved action execution
 """
 
-from services.scope_guard.state_machine import (
-    ScopeGuardStateMachine,
-    ApprovalState,
-    ActionType,
-)
 from services.scope_guard.mandate import (
     Mandate,
     MandateGenerator,
+)
+from services.scope_guard.state_machine import (
+    ActionType,
+    ApprovalState,
+    ScopeGuardStateMachine,
 )
 
 __all__ = [

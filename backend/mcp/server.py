@@ -8,9 +8,10 @@ Spec: https://modelcontextprotocol.io/specification
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field
 from datetime import datetime, timezone
+from typing import Any
+
+from pydantic import BaseModel
 
 from mcp.zero_retention import MCPZeroRetention
 
@@ -25,23 +26,23 @@ class JSONRPCRequest(BaseModel):
     """JSON-RPC 2.0 Request object."""
     jsonrpc: str = "2.0"
     method: str
-    params: Optional[Dict[str, Any]] = None
-    id: Optional[Union[str, int]] = None
+    params: dict[str, Any] | None = None
+    id: str | int | None = None
 
 
 class JSONRPCError(BaseModel):
     """JSON-RPC 2.0 Error object."""
     code: int
     message: str
-    data: Optional[Any] = None
+    data: Any | None = None
 
 
 class JSONRPCResponse(BaseModel):
     """JSON-RPC 2.0 Response object."""
     jsonrpc: str = "2.0"
-    result: Optional[Any] = None
-    error: Optional[JSONRPCError] = None
-    id: Optional[Union[str, int]] = None
+    result: Any | None = None
+    error: JSONRPCError | None = None
+    id: str | int | None = None
 
 
 # =============================================================================
@@ -117,7 +118,7 @@ class MCPServer:
         request: JSONRPCRequest,
         organization_id: str,
         agent_id: str,
-        allowed_scopes: Optional[List[str]] = None,
+        allowed_scopes: list[str] | None = None,
     ) -> JSONRPCResponse:
         """
         Route JSON-RPC request to appropriate handler.
@@ -201,10 +202,10 @@ class MCPServer:
 
     def _error_response(
         self,
-        request_id: Optional[Union[str, int]],
+        request_id: str | int | None,
         code: int,
         message: str,
-        data: Optional[Any] = None
+        data: Any | None = None
     ) -> JSONRPCResponse:
         """Create an error response."""
         return JSONRPCResponse(
@@ -222,11 +223,11 @@ class MCPServer:
 
     async def handle_initialize(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         organization_id: str,
         agent_id: str,
-        allowed_scopes: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        allowed_scopes: list[str] | None = None,
+    ) -> dict[str, Any]:
         """
         Handle MCP initialize request.
 
@@ -242,21 +243,21 @@ class MCPServer:
 
     async def handle_ping(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         organization_id: str,
         agent_id: str,
-        allowed_scopes: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        allowed_scopes: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Handle ping request for health check."""
         return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
     async def handle_tools_list(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         organization_id: str,
         agent_id: str,
-        allowed_scopes: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        allowed_scopes: list[str] | None = None,
+    ) -> dict[str, Any]:
         """
         Handle tools/list request.
 
@@ -268,11 +269,11 @@ class MCPServer:
 
     async def handle_tools_call(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         organization_id: str,
         agent_id: str,
-        allowed_scopes: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        allowed_scopes: list[str] | None = None,
+    ) -> dict[str, Any]:
         """
         Handle tools/call request.
 
@@ -299,11 +300,11 @@ class MCPServer:
 
     async def handle_resources_list(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         organization_id: str,
         agent_id: str,
-        allowed_scopes: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        allowed_scopes: list[str] | None = None,
+    ) -> dict[str, Any]:
         """
         Handle resources/list request.
 
@@ -320,11 +321,11 @@ class MCPServer:
 
     async def handle_resources_read(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         organization_id: str,
         agent_id: str,
-        allowed_scopes: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        allowed_scopes: list[str] | None = None,
+    ) -> dict[str, Any]:
         """
         Handle resources/read request.
 

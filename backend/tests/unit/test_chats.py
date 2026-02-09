@@ -5,18 +5,20 @@ Tests for:
 - GET /api/v1/chats - List user chats
 - POST /api/v1/chats - Create new chat
 - GET /api/v1/chats/{id}/messages - Get messages
-- POST /api/v1/chats/{id}/messages - Add message  
+- POST /api/v1/chats/{id}/messages - Add message
 - DELETE /api/v1/chats/{id} - Delete chat
 - POST /api/v1/chat - RAG chat endpoint
 """
 
-import pytest
-from types import SimpleNamespace
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
-import api.v1.chat  # Ensure module is loaded for patching
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
+
+import api.v1.chat  # Ensure module is loaded for patching
 from services.guardrails import GuardrailResult
 
 
@@ -90,7 +92,7 @@ def mock_llm_quota():
 
 class TestChatList:
     """Tests for GET /api/v1/chats."""
-    
+
     @pytest.mark.unit
     def test_list_chats_returns_user_chats_only(self):
         """Chat list must filter by organization_id (RLS equivalent)."""
@@ -99,6 +101,7 @@ class TestChatList:
         table.select.return_value = table
         table.eq.return_value = table
         table.order.return_value = table
+        table.range.return_value = table
         table.execute.return_value = MagicMock(data=[{"id": "chat-1", "organization_id": "org-1"}])
         mock_supabase.table.return_value = table
 
@@ -108,12 +111,14 @@ class TestChatList:
             result = asyncio.run(list_conversations(
                 request=_make_mock_request(),
                 user_id="user-1",
-                organization_id="org-1"
+                organization_id="org-1",
+                limit=200,
+                offset=0,
             ))
 
         assert result[0]["id"] == "chat-1"
         table.eq.assert_any_call("organization_id", "org-1")
-    
+
     @pytest.mark.unit
     def test_list_chats_ordered_by_updated_at_desc(self):
         """Most recently updated chats should appear first."""
@@ -122,6 +127,7 @@ class TestChatList:
         table.select.return_value = table
         table.eq.return_value = table
         table.order.return_value = table
+        table.range.return_value = table
         table.execute.return_value = MagicMock(data=[])
         mock_supabase.table.return_value = table
 
@@ -131,11 +137,13 @@ class TestChatList:
             asyncio.run(list_conversations(
                 request=_make_mock_request(),
                 user_id="user-1",
-                organization_id="org-1"
+                organization_id="org-1",
+                limit=200,
+                offset=0,
             ))
 
         table.order.assert_called_with("updated_at", desc=True)
-    
+
     @pytest.mark.unit
     def test_list_chats_empty_for_new_user(self):
         """New user should get empty array, not error."""
@@ -144,6 +152,7 @@ class TestChatList:
         table.select.return_value = table
         table.eq.return_value = table
         table.order.return_value = table
+        table.range.return_value = table
         table.execute.return_value = MagicMock(data=[])
         mock_supabase.table.return_value = table
 
@@ -153,7 +162,9 @@ class TestChatList:
             result = asyncio.run(list_conversations(
                 request=_make_mock_request(),
                 user_id="user-1",
-                organization_id="org-1"
+                organization_id="org-1",
+                limit=200,
+                offset=0,
             ))
 
         assert result == []
@@ -162,7 +173,7 @@ class TestChatList:
 @pytest.mark.asyncio
 class TestChatCreate:
     """Tests for POST /api/v1/conversations."""
-    
+
     async def test_create_chat_returns_new_chat(self):
         """Creating a chat should return the new chat object."""
         # Arrange
@@ -170,10 +181,10 @@ class TestChatCreate:
         mock_response = MagicMock()
         mock_response.data = [{"id": "new-chat-id", "title": "New Chat"}]
         mock_supabase.table.return_value.insert.return_value.execute.return_value = mock_response
-        
+
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
-            from api.v1.chat import create_conversation, ConversationCreate
-            
+            from api.v1.chat import ConversationCreate, create_conversation
+
             # Act
             payload = ConversationCreate(title="Test Chat")
             result = await create_conversation(
@@ -182,7 +193,7 @@ class TestChatCreate:
                 user_id="test-user",
                 organization_id="org-1"
             )
-            
+
             # Assert
             assert result["id"] == "new-chat-id"
             mock_supabase.table.assert_called_with("conversations")
@@ -192,23 +203,23 @@ class TestChatCreate:
 @pytest.mark.asyncio
 class TestRAGChatEndpoint:
     """Tests for POST /api/v1/chat - the RAG endpoint."""
-    
+
     async def test_chat_uses_condensed_question(self):
         """Verify LLM is invoked with condensed question, not original query."""
         from fastapi import Request
-        
+
         # Arrange
         mock_request = MagicMock(spec=Request)
         mock_request.client.host = "127.0.0.1"
-        
+
         mock_bg_tasks = MagicMock()
         mock_supabase = MagicMock()
-        
+
         # Mock user profile plan
         mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
-        
+
         guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
-        
+
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
@@ -216,44 +227,44 @@ class TestRAGChatEndpoint:
              patch("api.v1.chat.OpenAIEmbeddings"), \
              patch("api.v1.chat.LLMFactory") as mock_llm_factory, \
              patch("api.v1.chat.save_messages") as mock_save_messages:
-            
+
             # Mock Save Messages
             mock_save_messages.return_value = "msg-123"
-            
+
             # Mock Router
             mock_router.return_value.provider = "openai"
             mock_router.return_value.model = "gpt-4o"
-            
+
             # Mock LLM Chain
             mock_chain = MagicMock()
             mock_chain.invoke.return_value = "Test Answer"
-            
+
             # Properly mock the chain construction: prompt | llm | parser
             # We can mock the final invoke call
             with patch("api.v1.chat.StrOutputParser"), \
                  patch("api.v1.chat.ChatPromptTemplate") as mock_prompt_cls:
-                
+
                 # Make the chain object returned by the pipe operators
                 mock_prompt = MagicMock()
                 mock_llm = MagicMock()
                 mock_parser = MagicMock()
-                
+
                 mock_prompt_cls.from_messages.return_value = mock_prompt
-                
+
                 # Mock the pipe operation: prompt | llm | parser -> chain
                 mock_prompt.__or__.return_value = mock_llm
                 mock_llm.__or__.return_value = mock_chain
-                
-                from api.v1.chat import chat_endpoint, ChatRequest
-                
+
+                from api.v1.chat import ChatRequest, chat_endpoint
+
                 # Act
                 payload = ChatRequest(query="Original Query", history=[{"role": "user", "content": "prev"}], model="auto")
                 await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
-                
+
                 # Assert
                 # Verify condense was called
                 mock_condense.assert_called_with("Original Query", payload.history)
-                
+
                 # Verify chain invoked with CONDENSED question
                 call_args = mock_chain.invoke.call_args
                 assert call_args is not None
@@ -261,55 +272,55 @@ class TestRAGChatEndpoint:
                 # chain.invoke({...}) is a positional arg
                 assert args[0]['question'] == "Condensed Question?"
 
-    
+
     async def test_chat_captures_sentry_exception(self):
         """Mock sentry_sdk and trigger an error to verify capture."""
         from fastapi import Request
-        
+
         # Arrange
         mock_request = MagicMock(spec=Request)
         mock_request.client.host = "127.0.0.1"
-        
-        mock_bg_tasks = MagicMock() 
+
+        mock_bg_tasks = MagicMock()
         mock_supabase = MagicMock()
         mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
-        
+
         guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY")
-        
+
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.condense_question", return_value="Q"), \
              patch("api.v1.chat.OpenAIEmbeddings"), \
              patch("api.v1.chat.LLMFactory"), \
              patch("api.v1.chat.sentry_sdk") as mock_sentry:
-            
+
             # Force an error during routing or generation
             with patch("api.v1.chat.llm_router.select_model", side_effect=Exception("Test Error")):
-                from api.v1.chat import chat_endpoint, ChatRequest
-                from fastapi import HTTPException
-                
+
+                from api.v1.chat import ChatRequest, chat_endpoint
+
                 # Act & Assert
                 with pytest.raises(Exception): # or HTTP 500
                    payload = ChatRequest(query="Test", history=[], model="auto")
                    await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
-                
-                # Ideally check if error was logged/captured, but note that 
-                # generic Exceptions in earlier steps might just raise HTTP 500 without capturing 
+
+                # Ideally check if error was logged/captured, but note that
+                # generic Exceptions in earlier steps might just raise HTTP 500 without capturing
                 # (Rate limiting capture was added to generation block).
                 # Let's target the Generation block failure for our Sentry test.
-            
+
     async def test_generation_exception_captures_sentry(self):
          # Arrange
         from fastapi import Request
         mock_request = MagicMock(spec=Request)
         mock_request.client.host = "127.0.0.1"
-        
+
         mock_bg_tasks = MagicMock()
         mock_supabase = MagicMock()
         mock_supabase.table().select().eq().single().execute.return_value.data = {"plan": "starter"}
-        
+
         guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
-        
+
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
@@ -317,27 +328,27 @@ class TestRAGChatEndpoint:
              patch("api.v1.chat.OpenAIEmbeddings"), \
              patch("api.v1.chat.LLMFactory"), \
              patch("api.v1.chat.sentry_sdk") as mock_sentry:
-            
+
             mock_router.return_value.provider = "openai"
-            
+
             # FORCE ERROR IN CHAIN INVOKE
             mock_chain = MagicMock()
             mock_chain.invoke.side_effect = Exception("Generation Failed")
-            
+
             with patch("api.v1.chat.StrOutputParser"), \
                  patch("api.v1.chat.ChatPromptTemplate") as mock_prompt_cls:
-                
+
                 mock_prompt = MagicMock()
                 mock_prompt_cls.from_messages.return_value = mock_prompt
                 mock_prompt.__or__.return_value = MagicMock(__or__=MagicMock(return_value=mock_chain))
-                
-                from api.v1.chat import chat_endpoint, ChatRequest, HTTPException
-                
+
+                from api.v1.chat import ChatRequest, HTTPException, chat_endpoint
+
                 # Act
                 payload = ChatRequest(query="Test", model="auto")
                 with pytest.raises(HTTPException):
                     await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="test-user")
-                
+
                 # Assert
                 mock_sentry.capture_exception.assert_called_once()
                 args, _ = mock_sentry.capture_exception.call_args
@@ -409,6 +420,7 @@ class TestChatSafety:
     @pytest.mark.asyncio
     async def test_chat_endpoint_blocks_unsafe(self):
         from fastapi import Request
+
         from services.guardrails import GuardrailResult
 
         mock_request = MagicMock(spec=Request)
@@ -428,7 +440,7 @@ class TestChatSafety:
         with patch("api.v1.chat.get_supabase", return_value=MagicMock()), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.audit_logger.log") as audit_log:
-            from api.v1.chat import chat_endpoint, ChatRequest
+            from api.v1.chat import ChatRequest, chat_endpoint
 
             payload = ChatRequest(query="bad", history=[], conversation_id="conv-1")
             result = await chat_endpoint(mock_request, payload, mock_bg_tasks, user_id="user-1")
@@ -462,7 +474,7 @@ class TestConversationErrorPaths:
         supabase.table.return_value = table
 
         with patch("api.v1.chat.get_supabase", return_value=supabase):
-            from api.v1.chat import create_conversation, ConversationCreate
+            from api.v1.chat import ConversationCreate, create_conversation
 
             with pytest.raises(Exception):
                 await create_conversation(ConversationCreate(title="Test"), user_id="user-1")
@@ -526,7 +538,7 @@ class TestChatEndpointErrors:
             prompt_obj.__or__.return_value = MagicMock(__or__=MagicMock(return_value=chain))
             mock_prompt.return_value = prompt_obj
 
-            from api.v1.chat import chat_endpoint, ChatRequest
+            from api.v1.chat import ChatRequest, chat_endpoint
 
             result = await chat_endpoint(mock_request, ChatRequest(query="Q", model="auto"), mock_bg_tasks, user_id="user-1")
 
@@ -554,7 +566,7 @@ class TestChatEndpointErrors:
             mock_router.return_value.model = "gpt-4o"
             mock_embeddings.return_value.embed_query.return_value = [0.1]
 
-            from api.v1.chat import chat_endpoint, ChatRequest
+            from api.v1.chat import ChatRequest, chat_endpoint
 
             with pytest.raises(HTTPException):
                 await chat_endpoint(mock_request, ChatRequest(query="Q", model="auto"), mock_bg_tasks, user_id="user-1")
@@ -607,7 +619,7 @@ class TestConversationEndpoints:
         mock_supabase.table().select().eq().eq().single().execute.return_value = Mock(data=None)
 
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
-            from api.v1.chat import get_conversation, HTTPException
+            from api.v1.chat import HTTPException, get_conversation
             with pytest.raises(HTTPException) as exc:
                 await get_conversation(
                     request=_make_mock_request(),
@@ -622,7 +634,11 @@ class TestConversationEndpoints:
         mock_supabase.table().update().eq().eq().execute.return_value = Mock(data=[])
 
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
-            from api.v1.chat import update_conversation, ConversationUpdate, HTTPException
+            from api.v1.chat import (
+                ConversationUpdate,
+                HTTPException,
+                update_conversation,
+            )
             with pytest.raises(HTTPException) as exc:
                 await update_conversation(
                     request=_make_mock_request(method="PATCH"),
@@ -661,7 +677,7 @@ class TestConversationEndpoints:
         mock_supabase.table().select().eq().eq().execute.return_value = Mock(data=[])
 
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase):
-            from api.v1.chat import get_messages, HTTPException
+            from api.v1.chat import HTTPException, get_messages
             with pytest.raises(HTTPException) as exc:
                 await get_messages(
                     request=_make_mock_request(),
@@ -675,7 +691,7 @@ class TestConversationEndpoints:
 @pytest.mark.asyncio
 class TestChatEndpointPaths:
     async def test_chat_returns_refusal_on_safety_violation(self):
-        from fastapi import Request, BackgroundTasks
+        from fastapi import BackgroundTasks, Request
 
         request = MagicMock(spec=Request)
         request.client.host = "127.0.0.1"
@@ -690,7 +706,7 @@ class TestChatEndpointPaths:
         with patch("api.v1.chat.get_supabase", return_value=MagicMock()), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.audit_logger.log") as mock_audit:
-            from api.v1.chat import chat_endpoint, ChatRequest
+            from api.v1.chat import ChatRequest, chat_endpoint
             response = await chat_endpoint(
                 request,
                 ChatRequest(query="bad", conversation_id="conv-1"),
@@ -702,7 +718,7 @@ class TestChatEndpointPaths:
         mock_audit.assert_called_once()
 
     async def test_chat_returns_fast_reply_on_greeting(self):
-        from fastapi import Request, BackgroundTasks
+        from fastapi import BackgroundTasks, Request
 
         request = MagicMock(spec=Request)
         request.client.host = "127.0.0.1"
@@ -717,7 +733,7 @@ class TestChatEndpointPaths:
         with patch("api.v1.chat.get_supabase", return_value=MagicMock()), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.save_messages") as mock_save:
-            from api.v1.chat import chat_endpoint, ChatRequest
+            from api.v1.chat import ChatRequest, chat_endpoint
             response = await chat_endpoint(
                 request,
                 ChatRequest(query="hi", conversation_id="conv-1"),
@@ -729,7 +745,7 @@ class TestChatEndpointPaths:
         mock_save.assert_called_once()
 
     async def test_chat_embedding_failure_returns_500(self):
-        from fastapi import Request, BackgroundTasks, HTTPException
+        from fastapi import BackgroundTasks, HTTPException, Request
 
         request = MagicMock(spec=Request)
         request.client.host = "127.0.0.1"
@@ -749,13 +765,13 @@ class TestChatEndpointPaths:
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.OpenAIEmbeddings", return_value=embeddings):
-            from api.v1.chat import chat_endpoint, ChatRequest
+            from api.v1.chat import ChatRequest, chat_endpoint
             with pytest.raises(HTTPException) as exc:
                 await chat_endpoint(request, ChatRequest(query="ask"), background_tasks, user_id="user-1")
             assert exc.value.status_code == 500
 
     async def test_chat_errors_when_hybrid_search_fails(self):
-        from fastapi import Request, BackgroundTasks
+        from fastapi import BackgroundTasks, Request
 
         request = MagicMock(spec=Request)
         request.client.host = "127.0.0.1"
@@ -779,7 +795,7 @@ class TestChatEndpointPaths:
              patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
              patch("api.v1.chat.OpenAIEmbeddings", return_value=embeddings), \
              patch("api.v1.chat.settings.RAG_SIMILARITY_THRESHOLD", 0.1):
-            from api.v1.chat import chat_endpoint, ChatRequest
+            from api.v1.chat import ChatRequest, chat_endpoint
             with pytest.raises(HTTPException) as exc:
                 await chat_endpoint(
                     request,
@@ -886,7 +902,7 @@ async def test_get_conversation_handles_error():
 
 @pytest.mark.asyncio
 async def test_update_conversation_success():
-    from api.v1.chat import update_conversation, ConversationUpdate
+    from api.v1.chat import ConversationUpdate, update_conversation
 
     table = MagicMock()
     table.update.return_value = table
@@ -909,7 +925,7 @@ async def test_update_conversation_success():
 
 @pytest.mark.asyncio
 async def test_update_conversation_handles_error():
-    from api.v1.chat import update_conversation, ConversationUpdate
+    from api.v1.chat import ConversationUpdate, update_conversation
 
     table = MagicMock()
     table.update.return_value = table
@@ -947,15 +963,14 @@ async def test_delete_conversation_handles_error():
     supabase.table.return_value = conv_table
 
     with patch("api.v1.chat.get_supabase", return_value=supabase), \
-         patch("api.v1.chat.log_chat_delete"):
-        with pytest.raises(HTTPException) as exc:
-            await delete_conversation(
-                conversation_id="conv-1",
-                request=_make_mock_request(method="DELETE"),
-                background_tasks=MagicMock(),
-                user_id="user-1",
-                organization_id="org-1"
-            )
+         patch("api.v1.chat.log_chat_delete"), pytest.raises(HTTPException) as exc:
+        await delete_conversation(
+            conversation_id="conv-1",
+            request=_make_mock_request(method="DELETE"),
+            background_tasks=MagicMock(),
+            user_id="user-1",
+            organization_id="org-1"
+        )
 
     assert exc.value.status_code == 500
 
@@ -1086,7 +1101,8 @@ def test_format_context_with_citations_empty():
 @pytest.mark.asyncio
 async def test_chat_endpoint_streaming_returns_response():
     from fastapi import Request
-    from api.v1.chat import chat_endpoint, ChatRequest
+
+    from api.v1.chat import ChatRequest, chat_endpoint
 
     scope = {
         "type": "http",

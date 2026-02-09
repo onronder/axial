@@ -5,10 +5,10 @@ Tests the complete retry flow from failure detection through
 task resurrection and email notifications.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
-from datetime import datetime, timezone, timedelta
+
+import pytest
 
 
 class TestDLQLogging:
@@ -141,7 +141,7 @@ class TestDLQRetry:
                 "attempt_count": 1
             }
         ]
-        
+
         # Atomic update returns empty (task was already claimed)
         mock_supabase.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
 
@@ -185,7 +185,7 @@ class TestDLQEmailNotifications:
             mock_settings.APP_URL = "https://app.example.com"
 
             service = EmailService()
-            
+
             # Verify method exists and accepts correct parameters
             assert hasattr(service, "send_retry_scheduled_email")
 
@@ -199,7 +199,7 @@ class TestDLQEmailNotifications:
             mock_settings.APP_URL = "https://app.example.com"
 
             service = EmailService()
-            
+
             assert hasattr(service, "send_retry_succeeded_email")
 
     def test_permanently_failed_email(self):
@@ -212,7 +212,7 @@ class TestDLQEmailNotifications:
             mock_settings.APP_URL = "https://app.example.com"
 
             service = EmailService()
-            
+
             assert hasattr(service, "send_permanently_failed_email")
 
 
@@ -222,9 +222,9 @@ class TestDLQMetrics:
     def test_dlq_metrics_recorded(self):
         """Verify DLQ operations are tracked in Prometheus metrics."""
         from core.metrics import (
-            DLQ_TASKS_TOTAL,
+            DLQ_PERMANENTLY_FAILED,
             DLQ_RETRY_ATTEMPTS,
-            DLQ_PERMANENTLY_FAILED
+            DLQ_TASKS_TOTAL,
         )
 
         # Verify metrics are defined

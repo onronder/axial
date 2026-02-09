@@ -8,9 +8,9 @@ quota enforcement, and failover behavior.
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from api.v1.chat import ChatRequest, chat_endpoint
-from api.v1.dependencies import validate_team_access, require_paid_access
-from core.security import get_current_user
+from api.v1.dependencies import require_paid_access, validate_team_access
 from core.rate_limit import limiter
+from core.security import get_current_user
 
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 

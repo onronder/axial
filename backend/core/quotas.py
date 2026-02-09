@@ -5,9 +5,11 @@ This module defines plan limits and provides utilities for checking plans.
 Actual quota enforcement is handled by services/quotas.py (check_admission).
 """
 
-from core.config import settings
-from pydantic import BaseModel
 import logging
+
+from pydantic import BaseModel
+
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ class PlanLimits(BaseModel):
     max_team_seats: int = 1
     allow_web_crawl: bool = False
     model_tier: str = "standard" # standard, hybrid, premium
-    
+
     # Silence Pydantic warning about "model_" prefix
     model_config = {"protected_namespaces": ()}
 

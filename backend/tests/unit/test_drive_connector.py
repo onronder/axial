@@ -28,9 +28,8 @@ def test_get_credentials_by_integration_refresh_error():
     with patch(
         "services.oauth_token_manager.OAuthTokenManager.get_valid_credentials",
         side_effect=TokenRefreshError("fail"),
-    ):
-        with pytest.raises(ValueError):
-            connector._get_credentials_by_integration({"id": "int-1"})
+    ), pytest.raises(ValueError):
+        connector._get_credentials_by_integration({"id": "int-1"})
 
 
 def test_get_credentials_missing_definition():

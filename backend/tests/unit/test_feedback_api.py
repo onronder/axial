@@ -10,13 +10,13 @@ Tests all feedback endpoints:
 - POST /admin/feedback/refresh-metrics - Refresh materialized view (platform admin)
 """
 
+import os
+import sys
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from fastapi import HTTPException
 from starlette.requests import Request
-import asyncio
-import sys
-import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -41,8 +41,9 @@ class TestSubmitFeedbackValidation:
 
     def test_submit_feedback_request_validates_rating(self):
         """Rating must be 'positive' or 'negative'."""
-        from api.v1.feedback import SubmitFeedbackRequest
         from pydantic import ValidationError
+
+        from api.v1.feedback import SubmitFeedbackRequest
 
         # Valid ratings should work
         valid = SubmitFeedbackRequest(
@@ -72,8 +73,9 @@ class TestSubmitFeedbackValidation:
 
     def test_submit_feedback_request_limits_feedback_text(self):
         """feedback_text must be 100 characters or less."""
-        from api.v1.feedback import SubmitFeedbackRequest
         from pydantic import ValidationError
+
+        from api.v1.feedback import SubmitFeedbackRequest
 
         # Valid short text
         valid = SubmitFeedbackRequest(
@@ -112,21 +114,21 @@ class TestSubmitFeedbackEndpoint:
     @pytest.mark.asyncio
     async def test_submit_feedback_success(self):
         """Successful feedback submission."""
-        from api.v1.feedback import submit_feedback, SubmitFeedbackRequest
+        from api.v1.feedback import SubmitFeedbackRequest, submit_feedback
 
         mock_supabase = MagicMock()
-        
+
         # Mock message lookup
         mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
             data={"id": "msg-1", "conversation_id": "conv-1", "role": "assistant"}
         )
-        
+
         # Mock conversation lookup (for second call)
         conversation_mock = MagicMock()
         conversation_mock.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
             data={"id": "conv-1", "organization_id": "org-1"}
         )
-        
+
         def table_router(name):
             if name == "messages":
                 msg_mock = MagicMock()
@@ -170,7 +172,7 @@ class TestSubmitFeedbackEndpoint:
     @pytest.mark.asyncio
     async def test_submit_feedback_message_not_found(self):
         """Returns 404 if message doesn't exist."""
-        from api.v1.feedback import submit_feedback, SubmitFeedbackRequest
+        from api.v1.feedback import SubmitFeedbackRequest, submit_feedback
 
         mock_supabase = MagicMock()
         mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
@@ -197,7 +199,7 @@ class TestSubmitFeedbackEndpoint:
     @pytest.mark.asyncio
     async def test_submit_feedback_user_message_rejected(self):
         """Returns 400 if trying to rate a user message."""
-        from api.v1.feedback import submit_feedback, SubmitFeedbackRequest
+        from api.v1.feedback import SubmitFeedbackRequest, submit_feedback
 
         mock_supabase = MagicMock()
         mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
@@ -224,7 +226,7 @@ class TestSubmitFeedbackEndpoint:
     @pytest.mark.asyncio
     async def test_submit_feedback_conversation_org_mismatch(self):
         """Returns 403 if conversation belongs to different org."""
-        from api.v1.feedback import submit_feedback, SubmitFeedbackRequest
+        from api.v1.feedback import SubmitFeedbackRequest, submit_feedback
 
         def table_router(name):
             if name == "messages":
@@ -319,7 +321,7 @@ class TestTeamFeedbackAnalytics:
         from api.v1.feedback import get_team_feedback
 
         mock_supabase = MagicMock()
-        
+
         mock_feedback_service = AsyncMock(return_value={
             "items": [
                 {
@@ -388,7 +390,7 @@ class TestSourceMetrics:
         from api.v1.feedback import get_source_metrics
 
         mock_supabase = MagicMock()
-        
+
         mock_feedback_service = AsyncMock(return_value={
             "items": [
                 {
@@ -454,7 +456,7 @@ class TestPlatformAdmin:
 
         with patch("api.v1.feedback.get_supabase", return_value=mock_supabase):
             result = await require_platform_admin(user_id="user-1")
-        
+
         assert result == "user-1"
 
     @pytest.mark.asyncio
@@ -468,7 +470,7 @@ class TestPlatformAdmin:
         mock_user_result.user = Mock()
         mock_user_result.user.email = "user@other.com"
         mock_supabase.auth.admin.get_user_by_id.return_value = mock_user_result
-        
+
         # But has is_platform_admin flag
         mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
             data={"is_platform_admin": True}
@@ -476,7 +478,7 @@ class TestPlatformAdmin:
 
         with patch("api.v1.feedback.get_supabase", return_value=mock_supabase):
             result = await require_platform_admin(user_id="user-1")
-        
+
         assert result == "user-1"
 
     @pytest.mark.asyncio
@@ -489,7 +491,7 @@ class TestPlatformAdmin:
         mock_user_result.user = Mock()
         mock_user_result.user.email = "user@other.com"
         mock_supabase.auth.admin.get_user_by_id.return_value = mock_user_result
-        
+
         mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
             data={"is_platform_admin": False}
         )
@@ -505,7 +507,7 @@ class TestPlatformAdmin:
         from api.v1.feedback import get_platform_feedback
 
         mock_supabase = MagicMock()
-        
+
         mock_feedback_service = AsyncMock(return_value={
             "items": [],
             "total": 0,
@@ -546,7 +548,7 @@ class TestFeedbackErrorHandling:
     @pytest.mark.asyncio
     async def test_submit_feedback_db_error(self):
         """Database errors are handled gracefully."""
-        from api.v1.feedback import submit_feedback, SubmitFeedbackRequest
+        from api.v1.feedback import SubmitFeedbackRequest, submit_feedback
 
         def table_router(name):
             if name == "messages":
@@ -624,7 +626,7 @@ class TestSourceSnapshotModel:
             page=5,
             section="Introduction",
         )
-        
+
         assert source.index == 1
         assert source.type == "file_upload"
         assert source.label == "Document.pdf"
@@ -653,7 +655,7 @@ class TestResponseModels:
             created_at="2024-01-01T00:00:00Z",
             is_update=False,
         )
-        
+
         assert response.id == "fb-1"
         assert response.is_update is False
 
@@ -667,7 +669,7 @@ class TestResponseModels:
             total_count=10,
             negative_rate_pct=30.0,
         )
-        
+
         assert summary.total_count == 10
         assert summary.negative_rate_pct == 30.0
 
@@ -685,6 +687,6 @@ class TestResponseModels:
             negative_rate_pct=20.0,
             last_feedback_at="2024-01-15T00:00:00Z",
         )
-        
+
         assert item.source_label == "Important Doc"
         assert item.negative_rate_pct == 20.0

@@ -541,7 +541,7 @@ def test_crawl_discovery_task_recursive_dedup(monkeypatch):
 
 class TestIsDuplicateDocument:
     """Tests for Ghost Data prevention in _is_duplicate_document."""
-    
+
     def _make_supabase_mock(self, existing_data=None):
         """Create a mock Supabase client with chainable table methods."""
         supabase = MagicMock()
@@ -553,13 +553,13 @@ class TestIsDuplicateDocument:
         table.execute.return_value = SimpleNamespace(data=existing_data or [])
         supabase.table.return_value = table
         return supabase, table
-    
+
     def test_source_id_exact_duplicate_returns_true(self):
         """When source_id matches AND content_hash matches, return True (skip)."""
         supabase, table = self._make_supabase_mock([
             {"id": "doc-123", "content_hash": "abc123"}
         ])
-        
+
         result = tasks._is_duplicate_document(
             supabase=supabase,
             content_hash="abc123",
@@ -567,17 +567,17 @@ class TestIsDuplicateDocument:
             user_id="user-1",
             source_id="https://example.com/page1"
         )
-        
+
         assert result is True
         # Verify source_id was used in query
         table.eq.assert_any_call("source_id", "https://example.com/page1")
-    
+
     def test_source_id_content_changed_returns_false(self):
         """When source_id matches BUT content_hash differs, return False (update)."""
         supabase, table = self._make_supabase_mock([
             {"id": "doc-123", "content_hash": "old_hash"}
         ])
-        
+
         result = tasks._is_duplicate_document(
             supabase=supabase,
             content_hash="new_hash",  # Different content
@@ -585,14 +585,14 @@ class TestIsDuplicateDocument:
             user_id="user-1",
             source_id="https://example.com/page1"
         )
-        
+
         # Should return False so ingest_document_batched can UPDATE
         assert result is False
-    
+
     def test_source_id_new_document_returns_false(self):
         """When source_id doesn't exist, return False (new document)."""
         supabase, table = self._make_supabase_mock([])  # No existing document
-        
+
         result = tasks._is_duplicate_document(
             supabase=supabase,
             content_hash="abc123",
@@ -600,13 +600,13 @@ class TestIsDuplicateDocument:
             user_id="user-1",
             source_id="https://example.com/new-page"
         )
-        
+
         assert result is False
-    
+
     def test_fallback_to_content_hash_when_no_source_id(self):
         """When source_id is None, fall back to content_hash dedup."""
         supabase, table = self._make_supabase_mock([{"id": "doc-456"}])
-        
+
         result = tasks._is_duplicate_document(
             supabase=supabase,
             content_hash="abc123",
@@ -614,15 +614,15 @@ class TestIsDuplicateDocument:
             user_id="user-1",
             source_id=None  # No source_id
         )
-        
+
         assert result is True
         # Verify content_hash was used
         table.eq.assert_any_call("content_hash", "abc123")
-    
+
     def test_no_content_hash_no_source_id_returns_false(self):
         """When both source_id and content_hash are missing, return False."""
         supabase, _ = self._make_supabase_mock([])
-        
+
         result = tasks._is_duplicate_document(
             supabase=supabase,
             content_hash=None,
@@ -630,13 +630,13 @@ class TestIsDuplicateDocument:
             user_id="user-1",
             source_id=None
         )
-        
+
         assert result is False
-    
+
     def test_uses_organization_id_from_team(self):
         """Should use team_id as organization_id when available."""
         supabase, table = self._make_supabase_mock([])
-        
+
         tasks._is_duplicate_document(
             supabase=supabase,
             content_hash="abc123",
@@ -644,13 +644,13 @@ class TestIsDuplicateDocument:
             user_id="user-1",
             source_id="https://example.com"
         )
-        
+
         table.eq.assert_any_call("organization_id", "team-xyz")
-    
+
     def test_uses_user_id_when_no_team(self):
         """Should use user_id as organization_id when no team_id."""
         supabase, table = self._make_supabase_mock([])
-        
+
         tasks._is_duplicate_document(
             supabase=supabase,
             content_hash="abc123",
@@ -658,14 +658,14 @@ class TestIsDuplicateDocument:
             user_id="user-solo",
             source_id="https://example.com"
         )
-        
+
         table.eq.assert_any_call("organization_id", "user-solo")
-    
+
     def test_handles_database_exception_gracefully(self):
         """Should return False (safe default) on database errors."""
         supabase = MagicMock()
         supabase.table.side_effect = Exception("Database connection lost")
-        
+
         result = tasks._is_duplicate_document(
             supabase=supabase,
             content_hash="abc123",
@@ -673,16 +673,16 @@ class TestIsDuplicateDocument:
             user_id="user-1",
             source_id="https://example.com"
         )
-        
+
         # Should fail open (allow ingestion) rather than blocking
         assert result is False
-    
+
     def test_touches_updated_at_on_duplicate(self):
         """Should update updated_at timestamp when duplicate found."""
         supabase, table = self._make_supabase_mock([
             {"id": "doc-123", "content_hash": "abc123"}
         ])
-        
+
         tasks._is_duplicate_document(
             supabase=supabase,
             content_hash="abc123",
@@ -690,7 +690,7 @@ class TestIsDuplicateDocument:
             user_id="user-1",
             source_id="https://example.com"
         )
-        
+
         # Verify update was called
         table.update.assert_called_once()
         table.eq.assert_any_call("id", "doc-123")

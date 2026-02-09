@@ -1,13 +1,12 @@
-import os
-import urllib.parse
-import secrets
-import hashlib
 import base64
+import hashlib
+import os
+import secrets
+import urllib.parse
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
-
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT_DIR / ".env")
@@ -28,11 +27,11 @@ def generate_pkce_pair():
     """Generate PKCE code_verifier and code_challenge for OAuth 2.0."""
     # Generate a random code verifier (43-128 chars, base64url-safe)
     code_verifier = secrets.token_urlsafe(64)
-    
+
     # Create code_challenge = base64url(sha256(code_verifier))
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    
+
     return code_verifier, code_challenge
 
 

@@ -7,24 +7,29 @@ Supports the presigned upload flow:
 3. POST /uploads/file/reference -> Trigger ingestion
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from typing import Optional, Tuple
-from models import IngestResponse
-from core.db import get_supabase
-from services.usage import check_can_upload
-from services.quotas import check_admission, increment_usage
-from services.team_service import team_service
-from core.exceptions import QuotaExceededError
-from api.v1.dependencies import validate_team_access, require_editor, require_paid_access
-from api.v1.error_utils import raise_http_error, api_error, ApiErrorCode
-from services.audit import audit_logger
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from core.log_utils import safe_file_ref
-import uuid
 import datetime
 import logging
 import re
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+from api.v1.dependencies import (
+    require_editor,
+    require_paid_access,
+    validate_team_access,
+)
+from api.v1.error_utils import ApiErrorCode, api_error, raise_http_error
+from core.db import get_supabase
+from core.exceptions import QuotaExceededError
+from core.log_utils import safe_file_ref
+from models import IngestResponse
+from services.audit import audit_logger
+from services.quotas import check_admission, increment_usage
+from services.team_service import team_service
+from services.usage import check_can_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
@@ -33,32 +38,32 @@ router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_
 def sanitize_filename(filename: str) -> str:
     """
     Sanitize filename to prevent path traversal attacks.
-    
+
     Only allows alphanumeric characters, dots, dashes, and underscores.
     Replaces all other characters (including path separators) with underscores.
-    
+
     Security: Prevents attacks like "../../etc/passwd" or "%2e%2e/secret.txt"
     """
     if not filename:
         return "unnamed_file"
-    
+
     # Decode any URL encoding first
     try:
         from urllib.parse import unquote
         filename = unquote(filename)
     except Exception as e:
         logger.debug(f"[Upload] Failed to URL-decode filename: {e}")
-    
+
     # Extract just the basename (remove any path components)
     filename = filename.split('/')[-1].split('\\')[-1]
-    
+
     # Replace dangerous characters with underscore
     clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
-    
+
     # Ensure we don't have empty filename or just dots
     if not clean_name or clean_name.strip('.') == '':
         return "unnamed_file"
-    
+
     # Limit length
     return clean_name[:255]
 
@@ -92,7 +97,7 @@ def verify_mime_type(file_bytes: bytes, claimed_mime: str) -> bool:
         return True  # Fail-open on errors
 
 
-def get_idempotency_key(request: Request) -> Optional[str]:
+def get_idempotency_key(request: Request) -> str | None:
     key = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
     if not key:
         return None
@@ -100,7 +105,7 @@ def get_idempotency_key(request: Request) -> Optional[str]:
     return key if key else None
 
 
-async def _resolve_org_and_plan(user_id: str) -> Tuple[str, str]:
+async def _resolve_org_and_plan(user_id: str) -> tuple[str, str]:
     """
     Determine org_id (team or user) and plan code for quota enforcement.
     """
@@ -115,7 +120,7 @@ async def _resolve_org_and_plan(user_id: str) -> Tuple[str, str]:
     return org_id, plan_code
 
 
-def find_existing_ingestion_job(supabase, user_id: str, provider: str, idempotency_key: str) -> Optional[dict]:
+def find_existing_ingestion_job(supabase, user_id: str, provider: str, idempotency_key: str) -> dict | None:
     if not idempotency_key:
         return None
     existing = supabase.table("ingestion_jobs").select("id,status").eq(
@@ -156,7 +161,7 @@ class UploadUrlRequest(BaseModel):
     filename: str
     file_type: str  # MIME type
     file_size: int = Field(..., gt=0, le=100 * 1024 * 1024)  # Max 100MB
-    content_hash: Optional[str] = None  # SHA-256 hex for stable path & dedup
+    content_hash: str | None = None  # SHA-256 hex for stable path & dedup
     force_overwrite: bool = False  # User confirmed overwrite of duplicate
 
 
@@ -181,6 +186,7 @@ class FileReferenceRequest(BaseModel):
 
 from typing import Literal
 
+
 class DuplicateCheckRequest(BaseModel):
     """Request for pre-flight duplicate check."""
     content_hash: str = Field(..., min_length=64, max_length=64, description="SHA-256 hex digest")
@@ -193,13 +199,13 @@ class ExistingDocument(BaseModel):
     id: str
     title: str
     created_at: str
-    file_size_bytes: Optional[int] = None
+    file_size_bytes: int | None = None
 
 
 class DuplicateCheckResponse(BaseModel):
     """Response indicating whether file is a duplicate."""
     is_duplicate: bool
-    existing_document: Optional[ExistingDocument] = None
+    existing_document: ExistingDocument | None = None
     action_required: Literal["none", "confirm_overwrite"]
 
 
@@ -212,17 +218,17 @@ async def check_duplicates(
 ):
     """
     Pre-flight duplicate check using content hash (SHA-256).
-    
+
     Call this endpoint BEFORE uploading to detect if file already exists.
     If is_duplicate=True, show user a confirmation modal before proceeding.
-    
+
     Security:
     - Validates hash format (64 hex chars)
     - Only checks within user's own documents
     - Rate-limited to prevent enumeration attacks
     """
     supabase = get_supabase()
-    
+
     # Validate hash format (should be 64 hex characters)
     if not body.content_hash or len(body.content_hash) != 64:
         raise_http_error(
@@ -230,7 +236,7 @@ async def check_duplicates(
             ApiErrorCode.INVALID_INPUT.value,
             "Invalid content_hash: must be 64-character SHA-256 hex digest",
         )
-    
+
     try:
         int(body.content_hash, 16)  # Validate hex
     except ValueError:
@@ -239,13 +245,13 @@ async def check_duplicates(
             ApiErrorCode.INVALID_INPUT.value,
             "Invalid content_hash: must be valid hexadecimal",
         )
-    
+
     # Check for existing document with same hash belonging to this user
     try:
         existing = supabase.table("documents").select(
             "id, title, created_at, file_size_bytes"
         ).eq("user_id", user_id).eq("content_hash", body.content_hash).limit(1).execute()
-        
+
         if existing.data and len(existing.data) > 0:
             doc = existing.data[0]
             logger.info(f"[DupCheck] Found duplicate for hash {body.content_hash[:12]}... → doc {doc['id']}")
@@ -259,14 +265,14 @@ async def check_duplicates(
                 ),
                 action_required="confirm_overwrite"
             )
-        
+
         logger.debug(f"[DupCheck] No duplicate found for hash {body.content_hash[:12]}...")
         return DuplicateCheckResponse(
             is_duplicate=False,
             existing_document=None,
             action_required="none"
         )
-        
+
     except Exception as e:
         logger.error(f"[DupCheck] Database error: {e}")
         # Fail open - allow upload if check fails
@@ -286,7 +292,7 @@ async def generate_upload_url(
 ):
     """
     Generate a presigned URL for direct-to-storage file upload.
-    
+
     Flow:
     1. Frontend calls this endpoint to get a presigned URL
     2. Frontend uploads directly to Supabase Storage using the URL
@@ -294,16 +300,16 @@ async def generate_upload_url(
     """
     supabase = get_supabase()
     org_id, plan_code = await _resolve_org_and_plan(user_id)
-    
+
     # 1. Validate file type
-    if body.file_type.lower() not in [m.lower() for m in ALLOWED_MIME_TYPES.keys()]:
+    if body.file_type.lower() not in [m.lower() for m in ALLOWED_MIME_TYPES]:
         allowed = ", ".join(ALLOWED_MIME_TYPES.keys())
         raise_http_error(
             400,
             ApiErrorCode.INVALID_INPUT.value,
             f"Unsupported file type: {body.file_type}. Allowed: {allowed}",
         )
-    
+
     # 2. Check quota before generating URL
     quota_check = await check_can_upload(user_id, body.file_size)
     if not quota_check["allowed"]:
@@ -335,10 +341,10 @@ async def generate_upload_url(
             str(exc),
             exc.details if isinstance(exc, QuotaExceededError) else None,
         )
-    
+
     # 3. Generate storage path (SECURITY: sanitize filename to prevent path traversal)
     safe_filename = sanitize_filename(body.filename)
-    
+
     # Use content hash for STABLE path (enables deduplication) or fallback to UUID
     if body.content_hash and len(body.content_hash) >= 12:
         # Use first 12 chars of content hash - stable for same file content
@@ -347,14 +353,14 @@ async def generate_upload_url(
     else:
         # Fallback: random UUID (legacy behavior for clients without hash support)
         path_segment = str(uuid.uuid4())
-        logger.debug(f"[Upload] Using UUID path segment (no content_hash provided)")
-    
+        logger.debug("[Upload] Using UUID path segment (no content_hash provided)")
+
     storage_path = f"uploads/{user_id}/{path_segment}/{safe_filename}"
-    
+
     # 4. Generate signed upload URL (valid for 10 minutes)
     try:
         result = supabase.storage.from_(STAGING_BUCKET).create_signed_upload_url(storage_path)
-        
+
         if not result:
             logger.error(f"[Upload] Supabase returned None for {storage_path}")
             raise api_error(ApiErrorCode.EXTERNAL_SERVICE_ERROR, None, "get_upload_url")
@@ -362,9 +368,9 @@ async def generate_upload_url(
         if not result.get("signed_url"):
             logger.error(f"[Upload] No signed_url in response: {result}")
             raise api_error(ApiErrorCode.EXTERNAL_SERVICE_ERROR, None, "get_upload_url")
-        
+
         logger.info(f"[Upload] Generated presigned URL for {safe_file_ref(filename=body.filename)} (path:{storage_path[:16]}...)")
-        
+
         return UploadUrlResponse(
             upload_url=result["signed_url"],
             storage_path=storage_path,
@@ -386,7 +392,7 @@ async def ingest_file_reference(
 ):
     """
     Trigger ingestion for a file that was already uploaded to storage.
-    
+
     This is the second step of the presigned URL upload flow:
     1. Frontend uploads file directly to storage using presigned URL
     2. Frontend calls this endpoint to trigger ingestion
@@ -394,7 +400,7 @@ async def ingest_file_reference(
     supabase = get_supabase()
     org_id, plan_code = await _resolve_org_and_plan(user_id)
     idempotency_key = get_idempotency_key(request)
-    
+
     # 1. Verify file exists in storage
     try:
         file_list = supabase.storage.from_(STAGING_BUCKET).list(
@@ -402,7 +408,7 @@ async def ingest_file_reference(
         )
         filename = body.storage_path.split("/")[-1]
         file_exists = any(f.get("name") == filename for f in file_list)
-        
+
         if not file_exists:
             raise_http_error(
                 404,
@@ -413,7 +419,7 @@ async def ingest_file_reference(
         raise
     except Exception as e:
         logger.warning(f"[Upload] Could not verify file existence: {e}")
-    
+
     # 2. Check quota (double-check)
     quota_check = await check_can_upload(user_id, body.file_size)
     if not quota_check["allowed"]:
@@ -442,7 +448,7 @@ async def ingest_file_reference(
             str(exc),
             exc.details if isinstance(exc, QuotaExceededError) else None,
         )
-    
+
     if idempotency_key:
         existing_job = find_existing_ingestion_job(supabase, user_id, "file_upload", idempotency_key)
         if existing_job:
@@ -462,11 +468,11 @@ async def ingest_file_reference(
     }
     if idempotency_key:
         job_data["idempotency_key"] = idempotency_key
-    
+
     job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
     if not job_res.data:
         raise api_error(ApiErrorCode.DATABASE_ERROR, None, "ingest_file")
-    
+
     job_id = str(job_res.data[0]["id"])
     audit_logger.log_sync(
         user_id=user_id,
@@ -482,13 +488,13 @@ async def ingest_file_reference(
             "org_id": org_id,
         },
     )
-    
+
     # Increment usage counters (best-effort)
     try:
         increment_usage(org_id=org_id, storage_bytes=body.file_size, job_count_increment=1)
     except Exception as exc:
         logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
-    
+
     # 4. Dispatch to worker using unified ingestion
     from worker.tasks import unified_ingest_task
     try:
@@ -510,6 +516,6 @@ async def ingest_file_reference(
             ApiErrorCode.SERVICE_UNAVAILABLE, e, "ingest_file",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
-    
+
     logger.info(f"[Upload] Unified task queued: {safe_file_ref(filename=body.filename)}, task={task.id}")
     return IngestResponse(status="queued", doc_id=job_id)

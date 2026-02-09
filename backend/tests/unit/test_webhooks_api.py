@@ -1,10 +1,9 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from starlette.requests import Request
 
-from api.v1.webhooks import polar_webhook, webhook_health
-from api.v1.webhooks import HTTPException
+from api.v1.webhooks import HTTPException, polar_webhook, webhook_health
 
 
 def _make_request(body: bytes, headers: dict):
@@ -116,7 +115,7 @@ async def test_polar_webhook_redis_error_returns_503():
          patch("api.v1.webhooks.subscription_service.handle_webhook", new=AsyncMock()):
         with pytest.raises(HTTPException) as exc:
             await polar_webhook(request)
-    
+
     # Fail-closed behavior means 503 when Redis is unavailable
     assert exc.value.status_code == 503
 
@@ -161,7 +160,7 @@ async def test_polar_webhook_processing_error_returns_500():
 
         # Processing errors are now caught, stored in DLQ, and return 200 to acknowledge receipt
         result = await polar_webhook(request)
-    
+
     assert result["status"] in ("received", "error_queued")
 
 
@@ -173,9 +172,9 @@ async def test_webhook_health_returns_status():
         mock_client.ping = AsyncMock()
         mock_client.aclose = AsyncMock()
         mock_redis.return_value = mock_client
-        
+
         result = await webhook_health()
-    
+
     assert result["status"] == "healthy"
     assert result["redis"] == "healthy"
 
@@ -185,5 +184,5 @@ async def test_webhook_health_degraded_when_redis_down():
     """Test webhook health returns degraded when Redis is unavailable."""
     with patch("api.v1.webhooks.redis.from_url", side_effect=RuntimeError("redis unavailable")):
         result = await webhook_health()
-    
+
     assert result["status"] == "degraded"

@@ -6,19 +6,20 @@ Uses SlowAPI with Redis backend for distributed rate limiting.
 
 Usage:
     from core.rate_limit import limiter
-    
+
     @router.post("/endpoint")
     @limiter.limit("10/minute")
     async def my_endpoint(request: Request):
         ...
 """
 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+import logging
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
-import logging
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 def get_user_id_or_ip(request: Request) -> str:
     """
     Get rate limit key based on user ID (authenticated) or IP (anonymous).
-    
+
     This provides per-user rate limiting for authenticated users,
     and per-IP limiting for anonymous requests.
     """
@@ -34,7 +35,7 @@ def get_user_id_or_ip(request: Request) -> str:
     user = getattr(request.state, "user", None)
     if user and hasattr(user, "id"):
         return f"user:{user.id}"
-    
+
     # Fall back to IP address
     return get_remote_address(request)
 
@@ -49,7 +50,7 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSO
     Returns a JSON response with retry-after header.
     """
     logger.warning(f"⚠️ [RateLimit] Exceeded for {get_remote_address(request)}: {exc.detail}")
-    
+
     return JSONResponse(
         status_code=429,
         content={

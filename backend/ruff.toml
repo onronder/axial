@@ -12,15 +12,27 @@ select = [
     "UP",   # pyupgrade
 ]
 ignore = [
-    "E501",  # Line length — handled by formatter
-    "E402",  # Module level import not at top — FastAPI patterns
-    "B008",  # Do not perform function call in argument defaults — Depends()
-    "B904",  # raise-without-from — too noisy for existing codebase
+    "E501",   # Line length — handled by formatter
+    "E402",   # Module level import not at top — FastAPI patterns
+    "E712",   # Comparison to True/False — test assertion style (== True)
+    "E741",   # Ambiguous variable name — context-dependent (e.g., l for limit)
+    "B008",   # Do not perform function call in argument defaults — Depends()
+    "B017",   # assert-raises-exception — too broad, but acceptable in tests
+    "B019",   # cached-instance-method — intentional pattern for team_service
+    "B904",   # raise-without-from — too noisy for existing codebase
+    "B905",   # zip-without-explicit-strict — Python 3.9 compat
+    "F841",   # Unused variable — too noisy, many intentional mock assignments
+    "SIM102", # Collapsible if — readability preference
+    "SIM105", # Suppressible exception — contextlib.suppress not always clearer
+    "SIM108", # If-else-block-instead-of-if-exp — readability preference
+    "SIM117", # Multiple with statements — readability for complex mock setups
+    "SIM222", # expr-or-true — readability preference
+    "UP028",  # yield-in-for-loop — readability preference
 ]
 
 [lint.per-file-ignores]
 "__init__.py" = ["F401"]  # Unused imports in __init__ are re-exports
-"worker/tasks.py" = ["E722"]  # Bare except in legacy code (to be migrated)
+"worker/tasks.py" = ["E722", "F401"]  # Bare except + unused imports that are test mock targets
 
 [lint.isort]
 known-first-party = ["core", "api", "services", "connectors", "worker"]

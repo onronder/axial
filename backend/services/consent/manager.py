@@ -6,10 +6,10 @@ Implements hierarchical consent with inheritance.
 """
 
 import logging
-from enum import Enum
-from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -75,16 +75,16 @@ class ConsentManager:
     CACHE_TTL = 60
 
     def __init__(self):
-        self._cache: Dict[str, Any] = {}
-        self._cache_times: Dict[str, float] = {}
+        self._cache: dict[str, Any] = {}
+        self._cache_times: dict[str, float] = {}
 
     async def check_consent(
         self,
         organization_id: str,
         consent_type: ConsentType,
-        document_id: Optional[str] = None,
-        scope_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
+        document_id: str | None = None,
+        scope_id: str | None = None,
+        agent_id: str | None = None,
     ) -> ConsentDecision:
         """
         Evaluate consent for a specific access request.
@@ -136,9 +136,9 @@ class ConsentManager:
 
     def _evaluate_consent(
         self,
-        consent_data: Optional[Dict[str, Any]],
+        consent_data: dict[str, Any] | None,
         consent_type: ConsentType,
-        agent_id: Optional[str],
+        agent_id: str | None,
         level: ConsentLevel,
         inherited: bool = False,
     ) -> ConsentDecision:
@@ -197,7 +197,7 @@ class ConsentManager:
             agent_specific=agent_specific,
         )
 
-    async def _get_org_consent(self, organization_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_org_consent(self, organization_id: str) -> dict[str, Any] | None:
         """Get organization-level consent settings."""
         cache_key = f"org:{organization_id}"
         cached = self._get_cached(cache_key)
@@ -221,7 +221,7 @@ class ConsentManager:
         self,
         scope_id: str,
         organization_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get scope-level consent settings."""
         cache_key = f"scope:{organization_id}:{scope_id}"
         cached = self._get_cached(cache_key)
@@ -246,7 +246,7 @@ class ConsentManager:
         self,
         document_id: str,
         organization_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get document-level consent settings."""
         cache_key = f"doc:{organization_id}:{document_id}"
         cached = self._get_cached(cache_key)
@@ -267,7 +267,7 @@ class ConsentManager:
         self._set_cached(cache_key, data)
         return data
 
-    def _get_cached(self, key: str) -> Optional[Any]:
+    def _get_cached(self, key: str) -> Any | None:
         """Get value from cache if not expired."""
         if key not in self._cache:
             return None
@@ -286,8 +286,8 @@ class ConsentManager:
     def invalidate_cache(
         self,
         organization_id: str,
-        scope_id: Optional[str] = None,
-        document_id: Optional[str] = None,
+        scope_id: str | None = None,
+        document_id: str | None = None,
     ) -> None:
         """Invalidate cached consent data."""
         if document_id:
@@ -313,8 +313,8 @@ class ConsentManager:
         consent_type: ConsentType,
         allowed: bool,
         user_id: str,
-        ip_address: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        ip_address: str | None = None,
+    ) -> dict[str, Any]:
         """
         Set organization-level consent.
 
@@ -380,8 +380,8 @@ class ConsentManager:
         allowed: bool,
         user_id: str,
         inherit_org_consent: bool = True,
-        ip_address: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        ip_address: str | None = None,
+    ) -> dict[str, Any]:
         """
         Set scope-level consent.
 
@@ -446,8 +446,8 @@ class ConsentManager:
         allowed: bool,
         user_id: str,
         inherit_scope_consent: bool = True,
-        ip_address: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        ip_address: str | None = None,
+    ) -> dict[str, Any]:
         """
         Set document-level consent.
 
@@ -509,8 +509,8 @@ class ConsentManager:
         old_value: Any,
         new_value: Any,
         changed_by: str,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
     ) -> None:
         """Log consent change to audit table."""
         from core.db import get_supabase
@@ -536,7 +536,7 @@ class ConsentManager:
         organization_id: str,
         limit: int = 100,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get consent change audit log for organization with pagination."""
         from core.db import get_supabase
 
@@ -553,7 +553,7 @@ class ConsentManager:
     async def generate_compliance_report(
         self,
         organization_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Generate compliance report (GDPR/CCPA/KVKK) for organization.
 

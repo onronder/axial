@@ -9,13 +9,14 @@ Covers:
 - Paginated pending approvals retrieval
 """
 
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
+
 from services.scope_guard.state_machine import (
-    ScopeGuardStateMachine,
     ActionType,
-    ApprovalState,
+    ScopeGuardStateMachine,
 )
 
 

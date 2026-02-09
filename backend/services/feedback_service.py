@@ -11,7 +11,7 @@ Related Files:
 
 Usage:
     from services.feedback_service import feedback_service
-    
+
     result = await feedback_service.submit_feedback(
         supabase=supabase,
         user_id="...",
@@ -23,8 +23,8 @@ Usage:
 """
 
 import logging
-from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +32,11 @@ logger = logging.getLogger(__name__)
 class FeedbackService:
     """
     Service for chat feedback operations.
-    
+
     All methods are stateless and require a Supabase client.
     Organization scoping is enforced at this layer for security.
     """
-    
+
     async def submit_feedback(
         self,
         supabase,
@@ -47,14 +47,14 @@ class FeedbackService:
         rating: str,
         query_text: str,
         answer_preview: str,
-        sources_snapshot: List[Dict],
-        feedback_text: Optional[str] = None
-    ) -> Dict[str, Any]:
+        sources_snapshot: list[dict],
+        feedback_text: str | None = None
+    ) -> dict[str, Any]:
         """
         Submit or update feedback for a message.
-        
+
         Uses upsert to allow users to change their rating.
-        
+
         Args:
             supabase: Supabase client
             user_id: UUID of the user submitting feedback
@@ -66,24 +66,24 @@ class FeedbackService:
             answer_preview: First 500 chars of the AI response
             sources_snapshot: List of source metadata at feedback time
             feedback_text: Optional comment (max 100 chars)
-            
+
         Returns:
             dict with id, message_id, rating, created_at, updated_at, is_update
-            
+
         Raises:
             ValueError: Invalid rating or feedback_text too long
         """
         # Validate rating
         if rating not in ('positive', 'negative'):
             raise ValueError(f"Invalid rating: {rating}. Must be 'positive' or 'negative'")
-        
+
         # Validate feedback_text length
         if feedback_text and len(feedback_text) > 100:
             raise ValueError(f"feedback_text exceeds 100 characters ({len(feedback_text)})")
-        
+
         # Truncate answer_preview to 500 chars for GDPR data minimization
         answer_preview = answer_preview[:500] if answer_preview else ""
-        
+
         # Prepare upsert data
         feedback_data = {
             "message_id": message_id,
@@ -97,7 +97,7 @@ class FeedbackService:
             "sources_snapshot": sources_snapshot or [],
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         # Check if feedback already exists
         existing = supabase.table("message_feedback")\
             .select("id, created_at")\
@@ -105,9 +105,9 @@ class FeedbackService:
             .eq("user_id", user_id)\
             .maybe_single()\
             .execute()
-        
+
         is_update = bool(existing.data)
-        
+
         if is_update:
             # Update existing feedback
             result = supabase.table("message_feedback")\
@@ -118,7 +118,7 @@ class FeedbackService:
                 })\
                 .eq("id", existing.data["id"])\
                 .execute()
-            
+
             logger.info(
                 f"📝 [Feedback] Updated: user={user_id[:8]}... message={message_id[:8]}... "
                 f"rating={rating}"
@@ -129,15 +129,15 @@ class FeedbackService:
             result = supabase.table("message_feedback")\
                 .insert(feedback_data)\
                 .execute()
-            
+
             logger.info(
                 f"📝 [Feedback] Created: user={user_id[:8]}... message={message_id[:8]}... "
                 f"rating={rating}"
             )
-        
+
         if not result.data:
             raise RuntimeError("Failed to save feedback")
-        
+
         return {
             "id": result.data[0]["id"],
             "message_id": message_id,
@@ -146,16 +146,16 @@ class FeedbackService:
             "updated_at": result.data[0].get("updated_at"),
             "is_update": is_update,
         }
-    
+
     async def get_user_feedback_for_conversation(
         self,
         supabase,
         user_id: str,
         conversation_id: str
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         Get all feedback a user has given in a conversation.
-        
+
         Returns:
             Dict mapping message_id -> rating ('positive' or 'negative')
         """
@@ -164,26 +164,26 @@ class FeedbackService:
             .eq("user_id", user_id)\
             .eq("conversation_id", conversation_id)\
             .execute()
-        
+
         return {
             row["message_id"]: row["rating"]
             for row in (result.data or [])
         }
-    
+
     async def get_team_feedback(
         self,
         supabase,
         organization_id: str,
         limit: int = 50,
         offset: int = 0,
-        rating: Optional[str] = None,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        source_label: Optional[str] = None
-    ) -> Dict[str, Any]:
+        rating: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        source_label: str | None = None
+    ) -> dict[str, Any]:
         """
         Get feedback analytics for a team/organization.
-        
+
         Args:
             supabase: Supabase client
             organization_id: UUID of the organization
@@ -193,18 +193,18 @@ class FeedbackService:
             from_date: ISO date string for start of range
             to_date: ISO date string for end of range
             source_label: Filter by source document label
-            
+
         Returns:
             dict with items, total, has_more, summary
         """
         # Clamp limit
         limit = min(limit, 100)
-        
+
         # Build query
         query = supabase.table("message_feedback")\
             .select("*", count="exact")\
             .eq("organization_id", organization_id)
-        
+
         # Apply filters
         if rating:
             query = query.eq("rating", rating)
@@ -215,21 +215,21 @@ class FeedbackService:
         if source_label:
             # Filter by source label in JSONB array
             query = query.contains("sources_snapshot", [{"label": source_label}])
-        
+
         # Execute with pagination
         result = query\
             .order("created_at", desc=True)\
             .range(offset, offset + limit - 1)\
             .execute()
-        
+
         total = result.count if result.count is not None else 0
-        
+
         # Get user emails for display (service role can access auth.users)
         items = []
         for row in (result.data or []):
             # Fetch user email
             user_email = await self._get_user_email(supabase, row["user_id"])
-            
+
             items.append({
                 "id": row["id"],
                 "rating": row["rating"],
@@ -240,17 +240,17 @@ class FeedbackService:
                 "user_email": user_email,
                 "created_at": row["created_at"],
             })
-        
+
         # Get summary statistics
         summary = await self._get_feedback_summary(supabase, organization_id)
-        
+
         return {
             "items": items,
             "total": total,
             "has_more": (offset + limit) < total,
             "summary": summary,
         }
-    
+
     async def get_source_metrics(
         self,
         supabase,
@@ -259,12 +259,12 @@ class FeedbackService:
         sort_by: str = "negative_rate_pct",
         sort_order: str = "desc",
         limit: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get aggregated source quality metrics.
-        
+
         Shows which source documents appear most frequently in negative feedback.
-        
+
         Args:
             supabase: Supabase client
             organization_id: UUID of the organization
@@ -272,35 +272,35 @@ class FeedbackService:
             sort_by: Column to sort by
             sort_order: 'asc' or 'desc'
             limit: Max items to return (max 50)
-            
+
         Returns:
             dict with items and total
         """
         # Clamp limit
         limit = min(limit, 50)
-        
+
         # Validate sort column
         valid_sort_columns = ["negative_rate_pct", "total_feedback", "negative_count", "positive_count"]
         if sort_by not in valid_sort_columns:
             sort_by = "negative_rate_pct"
-        
+
         # Query materialized view
         query = supabase.table("source_feedback_metrics")\
             .select("*", count="exact")\
             .eq("organization_id", organization_id)\
             .gte("total_feedback", min_feedback_count)
-        
+
         # Apply sorting
         if sort_order == "asc":
             query = query.order(sort_by, desc=False)
         else:
             query = query.order(sort_by, desc=True)
-        
+
         # Execute with limit
         result = query.limit(limit).execute()
-        
+
         total = result.count if result.count is not None else 0
-        
+
         items = [
             {
                 "source_label": row["source_label"],
@@ -314,27 +314,27 @@ class FeedbackService:
             }
             for row in (result.data or [])
         ]
-        
+
         return {
             "items": items,
             "total": total,
         }
-    
+
     async def get_platform_feedback(
         self,
         supabase,
         limit: int = 50,
         offset: int = 0,
-        rating: Optional[str] = None,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        organization_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        rating: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        organization_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Get feedback across all organizations (platform admin only).
-        
+
         Similar to get_team_feedback but without org filter (or with optional org filter).
-        
+
         Args:
             supabase: Supabase client (must use service role)
             limit: Max items to return
@@ -343,17 +343,17 @@ class FeedbackService:
             from_date: Filter by start date
             to_date: Filter by end date
             organization_id: Optional filter by specific org
-            
+
         Returns:
             dict with items, total, has_more, summary
         """
         # Clamp limit
         limit = min(limit, 100)
-        
+
         # Build query (no org filter for platform-wide)
         query = supabase.table("message_feedback")\
             .select("*", count="exact")
-        
+
         # Apply filters
         if organization_id:
             query = query.eq("organization_id", organization_id)
@@ -363,28 +363,28 @@ class FeedbackService:
             query = query.gte("created_at", from_date)
         if to_date:
             query = query.lte("created_at", to_date)
-        
+
         # Execute
         result = query\
             .order("created_at", desc=True)\
             .range(offset, offset + limit - 1)\
             .execute()
-        
+
         total = result.count if result.count is not None else 0
-        
+
         # Get org names for context
         items = []
-        org_cache: Dict[str, str] = {}
-        
+        org_cache: dict[str, str] = {}
+
         for row in (result.data or []):
             org_id = row["organization_id"]
-            
+
             # Cache org name lookups
             if org_id not in org_cache:
                 org_cache[org_id] = await self._get_org_name(supabase, org_id)
-            
+
             user_email = await self._get_user_email(supabase, row["user_id"])
-            
+
             items.append({
                 "id": row["id"],
                 "organization_id": org_id,
@@ -397,21 +397,21 @@ class FeedbackService:
                 "user_email": user_email,
                 "created_at": row["created_at"],
             })
-        
+
         # Get platform-wide summary
         summary = await self._get_platform_summary(supabase)
-        
+
         return {
             "items": items,
             "total": total,
             "has_more": (offset + limit) < total,
             "summary": summary,
         }
-    
+
     async def refresh_metrics(self, supabase) -> None:
         """
         Refresh the source_feedback_metrics materialized view.
-        
+
         Call after bulk feedback operations or on a schedule.
         """
         try:
@@ -420,12 +420,12 @@ class FeedbackService:
         except Exception as e:
             logger.error(f"❌ [Feedback] Failed to refresh metrics: {e}")
             raise
-    
+
     async def _get_feedback_summary(
         self,
         supabase,
         organization_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get summary statistics for an organization."""
         # Get counts by rating
         positive = supabase.table("message_feedback")\
@@ -433,17 +433,17 @@ class FeedbackService:
             .eq("organization_id", organization_id)\
             .eq("rating", "positive")\
             .execute()
-        
+
         negative = supabase.table("message_feedback")\
             .select("id", count="exact")\
             .eq("organization_id", organization_id)\
             .eq("rating", "negative")\
             .execute()
-        
+
         positive_count = positive.count or 0
         negative_count = negative.count or 0
         total = positive_count + negative_count
-        
+
         return {
             "positive_count": positive_count,
             "negative_count": negative_count,
@@ -452,30 +452,30 @@ class FeedbackService:
                 (negative_count / total * 100) if total > 0 else 0, 2
             ),
         }
-    
-    async def _get_platform_summary(self, supabase) -> Dict[str, Any]:
+
+    async def _get_platform_summary(self, supabase) -> dict[str, Any]:
         """Get platform-wide summary statistics."""
         positive = supabase.table("message_feedback")\
             .select("id", count="exact")\
             .eq("rating", "positive")\
             .execute()
-        
+
         negative = supabase.table("message_feedback")\
             .select("id", count="exact")\
             .eq("rating", "negative")\
             .execute()
-        
+
         # Count unique organizations with feedback
         orgs = supabase.table("message_feedback")\
             .select("organization_id")\
             .execute()
-        
+
         unique_orgs = len(set(row["organization_id"] for row in (orgs.data or [])))
-        
+
         positive_count = positive.count or 0
         negative_count = negative.count or 0
         total = positive_count + negative_count
-        
+
         return {
             "positive_count": positive_count,
             "negative_count": negative_count,
@@ -485,7 +485,7 @@ class FeedbackService:
             ),
             "organizations_with_feedback": unique_orgs,
         }
-    
+
     async def _get_user_email(self, supabase, user_id: str) -> str:
         """Get user email by ID (for display in analytics)."""
         try:
@@ -495,7 +495,7 @@ class FeedbackService:
                 return user.user.email or "unknown"
         except Exception as e:
             logger.debug(f"[Feedback] Failed to fetch user email from auth: {e}")
-        
+
         # Fallback: try user_profiles
         try:
             profile = supabase.table("user_profiles")\
@@ -507,9 +507,9 @@ class FeedbackService:
                 return f"user-{user_id[:8]}..."
         except Exception as e:
             logger.debug(f"[Feedback] Failed to fetch user profile: {e}")
-        
+
         return "unknown"
-    
+
     async def _get_org_name(self, supabase, organization_id: str) -> str:
         """Get organization/team name by ID."""
         try:
@@ -522,7 +522,7 @@ class FeedbackService:
                 return team.data["name"]
         except Exception as e:
             logger.debug(f"[Feedback] Failed to fetch organization name: {e}")
-        
+
         return f"org-{organization_id[:8]}..."
 
 

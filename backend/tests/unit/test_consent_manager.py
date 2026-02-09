@@ -9,10 +9,12 @@ Covers:
 - Compliance report generation
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from services.consent.manager import ConsentManager
+
 from services.consent import ConsentType
+from services.consent.manager import ConsentManager
 
 
 @pytest.fixture

@@ -14,31 +14,27 @@ Tests cover:
 - Rate limit behavior
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch, Mock
-from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, Mock, patch
 
+import pytest
 import requests
 
-from connectors.github import (
-    CodeFileFilter,
-    GitHubRateLimiter,
-    GitHubConnector,
-    NavigationLevel,
-    NavigationContext,
-    parse_parent_id,
-    GITHUB_API_BASE,
-    get_github_connector,
-)
-from connectors.enhanced import SourceDocument, SourceType, ItemNotFoundError
 from connectors.base import (
     ConnectorAuthError,
     ConnectorRateLimitError,
     ConnectorTransientError,
     RemoteFile,
 )
-
+from connectors.enhanced import ItemNotFoundError, SourceDocument, SourceType
+from connectors.github import (
+    CodeFileFilter,
+    GitHubConnector,
+    GitHubRateLimiter,
+    NavigationLevel,
+    get_github_connector,
+    parse_parent_id,
+)
 
 # =============================================================================
 # CodeFileFilter Tests
@@ -189,7 +185,7 @@ class TestCodeFileFilter:
     def test_should_include_env_sample_files(self):
         f = CodeFileFilter()
         # Note: .env.example and .env.sample are NOT matched by the current
-        # implementation because the extension extraction looks at the last 
+        # implementation because the extension extraction looks at the last
         # part after the dot: .env.example -> extension is .example
         # The EXTENSION_WHITELIST has ".env.example" but the _get_extension
         # method returns ".example" which doesn't match

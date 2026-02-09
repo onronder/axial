@@ -2,17 +2,18 @@
 Unit tests for connector implementations (unified ingestion interface).
 """
 
-import pytest
 from unittest.mock import Mock, patch
 
-from connectors.file_upload import FileUploadConnector
+import pytest
+
+from connectors import get_connector
 from connectors.drive import DriveConnector
-from connectors.notion import NotionConnector
+from connectors.enhanced import ItemNotFoundError, SourceDocument, SourceType
+from connectors.file_upload import FileUploadConnector
 from connectors.microsoft import MicrosoftGraphConnector
+from connectors.notion import NotionConnector
 from connectors.sftp import SFTPConnector
 from connectors.web import WebConnector
-from connectors.enhanced import ItemNotFoundError, SourceDocument, SourceType
-from connectors import get_connector
 
 
 @pytest.mark.asyncio
@@ -78,7 +79,7 @@ def test_file_upload_connector_mime_detection():
 
 def test_get_connector_returns_instances():
     from connectors.github import GitHubConnector
-    
+
     assert isinstance(get_connector("file_upload"), FileUploadConnector)
     assert isinstance(get_connector("google_drive"), DriveConnector)
     assert isinstance(get_connector("notion"), NotionConnector)

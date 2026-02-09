@@ -8,18 +8,33 @@ Note: Most endpoints require paid access via require_paid_access dependency.
       the frontend to check plan status before showing the paywall.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Query, Request
+import logging
+from datetime import datetime, timezone
+from enum import Enum
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional
-from api.v1.dependencies import validate_team_access, require_admin, require_paid_access
-from core.security import get_current_user
+
+from api.v1.dependencies import require_paid_access, validate_team_access
+from api.v1.error_utils import (
+    ApiErrorCode,
+    api_error,
+    api_error_400,
+    api_error_403,
+    api_error_404,
+)
 from core.db import get_supabase
 from core.rate_limit import limiter
+from core.security import get_current_user
 from services.team_service import team_service
-from datetime import datetime, timezone
-from api.v1.error_utils import api_error, api_error_400, api_error_403, api_error_404, ApiErrorCode
-from enum import Enum
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -41,31 +56,31 @@ class TeamResponse(BaseModel):
     """Team details response."""
     id: str
     name: str
-    slug: Optional[str] = None
+    slug: str | None = None
     owner_id: str
     created_at: str
-    user_role: Optional[str] = None
+    user_role: str | None = None
     is_owner: bool = False
 
 class TeamMemberResponse(BaseModel):
     id: str
     email: str
-    name: Optional[str] = None
+    name: str | None = None
     role: str
     status: str
-    last_active: Optional[str] = None
+    last_active: str | None = None
     created_at: str
-    invited_at: Optional[str] = None
+    invited_at: str | None = None
 
 class TeamMemberCreate(BaseModel):
     email: EmailStr
-    name: Optional[str] = Field(None, max_length=100)
+    name: str | None = Field(None, max_length=100)
     role: TeamRole = TeamRole.viewer
 
 class TeamMemberUpdate(BaseModel):
-    name: Optional[str] = Field(None, max_length=100)
-    role: Optional[TeamRole] = None
-    status: Optional[str] = Field(None, max_length=30)
+    name: str | None = Field(None, max_length=100)
+    role: TeamRole | None = None
+    status: str | None = Field(None, max_length=30)
 
 class TeamStatsResponse(BaseModel):
     total_seats: int = 20
@@ -76,29 +91,29 @@ class EffectivePlanResponse(BaseModel):
     """Response for effective plan lookup."""
     plan: str
     inherited: bool
-    team_id: Optional[str] = None
-    team_name: Optional[str] = None
+    team_id: str | None = None
+    team_name: str | None = None
 
 
 class TeamUpdate(BaseModel):
     """Request model for updating team details."""
-    name: Optional[str] = Field(None, max_length=100)
-    slug: Optional[str] = Field(None, max_length=50)
+    name: str | None = Field(None, max_length=100)
+    slug: str | None = Field(None, max_length=50)
 
 
 class InviteRequest(BaseModel):
     """Request to invite a team member."""
     email: EmailStr
     role: TeamRole = TeamRole.viewer
-    name: Optional[str] = Field(None, max_length=100)
+    name: str | None = Field(None, max_length=100)
 
 
 class InviteResponse(BaseModel):
     """Response from invite operation."""
     success: bool
-    member: Optional[dict] = None
-    error: Optional[str] = None
-    code: Optional[str] = None
+    member: dict | None = None
+    error: str | None = None
+    code: str | None = None
 
 
 class BulkInviteResponse(BaseModel):
@@ -107,9 +122,9 @@ class BulkInviteResponse(BaseModel):
     total: int = 0
     invited: int = 0
     failed: int = 0
-    errors: List[dict] = []
-    error: Optional[str] = None
-    code: Optional[str] = None
+    errors: list[dict] = []
+    error: str | None = None
+    code: str | None = None
 
 
 class AcceptInviteRequest(BaseModel):
@@ -120,9 +135,9 @@ class AcceptInviteRequest(BaseModel):
 class AcceptInviteResponse(BaseModel):
     """Response from accept invite operation."""
     success: bool
-    team_name: Optional[str] = None
-    team_id: Optional[str] = None
-    error: Optional[str] = None
+    team_name: str | None = None
+    team_id: str | None = None
+    error: str | None = None
 
 
 class PendingInvite(BaseModel):
@@ -131,13 +146,13 @@ class PendingInvite(BaseModel):
     team_id: str
     team_name: str
     role: str
-    invited_by: Optional[str] = None
+    invited_by: str | None = None
     invited_at: str
 
 
 class PendingInvitesResponse(BaseModel):
     """Response containing user's pending invites."""
-    invites: List[PendingInvite]
+    invites: list[PendingInvite]
     count: int
 
 
@@ -154,7 +169,7 @@ _paid_team_deps = [Depends(validate_team_access), Depends(require_paid_access)]
 async def get_current_team(request: Request, user_id: str = Depends(get_current_user)):
     """Get the current user's team."""
     team = await team_service.get_user_team(user_id)
-    
+
     if not team:
         raise api_error_404("team")
 
@@ -169,26 +184,26 @@ async def get_pending_invites(
 ):
     """
     Get pending team invites for the current user.
-    
+
     Matches invites by the user's email address. This endpoint is not
     gated by paid access so users can see invites before joining a team.
     """
     supabase = get_supabase()
-    
+
     try:
         # Get current user's email
         user_response = supabase.table("user_profiles").select("email").eq("user_id", user_id).single().execute()
-        
+
         if not user_response.data or not user_response.data.get("email"):
             return PendingInvitesResponse(invites=[], count=0)
-        
+
         user_email = user_response.data["email"]
-        
+
         # Find pending invites for this email
         invites_response = supabase.table("team_members").select(
             "id, team_id, role, invited_by, created_at, teams(id, name)"
         ).eq("email", user_email).eq("status", "pending").execute()
-        
+
         invites = []
         for invite in (invites_response.data or []):
             team_info = invite.get("teams", {})
@@ -201,9 +216,9 @@ async def get_pending_invites(
                     invited_by=invite.get("invited_by"),
                     invited_at=invite.get("created_at", "")
                 ))
-        
+
         return PendingInvitesResponse(invites=invites, count=len(invites))
-        
+
     except Exception as e:
         logger.error(f"Failed to fetch pending invites: {e}")
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_pending_invites")
@@ -218,21 +233,21 @@ async def update_team(
 ):
     """
     Update team name or slug.
-    
+
     Only team owners can update team details.
     """
     supabase = get_supabase()
-    
+
     try:
         # Get user's team and verify ownership
         team = await team_service.get_user_team(user_id)
-        
+
         if not team:
             raise api_error_404("team")
 
         if not team.get("is_owner"):
             raise api_error_403("Only team owners can update team details")
-        
+
         # Build update payload
         update_data = {}
         if payload.name is not None:
@@ -243,7 +258,7 @@ async def update_team(
             if not re.match(r'^[a-z0-9-]+$', payload.slug):
                 raise api_error_400("Slug must be lowercase alphanumeric with dashes only")
             update_data["slug"] = payload.slug
-        
+
         if not update_data:
             raise api_error_400("No update fields provided")
 
@@ -252,13 +267,13 @@ async def update_team(
             .update(update_data)\
             .eq("id", team["id"])\
             .execute()
-        
+
         if not result.data:
             raise api_error(ApiErrorCode.DATABASE_ERROR, None, "update_team")
-        
+
         # Return updated team (with user context)
         return await team_service.get_user_team(user_id)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -274,30 +289,30 @@ async def delete_team(
 ):
     """
     Delete the entire team.
-    
+
     **WARNING**: This is a destructive operation that will:
     - Remove all team members
     - Revoke all member access
-    
+
     Only team owners can delete teams.
     By default, org-scoped data is purged before deleting the team.
     """
     supabase = get_supabase()
-    
+
     try:
         # Get user's team and verify ownership
         team = await team_service.get_user_team(user_id)
-        
+
         if not team:
             raise api_error_404("team")
 
         if not team.get("is_owner"):
             raise api_error_403("Only team owners can delete a team")
-        
+
         team_id = team["id"]
 
         if purge_data:
-            from services.cleanup import cleanup_service, ActiveIngestionError
+            from services.cleanup import ActiveIngestionError, cleanup_service
             try:
                 await cleanup_service.execute_org_deletion(team_id, owner_id=user_id)
             except ActiveIngestionError as exc:
@@ -305,24 +320,24 @@ async def delete_team(
                     ApiErrorCode.CONFLICT, exc, "delete_team",
                     status_code=status.HTTP_409_CONFLICT,
                 )
-        
+
         # Delete all team members first (respects FK constraints)
         supabase.table("team_members")\
             .delete()\
             .eq("team_id", team_id)\
             .execute()
-        
+
         # Delete the team itself
         supabase.table("teams")\
             .delete()\
             .eq("id", team_id)\
             .execute()
-        
+
         # Invalidate plan cache for the owner
         team_service.invalidate_plan_cache(user_id)
-        
+
         return {"status": "success", "message": "Team deleted successfully"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -330,7 +345,7 @@ async def delete_team(
 
 
 @router.get(
-    "/team/effective-plan", 
+    "/team/effective-plan",
     response_model=EffectivePlanResponse,
     dependencies=[Depends(validate_team_access)]  # No require_paid_access - needed for paywall check
 )
@@ -338,26 +353,26 @@ async def delete_team(
 async def get_effective_plan(request: Request, user_id: str = Depends(get_current_user)):
     """
     Get the effective plan for the current user.
-    
+
     This returns the plan inherited from the team owner,
     which determines feature access.
-    
+
     NOTE: This endpoint is intentionally NOT behind require_paid_access
     so the frontend can fetch the plan to determine if paywall should be shown.
     """
     plan = await team_service.get_effective_plan(user_id)
     team = await team_service.get_user_team(user_id)
-    
+
     # Determine if inherited (team owner's plan != user's own plan only matters if not owner)
     inherited = False
     team_id = None
     team_name = None
-    
+
     if team:
         team_id = team.get("id")
         team_name = team.get("name")
         inherited = not team.get("is_owner", True)
-    
+
     return EffectivePlanResponse(
         plan=plan,
         inherited=inherited,
@@ -366,51 +381,51 @@ async def get_effective_plan(request: Request, user_id: str = Depends(get_curren
     )
 
 
-@router.get("/team/members", response_model=List[TeamMemberResponse], dependencies=_paid_team_deps)
+@router.get("/team/members", response_model=list[TeamMemberResponse], dependencies=_paid_team_deps)
 @limiter.limit("60/minute")
 async def list_team_members(
     request: Request,
     user_id: str = Depends(get_current_user),
-    role: Optional[str] = None,
-    status: Optional[str] = None,
-    search: Optional[str] = None,
+    role: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
     limit: int = 50,
     offset: int = 0
 ):
     """List team members with optional filters."""
     supabase = get_supabase()
-    
+
     try:
         query = supabase.table("team_members")\
             .select("*")\
             .eq("owner_user_id", user_id)\
             .order("created_at", desc=True)
-        
+
         # Apply filters
         if role and role != "all":
             query = query.eq("role", role)
         if status and status != "all":
             query = query.eq("status", status)
-        
-        # Note: Supabase doesn't support ILIKE easily through client, 
+
+        # Note: Supabase doesn't support ILIKE easily through client,
         # so search would need to be done client-side or via RPC
-        
+
         query = query.range(offset, offset + limit - 1)
-        
+
         response = query.execute()
-        
+
         # Client-side search filter if provided
         results = response.data or []
         if search:
             search_lower = search.lower()
             results = [
-                m for m in results 
-                if search_lower in (m.get("name", "") or "").lower() 
+                m for m in results
+                if search_lower in (m.get("name", "") or "").lower()
                 or search_lower in (m.get("email", "") or "").lower()
             ]
-        
+
         return results
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_team_members")
 
@@ -420,30 +435,30 @@ async def list_team_members(
 async def get_team_stats(request: Request, user_id: str = Depends(get_current_user)):
     """Get team statistics with dynamic seat limits based on plan."""
     from core.quotas import get_plan_limits
-    
+
     supabase = get_supabase()
-    
+
     try:
         # Get user's effective plan for dynamic seat limits
         effective_plan = await team_service.get_effective_plan(user_id)
         plan_limits = get_plan_limits(effective_plan)
-        
+
         response = supabase.table("team_members")\
             .select("status")\
             .eq("owner_user_id", user_id)\
             .execute()
-        
+
         members = response.data or []
-        
+
         active = sum(1 for m in members if m.get("status") == "active")
         pending = sum(1 for m in members if m.get("status") == "pending")
-        
+
         return TeamStatsResponse(
             total_seats=plan_limits.max_team_seats,
             active_members=active,
             pending_invites=pending
         )
-        
+
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_team_stats")
 
@@ -457,7 +472,7 @@ async def invite_team_member(
 ):
     """
     Invite a new team member.
-    
+
     **Enterprise Only**: Requires a plan with team seats.
     Returns 403 if plan doesn't allow team management.
     """
@@ -467,10 +482,10 @@ async def invite_team_member(
         role=payload.role,
         name=payload.name
     )
-    
+
     if not result.get("success"):
         error_code = result.get("code", "ERROR")
-        
+
         if error_code == "UPGRADE_REQUIRED":
             raise api_error_403(result.get("error", "Upgrade required"), code=ApiErrorCode.SUBSCRIPTION_REQUIRED)
         elif error_code == "ALREADY_EXISTS":
@@ -479,7 +494,7 @@ async def invite_team_member(
             raise api_error(ApiErrorCode.QUOTA_EXCEEDED, status_code=402, operation="invite_member")
         else:
             raise api_error_400(result.get("error", "Invite failed"))
-    
+
     return InviteResponse(
         success=True,
         member=result.get("member")
@@ -495,9 +510,9 @@ async def bulk_invite_team_members(
 ):
     """
     Bulk invite team members from CSV file.
-    
+
     **Enterprise Only**: Requires a plan with team seats.
-    
+
     Expected CSV format:
     ```csv
     email,role,name
@@ -512,15 +527,15 @@ async def bulk_invite_team_members(
     except Exception as e:
         logger.error(f"Failed to read CSV: {e}")
         raise api_error_400("Unable to read CSV file. Please check the file format.")
-    
+
     result = await team_service.bulk_invite_csv(
         owner_id=user_id,
         csv_content=csv_content
     )
-    
+
     if not result.get("success") and result.get("code") == "UPGRADE_REQUIRED":
         raise api_error_403(result.get("error", "Upgrade required"), code=ApiErrorCode.SUBSCRIPTION_REQUIRED)
-    
+
     return BulkInviteResponse(**result)
 
 
@@ -542,7 +557,7 @@ async def invite_team_member_legacy(
         role=payload.role,
         name=payload.name
     )
-    
+
     if not result.get("success"):
         error_code = result.get("code", "ERROR")
 
@@ -576,14 +591,14 @@ async def update_team_member(
 ):
     """Update a team member's role or status."""
     supabase = get_supabase()
-    
+
     try:
         # Build update data
         update_data = {}
-        
+
         if payload.name is not None:
             update_data["name"] = payload.name
-        
+
         if payload.role is not None:
             # Last-admin protection: prevent demoting the last admin
             if payload.role != "admin":
@@ -593,7 +608,7 @@ async def update_team_member(
                     .eq("id", member_id)\
                     .eq("owner_user_id", user_id)\
                     .execute()
-                
+
                 if member_check.data and member_check.data[0].get("role") == "admin":
                     # Count remaining active admins for this team owner
                     admin_count_response = supabase.table("team_members")\
@@ -602,17 +617,17 @@ async def update_team_member(
                         .eq("role", "admin")\
                         .eq("status", "active")\
                         .execute()
-                    
+
                     admin_count = admin_count_response.count or 0
                     if admin_count <= 1:
                         raise api_error_400("Cannot demote the last admin. Promote another member to admin first.")
 
             update_data["role"] = payload.role
-        
+
         if payload.status is not None:
             if payload.status not in ["active", "pending", "suspended"]:
                 raise api_error_400("Invalid status. Must be active, pending, or suspended.")
-            
+
             # Last-admin protection: prevent suspending the last admin
             if payload.status in ["suspended", "pending"]:
                 member_check = supabase.table("team_members")\
@@ -620,9 +635,9 @@ async def update_team_member(
                     .eq("id", member_id)\
                     .eq("owner_user_id", user_id)\
                     .execute()
-                
-                if (member_check.data and 
-                    member_check.data[0].get("role") == "admin" and 
+
+                if (member_check.data and
+                    member_check.data[0].get("role") == "admin" and
                     member_check.data[0].get("status") == "active"):
                     # Count remaining active admins
                     admin_count_response = supabase.table("team_members")\
@@ -631,13 +646,13 @@ async def update_team_member(
                         .eq("role", "admin")\
                         .eq("status", "active")\
                         .execute()
-                    
+
                     admin_count = admin_count_response.count or 0
                     if admin_count <= 1:
                         raise api_error_400("Cannot suspend the last admin. Promote another member to admin first.")
-            
+
             update_data["status"] = payload.status
-        
+
         if not update_data:
             raise api_error_400("No update fields provided")
 
@@ -646,12 +661,12 @@ async def update_team_member(
             .eq("id", member_id)\
             .eq("owner_user_id", user_id)\
             .execute()
-        
+
         if response.data and len(response.data) > 0:
             return response.data[0]
 
         raise api_error_404("member", member_id)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -667,7 +682,7 @@ async def remove_team_member(
 ):
     """Remove a team member."""
     supabase = get_supabase()
-    
+
     try:
         # Last-admin protection: check if we're removing the last admin
         member_check = supabase.table("team_members")\
@@ -675,7 +690,7 @@ async def remove_team_member(
             .eq("id", member_id)\
             .eq("owner_user_id", user_id)\
             .execute()
-        
+
         if not member_check.data:
             raise api_error_404("member", member_id)
 
@@ -684,7 +699,7 @@ async def remove_team_member(
         # Prevent removing the team owner (themselves)
         if member_data.get("member_user_id") == user_id:
             raise api_error_400("Cannot remove yourself. Transfer ownership or delete the team instead.")
-        
+
         # Prevent removing the last active admin
         if member_data.get("role") == "admin" and member_data.get("status") == "active":
             admin_count_response = supabase.table("team_members")\
@@ -693,7 +708,7 @@ async def remove_team_member(
                 .eq("role", "admin")\
                 .eq("status", "active")\
                 .execute()
-            
+
             admin_count = admin_count_response.count or 0
             if admin_count <= 1:
                 raise api_error_400("Cannot remove the last admin. Promote another member to admin first.")
@@ -703,12 +718,12 @@ async def remove_team_member(
             .eq("id", member_id)\
             .eq("owner_user_id", user_id)\
             .execute()
-        
+
         if not response.data:
             raise api_error_404("member", member_id)
 
         return {"status": "success", "id": member_id}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -725,7 +740,7 @@ async def resend_invitation(
     """Resend invitation to a pending member."""
     # Delegate to service which handles logic and email
     result = await team_service.resend_invite(member_id, user_id)
-    
+
     if not result.get("success"):
         # Map service errors to HTTP codes
         error = result.get("error", "Unknown error")
@@ -733,7 +748,7 @@ async def resend_invitation(
             raise api_error_404("member", member_id)
         else:
             raise api_error(ApiErrorCode.INTERNAL_ERROR, None, "resend_invite")
-    
+
     return {"status": "success", "message": "Invitation resent"}
 
 
@@ -746,7 +761,7 @@ async def accept_invite(
 ):
     """
     Accept a team invitation.
-    
+
     The token is the member_id from the invite URL.
     This endpoint:
     1. Validates the invite token (member_id)
@@ -755,42 +770,42 @@ async def accept_invite(
     4. Invalidates plan cache for the user
     """
     supabase = get_supabase()
-    
+
     try:
         # Step 1: Find the pending invite by token (which is the member_id)
         invite_response = supabase.table("team_members").select(
             "id, team_id, email, status, teams(id, name)"
         ).eq("id", payload.token).eq("status", "pending").execute()
-        
+
         if not invite_response.data or len(invite_response.data) == 0:
             raise api_error_404("invite")
-        
+
         invite = invite_response.data[0]
         team_info = invite.get("teams", {})
         team_name = team_info.get("name", "Team")
         team_id = invite.get("team_id")
-        
+
         # Step 2: Update the member record - link to accepting user
         now = datetime.now(timezone.utc).isoformat()
-        
+
         update_response = supabase.table("team_members").update({
             "member_user_id": user_id,
             "status": "active",
             "joined_at": now
         }).eq("id", payload.token).execute()
-        
+
         if not update_response.data:
             raise api_error(ApiErrorCode.DATABASE_ERROR, None, "accept_invite")
-        
+
         # Step 3: Invalidate plan cache for the new member
         team_service.invalidate_plan_cache(user_id)
-        
+
         return AcceptInviteResponse(
             success=True,
             team_name=team_name,
             team_id=team_id
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
