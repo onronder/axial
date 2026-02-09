@@ -18,6 +18,7 @@ vi.mock('@/lib/api', () => ({
     api: {
         get: vi.fn(),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 const mockApiGet = vi.mocked(api.get);

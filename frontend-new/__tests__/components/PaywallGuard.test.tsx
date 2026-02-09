@@ -51,7 +51,8 @@ const mockPost = vi.fn();
 vi.mock('@/lib/api', () => ({
     api: {
         post: (...args: any[]) => mockPost(...args)
-    }
+    },
+    clearAuthCache: vi.fn(),
 }));
 
 vi.mock('@/components/billing/EnterpriseContactModal', () => ({

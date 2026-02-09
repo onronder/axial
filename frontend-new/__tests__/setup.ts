@@ -64,6 +64,7 @@ vi.mock('@/lib/api', () => ({
         post: vi.fn().mockResolvedValue({ data: {} }),
         delete: vi.fn().mockResolvedValue({ data: {} }),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 // Mock useToast hook

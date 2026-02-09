@@ -39,6 +39,7 @@ vi.mock('@/lib/api', () => ({
     post: (...args: unknown[]) => mockApiPost(...args),
     delete: (...args: unknown[]) => mockApiDelete(...args),
   },
+  clearAuthCache: vi.fn(),
 }));
 
 // Mock useIngestionProgress

@@ -73,6 +73,7 @@ vi.mock('@/lib/api', () => ({
     getUploadUrl: mockGetUploadUrl,
     ingestFileReference: mockIngestFileReference,
     uploadToStorage: mockUploadToStorage,
+    clearAuthCache: vi.fn(),
 }));
 
 vi.mock('@/components/ingest/WebInput', () => ({

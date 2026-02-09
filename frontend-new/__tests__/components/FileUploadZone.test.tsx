@@ -38,6 +38,7 @@ vi.mock('@/lib/api', () => ({
   getUploadUrl: (...args: unknown[]) => mockGetUploadUrl(...args),
   uploadToStorage: (...args: unknown[]) => mockUploadToStorage(...args),
   ingestFileReference: (...args: unknown[]) => mockIngestFileReference(...args),
+  clearAuthCache: vi.fn(),
 }));
 
 vi.mock('@/lib/hash', async (importOriginal) => {

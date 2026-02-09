@@ -19,6 +19,7 @@ vi.mock('@/lib/api', () => ({
     api: {
         post: (...args: unknown[]) => mockApiPost(...args),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({

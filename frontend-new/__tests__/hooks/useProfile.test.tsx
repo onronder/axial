@@ -23,6 +23,17 @@ vi.mock('@/lib/api', () => ({
         get: (...args: any[]) => mockApiGet(...args),
         patch: (...args: any[]) => mockApiPatch(...args),
     },
+    clearAuthCache: vi.fn(),
+}));
+
+// Mock dedupedRequest to pass through immediately (avoids cross-test dedup window issues)
+vi.mock('@/lib/request-dedup', () => ({
+    dedupedRequest: (_key: string, fetcher: () => Promise<any>) => fetcher(),
+    createDedupedQueryFn: (_key: readonly unknown[], fetcher: () => Promise<any>) => fetcher,
+    clearPendingRequests: vi.fn(),
+    getPendingRequestCount: vi.fn(() => 0),
+    isRequestPending: vi.fn(() => false),
+    createDedupedFetcher: (_prefix: string, fetcher: (...args: any[]) => Promise<any>) => fetcher,
 }));
 
 // Test wrapper

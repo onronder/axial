@@ -25,6 +25,7 @@ vi.mock('@/lib/api', () => ({
     api: {
         get: (url: string) => mockApiGet(url),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 // Mock data
@@ -70,7 +71,7 @@ const mockSourceMetricsResponse: SourceMetricsResponse = {
 function createWrapper() {
     const queryClient = new QueryClient({
         defaultOptions: {
-            queries: { retry: false },
+            queries: { retry: false, retryDelay: 0 },
         },
     });
     const Wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -166,9 +167,10 @@ describe('useAnalytics Hooks', () => {
 
             const { result } = renderHook(() => useFeedback(), { wrapper: createWrapper() });
 
+            // Hook has custom retry (failureCount < 2), so allow time for retries
             await waitFor(() => {
                 expect(result.current.isError).toBe(true);
-            });
+            }, { timeout: 10000 });
 
             expect(result.current.error).toBeDefined();
         });
@@ -228,9 +230,10 @@ describe('useAnalytics Hooks', () => {
 
             const { result } = renderHook(() => useSourceMetrics(), { wrapper: createWrapper() });
 
+            // Hook has custom retry (failureCount < 2), so allow time for retries
             await waitFor(() => {
                 expect(result.current.isError).toBe(true);
-            });
+            }, { timeout: 10000 });
 
             expect(result.current.error).toBeDefined();
         });

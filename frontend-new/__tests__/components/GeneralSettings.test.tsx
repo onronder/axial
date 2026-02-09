@@ -50,6 +50,7 @@ vi.mock('@/lib/api', () => ({
         patch: vi.fn(),
         post: vi.fn(),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 import { api } from '@/lib/api';
@@ -136,6 +137,10 @@ describe('GeneralSettings - Danger Zone', () => {
             mockUpdateProfile.mockImplementation(() => new Promise(() => { }));
 
             render(<GeneralSettings />);
+
+            // Must modify a field first so isDirty becomes true and Save Changes is enabled
+            await userEvent.clear(screen.getByLabelText('First Name'));
+            await userEvent.type(screen.getByLabelText('First Name'), 'Jane');
 
             await userEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
 

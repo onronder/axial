@@ -20,6 +20,7 @@ const mockAuthFetch = {
 
 vi.mock('@/lib/api', () => ({
     authFetch: mockAuthFetch,
+    clearAuthCache: vi.fn(),
 }));
 
 describe('useNotifications Hook', () => {

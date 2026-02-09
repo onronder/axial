@@ -9,6 +9,7 @@ vi.mock("@/lib/api", () => ({
         get: vi.fn(),
         post: vi.fn(),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 const mockRepos: GitHubRepo[] = [

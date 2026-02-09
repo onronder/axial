@@ -38,6 +38,7 @@ vi.mock('@/lib/api', () => ({
         post: (...args: unknown[]) => mockApiPost(...args),
         delete: (...args: unknown[]) => mockApiDelete(...args),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 vi.mock('@/components/branding/AxioLogo', () => ({
@@ -59,7 +60,13 @@ describe('BillingSettings Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockWindowOpen.mockClear();
-        mockApiGet.mockResolvedValue({ data: [] });
+        mockApiGet.mockImplementation((url: string) => {
+            if (url === '/billing/invoices') {
+                return Promise.resolve({ data: [] });
+            }
+            // subscription endpoint returns null (no subscription detail)
+            return Promise.resolve({ data: null });
+        });
         mockApiPost.mockResolvedValue({ data: { url: 'https://polar.sh/checkout/mock' } });
         mockApiDelete.mockResolvedValue({ data: { success: true } });
 
@@ -104,7 +111,7 @@ describe('BillingSettings Component', () => {
 
             await renderBilling();
 
-            expect(screen.queryByText('Billing & Plans')).not.toBeInTheDocument();
+            expect(screen.queryByText('Billing')).not.toBeInTheDocument();
         });
     });
 
@@ -112,13 +119,13 @@ describe('BillingSettings Component', () => {
         it('should render page title', async () => {
             await renderBilling();
 
-            expect(screen.getByText('Billing & Plans')).toBeInTheDocument();
+            expect(screen.getByText('Billing')).toBeInTheDocument();
         });
 
         it('should render page description', async () => {
             await renderBilling();
 
-            expect(screen.getByText('Manage your subscription and upgrade your plan')).toBeInTheDocument();
+            expect(screen.getByText('Manage your subscription and billing')).toBeInTheDocument();
         });
     });
 
@@ -505,7 +512,7 @@ describe('BillingSettings Component', () => {
         });
 
         it('should handle null invoice data', async () => {
-            mockApiGet.mockResolvedValue({ data: null });
+            mockApiGet.mockImplementation(() => Promise.resolve({ data: null }));
 
             await renderBilling();
 
@@ -581,18 +588,26 @@ describe('BillingSettings Component', () => {
 
     describe('Billing History Items', () => {
         it('should render invoice list and open invoice link', async () => {
-            mockApiGet.mockResolvedValue({
-                data: [
-                    {
-                        id: 'inv-1',
-                        amount: 2900,
-                        currency: 'usd',
-                        status: 'paid',
-                        created_at: '2024-01-01T00:00:00Z',
-                        product_name: 'Pro Plan',
-                        invoice_url: 'https://polar.sh/invoices/inv-1',
-                    },
-                ],
+            mockApiGet.mockImplementation((url: string) => {
+                if (url === '/billing/invoices') {
+                    return Promise.resolve({
+                        data: [
+                            {
+                                id: 'inv-1',
+                                amount: 2900,
+                                currency: 'usd',
+                                status: 'paid',
+                                created_at: '2024-01-01T00:00:00Z',
+                                product_name: 'Pro Plan',
+                                invoice_url: 'https://polar.sh/invoices/inv-1',
+                            },
+                        ],
+                    });
+                }
+                if (url === '/billing/invoices/inv-1/download') {
+                    return Promise.resolve({ data: { url: 'https://polar.sh/invoices/inv-1' } });
+                }
+                return Promise.resolve({ data: null });
             });
 
             await renderBilling();
@@ -609,7 +624,9 @@ describe('BillingSettings Component', () => {
             const invoiceButton = within(invoiceRow).getByRole('button');
             fireEvent.click(invoiceButton);
 
-            expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/invoices/inv-1', '_blank', 'noopener,noreferrer');
+            await waitFor(() => {
+                expect(mockWindowOpen).toHaveBeenCalledWith('https://polar.sh/invoices/inv-1', '_blank', 'noopener,noreferrer');
+            });
         });
 
         it('should render formatted invoice amount and fallback date on invalid date', async () => {
@@ -617,18 +634,23 @@ describe('BillingSettings Component', () => {
                 throw new Error('Bad date');
             });
 
-            mockApiGet.mockResolvedValue({
-                data: [
-                    {
-                        id: 'inv-2',
-                        amount: 2950,
-                        currency: 'usd',
-                        status: 'open',
-                        created_at: 'bad-date',
-                        product_name: 'Starter Plan',
-                        invoice_url: null,
-                    },
-                ],
+            mockApiGet.mockImplementation((url: string) => {
+                if (url === '/billing/invoices') {
+                    return Promise.resolve({
+                        data: [
+                            {
+                                id: 'inv-2',
+                                amount: 2950,
+                                currency: 'usd',
+                                status: 'open',
+                                created_at: 'bad-date',
+                                product_name: 'Starter Plan',
+                                invoice_url: null,
+                            },
+                        ],
+                    });
+                }
+                return Promise.resolve({ data: null });
             });
 
             await renderBilling();

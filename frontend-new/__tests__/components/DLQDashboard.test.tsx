@@ -18,6 +18,7 @@ vi.mock('@/lib/api', () => ({
         get: (url: string) => mockApiGet(url),
         post: (url: string, data?: unknown) => mockApiPost(url, data),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 // Mock useProfile
@@ -1191,10 +1192,12 @@ describe('DLQ Dashboard - Resolve Task', () => {
         expect(resolveButton).not.toBeNull();
         await userEvent.click(resolveButton!);
 
+        // extractErrorMessage passes string errors through directly
+        // (it only falls back to the default when the error type is unknown)
         await waitFor(() => {
             expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
                 title: 'Error',
-                description: 'Failed to resolve task',
+                description: 'Some string error',
                 variant: 'destructive',
             }));
         });

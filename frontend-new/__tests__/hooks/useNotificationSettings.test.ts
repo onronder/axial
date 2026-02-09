@@ -20,6 +20,7 @@ vi.mock('@/lib/api', () => ({
         patch: vi.fn(),
         delete: vi.fn(),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 // Mock the toast hook

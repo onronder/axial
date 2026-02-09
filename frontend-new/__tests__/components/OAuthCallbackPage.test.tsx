@@ -26,6 +26,7 @@ vi.mock("@/lib/api", () => ({
         patch: vi.fn(),
         delete: vi.fn(),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 // Mock GitHubRepoSelector to simplify testing

@@ -808,10 +808,7 @@ describe('KnowledgeBaseBrowser Component', () => {
             setupDefaultMocks([
                 createDocument({ id: 'doc-1', sourceType: 'file_upload', name: 'test.pdf', path: 'test.pdf' }),
             ]);
-            
-            // Mock window.confirm
-            const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-            
+
             renderWithProviders(<KnowledgeBaseBrowser />);
 
             // Navigate into folder
@@ -826,24 +823,26 @@ describe('KnowledgeBaseBrowser Component', () => {
             const checkboxes = screen.getAllByRole('checkbox');
             fireEvent.click(checkboxes[1]);
 
-            // Click bulk delete
+            // Click bulk delete - opens AlertDialog
             const bulkDeleteButton = screen.getByRole('button', { name: /Delete selected/i });
             fireEvent.click(bulkDeleteButton);
 
-            expect(confirmSpy).toHaveBeenCalled();
+            // Confirm in the AlertDialog
+            await waitFor(() => {
+                expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+            });
+
+            const confirmButton = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' });
+            await userEvent.click(confirmButton);
+
             expect(mockBulkDeleteDocuments).toHaveBeenCalledWith({ documentIds: ['doc-1'] });
-            
-            confirmSpy.mockRestore();
         });
 
         it('should not call bulkDeleteDocuments when bulk delete is cancelled', async () => {
             setupDefaultMocks([
                 createDocument({ id: 'doc-1', sourceType: 'file_upload', name: 'test.pdf', path: 'test.pdf' }),
             ]);
-            
-            // Mock window.confirm to return false
-            const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-            
+
             renderWithProviders(<KnowledgeBaseBrowser />);
 
             // Navigate into folder
@@ -858,26 +857,29 @@ describe('KnowledgeBaseBrowser Component', () => {
             const checkboxes = screen.getAllByRole('checkbox');
             fireEvent.click(checkboxes[1]);
 
-            // Click bulk delete
+            // Click bulk delete - opens AlertDialog
             const bulkDeleteButton = screen.getByRole('button', { name: /Delete selected/i });
             fireEvent.click(bulkDeleteButton);
 
-            expect(confirmSpy).toHaveBeenCalled();
+            // Cancel in the AlertDialog
+            await waitFor(() => {
+                expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+            });
+
+            const cancelButton = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' });
+            await userEvent.click(cancelButton);
+
             expect(mockBulkDeleteDocuments).not.toHaveBeenCalled();
-            
-            confirmSpy.mockRestore();
         });
 
         it('should handle bulk delete error gracefully', async () => {
             setupDefaultMocks([
                 createDocument({ id: 'doc-1', sourceType: 'file_upload', name: 'test.pdf', path: 'test.pdf' }),
             ]);
-            
-            // Mock confirm to return true
-            const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
             // Mock bulkDeleteDocuments to reject
             mockBulkDeleteDocuments.mockRejectedValueOnce(new Error('Delete failed'));
-            
+
             renderWithProviders(<KnowledgeBaseBrowser />);
 
             // Navigate into folder
@@ -892,19 +894,25 @@ describe('KnowledgeBaseBrowser Component', () => {
             const checkboxes = screen.getAllByRole('checkbox');
             fireEvent.click(checkboxes[1]);
 
-            // Click bulk delete
+            // Click bulk delete - opens AlertDialog
             const bulkDeleteButton = screen.getByRole('button', { name: /Delete selected/i });
             fireEvent.click(bulkDeleteButton);
+
+            // Confirm in the AlertDialog
+            await waitFor(() => {
+                expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+            });
+
+            const confirmButton = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' });
+            await userEvent.click(confirmButton);
 
             // Should call the function (which will throw, but be caught)
             await waitFor(() => {
                 expect(mockBulkDeleteDocuments).toHaveBeenCalled();
             });
-            
+
             // Component should still be functional (error was caught)
             expect(screen.getByText('test.pdf')).toBeInTheDocument();
-            
-            confirmSpy.mockRestore();
         });
 
         it('should not allow bulk delete for viewer role even with selections', async () => {
@@ -923,8 +931,6 @@ describe('KnowledgeBaseBrowser Component', () => {
                 isLoading: false,
             });
 
-            const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-            
             renderWithProviders(<KnowledgeBaseBrowser />);
 
             // Navigate into folder
@@ -939,12 +945,10 @@ describe('KnowledgeBaseBrowser Component', () => {
             const bulkDeleteButton = screen.getByRole('button', { name: /Delete selected/i });
             expect(bulkDeleteButton).toBeDisabled();
 
-            // Even if we try to click, confirm should not be called
+            // Even if we try to click, no dialog should open
             fireEvent.click(bulkDeleteButton);
-            expect(confirmSpy).not.toHaveBeenCalled();
+            expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
             expect(mockBulkDeleteDocuments).not.toHaveBeenCalled();
-            
-            confirmSpy.mockRestore();
         });
 
         it('should disable delete for viewer role', async () => {
@@ -1270,7 +1274,7 @@ describe('KnowledgeBaseBrowser Component', () => {
             expect(screen.getByText('Rows per page')).toBeInTheDocument();
 
             // Should show item range
-            expect(screen.getByText(/1-1 of 1/)).toBeInTheDocument();
+            expect(screen.getByText(/1.1 of 1/)).toBeInTheDocument();
         });
 
         it('should change page size', async () => {
@@ -1286,7 +1290,7 @@ describe('KnowledgeBaseBrowser Component', () => {
             fireEvent.doubleClick(sourceFolder.closest('tr')!);
 
             await waitFor(() => {
-                expect(screen.getByText('1-25 of 30')).toBeInTheDocument();
+                expect(screen.getByText(/1.25 of 30/)).toBeInTheDocument();
             });
 
             // Change page size
@@ -1297,7 +1301,7 @@ describe('KnowledgeBaseBrowser Component', () => {
             await userEvent.click(option50);
 
             await waitFor(() => {
-                expect(screen.getByText('1-30 of 30')).toBeInTheDocument();
+                expect(screen.getByText(/1.30 of 30/)).toBeInTheDocument();
             });
         });
 
@@ -1314,14 +1318,12 @@ describe('KnowledgeBaseBrowser Component', () => {
             fireEvent.doubleClick(sourceFolder.closest('tr')!);
 
             await waitFor(() => {
-                expect(screen.getByText('1-25 of 30')).toBeInTheDocument();
+                expect(screen.getByText(/1.25 of 30/)).toBeInTheDocument();
             });
 
-            // Go to page 2
-            const nextButton = screen.getAllByRole('button').find(btn => btn.querySelector('.lucide-chevron-right'));
-            if (nextButton) {
-                fireEvent.click(nextButton);
-            }
+            // Go to page 2 using aria-label
+            const nextButton = screen.getByRole('button', { name: 'Next page' });
+            fireEvent.click(nextButton);
 
             // Now update to fewer documents (simulating data refresh)
             // The page should clamp automatically
@@ -1363,26 +1365,25 @@ describe('KnowledgeBaseBrowser Component', () => {
             fireEvent.doubleClick(sourceFolder.closest('tr')!);
 
             await waitFor(() => {
-                expect(screen.getByText('1-25 of 30')).toBeInTheDocument();
+                expect(screen.getByText(/1.25 of 30/)).toBeInTheDocument();
             });
 
-            // Click next page
-            const buttons = screen.getAllByRole('button');
-            const nextButton = buttons.find(btn => btn.querySelector('.lucide-chevron-right'));
+            // Click next page using aria-label
+            const nextButton = screen.getByRole('button', { name: 'Next page' });
             expect(nextButton).toBeInTheDocument();
-            fireEvent.click(nextButton!);
+            fireEvent.click(nextButton);
 
             await waitFor(() => {
-                expect(screen.getByText('26-30 of 30')).toBeInTheDocument();
+                expect(screen.getByText(/26.30 of 30/)).toBeInTheDocument();
             });
 
-            // Click previous page
-            const prevButton = buttons.find(btn => btn.querySelector('.lucide-chevron-left'));
+            // Click previous page using aria-label
+            const prevButton = screen.getByRole('button', { name: 'Previous page' });
             expect(prevButton).toBeInTheDocument();
-            fireEvent.click(prevButton!);
+            fireEvent.click(prevButton);
 
             await waitFor(() => {
-                expect(screen.getByText('1-25 of 30')).toBeInTheDocument();
+                expect(screen.getByText(/1.25 of 30/)).toBeInTheDocument();
             });
         });
     });

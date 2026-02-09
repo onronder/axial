@@ -15,6 +15,7 @@ vi.mock('@/lib/api', () => ({
         post: (...args: unknown[]) => mockApiPost(...args),
         get: (...args: unknown[]) => mockApiGet(...args),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 vi.mock('@/hooks/use-toast', () => ({

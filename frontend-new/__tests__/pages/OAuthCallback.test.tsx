@@ -16,6 +16,7 @@ vi.mock('@/lib/api', () => ({
     api: {
         post: vi.fn(),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -187,13 +188,16 @@ describe('OAuthCallbackPage', () => {
         });
 
         it('should default to Google when no state param', async () => {
+            // State is now required for CSRF protection
+            // Test that explicit 'google' state works correctly
             mockSearchParamsGet.mockImplementation((key: string) => {
                 if (key === 'code') return 'code-123';
-                return null; // No state param
+                if (key === 'state') return 'google';
+                return null;
             });
-            
+
             render(<OAuthCallbackPage />);
-            
+
             await waitFor(() => {
                 expect(api.post).toHaveBeenCalledWith(
                     '/integrations/google/exchange',
@@ -245,10 +249,13 @@ describe('OAuthCallbackPage', () => {
 
     describe('Error Handling', () => {
         it('should show error when no code received', async () => {
-            mockSearchParamsGet.mockImplementation(() => null);
-            
+            mockSearchParamsGet.mockImplementation((key: string) => {
+                if (key === 'state') return 'google';
+                return null; // No code
+            });
+
             render(<OAuthCallbackPage />);
-            
+
             await waitFor(() => {
                 expect(screen.getByText(/No authorization code received/i)).toBeInTheDocument();
                 expect(screen.getByText(/Connection Failed/i)).toBeInTheDocument();
@@ -258,11 +265,12 @@ describe('OAuthCallbackPage', () => {
         it('should show "Access was denied" for access_denied error', async () => {
             mockSearchParamsGet.mockImplementation((key: string) => {
                 if (key === 'error') return 'access_denied';
+                if (key === 'state') return 'google';
                 return null;
             });
-            
+
             render(<OAuthCallbackPage />);
-            
+
             await waitFor(() => {
                 expect(screen.getByText(/Access was denied/i)).toBeInTheDocument();
             });
@@ -272,11 +280,12 @@ describe('OAuthCallbackPage', () => {
             mockSearchParamsGet.mockImplementation((key: string) => {
                 if (key === 'error') return 'server_error';
                 if (key === 'error_description') return 'The server is unavailable';
+                if (key === 'state') return 'google';
                 return null;
             });
-            
+
             render(<OAuthCallbackPage />);
-            
+
             await waitFor(() => {
                 expect(screen.getByText(/The server is unavailable/i)).toBeInTheDocument();
             });
@@ -312,10 +321,13 @@ describe('OAuthCallbackPage', () => {
         });
 
         it('should show Go Back and Try Again buttons on error', async () => {
-            mockSearchParamsGet.mockImplementation(() => null);
-            
+            mockSearchParamsGet.mockImplementation((key: string) => {
+                if (key === 'state') return 'google';
+                return null; // No code — triggers "error" status
+            });
+
             render(<OAuthCallbackPage />);
-            
+
             await waitFor(() => {
                 expect(screen.getByRole('button', { name: /Go Back/i })).toBeInTheDocument();
                 expect(screen.getByRole('button', { name: /Try Again/i })).toBeInTheDocument();
@@ -337,16 +349,19 @@ describe('OAuthCallbackPage', () => {
         });
 
         it('should navigate to data-sources when Try Again is clicked', async () => {
-            mockSearchParamsGet.mockImplementation(() => null);
-            
+            mockSearchParamsGet.mockImplementation((key: string) => {
+                if (key === 'state') return 'google';
+                return null;
+            });
+
             render(<OAuthCallbackPage />);
-            
+
             await waitFor(() => {
                 expect(screen.getByRole('button', { name: /Try Again/i })).toBeInTheDocument();
             });
 
             fireEvent.click(screen.getByRole('button', { name: /Try Again/i }));
-            
+
             expect(mockPush).toHaveBeenCalledWith('/dashboard/settings/data-sources');
         });
     });

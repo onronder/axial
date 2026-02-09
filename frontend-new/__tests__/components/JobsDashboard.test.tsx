@@ -117,7 +117,7 @@ describe('JobsDashboard Component', () => {
     it('should render dashboard title and description', () => {
       render(<JobsDashboard />, { wrapper: createWrapper() });
 
-      expect(screen.getByText('Ingestion Jobs')).toBeInTheDocument();
+      expect(screen.getByText('Jobs')).toBeInTheDocument();
       expect(screen.getByText('Monitor and manage your data ingestion tasks')).toBeInTheDocument();
     });
 

@@ -31,6 +31,7 @@ vi.mock('@/lib/api', () => ({
         patch: (...args: any[]) => mockApiPatch(...args),
         delete: (...args: any[]) => mockApiDelete(...args),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 // Create QueryClient for tests

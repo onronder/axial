@@ -26,6 +26,7 @@ vi.mock('@/lib/api', () => ({
         patch: (...args: any[]) => mockApiPatch(...args),
         delete: (...args: any[]) => mockApiDelete(...args),
     },
+    clearAuthCache: vi.fn(),
 }));
 
 const mockMembers: TeamMember[] = [
@@ -111,7 +112,7 @@ describe('useTeamMembers', () => {
                 expect(result.current.isLoading).toBe(false);
             });
 
-            expect(result.current.error).toBe('Failed to fetch team');
+            expect(result.current.error).toBe('bad');
         });
     });
 

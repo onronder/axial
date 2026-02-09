@@ -17,6 +17,7 @@ vi.mock('@/lib/api', () => ({
   api: {
     post: (...args: unknown[]) => mockPost(...args),
   },
+  clearAuthCache: vi.fn(),
 }));
 
 // Mock clipboard API with proper stubbing
