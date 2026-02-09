@@ -438,20 +438,26 @@ async def get_scope_consent(
 
     supabase = get_supabase()
 
-    result = supabase.table("scope_consents")\
-        .select("*")\
-        .eq("scope_id", scope_id)\
-        .eq("organization_id", organization_id)\
-        .maybe_single()\
-        .execute()
+    default_response = ScopeConsentResponse(
+        scope_id=scope_id,
+        organization_id=organization_id,
+        inherit_org_consent=True,
+    )
+
+    try:
+        result = supabase.table("scope_consents")\
+            .select("*")\
+            .eq("scope_id", scope_id)\
+            .eq("organization_id", organization_id)\
+            .maybe_single()\
+            .execute()
+    except Exception as e:
+        logger.error(f"[Consent] Failed to fetch scope consent for scope={scope_id}: {e}")
+        return default_response
 
     if not result.data:
         # Return defaults with inheritance enabled
-        return ScopeConsentResponse(
-            scope_id=scope_id,
-            organization_id=organization_id,
-            inherit_org_consent=True,
-        )
+        return default_response
 
     data = result.data
     return ScopeConsentResponse(
@@ -609,19 +615,25 @@ async def get_document_consent(
 
     supabase = get_supabase()
 
-    result = supabase.table("document_consents")\
-        .select("*")\
-        .eq("document_id", document_id)\
-        .eq("organization_id", organization_id)\
-        .maybe_single()\
-        .execute()
+    default_response = DocumentConsentResponse(
+        document_id=document_id,
+        organization_id=organization_id,
+        inherit_scope_consent=True,
+    )
+
+    try:
+        result = supabase.table("document_consents")\
+            .select("*")\
+            .eq("document_id", document_id)\
+            .eq("organization_id", organization_id)\
+            .maybe_single()\
+            .execute()
+    except Exception as e:
+        logger.error(f"[Consent] Failed to fetch document consent for doc={document_id}: {e}")
+        return default_response
 
     if not result.data:
-        return DocumentConsentResponse(
-            document_id=document_id,
-            organization_id=organization_id,
-            inherit_scope_consent=True,
-        )
+        return default_response
 
     data = result.data
     return DocumentConsentResponse(
