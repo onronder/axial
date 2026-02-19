@@ -81,6 +81,10 @@ logs/
 *.sql.gz
 *.dump
 
+# AxioHub docs build output
+docs/AXIOHUB/build/
+docs/AXIOHUB/node_modules/
+
 # Credential files
 credentials.json
 service-account*.json

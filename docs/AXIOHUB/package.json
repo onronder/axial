@@ -1,0 +1,21 @@
+{
+  "name": "axiohub-docs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AxioHub documentation PDF/PPTX conversion pipeline",
+  "scripts": {
+    "build": "bash scripts/convert-all.sh",
+    "extract": "node scripts/extract-mermaid.mjs",
+    "replace": "node scripts/replace-mermaid-with-images.mjs",
+    "slides:arch": "node scripts/generate-marp-slides.mjs",
+    "slides:product": "node scripts/generate-product-slides.mjs",
+    "clean": "rm -rf build"
+  },
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.2",
+    "@marp-team/marp-cli": "^4.1.1",
+    "marked": "^15.0.7",
+    "puppeteer": "^24.8.0"
+  }
+}
