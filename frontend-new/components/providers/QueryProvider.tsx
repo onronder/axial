@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider, QueryCache, MutationCache, onlineMana
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useEffect, useState, ReactNode } from "react";
 import { toast } from "sonner"; // Using sonner as per package.json
-import { AxiosError, isAxiosError } from "axios";
+import { isAxiosError } from "axios";
 import { setupCrossTabSync } from "@/lib/crossTabSync";
 import { getRetryAfterSeconds } from "@/lib/error-handling";
 

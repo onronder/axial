@@ -32,11 +32,13 @@ const createWrapper = () => {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false } },
     });
-    return ({ children }: { children: ReactNode }) => (
+    const Wrapper = ({ children }: { children: ReactNode }) => (
         <QueryClientProvider client={queryClient}>
             <ProfileProvider>{children}</ProfileProvider>
         </QueryClientProvider>
     );
+    Wrapper.displayName = 'TestWrapper';
+    return Wrapper;
 };
 
 const mockProfile: UserProfile = {
