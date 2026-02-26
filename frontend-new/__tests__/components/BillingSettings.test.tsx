@@ -655,7 +655,8 @@ describe('BillingSettings Component', () => {
 
             await renderBilling();
 
-            const invoiceLabel = screen.getByText('Starter Plan', { selector: 'p' });
+            // Wait for the invoice data to render (async fetch)
+            const invoiceLabel = await screen.findByText('Starter Plan', { selector: 'p' });
             const invoiceRow = invoiceLabel.parentElement?.parentElement?.parentElement;
             expect(invoiceRow).toBeTruthy();
             if (!invoiceRow) {
