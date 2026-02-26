@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/api"
+import { extractErrorMessage } from "@/lib/error-handling"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { useIngestionProgress } from "@/hooks/useIngestionProgress"
@@ -94,10 +95,10 @@ export function DriveExplorer() {
                 description: `${selection.size} item(s) are now being processed.`,
             })
             setSelection(new Set())
-        } catch {
+        } catch (err) {
             toast({
                 title: "Ingestion Failed",
-                description: "Could not queue items for ingestion. Please try again.",
+                description: extractErrorMessage(err, "Could not queue items for ingestion. Please try again."),
                 variant: "destructive",
             })
         } finally {

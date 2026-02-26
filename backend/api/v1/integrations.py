@@ -2505,12 +2505,21 @@ async def ingest_provider_items(
 
         # 3. Pre-flight check: ensure Celery worker is reachable
         from core.celery_app import celery_app as _celery_app
-        try:
-            ping_resp = _celery_app.control.ping(timeout=2.0)
-            if not ping_resp:
-                raise Exception("No workers responded")
-        except Exception:
-            # Clean up the job we just created so it doesn't sit as "pending" forever
+        import asyncio
+
+        worker_available = False
+        for attempt in range(2):
+            try:
+                ping_resp = _celery_app.control.ping(timeout=3.0)
+                if ping_resp:
+                    worker_available = True
+                    break
+            except Exception:
+                pass
+            if attempt < 1:
+                await asyncio.sleep(1)
+
+        if not worker_available:
             supabase.table("ingestion_jobs").update({
                 "status": "failed",
                 "error_message": "Background worker is temporarily unavailable.",

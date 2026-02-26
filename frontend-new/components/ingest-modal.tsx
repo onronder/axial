@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useProfile } from "@/hooks/useProfile"
 import { useUsage } from "@/hooks/useUsage"
 import { authFetch, getUploadUrl, ingestFileReference, uploadToStorage } from "@/lib/api"
+import { extractErrorMessage } from "@/lib/error-handling"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -205,7 +206,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
             setYoutubeValidationError(null)
 
         } catch (err) {
-            const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
+            const message = extractErrorMessage(err, "Something went wrong. Please try again.")
             if (process.env.NODE_ENV !== 'production') {
                 console.error(message)
             }
