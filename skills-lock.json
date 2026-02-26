@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "startup-business-models": {
+      "source": "vasilyu1983/ai-agents-public",
+      "sourceType": "github",
+      "computedHash": "e83343b98c1a8b6ab24125d86fee3709d702b7098251fc2f05ec30bb4f6d0a52"
+    }
+  }
+}

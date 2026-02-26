@@ -175,6 +175,11 @@ celery_app.conf.update(
             "task": "worker.dlq_worker.retry_failed_tasks",
             "schedule": 300.0,  # Every 5 minutes
         },
+        # Detect and fail stuck ingestion jobs (worker crash recovery)
+        "detect-stuck-jobs": {
+            "task": "worker.periodic_tasks.detect_stuck_ingestion_jobs",
+            "schedule": 300.0,  # Every 5 minutes
+        },
         # Reconcile ingestion jobs in case counters are missing/delayed
         "reconcile-ingestion-jobs": {
             "task": "worker.periodic_tasks.reconcile_ingestion_jobs",

@@ -2503,7 +2503,25 @@ async def ingest_provider_items(
         job_id = job_response.data[0]["id"]
         logger.info(f"📋 [Ingest] Created job {job_id} for {len(body.item_ids)} items")
 
-        # 3. Queue the unified ingestion task
+        # 3. Pre-flight check: ensure Celery worker is reachable
+        from core.celery_app import celery_app as _celery_app
+        try:
+            ping_resp = _celery_app.control.ping(timeout=2.0)
+            if not ping_resp:
+                raise Exception("No workers responded")
+        except Exception:
+            # Clean up the job we just created so it doesn't sit as "pending" forever
+            supabase.table("ingestion_jobs").update({
+                "status": "failed",
+                "error_message": "Background worker is temporarily unavailable.",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", job_id).execute()
+            raise HTTPException(
+                status_code=503,
+                detail="Background worker is temporarily unavailable. Please try again in a few minutes."
+            )
+
+        # 4. Queue the unified ingestion task
         from worker.tasks import unified_ingest_task
 
         task = unified_ingest_task.delay(
@@ -2529,7 +2547,7 @@ async def ingest_provider_items(
             details={"provider": provider, "item_count": len(body.item_ids), "task_id": task.id},
         )
 
-        # 4. Return 202 Accepted with job info
+        # 5. Return 202 Accepted with job info
         return {
             "status": "accepted",
             "message": f"Ingestion queued for {len(body.item_ids)} items",

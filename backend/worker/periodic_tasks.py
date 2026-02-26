@@ -219,6 +219,96 @@ def cleanup_old_audit_logs():
 
 
 # ============================================================
+# STUCK JOB DETECTION
+# ============================================================
+
+@celery_app.task(
+    name="worker.periodic_tasks.detect_stuck_ingestion_jobs",
+    ignore_result=True,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    max_retries=2,
+    soft_time_limit=120,
+    time_limit=150,
+)
+def detect_stuck_ingestion_jobs():
+    """
+    Detect ingestion jobs stuck in 'pending' or 'processing' for >10 minutes.
+
+    If the Celery worker was restarted or crashed, queued tasks may never execute.
+    This marks those jobs as failed with a helpful message so users aren't stuck
+    staring at "Preparing files..." forever.
+
+    Runs every 5 minutes via Celery Beat.
+    """
+    if not _acquire_periodic_lock("detect_stuck_ingestion_jobs", ttl=600):
+        logger.info("🔒 [StuckJobs] detect_stuck_ingestion_jobs: lock held, skipping")
+        return {"skipped": True}
+
+    try:
+        supabase = get_supabase()
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+
+        # Find jobs stuck in pending/processing with no update for 10+ minutes
+        stuck_res = supabase.table("ingestion_jobs").select(
+            "id, user_id, status, provider"
+        ).in_(
+            "status", ["pending", "processing"]
+        ).lt(
+            "updated_at", cutoff.isoformat()
+        ).execute()
+
+        stuck_jobs = stuck_res.data or []
+        if not stuck_jobs:
+            return {"status": "ok", "failed_count": 0}
+
+        failed_count = 0
+        error_msg = (
+            "Worker did not pick up this job. The background worker may have been "
+            "restarted. Please try again."
+        )
+
+        for job in stuck_jobs:
+            job_id = job.get("id")
+            user_id = job.get("user_id")
+            if not job_id:
+                continue
+
+            try:
+                supabase.table("ingestion_jobs").update({
+                    "status": "failed",
+                    "error_message": error_msg,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", job_id).execute()
+
+                # Create a notification for the affected user
+                if user_id:
+                    try:
+                        supabase.table("notifications").insert({
+                            "user_id": user_id,
+                            "type": "ingestion_failed",
+                            "title": "Import job timed out",
+                            "message": error_msg,
+                            "metadata": {"job_id": str(job_id)},
+                        }).execute()
+                    except Exception as notif_err:
+                        logger.warning(f"⚠️ [StuckJobs] Failed to create notification: {notif_err}")
+
+                failed_count += 1
+                logger.warning(f"⏰ [StuckJobs] Marked stuck job {job_id} as failed (status was: {job.get('status')})")
+
+            except Exception as update_err:
+                logger.error(f"❌ [StuckJobs] Failed to update stuck job {job_id}: {update_err}")
+
+        logger.info(f"⏰ [StuckJobs] Marked {failed_count}/{len(stuck_jobs)} stuck jobs as failed")
+        return {"status": "ok", "failed_count": failed_count, "checked": len(stuck_jobs)}
+
+    except Exception as e:
+        logger.error(f"❌ [StuckJobs] Failed to detect stuck jobs: {e}")
+        return {"error": str(e)}
+
+
+# ============================================================
 # RECONCILIATION TASKS
 # ============================================================
 

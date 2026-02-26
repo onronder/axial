@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
-import { ChevronDown, ChevronUp, X, FileText, CheckCircle2, XCircle, Clock, SkipForward } from "lucide-react";
+import { ChevronDown, ChevronUp, X, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, SkipForward } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileStatus, getStatusLabel } from "@/hooks/useFileStatus";
 import { useIngestionProgress } from "@/hooks/useIngestionProgress";
@@ -51,10 +51,12 @@ export function IngestionProgressModal({
     onComplete,
 }: IngestionProgressModalProps) {
     const [isExpanded, setIsExpanded] = useState(true);
+    const [preparingTimedOut, setPreparingTimedOut] = useState(false);
     const modalRef = useRef<HTMLDivElement>(null);
     const keyboardShortcuts = useRef<KeyboardShortcuts | null>(null);
     const focusTrap = useRef<FocusTrap | null>(null);
     const completeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const preparingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     
     // Use context-level completion tracking to prevent infinite loops on remount
     const { hasJobCompleted, markJobCompleted } = useIngestionProgress();
@@ -118,6 +120,34 @@ export function IngestionProgressModal({
             trap.deactivate();
         };
     }, [handleClose, toggleExpand]);
+
+    // Timeout: if no files appear after 2 minutes, show error instead of "Preparing files..." forever
+    useEffect(() => {
+        if (files.length > 0) {
+            // Files arrived — clear any pending timeout and reset
+            if (preparingTimeoutRef.current) {
+                clearTimeout(preparingTimeoutRef.current);
+                preparingTimeoutRef.current = null;
+            }
+            setPreparingTimedOut(false);
+            return;
+        }
+
+        // No files yet — start the 2-minute timeout
+        if (!preparingTimeoutRef.current && !preparingTimedOut) {
+            preparingTimeoutRef.current = setTimeout(() => {
+                setPreparingTimedOut(true);
+                preparingTimeoutRef.current = null;
+            }, 2 * 60 * 1000); // 2 minutes
+        }
+
+        return () => {
+            if (preparingTimeoutRef.current) {
+                clearTimeout(preparingTimeoutRef.current);
+                preparingTimeoutRef.current = null;
+            }
+        };
+    }, [files.length, preparingTimedOut]);
 
     // Trigger completion callback ONCE when all files finish
     // Uses context-level tracking (not local ref) to survive component remounts
@@ -239,8 +269,20 @@ export function IngestionProgressModal({
                     <div className="max-h-96 overflow-y-auto">
                         {files.length === 0 ? (
                             <div className="p-8 text-center text-sm text-muted-foreground">
-                                <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                                <p>Preparing files...</p>
+                                {preparingTimedOut ? (
+                                    <>
+                                        <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-amber-500" />
+                                        <p className="font-medium text-foreground">Something went wrong</p>
+                                        <p className="mt-1 text-xs">
+                                            The background worker may not be running. Please try again or contact support.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                        <p>Preparing files...</p>
+                                    </>
+                                )}
                             </div>
                         ) : (
                             <div className="divide-y">
