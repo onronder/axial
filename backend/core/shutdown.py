@@ -176,24 +176,25 @@ async def cleanup_llm_pool():
 
 
 async def cleanup_celery_tasks():
-    """Wait for running Celery tasks to complete."""
-    logger.info("🥬 Waiting for Celery tasks to complete...")
+    """Clean up API-side Celery resources.
+
+    NOTE: We intentionally do NOT broadcast 'shutdown' to workers.
+    Workers are independent services managed by the container orchestrator.
+    The API should only clean up its own broker connection.
+    """
+    logger.info("🥬 Cleaning up Celery broker connection...")
 
     try:
         from core.celery_app import celery_app
 
-        # Inspect active tasks
-        inspector = celery_app.control.inspect()
-        active_tasks = inspector.active()
-
-        if active_tasks:
-            active_count = sum(len(tasks) for tasks in active_tasks.values())
-            logger.info(f"📋 {active_count} active Celery tasks, waiting for completion...")
-
-        # Revoke pending tasks and wait for active ones
-        # Give tasks 30 seconds to complete gracefully
-        celery_app.control.broadcast('shutdown', timeout=30)
-        logger.info("✅ Celery shutdown broadcast sent")
+        # Close the API's broker connection pool (not the worker's)
+        if celery_app.connection_for_write:
+            try:
+                celery_app.connection_for_write().close()
+            except Exception:
+                pass
+        celery_app.close()
+        logger.info("✅ Celery broker connection closed")
 
     except ImportError:
         logger.debug("Celery module not available for cleanup")
@@ -262,7 +263,7 @@ async def cleanup_embeddings_model():
 def register_cleanup_handlers():
     """Register all cleanup handlers in correct order."""
     # Order matters: stop accepting work first, then clean up resources
-    shutdown_manager.register_handler(cleanup_celery_tasks)      # Stop new tasks
+    shutdown_manager.register_handler(cleanup_celery_tasks)      # Close broker connection
     shutdown_manager.register_handler(cleanup_llm_pool)          # Release LLM connections
     shutdown_manager.register_handler(cleanup_embeddings_model)  # Release embeddings
     shutdown_manager.register_handler(cleanup_redis_connections) # Release Redis

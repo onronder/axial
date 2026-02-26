@@ -84,6 +84,18 @@ celery_app.conf.update(
     # Connection retry on startup (Celery 6.0+ compatibility)
     broker_connection_retry_on_startup=True,
 
+    # Redis broker transport reliability
+    broker_transport_options={
+        'visibility_timeout': 3600,  # 1 hour (must be > task_time_limit of 1200s)
+        'retry_on_timeout': True,
+        'socket_connect_timeout': 5,
+        'socket_timeout': 10,
+        'socket_keepalive': True,
+    },
+
+    # Limit broker connection pool (prevent connection exhaustion)
+    broker_pool_limit=10,
+
     # Reliability: Tasks are only acknowledged after successful completion
     # If worker crashes, task goes back to queue
     task_acks_late=True,

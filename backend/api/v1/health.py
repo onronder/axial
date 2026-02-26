@@ -82,13 +82,14 @@ async def readiness_probe():
     except Exception as e:
         logger.error(f"Database readiness check failed: {e}")
 
-    # Check Celery connection
+    # Check Celery broker connectivity (not worker availability)
     try:
-        # Ping Celery workers
-        celery_app.control.ping(timeout=1.0)
+        conn = celery_app.connection_for_read()
+        conn.ensure_connection(max_retries=1, timeout=1.0)
+        conn.close()
         checks["celery"] = True
     except Exception as e:
-        logger.error(f"Celery readiness check failed: {e}")
+        logger.error(f"Celery broker readiness check failed: {e}")
 
     # Check memory usage
     try:

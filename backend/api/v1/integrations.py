@@ -2503,46 +2503,30 @@ async def ingest_provider_items(
         job_id = job_response.data[0]["id"]
         logger.info(f"📋 [Ingest] Created job {job_id} for {len(body.item_ids)} items")
 
-        # 3. Pre-flight check: ensure Celery worker is reachable
-        import asyncio
+        # 3. Queue the unified ingestion task
+        from worker.tasks import unified_ingest_task
 
-        from core.celery_app import celery_app as _celery_app
-
-        worker_available = False
-        for attempt in range(2):
-            try:
-                ping_resp = _celery_app.control.ping(timeout=3.0)
-                if ping_resp:
-                    worker_available = True
-                    break
-            except Exception:
-                pass
-            if attempt < 1:
-                await asyncio.sleep(1)
-
-        if not worker_available:
+        try:
+            task = unified_ingest_task.delay(
+                user_id=user_id,
+                job_id=str(job_id),
+                connector_type=provider,
+                item_ids=body.item_ids,
+                credentials=credentials,
+                plan_code=plan_code,
+                dispatch_batch_size=_get_ingest_batch_size(),
+            )
+        except Exception as e:
+            logger.error(f"❌ [Ingest] Failed to queue task for job {job_id}: {e}")
             supabase.table("ingestion_jobs").update({
                 "status": "failed",
-                "error_message": "Background worker is temporarily unavailable.",
+                "error_message": "Failed to queue ingestion task. Please try again.",
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", job_id).execute()
             raise HTTPException(
                 status_code=503,
                 detail="Background worker is temporarily unavailable. Please try again in a few minutes."
             )
-
-        # 4. Queue the unified ingestion task
-        from worker.tasks import unified_ingest_task
-
-        task = unified_ingest_task.delay(
-            user_id=user_id,
-            job_id=str(job_id),
-            connector_type=provider,
-            item_ids=body.item_ids,  # Pass all items at once
-            credentials=credentials,
-            plan_code=plan_code,
-            dispatch_batch_size=_get_ingest_batch_size(),
-        )
         try:
             increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(body.item_ids)))
         except Exception as exc:
@@ -2557,7 +2541,7 @@ async def ingest_provider_items(
             details={"provider": provider, "item_count": len(body.item_ids), "task_id": task.id},
         )
 
-        # 5. Return 202 Accepted with job info
+        # 4. Return 202 Accepted with job info
         return {
             "status": "accepted",
             "message": f"Ingestion queued for {len(body.item_ids)} items",
