@@ -240,6 +240,7 @@ export function GlobalProgress() {
                                 prev.map((job) => (job.id === newJob.id ? newJob : job))
                             );
                             showCompletionToast(newJob);
+                            handleIngestionComplete();
                         } else if (newJob.status === "failed" && wasNotFailed) {
                             setJobs((prev) =>
                                 prev.map((job) => (job.id === newJob.id ? newJob : job))
@@ -278,7 +279,7 @@ export function GlobalProgress() {
             flushJobUpdates();
             channel.unsubscribe();
         };
-    }, [user?.id, registerJob, showCompletionToast, showFailureToast, showCancelledToast, scheduleJobUpdate, flushJobUpdates]);
+    }, [user?.id, registerJob, showCompletionToast, showFailureToast, showCancelledToast, scheduleJobUpdate, flushJobUpdates, handleIngestionComplete]);
 
     // Sync expanded job ref
     useEffect(() => {

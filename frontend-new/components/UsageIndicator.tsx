@@ -25,7 +25,7 @@ const getTextColorClass = (percent: number): string => {
  */
 function ColoredProgressBar({ value, colorClass }: { value: number; colorClass: string }) {
     return (
-        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
                 className={cn("h-full transition-all duration-300", colorClass)}
                 style={{ width: `${Math.min(100, Math.max(0, value))}%` }}

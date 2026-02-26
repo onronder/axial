@@ -153,7 +153,7 @@ export function StorageMeter({ className, showUpgradePrompt = true, variant = 'v
                                     </span>
                                     <span>{formatBytes(storageUsed)} / {formatBytes(storageLimit)}</span>
                                 </div>
-                                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                                     <div
                                         className={cn("h-full rounded-full transition-all duration-500", storagePercent > 90 ? "bg-red-500" : "bg-primary")}
                                         style={{ width: `${Math.min(100, storagePercent)}%` }}
@@ -167,7 +167,7 @@ export function StorageMeter({ className, showUpgradePrompt = true, variant = 'v
                                     </span>
                                     <span>{filesUsed} / {filesLimit}</span>
                                 </div>
-                                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                                     <div
                                         className={cn("h-full rounded-full transition-all duration-500", filesPercent > 90 ? "bg-red-500" : "bg-blue-500")}
                                         style={{ width: `${Math.min(100, filesPercent)}%` }}
@@ -267,7 +267,7 @@ export function StorageMeter({ className, showUpgradePrompt = true, variant = 'v
                                 </span>
                                 <span>{formatBytes(storageUsed)} / {formatBytes(storageLimit)}</span>
                             </div>
-                            <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                                 <div
                                     className={cn("h-full rounded-full transition-all duration-500",
                                         storagePercent > 90 ? "bg-red-500" : "bg-primary"
@@ -284,7 +284,7 @@ export function StorageMeter({ className, showUpgradePrompt = true, variant = 'v
                                 </span>
                                 <span>{filesUsed} / {filesLimit}</span>
                             </div>
-                            <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                                 <div
                                     className={cn("h-full rounded-full transition-all duration-500",
                                         filesPercent > 90 ? "bg-red-500" : "bg-blue-500"
