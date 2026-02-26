@@ -325,7 +325,7 @@ class NotionConnector(EnhancedConnector, BaseConnector):
             supabase = get_supabase()
             int_res = supabase.table("user_integrations").select("*").eq(
                 "id", credentials["integration_id"]
-            ).single().execute()
+            ).maybe_single().execute()
             if not int_res.data:
                 raise AuthenticationError(f"Integration {credentials['integration_id']} not found")
 
@@ -442,7 +442,7 @@ class NotionConnector(EnhancedConnector, BaseConnector):
             supabase = get_supabase()
             int_res = supabase.table("user_integrations").select("*").eq(
                 "id", integration_id
-            ).single().execute()
+            ).maybe_single().execute()
             if not int_res.data:
                 raise ConnectorAuthError(f"Integration {integration_id} not found")
             creds_data = OAuthTokenManager.get_valid_credentials(int_res.data, "notion")

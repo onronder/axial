@@ -244,13 +244,13 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
 
     def _load_credentials_for_user(self, user_id: str) -> dict:
         supabase = get_supabase()
-        def_res = supabase.table("connector_definitions").select("id").eq("type", "sftp").single().execute()
+        def_res = supabase.table("connector_definitions").select("id").eq("type", "sftp").maybe_single().execute()
         if not def_res.data:
             raise ConnectorAuthError("SFTP connector not registered")
         connector_def_id = def_res.data["id"]
         int_res = supabase.table("user_integrations").select("credentials").eq(
             "user_id", user_id
-        ).eq("connector_definition_id", connector_def_id).single().execute()
+        ).eq("connector_definition_id", connector_def_id).maybe_single().execute()
         if not int_res.data or not int_res.data.get("credentials"):
             raise ConnectorAuthError("SFTP not connected for this user")
         return int_res.data["credentials"]

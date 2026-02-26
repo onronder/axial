@@ -542,7 +542,7 @@ class OAuthTokenManager:
         try:
             result = supabase.table("user_integrations").select(
                 "access_token, refresh_token, expires_at"
-            ).eq("id", integration_id).single().execute()
+            ).eq("id", integration_id).maybe_single().execute()
             return result.data if result.data else {}
         except Exception as exc:
             logger.error(f"❌ [Box] Failed to re-fetch integration: {exc}")

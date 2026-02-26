@@ -47,7 +47,7 @@ def load_integration(
     if integration_id:
         result = supabase.table("user_integrations").select("*").eq(
             "id", integration_id
-        ).single().execute()
+        ).maybe_single().execute()
 
         if result.data:
             return result.data
@@ -60,7 +60,7 @@ def load_integration(
     # Find connector definition
     def_result = supabase.table("connector_definitions").select("id").eq(
         "type", connector_type
-    ).single().execute()
+    ).maybe_single().execute()
 
     if not def_result.data:
         raise ConnectorAuthError(f"{connector_type} connector not registered")
@@ -70,7 +70,7 @@ def load_integration(
     # Find user's integration for this connector
     int_result = supabase.table("user_integrations").select("*").eq(
         "user_id", user_id
-    ).eq("connector_definition_id", connector_def_id).single().execute()
+    ).eq("connector_definition_id", connector_def_id).maybe_single().execute()
 
     if not int_result.data:
         raise ConnectorAuthError(f"{connector_type} not connected for this user")
