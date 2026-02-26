@@ -1,8 +1,8 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { createContext, useContext, useMemo, useCallback, ReactNode } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { dedupedRequest } from '@/lib/request-dedup';
 import { useToast } from '@/hooks/use-toast';
 
 export interface UserProfile {
@@ -34,6 +34,8 @@ interface ProfileContextType {
 
 const ProfileContext = createContext<ProfileContextType | null>(null);
 
+const PROFILE_QUERY_KEY = ['profile'] as const;
+
 type ApiError = {
     response?: {
         status?: number;
@@ -57,82 +59,67 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 
 /**
  * Provider component that wraps the app and provides profile state.
- * This ensures only ONE fetch happens regardless of how many components use the hook.
+ * Uses React Query for caching, retry, dedup, and cross-tab sync.
  */
 export function ProfileProvider({ children }: { children: ReactNode }) {
     const { toast } = useToast();
-    const [profile, setProfile] = useState<UserProfile | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const hasFetched = useRef(false);
+    const queryClient = useQueryClient();
 
-    const fetchProfile = useCallback(async () => {
-        if (process.env.NODE_ENV === 'development') {
-            console.log('📋 [useProfile] Fetching profile...');
-        }
-        setIsLoading(true);
-        setError(null);
-        try {
-            const { data } = await dedupedRequest('profile', () => api.get('/settings/profile'));
-            if (process.env.NODE_ENV === 'development') {
-                console.log('📋 [useProfile] ✅ Profile fetched:', data?.first_name, data?.last_name);
-            }
-            setProfile(data);
-        } catch (err: unknown) {
-            const apiError = err as ApiError;
-            if (process.env.NODE_ENV !== 'production') {
-                console.error('📋 [useProfile] ❌ Failed:', apiError.response?.status, apiError.message);
-            }
-            setError(getErrorMessage(err, 'Failed to fetch profile'));
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+    const {
+        data: profile = null,
+        isLoading,
+        error: queryError,
+    } = useQuery<UserProfile | null>({
+        queryKey: PROFILE_QUERY_KEY,
+        queryFn: async ({ signal }) => {
+            const { data } = await api.get('/settings/profile', { signal });
+            return data;
+        },
+    });
 
-    // Fetch once on mount - prevents duplicate fetches
-    useEffect(() => {
-        if (!hasFetched.current) {
-            hasFetched.current = true;
-            fetchProfile();
-        }
-    }, [fetchProfile]);
+    const error = queryError ? getErrorMessage(queryError, 'Failed to fetch profile') : null;
 
-    const updateProfile = useCallback(async (payload: ProfileUpdatePayload): Promise<boolean> => {
-        if (process.env.NODE_ENV === 'development') {
-            console.log('📋 [useProfile] Updating with:', payload);
-        }
-        try {
+    const { mutateAsync } = useMutation({
+        mutationFn: async (payload: ProfileUpdatePayload) => {
             const { data } = await api.patch('/settings/profile', payload);
-            if (process.env.NODE_ENV === 'development') {
-                console.log('📋 [useProfile] ✅ Updated');
-            }
-            setProfile(data);
+            return data as UserProfile;
+        },
+        onSuccess: (data) => {
+            queryClient.setQueryData(PROFILE_QUERY_KEY, data);
             toast({
                 title: 'Profile updated',
                 description: 'Your profile information has been saved.',
             });
-            return true;
-        } catch (err: unknown) {
-            const apiError = err as ApiError;
-            if (process.env.NODE_ENV !== 'production') {
-                console.error('📋 [useProfile] ❌ Update failed:', apiError.message);
-            }
+        },
+        onError: (err: unknown) => {
             toast({
                 title: 'Error',
                 description: getErrorMessage(err, 'Failed to update profile.'),
                 variant: 'destructive',
             });
+        },
+    });
+
+    const updateProfile = useCallback(async (payload: ProfileUpdatePayload): Promise<boolean> => {
+        try {
+            await mutateAsync(payload);
+            return true;
+        } catch {
             return false;
         }
-    }, [toast]);
+    }, [mutateAsync]);
 
-    const value: ProfileContextType = {
+    const refresh = useCallback(async () => {
+        await queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
+    }, [queryClient]);
+
+    const value = useMemo<ProfileContextType>(() => ({
         profile,
         isLoading,
         error,
         updateProfile,
-        refresh: fetchProfile,
-    };
+        refresh,
+    }), [profile, isLoading, error, updateProfile, refresh]);
 
     return (
         <ProfileContext.Provider value={value} >

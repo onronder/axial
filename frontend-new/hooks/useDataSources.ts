@@ -126,6 +126,7 @@ export const useDataSources = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const hasFetched = useRef(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     // =========================================================================
     // Data Merging
@@ -200,6 +201,11 @@ export const useDataSources = () => {
      * Fetch available connectors and user integrations from API.
      */
     const fetchData = useCallback(async () => {
+        // Abort any in-flight request
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         devLog('📦 [useDataSources] Fetching data...');
         setLoading(true);
         setError(null);
@@ -208,9 +214,15 @@ export const useDataSources = () => {
             // Fetch both endpoints in parallel (with dedup to prevent duplicate calls
             // when multiple components mount simultaneously)
             const [availableRes, statusRes] = await Promise.all([
-                dedupedRequest('integrations:available', () => api.get('/integrations/available')),
-                dedupedRequest('integrations:status', () => api.get('/integrations/status'))
+                dedupedRequest('integrations:available', () =>
+                    api.get('/integrations/available')
+                ),
+                dedupedRequest('integrations:status', () =>
+                    api.get('/integrations/status')
+                ),
             ]);
+
+            if (controller.signal.aborted) return;
 
             const connectors: ConnectorDefinition[] = availableRes.data || [];
             const integrations: UserIntegration[] = statusRes.data || [];
@@ -221,11 +233,14 @@ export const useDataSources = () => {
             setUserIntegrations(integrations);
             setDataSources(mergeData(connectors, integrations));
         } catch (err) {
+            if (controller.signal.aborted) return;
             const message = extractErrorMessage(err, 'Failed to fetch data sources');
             devError('📦 [useDataSources] ❌ Fetch failed:', message);
             setError(message);
         } finally {
-            setLoading(false);
+            if (!controller.signal.aborted) {
+                setLoading(false);
+            }
         }
     }, [mergeData]);
 
@@ -234,6 +249,9 @@ export const useDataSources = () => {
         if (hasFetched.current) return;
         hasFetched.current = true;
         fetchData();
+        return () => {
+            abortControllerRef.current?.abort();
+        };
     }, [fetchData]);
 
     // =========================================================================

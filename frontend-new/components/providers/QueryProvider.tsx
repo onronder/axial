@@ -19,6 +19,10 @@ function handleGlobalError(error: unknown) {
     if (isAxiosError(error)) {
         const status = error.response?.status;
 
+        // 401 is handled by the Axios interceptor in api.ts (redirect to /login).
+        // Showing a toast here is counterproductive — the page navigates away.
+        if (status === 401) return;
+
         if (status === 429) {
             const retryAfter = getRetryAfterSeconds(error);
             if (retryAfter) {
@@ -69,13 +73,16 @@ export function QueryProvider({ children }: QueryProviderProps) {
                         staleTime: 5 * 60 * 1000,
                         // Keep unused data in cache for 10 minutes
                         gcTime: 10 * 60 * 1000,
-                        // Retry failed requests 3 times with exponential backoff
-                        retry: 3,
+                        // Retry failed requests 3 times, but skip retries on 401 (expired token)
+                        retry: (failureCount, error) => {
+                            if (isAxiosError(error) && error.response?.status === 401) return false;
+                            return failureCount < 3;
+                        },
                         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
                         // Refetch on window focus for fresh data
                         refetchOnWindowFocus: true,
-                        // Don't refetch on mount if data is fresh
-                        refetchOnMount: false,
+                        // Refetch on mount when data is stale (respects staleTime)
+                        refetchOnMount: true,
                     },
                     mutations: {
                         // Retry mutations once

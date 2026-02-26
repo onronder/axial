@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProfileProvider, useProfile, UserProfile } from '@/hooks/useProfile';
 
 // Mock dependencies
@@ -26,20 +27,17 @@ vi.mock('@/lib/api', () => ({
     clearAuthCache: vi.fn(),
 }));
 
-// Mock dedupedRequest to pass through immediately (avoids cross-test dedup window issues)
-vi.mock('@/lib/request-dedup', () => ({
-    dedupedRequest: (_key: string, fetcher: () => Promise<any>) => fetcher(),
-    createDedupedQueryFn: (_key: readonly unknown[], fetcher: () => Promise<any>) => fetcher,
-    clearPendingRequests: vi.fn(),
-    getPendingRequestCount: vi.fn(() => 0),
-    isRequestPending: vi.fn(() => false),
-    createDedupedFetcher: (_prefix: string, fetcher: (...args: any[]) => Promise<any>) => fetcher,
-}));
-
-// Test wrapper
-const wrapper = ({ children }: { children: ReactNode }) => (
-    <ProfileProvider>{children} </ProfileProvider>
-);
+// Create a fresh wrapper for each test to avoid cross-test cache pollution
+const createWrapper = () => {
+    const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+    });
+    return ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+            <ProfileProvider>{children}</ProfileProvider>
+        </QueryClientProvider>
+    );
+};
 
 const mockProfile: UserProfile = {
     id: 'profile-1',
@@ -60,7 +58,7 @@ describe('useProfile', () => {
 
     describe('Initial State', () => {
         it('should start with loading state', async () => {
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
             expect(result.current.isLoading).toBe(true);
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -68,20 +66,20 @@ describe('useProfile', () => {
         });
 
         it('should fetch profile on mount', async () => {
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
             });
 
-            expect(mockApiGet).toHaveBeenCalledWith('/settings/profile');
+            expect(mockApiGet).toHaveBeenCalledWith('/settings/profile', expect.objectContaining({ signal: expect.any(AbortSignal) }));
             expect(result.current.profile).toEqual(mockProfile);
         });
 
         it('should handle fetch error', async () => {
             mockApiGet.mockRejectedValue(new Error('Network error'));
 
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -94,7 +92,7 @@ describe('useProfile', () => {
         it('should use fallback error message for unknown errors', async () => {
             mockApiGet.mockRejectedValue({});
 
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -109,7 +107,7 @@ describe('useProfile', () => {
                 message: 'Forbidden',
             });
 
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
 
             await waitFor(() => {
                 expect(result.current.isLoading).toBe(false);
@@ -124,7 +122,7 @@ describe('useProfile', () => {
             const updatedProfile = { ...mockProfile, first_name: 'Jane' };
             mockApiPatch.mockResolvedValue({ data: updatedProfile });
 
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
 
             await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -135,7 +133,9 @@ describe('useProfile', () => {
 
             expect(success!).toBe(true);
             expect(mockApiPatch).toHaveBeenCalledWith('/settings/profile', { first_name: 'Jane' });
-            expect(result.current.profile?.first_name).toBe('Jane');
+            await waitFor(() => {
+                expect(result.current.profile?.first_name).toBe('Jane');
+            });
             expect(mockToast).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Profile updated' })
             );
@@ -144,7 +144,7 @@ describe('useProfile', () => {
         it('should handle update error', async () => {
             mockApiPatch.mockRejectedValue({ message: 'Update failed', response: { data: { detail: 'Server error' } } });
 
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
 
             await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -166,7 +166,7 @@ describe('useProfile', () => {
             const updatedProfile = { ...mockProfile, theme: 'light' as const };
             mockApiPatch.mockResolvedValue({ data: updatedProfile });
 
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
 
             await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -174,13 +174,15 @@ describe('useProfile', () => {
                 await result.current.updateProfile({ theme: 'light' });
             });
 
-            expect(result.current.profile?.theme).toBe('light');
+            await waitFor(() => {
+                expect(result.current.profile?.theme).toBe('light');
+            });
         });
     });
 
     describe('refresh', () => {
         it('should re-fetch profile', async () => {
-            const { result } = renderHook(() => useProfile(), { wrapper });
+            const { result } = renderHook(() => useProfile(), { wrapper: createWrapper() });
 
             await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -191,7 +193,9 @@ describe('useProfile', () => {
                 await result.current.refresh();
             });
 
-            expect(result.current.profile?.first_name).toBe('Updated');
+            await waitFor(() => {
+                expect(result.current.profile?.first_name).toBe('Updated');
+            });
         });
     });
 });
@@ -223,159 +227,3 @@ describe('useProfile outside provider', () => {
     });
 });
 
-// =============================================================================
-// Development Logging Tests
-// =============================================================================
-
-describe('useProfile development logging', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        mockApiGet.mockResolvedValue({ data: mockProfile });
-    });
-
-    it('should log fetching message in development', async () => {
-        const originalEnv = process.env.NODE_ENV;
-        process.env.NODE_ENV = 'development';
-        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
-
-        renderHook(() => useProfile(), { wrapper });
-
-        await waitFor(() => {
-            expect(consoleSpy).toHaveBeenCalledWith(
-                expect.stringContaining('[useProfile] Fetching profile')
-            );
-        });
-
-        consoleSpy.mockRestore();
-        process.env.NODE_ENV = originalEnv;
-    });
-
-    it('should log profile fetched success in development', async () => {
-        const originalEnv = process.env.NODE_ENV;
-        process.env.NODE_ENV = 'development';
-        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
-
-        const { result } = renderHook(() => useProfile(), { wrapper });
-
-        await waitFor(() => {
-            expect(result.current.isLoading).toBe(false);
-        });
-
-        expect(consoleSpy).toHaveBeenCalledWith(
-            expect.stringContaining('[useProfile] ✅ Profile fetched'),
-            mockProfile.first_name,
-            mockProfile.last_name
-        );
-
-        consoleSpy.mockRestore();
-        process.env.NODE_ENV = originalEnv;
-    });
-
-    it('should log updating message in development', async () => {
-        const originalEnv = process.env.NODE_ENV;
-        process.env.NODE_ENV = 'development';
-        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
-
-        const updatedProfile = { ...mockProfile, first_name: 'Jane' };
-        mockApiPatch.mockResolvedValue({ data: updatedProfile });
-
-        const { result } = renderHook(() => useProfile(), { wrapper });
-
-        await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-        await act(async () => {
-            await result.current.updateProfile({ first_name: 'Jane' });
-        });
-
-        expect(consoleSpy).toHaveBeenCalledWith(
-            expect.stringContaining('[useProfile] Updating with'),
-            { first_name: 'Jane' }
-        );
-
-        consoleSpy.mockRestore();
-        process.env.NODE_ENV = originalEnv;
-    });
-
-    it('should log update success in development', async () => {
-        const originalEnv = process.env.NODE_ENV;
-        process.env.NODE_ENV = 'development';
-        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
-
-        const updatedProfile = { ...mockProfile, first_name: 'Jane' };
-        mockApiPatch.mockResolvedValue({ data: updatedProfile });
-
-        const { result } = renderHook(() => useProfile(), { wrapper });
-
-        await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-        consoleSpy.mockClear();
-
-        await act(async () => {
-            await result.current.updateProfile({ first_name: 'Jane' });
-        });
-
-        expect(consoleSpy).toHaveBeenCalledWith(
-            expect.stringContaining('[useProfile] ✅ Updated')
-        );
-
-        consoleSpy.mockRestore();
-        process.env.NODE_ENV = originalEnv;
-    });
-});
-
-// =============================================================================
-// Error Logging Tests
-// =============================================================================
-
-describe('useProfile error logging', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
-    it('should log fetch error with status and message', async () => {
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
-
-        mockApiGet.mockRejectedValue({
-            response: { status: 500 },
-            message: 'Internal server error',
-        });
-
-        const { result } = renderHook(() => useProfile(), { wrapper });
-
-        await waitFor(() => {
-            expect(result.current.isLoading).toBe(false);
-        });
-
-        expect(errorSpy).toHaveBeenCalledWith(
-            expect.stringContaining('[useProfile] ❌ Failed'),
-            500,
-            'Internal server error'
-        );
-
-        errorSpy.mockRestore();
-    });
-
-    it('should log update error with message', async () => {
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
-
-        mockApiGet.mockResolvedValue({ data: mockProfile });
-        mockApiPatch.mockRejectedValue({
-            message: 'Update failed',
-        });
-
-        const { result } = renderHook(() => useProfile(), { wrapper });
-
-        await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-        await act(async () => {
-            await result.current.updateProfile({ first_name: 'Jane' });
-        });
-
-        expect(errorSpy).toHaveBeenCalledWith(
-            expect.stringContaining('[useProfile] ❌ Update failed'),
-            'Update failed'
-        );
-
-        errorSpy.mockRestore();
-    });
-});

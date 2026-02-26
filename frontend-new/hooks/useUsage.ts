@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
 import { getUsageStats, getEffectivePlan } from '@/lib/api';
 import type { UserUsage, EffectivePlan, PlanType } from '@/types';
 import { AxiosError } from 'axios';
@@ -70,6 +70,7 @@ export function UsageProvider({ children }: UsageProviderProps) {
     const hasFetched = useRef(false);
     const lastFetchTime = useRef<number>(0);
     const fetchInProgress = useRef(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const fetchAll = useCallback(async (force: boolean = false) => {
         if (fetchInProgress.current) return;
@@ -79,44 +80,60 @@ export function UsageProvider({ children }: UsageProviderProps) {
             return;
         }
 
+        // Abort any in-flight request
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         fetchInProgress.current = true;
         setIsLoading(true);
         setError(null);
 
         try {
-            // Fetch effective plan first - this endpoint is NOT behind paywall
-            // so it will always return the plan even for free/none users
-            const planData = await getEffectivePlan();
-            if (planData) setEffectivePlan(planData);
-            
-            // Try to fetch usage - this may fail with 402 for free/none users
-            try {
-                const usageData = await getUsageStats();
-                if (usageData) setUsage(usageData);
-            } catch (usageError: unknown) {
-                // 402 is expected for free/none users - don't treat as error
-                // The plan data we already have is sufficient for PaywallGuard
-                if (usageError instanceof AxiosError && usageError.response?.status === 402) {
+            // Fire both requests in parallel — they are independent endpoints
+            const [planResult, usageResult] = await Promise.allSettled([
+                getEffectivePlan(),
+                getUsageStats(),
+            ]);
+
+            if (controller.signal.aborted) return;
+
+            // Handle plan result
+            if (planResult.status === 'fulfilled') {
+                if (planResult.value) setEffectivePlan(planResult.value);
+            } else {
+                // If even effective-plan fails, extract plan from 402 error if available
+                const planFromError = extractPlanFrom402Error(planResult.reason);
+                if (planFromError) {
+                    setEffectivePlan({ plan: planFromError, inherited: false, team_id: null, team_name: null });
+                } else {
+                    throw planResult.reason;
+                }
+            }
+
+            // Handle usage result
+            if (usageResult.status === 'fulfilled') {
+                if (usageResult.value) setUsage(usageResult.value);
+            } else {
+                // 402 is expected for free/none users — don't treat as error
+                if (usageResult.reason instanceof AxiosError && usageResult.reason.response?.status === 402) {
                     if (process.env.NODE_ENV !== 'production') {
                         console.log('[useUsage] Usage endpoint returned 402 (expected for free/none plan)');
                     }
                 } else {
-                    throw usageError;
+                    throw usageResult.reason;
                 }
             }
-            
-            lastFetchTime.current = Date.now();
+
         } catch (err: unknown) {
-            // If even effective-plan fails, extract plan from 402 error if available
-            const planFromError = extractPlanFrom402Error(err);
-            if (planFromError) {
-                // Set a minimal effective plan so PaywallGuard can show the paywall
-                setEffectivePlan({ plan: planFromError, inherited: false, team_id: null, team_name: null });
-            } else {
+            if (!controller.signal.aborted) {
                 setError(extractErrorMessage(err, 'Failed to fetch usage'));
             }
         } finally {
-            setIsLoading(false);
+            if (!controller.signal.aborted) {
+                setIsLoading(false);
+                lastFetchTime.current = Date.now();
+            }
             fetchInProgress.current = false;
         }
     }, []);
@@ -125,44 +142,49 @@ export function UsageProvider({ children }: UsageProviderProps) {
         if (hasFetched.current) return;
         hasFetched.current = true;
         fetchAll();
+        return () => {
+            abortControllerRef.current?.abort();
+        };
     }, [fetchAll]);
-
-    const plan: PlanType | null = isLoading ? null : (effectivePlan?.plan ?? usage?.plan ?? 'free');
-    const isPlanInherited = effectivePlan?.inherited ?? false;
-    const filesUsed = usage?.files.used ?? 0;
-    const filesLimit = usage?.files.limit ?? 10;
-    const storageUsed = usage?.storage.used_bytes ?? 0;
-    const storageLimit = usage?.storage.limit_bytes ?? 100 * 1024 * 1024;
-    // Backend uses `features.team`; keep `team_enabled` for legacy compatibility
-    const canWebCrawl = usage?.features.web_crawl ?? false;
-    const teamEnabled = usage?.features.team ?? usage?.features.team_enabled ?? false;
-    const premiumModels = usage?.features.premium_models ?? false;
-    const modelTier = usage?.model_tier ?? null;
-    const filesPercent = filesLimit > 0 ? (filesUsed / filesLimit) * 100 : 0;
-    const storagePercent = storageLimit > 0 ? (storageUsed / storageLimit) * 100 : 0;
 
     const refresh = useCallback((force: boolean = true) => fetchAll(force), [fetchAll]);
 
-    const value: UsageContextValue = {
-        usage,
-        effectivePlan,
-        isLoading,
-        error,
-        plan,
-        isPlanInherited,
-        filesUsed,
-        filesLimit,
-        filesPercent,
-        storageUsed,
-        storageLimit,
-        storagePercent,
-        canWebCrawl,
-        teamEnabled,
-        premiumModels,
-        modelTier,
-        refresh,
-        refreshPlan: refresh,
-    };
+    const value = useMemo<UsageContextValue>(() => {
+        const plan: PlanType | null = isLoading ? null : (effectivePlan?.plan ?? usage?.plan ?? 'free');
+        const isPlanInherited = effectivePlan?.inherited ?? false;
+        const filesUsed = usage?.files.used ?? 0;
+        const filesLimit = usage?.files.limit ?? 10;
+        const storageUsed = usage?.storage.used_bytes ?? 0;
+        const storageLimit = usage?.storage.limit_bytes ?? 100 * 1024 * 1024;
+        // Backend uses `features.team`; keep `team_enabled` for legacy compatibility
+        const canWebCrawl = usage?.features.web_crawl ?? false;
+        const teamEnabled = usage?.features.team ?? usage?.features.team_enabled ?? false;
+        const premiumModels = usage?.features.premium_models ?? false;
+        const modelTier = usage?.model_tier ?? null;
+        const filesPercent = filesLimit > 0 ? (filesUsed / filesLimit) * 100 : 0;
+        const storagePercent = storageLimit > 0 ? (storageUsed / storageLimit) * 100 : 0;
+
+        return {
+            usage,
+            effectivePlan,
+            isLoading,
+            error,
+            plan,
+            isPlanInherited,
+            filesUsed,
+            filesLimit,
+            filesPercent,
+            storageUsed,
+            storageLimit,
+            storagePercent,
+            canWebCrawl,
+            teamEnabled,
+            premiumModels,
+            modelTier,
+            refresh,
+            refreshPlan: refresh,
+        };
+    }, [usage, effectivePlan, isLoading, error, refresh]);
 
     return React.createElement(UsageContext.Provider, { value }, children);
 }

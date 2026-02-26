@@ -6,6 +6,7 @@
  */
 
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import axiosRetry from 'axios-retry';
 import { supabase } from '@/lib/supabase';
 
 // Debug mode - set to false for production
@@ -34,10 +35,22 @@ export const api = axios.create({
     timeout: 30000,
 });
 
+// Retry transient errors with exponential backoff
+axiosRetry(api, {
+    retries: 3,
+    retryDelay: axiosRetry.exponentialDelay,
+    retryCondition: (error) =>
+        axiosRetry.isNetworkOrIdempotentRequestError(error)
+        || [502, 503, 504].includes(error.response?.status ?? 0),
+});
+
 // --- PERFORMANCE OPTIMIZATION: TOKEN CACHING ---
 let cachedToken: string | null = null;
 let tokenExpiryTime: number = 0; // Timestamp in ms
 let refreshPromise: Promise<string | null> | null = null;
+
+// Guard to prevent multiple concurrent 401 redirects
+let isRedirectingTo401 = false;
 
 /**
  * Request interceptor with token caching
@@ -105,12 +118,20 @@ api.interceptors.response.use(
     async (error: AxiosError) => {
         log.error(error);
 
-        // If 401 Unauthorized, clear cached token so next request refreshes
+        // If 401 Unauthorized, clear cached token and redirect to login
         if (error.response?.status === 401) {
             cachedToken = null;
             tokenExpiryTime = 0;
             if (DEBUG_MODE) {
                 console.log('🔑 Token invalidated due to 401');
+            }
+            if (typeof window !== 'undefined'
+                && !isRedirectingTo401
+                && !window.location.pathname.startsWith('/login')
+                && !window.location.pathname.startsWith('/auth')) {
+                isRedirectingTo401 = true;
+                const currentPath = window.location.pathname + window.location.search;
+                window.location.href = `/login?redirectTo=${encodeURIComponent(currentPath)}`;
             }
         }
 

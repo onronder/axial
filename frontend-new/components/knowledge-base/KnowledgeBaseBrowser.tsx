@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Home,
   ArrowLeft,
+  Info,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -108,6 +109,7 @@ const statusStyles: Record<string, { label: string; className: string; dotClass:
 };
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const TREE_FETCH_LIMIT = 500;
 
 // =============================================================================
 // HELPER COMPONENTS
@@ -169,12 +171,14 @@ export function KnowledgeBaseBrowser() {
   // Hooks
   const {
     documents,
+    totalCount,
     isLoading: isRefreshing,
     refresh: handleRefresh,
     deleteDocument,
     bulkDeleteDocuments,
     isBulkDeleting
-  } = useDocuments(1, 10000, debouncedSearch); // Fetch all for tree building
+  } = useDocuments(1, TREE_FETCH_LIMIT, debouncedSearch);
+  const isTreeTruncated = totalCount > TREE_FETCH_LIMIT;
 
   const { profile } = useProfile();
   const isViewer = profile?.role === 'viewer';
@@ -427,6 +431,16 @@ export function KnowledgeBaseBrowser() {
         <div className="w-full">
           <StorageMeter variant="horizontal" className="w-full" />
         </div>
+
+        {/* Truncation Banner */}
+        {isTreeTruncated && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-200 text-sm">
+            <Info className="h-4 w-4 shrink-0" />
+            <span>
+              Showing {TREE_FETCH_LIMIT} of {totalCount} documents. Use search to find specific files.
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="glass-card rounded-xl border border-white/10 shadow-glow overflow-hidden">
