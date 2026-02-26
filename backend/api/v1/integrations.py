@@ -2504,8 +2504,9 @@ async def ingest_provider_items(
         logger.info(f"📋 [Ingest] Created job {job_id} for {len(body.item_ids)} items")
 
         # 3. Pre-flight check: ensure Celery worker is reachable
-        from core.celery_app import celery_app as _celery_app
         import asyncio
+
+        from core.celery_app import celery_app as _celery_app
 
         worker_available = False
         for attempt in range(2):

@@ -676,7 +676,7 @@ describe('IngestModal', () => {
 
     describe('Error Handling', () => {
         it('should handle non-Error exceptions', async () => {
-            mockAuthFetchPost.mockRejectedValue('string error');
+            mockAuthFetchPost.mockRejectedValue(42);
             
             const user = userEvent.setup();
             render(<IngestModal {...defaultProps} initialTab="website" />);

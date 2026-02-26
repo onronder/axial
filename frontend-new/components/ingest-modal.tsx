@@ -142,13 +142,14 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                     throw new Error("Please enter a valid URL starting with http:// or https://")
                 }
                 const crawlType = activeTab === 'website' ? 'sitemap' : 'single'
-                const { data } = await authFetch.post('/integrations/web/crawl', {
+                const response = await authFetch.post('/integrations/web/crawl', {
                     url: targetUrl,
                     crawl_type: crawlType,
                     max_depth: 1,
                     respect_robots: true,
                     allow_subdomains: false
                 })
+                const data = response?.data
 
                 ingestionJobId = data?.job_id || data?.crawl_id || null
             } else if (activeTab === 'youtube') {
@@ -164,13 +165,14 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
                 // Normalize and send to web backend (backend detects YouTube and fetches transcript)
                 const normalizedUrl = normalizeYoutubeUrl(youtubeUrl)
-                const { data } = await authFetch.post('/integrations/web/crawl', {
+                const response = await authFetch.post('/integrations/web/crawl', {
                     url: normalizedUrl,
                     crawl_type: 'single',
                     max_depth: 1,
                     respect_robots: true,
                     allow_subdomains: false
                 })
+                const data = response?.data
 
                 ingestionJobId = data?.job_id || data?.crawl_id || null
             }
