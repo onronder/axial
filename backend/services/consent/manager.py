@@ -584,12 +584,8 @@ class ConsentManager:
             .eq("organization_id", organization_id)\
             .execute()
 
-        # Count total scopes
-        scope_count_result = supabase.table("scopes")\
-            .select("id", count="exact")\
-            .eq("organization_id", organization_id)\
-            .execute()
-        scope_count = scope_count_result.count or 0
+        # Count total scopes (derived from scope_consents already queried above)
+        scope_count = len(scope_result.data or [])
 
         return {
             "organization_id": organization_id,

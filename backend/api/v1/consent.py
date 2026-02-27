@@ -455,7 +455,7 @@ async def get_scope_consent(
         logger.error(f"[Consent] Failed to fetch scope consent for scope={scope_id}: {e}")
         return default_response
 
-    if not result.data:
+    if result is None or not result.data:
         # Return defaults with inheritance enabled
         return default_response
 
