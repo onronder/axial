@@ -291,22 +291,28 @@ class FeedbackService:
             sort_by = "negative_rate_pct"
 
         # Use RPC for date-filtered queries, materialized view otherwise
+        rows = None
         if from_date or to_date:
-            rpc_params: dict[str, Any] = {
-                "p_organization_id": organization_id,
-                "p_min_feedback_count": min_feedback_count,
-                "p_sort_by": sort_by,
-                "p_sort_order": sort_order,
-                "p_limit": limit,
-            }
-            if from_date:
-                rpc_params["p_from_date"] = from_date
-            if to_date:
-                rpc_params["p_to_date"] = to_date
+            try:
+                rpc_params: dict[str, Any] = {
+                    "p_organization_id": organization_id,
+                    "p_min_feedback_count": min_feedback_count,
+                    "p_sort_by": sort_by,
+                    "p_sort_order": sort_order,
+                    "p_limit": limit,
+                }
+                if from_date:
+                    rpc_params["p_from_date"] = from_date
+                if to_date:
+                    rpc_params["p_to_date"] = to_date
 
-            result = supabase.rpc("get_source_metrics_filtered", rpc_params).execute()
-            rows = result.data or []
-        else:
+                result = supabase.rpc("get_source_metrics_filtered", rpc_params).execute()
+                rows = result.data or []
+            except Exception as e:
+                logger.warning(f"[Feedback] RPC get_source_metrics_filtered unavailable, falling back to materialized view: {e}")
+                rows = None
+
+        if rows is None:
             # Fast path: materialized view (no date filtering)
             query = supabase.table("source_feedback_metrics")\
                 .select("*", count="exact")\
@@ -363,15 +369,39 @@ class FeedbackService:
         if to_date:
             rpc_params["p_to_date"] = to_date
 
-        result = supabase.rpc("get_feedback_trend", rpc_params).execute()
+        try:
+            result = supabase.rpc("get_feedback_trend", rpc_params).execute()
+            return [
+                {
+                    "date": row["date"],
+                    "positive_count": int(row["positive_count"]),
+                    "negative_count": int(row["negative_count"]),
+                }
+                for row in (result.data or [])
+            ]
+        except Exception as e:
+            logger.warning(f"[Feedback] RPC get_feedback_trend unavailable, falling back to direct query: {e}")
+
+        # Fallback: query message_feedback directly and aggregate in Python
+        query = supabase.table("message_feedback")\
+            .select("created_at, rating")\
+            .eq("organization_id", organization_id)
+        if from_date:
+            query = query.gte("created_at", from_date)
+        if to_date:
+            query = query.lte("created_at", to_date)
+        result = query.order("created_at").execute()
+
+        from collections import defaultdict
+        by_day: dict[str, dict[str, int]] = defaultdict(lambda: {"positive": 0, "negative": 0})
+        for row in (result.data or []):
+            day = row["created_at"][:10]  # "YYYY-MM-DD"
+            if row["rating"] in ("positive", "negative"):
+                by_day[day][row["rating"]] += 1
 
         return [
-            {
-                "date": row["date"],
-                "positive_count": int(row["positive_count"]),
-                "negative_count": int(row["negative_count"]),
-            }
-            for row in (result.data or [])
+            {"date": day, "positive_count": counts["positive"], "negative_count": counts["negative"]}
+            for day, counts in sorted(by_day.items())
         ]
 
     async def get_platform_feedback(
