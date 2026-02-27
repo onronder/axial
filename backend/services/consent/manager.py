@@ -584,16 +584,26 @@ class ConsentManager:
             .eq("organization_id", organization_id)\
             .execute()
 
+        # Count total scopes
+        scope_count_result = supabase.table("scopes")\
+            .select("id", count="exact")\
+            .eq("organization_id", organization_id)\
+            .execute()
+        scope_count = scope_count_result.count or 0
+
         return {
             "organization_id": organization_id,
             "report_generated_at": datetime.now(timezone.utc).isoformat(),
             "organization_consent": {
                 "ai_learning": org_consent.get("allow_ai_learning", False) if org_consent else False,
                 "external_agents": org_consent.get("allow_external_agents", False) if org_consent else False,
+                "ai_learning_configured": org_consent.get("ai_learning_consent_at") is not None if org_consent else False,
+                "external_agents_configured": org_consent.get("external_agents_consent_at") is not None if org_consent else False,
             },
             "scope_overrides": len(scope_result.data or []),
             "document_overrides": len(doc_result.data or []),
             "total_documents": doc_count_result.count or 0,
+            "total_scopes": scope_count,
             "compliance_status": "compliant" if org_consent else "needs_review",
         }
 

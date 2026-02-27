@@ -39,10 +39,16 @@ interface DocumentConsentRaw {
 interface ComplianceReportRaw {
   organization_id: string;
   report_generated_at: string;
-  organization_consent: Record<string, unknown>;
+  organization_consent: {
+    ai_learning: boolean;
+    external_agents: boolean;
+    ai_learning_configured: boolean;
+    external_agents_configured: boolean;
+  };
   scope_overrides: number;
   document_overrides: number;
   total_documents: number;
+  total_scopes: number;
   compliance_status: string;
 }
 
@@ -99,9 +105,12 @@ export interface ComplianceReport {
   reportGeneratedAt: string;
   complianceScore: number;
   totalDocuments: number;
+  totalScopes: number;
   scopeOverrides: number;
   documentOverrides: number;
   complianceStatus: string;
+  aiLearningConfigured: boolean;
+  externalAgentsConfigured: boolean;
 }
 
 // Agent access types for frontend
@@ -155,16 +164,28 @@ function transformDocumentConsent(raw: DocumentConsentRaw, documentName?: string
 }
 
 function transformComplianceReport(raw: ComplianceReportRaw): ComplianceReport {
-  // Calculate compliance score based on configuration
   const orgConsent = raw.organization_consent || {};
-  let score = 50; // Base score
+  let score = 0;
 
-  // Add points for having consent configured
-  if (orgConsent) score += 20;
-  if (raw.scope_overrides > 0) score += 15;
-  if (raw.document_overrides > 0) score += 15;
+  // +30: Organization consent defaults explicitly configured (15 each)
+  const aiConfigured = orgConsent.ai_learning_configured === true;
+  const agentsConfigured = orgConsent.external_agents_configured === true;
+  if (aiConfigured) score += 15;
+  if (agentsConfigured) score += 15;
 
-  // Cap at 100
+  // +30: Organization consent values are actively set (15 each)
+  if (aiConfigured && orgConsent.ai_learning !== null) score += 15;
+  if (agentsConfigured && orgConsent.external_agents !== null) score += 15;
+
+  // +20: Audit logging active (always true in our system)
+  score += 20;
+
+  // +10: Scope-level granular overrides exist
+  if (raw.scope_overrides > 0) score += 10;
+
+  // +10: Document-level granular overrides exist
+  if (raw.document_overrides > 0) score += 10;
+
   score = Math.min(score, 100);
 
   return {
@@ -172,9 +193,12 @@ function transformComplianceReport(raw: ComplianceReportRaw): ComplianceReport {
     reportGeneratedAt: raw.report_generated_at,
     complianceScore: score,
     totalDocuments: raw.total_documents,
+    totalScopes: raw.total_scopes || 0,
     scopeOverrides: raw.scope_overrides,
     documentOverrides: raw.document_overrides,
     complianceStatus: raw.compliance_status,
+    aiLearningConfigured: aiConfigured,
+    externalAgentsConfigured: agentsConfigured,
   };
 }
 

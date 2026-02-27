@@ -56,11 +56,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
@@ -229,18 +224,16 @@ function JobRow({ job, onCancel, onRetry, getJobFiles }: JobRowProps) {
   };
 
   return (
-    <Collapsible open={isExpanded} onOpenChange={handleExpand}>
+    <>
       <TableRow className="hover:bg-muted/30">
         <TableCell>
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="sm" className="p-1 h-7 w-7">
-              {isExpanded ? (
-                <ChevronUp className="h-4 w-4" />
-              ) : (
-                <ChevronDown className="h-4 w-4" />
-              )}
-            </Button>
-          </CollapsibleTrigger>
+          <Button variant="ghost" size="sm" className="p-1 h-7 w-7" onClick={handleExpand}>
+            {isExpanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
         </TableCell>
         <TableCell>
           <div className="flex flex-col gap-1">
@@ -322,7 +315,7 @@ function JobRow({ job, onCancel, onRetry, getJobFiles }: JobRowProps) {
         </TableCell>
       </TableRow>
 
-      <CollapsibleContent asChild>
+      {isExpanded && (
         <tr>
           <td colSpan={6} className="p-0">
             <div className="bg-muted/20 border-y border-border/50 p-4">
@@ -398,8 +391,8 @@ function JobRow({ job, onCancel, onRetry, getJobFiles }: JobRowProps) {
             </div>
           </td>
         </tr>
-      </CollapsibleContent>
-    </Collapsible>
+      )}
+    </>
   );
 }
 

@@ -176,23 +176,23 @@ function ReportContent({ report, onRefetch }: { report: ComplianceReport | null;
           <div className="space-y-3">
             <ChecklistItem
               label="Organization consent defaults set"
-              checked={report.complianceScore >= 50}
+              checked={report.aiLearningConfigured && report.externalAgentsConfigured}
             />
             <ChecklistItem
               label="Scope-level consent management enabled"
-              checked={report.scopeOverrides >= 0}
+              checked={report.scopeOverrides > 0}
             />
             <ChecklistItem
               label="Document-level granular controls available"
-              checked={report.documentOverrides >= 0}
+              checked={report.documentOverrides > 0}
             />
             <ChecklistItem
               label="Audit logging active"
-              checked={report.complianceScore >= 70}
+              checked={true}
             />
             <ChecklistItem
               label="External agent access controlled"
-              checked={report.complianceScore >= 80}
+              checked={report.externalAgentsConfigured}
             />
             <ChecklistItem
               label="Full KVKK 2026 compliance"
