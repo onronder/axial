@@ -1607,6 +1607,7 @@ def unified_ingest_task(
     item_id: str | None = None,
     plan_code: str | None = None,
     dispatch_batch_size: int | None = None,
+    is_sync: bool = False,
 ):
     """
     UNIFIED ingestion task for ALL data sources.
@@ -1875,14 +1876,30 @@ def unified_ingest_task(
                     scope_ids_seen.add(scope_id)
 
                     # The atomic function handles: exists check, quota check, placeholder creation
-                    result = _ensure_scope_identity_placeholder(
-                        supabase=supabase,
-                        organization_id=organization_id,
-                        user_id=user_id,
-                        scope_id=scope_id,
-                        source_type=doc_source_type,
-                        max_scopes=max_scopes,  # Pass quota for atomic check
-                    )
+                    try:
+                        result = _ensure_scope_identity_placeholder(
+                            supabase=supabase,
+                            organization_id=organization_id,
+                            user_id=user_id,
+                            scope_id=scope_id,
+                            source_type=doc_source_type,
+                            max_scopes=max_scopes,  # Pass quota for atomic check
+                        )
+                    except QuotaExceededError:
+                        if is_sync:
+                            logger.info(
+                                f"[UnifiedIngest:{task_id}] Skipping new scope {scope_id[:50]}... "
+                                f"during sync (quota would be exceeded)"
+                            )
+                            try:
+                                supabase.table("ingestion_file_status").update({
+                                    "status": "skipped",
+                                    "status_message": "Skipped during sync (scope quota)",
+                                }).eq("id", file_status_id).execute()
+                            except Exception:
+                                pass  # Best-effort cleanup
+                            continue  # Skip this document, process next
+                        raise
 
                     # Track new scopes for local quota tracking
                     if result == "created":

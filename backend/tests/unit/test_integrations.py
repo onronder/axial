@@ -996,26 +996,38 @@ class TestSyncIntegration:
 class TestRunBackgroundSync:
     @pytest.mark.asyncio
     async def test_run_background_sync_success(self):
-        supabase = build_supabase({"ingestion_jobs": build_table([])})
-        connector = SimpleNamespace(list_files=AsyncMock(return_value=[SimpleNamespace(id="root-1")]))
+        scope_table = build_table([{"id": "gdrive://root-1"}])
+        supabase = build_supabase({
+            "ingestion_jobs": build_table([]),
+            "scope_identities": scope_table,
+        })
         task = MagicMock()
         task.delay.return_value = SimpleNamespace(id="task-1")
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
-             patch("connectors.get_connector", return_value=connector), \
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission"), \
+             patch("api.v1.integrations.increment_usage"), \
+             patch("api.v1.integrations.log_connector_sync"), \
              patch("worker.tasks.unified_ingest_task", task):
             await run_background_sync("job-1", "google_drive", "user-1", "int-1")
 
         task.delay.assert_called_once()
-        assert supabase.table.called
+        call_kwargs = task.delay.call_args[1]
+        assert call_kwargs["is_sync"] is True
+        assert "root-1" in call_kwargs["item_ids"]
 
     @pytest.mark.asyncio
     async def test_run_background_sync_no_items_completes(self):
-        supabase = build_supabase({"ingestion_jobs": build_table([])})
-        connector = SimpleNamespace(list_files=AsyncMock(return_value=[]))
+        scope_table = build_table([])
+        supabase = build_supabase({
+            "ingestion_jobs": build_table([]),
+            "scope_identities": scope_table,
+        })
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
-             patch("connectors.get_connector", return_value=connector):
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.log_connector_sync"):
             await run_background_sync("job-1", "google_drive", "user-1", "int-1")
 
         update_call = supabase.table("ingestion_jobs").update.call_args
@@ -1756,30 +1768,73 @@ class TestIntegrationsAdditional:
         assert exc.value.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_run_background_sync_connector_failure(self):
-        supabase = MagicMock()
-        supabase.table().update().eq().execute.return_value = MagicMock(data=[{"id": "job-1"}])
+    async def test_run_background_sync_scope_query_failure(self):
+        """When scope_identities query fails, sync job is marked as failed."""
+        scope_table = MagicMock()
+        scope_table.select.return_value = scope_table
+        scope_table.eq.return_value = scope_table
+        scope_table.like.side_effect = Exception("db connection error")
+
+        jobs_table = build_table([])
+        supabase = build_supabase({
+            "ingestion_jobs": jobs_table,
+            "scope_identities": scope_table,
+        })
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
-             patch("connectors.get_connector", side_effect=Exception("boom")):
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.log_connector_sync"):
             await run_background_sync("job-1", "google_drive", "user-1", "int-1")
 
-        assert supabase.table().update.called
+        # RuntimeError is caught by outer except → job marked as "failed"
+        update_calls = jobs_table.update.call_args_list
+        last_update = update_calls[-1][0][0]
+        assert last_update["status"] == "failed"
 
     @pytest.mark.asyncio
-    async def test_run_background_sync_auth_failure_message(self):
-        supabase = MagicMock()
-        supabase.table().update().eq().execute.return_value = MagicMock(data=[{"id": "job-1"}])
-
-        connector = MagicMock()
-        connector.list_files = AsyncMock(side_effect=Exception("invalid_grant"))
+    async def test_run_background_sync_multiple_scopes(self):
+        """Sync resolves multiple items from existing scopes."""
+        scope_table = build_table([
+            {"id": "gdrive://file-1"},
+            {"id": "gdrive://file-2"},
+            {"id": "gdrive://file-3"},
+        ])
+        supabase = build_supabase({
+            "ingestion_jobs": build_table([]),
+            "scope_identities": scope_table,
+        })
+        task = MagicMock()
+        task.delay.return_value = SimpleNamespace(id="task-1")
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
-             patch("connectors.get_connector", return_value=connector):
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission"), \
+             patch("api.v1.integrations.increment_usage"), \
+             patch("api.v1.integrations.log_connector_sync"), \
+             patch("worker.tasks.unified_ingest_task", task):
             await run_background_sync("job-1", "google_drive", "user-1", "int-1")
 
-        update_payload = supabase.table().update.call_args_list[-1][0][0]
-        assert "Authentication failed" in update_payload["error_message"]
+        call_kwargs = task.delay.call_args[1]
+        assert len(call_kwargs["item_ids"]) == 3
+        assert call_kwargs["is_sync"] is True
+
+    @pytest.mark.asyncio
+    async def test_run_background_sync_unknown_provider_fails(self):
+        """Unknown provider (empty scope_prefixes) marks job as failed."""
+        jobs_table = build_table([])
+        supabase = build_supabase({
+            "ingestion_jobs": jobs_table,
+        })
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.log_connector_sync"):
+            await run_background_sync("job-1", "totally_unknown_provider", "user-1", "int-1")
+
+        update_calls = jobs_table.update.call_args_list
+        last_update = update_calls[-1][0][0]
+        assert last_update["status"] == "failed"
+        assert "No scope prefixes" in last_update["error_message"]
 
     @pytest.mark.asyncio
     async def test_sync_integration_existing_job(self):

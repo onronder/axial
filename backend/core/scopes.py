@@ -265,3 +265,46 @@ def infer_scope_type(scope_id: str) -> str:
     }
 
     return type_map.get(scheme, "unknown")
+
+
+def extract_item_ids_from_scope(scope_uri: str) -> list[str]:
+    """
+    Inverse of build_scope_uri: extract connector item_id(s) from a scope URI.
+    Used by sync to determine which items to re-process from existing scopes.
+    """
+    if not scope_uri or "://" not in scope_uri:
+        return []
+    scheme, _, rest = scope_uri.partition("://")
+    scheme = scheme.lower()
+    rest = rest.strip("/")
+    if not rest:
+        return []
+
+    # Google Drive / Notion / Dropbox: scheme://{item_id}
+    if scheme in ("gdrive", "drive", "google_drive", "notion", "dropbox"):
+        return [rest]
+
+    # OneDrive / SharePoint: scheme://{drive_id}/{item_id} → item_id
+    if scheme in ("onedrive", "sharepoint"):
+        parts = rest.split("/", 1)
+        return [parts[1]] if len(parts) == 2 else [parts[0]]
+
+    # Box: box://folder/{folder_id}:{folder_name} → folder_id
+    if scheme == "box":
+        if rest.startswith("folder/"):
+            return [rest[len("folder/"):].split(":")[0]]
+        return [rest]
+
+    # GitHub: github://{org}/{repo}@{branch} → org/repo
+    if scheme == "github":
+        return [rest.split("@")[0] if "@" in rest else rest]
+
+    # S3 / SFTP / Web: return rest as-is
+    if scheme in ("s3", "sftp", "web"):
+        return [rest]
+
+    # File uploads are not syncable
+    if scheme in ("upload", "file_upload"):
+        return []
+
+    return [rest]

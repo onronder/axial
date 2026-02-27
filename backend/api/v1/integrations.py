@@ -42,7 +42,7 @@ from core.db import get_supabase
 from core.exceptions import QuotaExceededError
 from core.ingestion_utils import require_canonical_provider
 from core.rate_limit import limiter
-from core.scopes import get_scope_prefixes
+from core.scopes import extract_item_ids_from_scope, get_scope_prefixes
 from core.security import decrypt_token, encrypt_token, get_current_user
 from services.audit import audit_logger, log_connector_sync
 from services.quotas import check_admission, increment_usage
@@ -2588,26 +2588,48 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", job_id).execute()
 
-        # 2. Get Connector
-        from connectors import get_connector
-        try:
-            connector = get_connector(provider)
-        except Exception:
-            logger.error(f"❌ [SyncJob] Connector factory failed for {provider}")
-            raise
+        # 2. Resolve items to sync FROM EXISTING SCOPE IDENTITIES
+        # Sync re-processes previously-ingested items only.
+        # New items must be added via the "Browse" flow.
+        # This prevents new scope creation and quota errors.
+        scope_prefixes = get_scope_prefixes(provider)
+        if not scope_prefixes:
+            raise RuntimeError(f"No scope prefixes for provider '{provider}' — cannot sync")
 
-        # 3. Resolve root items to sync
-        # Handle both async and sync connectors (same pattern as list_provider_items)
-        list_files_method = connector.list_files
-        sync_config = {"user_id": user_id, "parent_id": None, "provider": provider}
+        item_ids: list[str] = []
+        query_failed = False
 
-        if inspect.iscoroutinefunction(list_files_method):
-            root_items = await list_files_method(sync_config)
-        else:
-            # Sync connector - offload to threadpool
-            root_items = await run_in_threadpool(lambda: list(list_files_method(sync_config)))
+        # Use only the first (canonical) prefix — build_scope_uri() is the sole writer
+        # of scope_identities and always emits the canonical form (e.g. "gdrive://").
+        # Legacy aliases (drive://, google_drive://) are NOT expected in stored data.
+        # disconnect_provider() loops ALL prefixes defensively for deletion safety,
+        # but sync can rely on canonical-only. If legacy data is discovered, change
+        # this to loop all prefixes.
+        canonical_prefix = scope_prefixes[0]
 
-        item_ids = [getattr(item, "id", None) or item.get("id") for item in (root_items or []) if (getattr(item, "id", None) or (isinstance(item, dict) and item.get("id")))]
+        if canonical_prefix:
+            try:
+                scope_res = (
+                    supabase.table("scope_identities")
+                    .select("id")
+                    .eq("organization_id", org_id)
+                    .like("id", f"{canonical_prefix}%")
+                    .execute()
+                )
+                for row in (scope_res.data or []):
+                    item_ids.extend(extract_item_ids_from_scope(row["id"]))
+            except Exception as e:
+                logger.error(f"❌ [SyncJob] Failed to query scopes for {provider}: {e}")
+                query_failed = True
+
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        item_ids = [x for x in item_ids if not (x in seen or seen.add(x))]
+
+        logger.info(f"[SyncJob] Resolved {len(item_ids)} item(s) from existing scopes for {provider}")
+
+        if not item_ids and query_failed:
+            raise RuntimeError(f"Scope query failed for {provider} — cannot determine items to sync")
 
         if not item_ids:
             supabase.table("ingestion_jobs").update({
@@ -2668,6 +2690,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             credentials=credentials,
             plan_code=plan_code,
             dispatch_batch_size=_get_ingest_batch_size(),
+            is_sync=True,
         )
 
         logger.info(f"✅ [SyncJob] Queued unified ingest {task.id} for job {job_id}")

@@ -14,7 +14,7 @@ sys.modules.setdefault("botocore.config", MagicMock())
 sys.modules.setdefault("botocore.exceptions", MagicMock())
 
 from api.v1.chat import ChatRequest, chat_endpoint
-from core.scopes import build_scope_uri
+from core.scopes import build_scope_uri, extract_item_ids_from_scope
 from services.scope_analysis import ScopeAnalysisResult, ScopeClassification, ScopeStats
 from services.scope_identity import synthesize_and_save_identity
 
@@ -84,6 +84,65 @@ def test_build_scope_uri_box_valid():
 def test_build_scope_uri_box_missing_folder_name():
     with pytest.raises(ValueError):
         build_scope_uri("box", {"folder_id": "123"})
+
+
+class TestExtractItemIdsFromScope:
+    def test_gdrive(self):
+        assert extract_item_ids_from_scope("gdrive://abc123") == ["abc123"]
+
+    def test_notion(self):
+        assert extract_item_ids_from_scope("notion://page-uuid") == ["page-uuid"]
+
+    def test_dropbox(self):
+        assert extract_item_ids_from_scope("dropbox://id:abc123") == ["id:abc123"]
+
+    def test_onedrive(self):
+        assert extract_item_ids_from_scope("onedrive://drv1/item2") == ["item2"]
+
+    def test_onedrive_single_part(self):
+        assert extract_item_ids_from_scope("onedrive://drv1") == ["drv1"]
+
+    def test_sharepoint(self):
+        assert extract_item_ids_from_scope("sharepoint://drv1/item2") == ["item2"]
+
+    def test_box(self):
+        assert extract_item_ids_from_scope("box://folder/123:Marketing") == ["123"]
+
+    def test_box_no_folder_prefix(self):
+        assert extract_item_ids_from_scope("box://raw-id") == ["raw-id"]
+
+    def test_github(self):
+        assert extract_item_ids_from_scope("github://owner/repo@main") == ["owner/repo"]
+
+    def test_github_no_branch(self):
+        assert extract_item_ids_from_scope("github://owner/repo") == ["owner/repo"]
+
+    def test_s3(self):
+        assert extract_item_ids_from_scope("s3://bucket/prefix") == ["bucket/prefix"]
+
+    def test_sftp(self):
+        assert extract_item_ids_from_scope("sftp://host/path") == ["host/path"]
+
+    def test_web(self):
+        assert extract_item_ids_from_scope("web://example.com") == ["example.com"]
+
+    def test_upload_returns_empty(self):
+        assert extract_item_ids_from_scope("upload://user-1/manual") == []
+
+    def test_empty_string(self):
+        assert extract_item_ids_from_scope("") == []
+
+    def test_no_scheme(self):
+        assert extract_item_ids_from_scope("no-scheme") == []
+
+    def test_none_returns_empty(self):
+        assert extract_item_ids_from_scope(None) == []
+
+    def test_trailing_slash(self):
+        assert extract_item_ids_from_scope("gdrive://abc123/") == ["abc123"]
+
+    def test_uppercase_scheme(self):
+        assert extract_item_ids_from_scope("GDRIVE://abc123") == ["abc123"]
 
 
 @pytest.mark.asyncio
