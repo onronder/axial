@@ -2,20 +2,20 @@
 
 /**
  * Feedback Analytics Dashboard
- * 
+ *
  * Shows chat response quality analytics for team admins.
  * Includes:
  * - Summary statistics (positive/negative rates)
- * - Recent negative feedback with context
+ * - Trend chart from dedicated endpoint (full date range, not paginated subset)
  * - Source quality metrics (problematic documents)
- * 
+ * - Recent feedback with context
+ *
  * Related Files:
  * - backend/api/v1/feedback.py (API endpoints)
- * - docs/ChatFeedback_Implementation_Spec.md (specification)
+ * - hooks/useAnalytics.ts (data fetching hook)
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
     BarChart3,
     ThumbsUp,
@@ -31,8 +31,7 @@ import {
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { SettingsStatCard } from "@/components/settings/SettingsStatCard";
 import { SettingsEmptyState } from "@/components/settings/SettingsEmptyState";
-import { subDays, format, startOfDay, endOfDay } from 'date-fns';
-import { api } from '@/lib/api';
+import { subDays, format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,64 +56,11 @@ import { Spinner } from '@/components/ui/spinner';
 import { useProfile } from '@/hooks/useProfile';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-
-// =============================================================================
-// Types
-// =============================================================================
-
-interface FeedbackSummary {
-    positive_count: number;
-    negative_count: number;
-    total_count: number;
-    negative_rate_pct: number;
-}
-
-interface FeedbackItem {
-    id: string;
-    rating: 'positive' | 'negative';
-    feedback_text: string | null;
-    query_text: string;
-    answer_preview: string;
-    sources: Array<{
-        label?: string;
-        type?: string;
-        url?: string;
-    }>;
-    user_email: string;
-    created_at: string;
-}
-
-interface FeedbackResponse {
-    items: FeedbackItem[];
-    total: number;
-    has_more: boolean;
-    summary: FeedbackSummary;
-}
-
-interface SourceMetric {
-    source_label: string;
-    source_type: string | null;
-    source_url: string | null;
-    positive_count: number;
-    negative_count: number;
-    total_feedback: number;
-    negative_rate_pct: number;
-    last_feedback_at: string | null;
-}
-
-interface SourceMetricsResponse {
-    items: SourceMetric[];
-    total: number;
-}
+import useAnalytics, { type FeedbackItem, type DateRange } from '@/hooks/useAnalytics';
 
 // =============================================================================
 // Date Range Presets
 // =============================================================================
-
-interface DateRange {
-    from: Date | null;
-    to: Date | null;
-}
 
 const DATE_RANGE_PRESETS = [
     { label: 'Last 7 days', value: '7d', getDates: () => ({ from: subDays(new Date(), 7), to: new Date() }) },
@@ -138,55 +84,6 @@ const ratingDistConfig = {
     negative: { label: "Negative", color: "var(--color-red-500, #ef4444)" },
 } satisfies ChartConfig;
 
-/**
- * Aggregate feedback items by day for the trend chart.
- */
-function aggregateFeedbackByDay(items: FeedbackItem[]): Array<{ date: string; positive: number; negative: number }> {
-    const byDay = new Map<string, { positive: number; negative: number }>();
-    for (const item of items) {
-        const day = format(new Date(item.created_at), 'MMM d');
-        const entry = byDay.get(day) ?? { positive: 0, negative: 0 };
-        if (item.rating === 'positive') entry.positive++;
-        else entry.negative++;
-        byDay.set(day, entry);
-    }
-    return Array.from(byDay.entries()).map(([date, counts]) => ({ date, ...counts }));
-}
-
-// =============================================================================
-// API Functions
-// =============================================================================
-
-async function fetchFeedback(
-    rating?: string, 
-    limit: number = 20,
-    fromDate?: Date | null,
-    toDate?: Date | null
-): Promise<FeedbackResponse> {
-    const params = new URLSearchParams();
-    params.set('limit', String(limit));
-    if (rating) params.set('rating', rating);
-    if (fromDate) params.set('from_date', startOfDay(fromDate).toISOString());
-    if (toDate) params.set('to_date', endOfDay(toDate).toISOString());
-    
-    const response = await api.get(`/analytics/feedback?${params.toString()}`);
-    return response.data;
-}
-
-async function fetchSourceMetrics(
-    fromDate?: Date | null,
-    toDate?: Date | null
-): Promise<SourceMetricsResponse> {
-    const params = new URLSearchParams();
-    params.set('min_feedback_count', '3');
-    params.set('limit', '10');
-    if (fromDate) params.set('from_date', startOfDay(fromDate).toISOString());
-    if (toDate) params.set('to_date', endOfDay(toDate).toISOString());
-    
-    const response = await api.get(`/analytics/feedback/sources?${params.toString()}`);
-    return response.data;
-}
-
 // =============================================================================
 // Component
 // =============================================================================
@@ -196,10 +93,10 @@ export default function FeedbackAnalyticsPage() {
     const [ratingFilter, setRatingFilter] = useState<string>('all');
     const [feedbackLimit, setFeedbackLimit] = useState(20);
     const [dateRangePreset, setDateRangePreset] = useState<string>('30d');
-    const [dateRange, setDateRange] = useState<DateRange>(() => 
+    const [dateRange, setDateRange] = useState<DateRange>(() =>
         DATE_RANGE_PRESETS.find(p => p.value === '30d')?.getDates() ?? { from: null, to: null }
     );
-    
+
     // Handle date range preset change
     const handleDateRangeChange = useCallback((preset: string) => {
         setDateRangePreset(preset);
@@ -209,61 +106,52 @@ export default function FeedbackAnalyticsPage() {
         }
         setFeedbackLimit(20); // Reset pagination
     }, []);
-    
+
     // Reset limit when filter changes
     useEffect(() => {
         setFeedbackLimit(20);
     }, [ratingFilter]);
-    
+
     // Authorization check - only admins and owners can view analytics
-    const isAuthorized = !profile?.role || profile?.role === 'admin'; // No role means owner
-    
-    // Fetch feedback data
-    const { 
-        data: feedbackData, 
-        isLoading: feedbackLoading, 
-        isFetching: feedbackFetching,
-        error: feedbackError,
-        refetch: refetchFeedback,
-    } = useQuery({
-        queryKey: ['feedback', ratingFilter, feedbackLimit, dateRange.from?.toISOString(), dateRange.to?.toISOString()],
-        queryFn: () => fetchFeedback(
-            ratingFilter === 'all' ? undefined : ratingFilter, 
-            feedbackLimit,
-            dateRange.from,
-            dateRange.to
-        ),
-        staleTime: 60_000, // 1 minute
+    // Must have a loaded profile; null/undefined profile means loading/error → deny
+    const isAuthorized = profile != null && (!profile.role || profile.role === 'admin');
+
+    // Use the analytics hook for all data fetching
+    const {
+        feedbackData,
+        summary,
+        feedbackItems,
+        hasMoreFeedback,
+        sourceMetrics,
+        trendData,
+        isLoadingFeedback,
+        isFetchingFeedback,
+        isLoadingMetrics,
+        feedbackError,
+        refetchAll,
+    } = useAnalytics({
+        rating: ratingFilter === 'all' ? undefined : ratingFilter as 'positive' | 'negative',
+        limit: feedbackLimit,
+        dateRange,
         enabled: isAuthorized && !profileLoading,
     });
-    
-    // Fetch source metrics
-    const { 
-        data: sourceMetrics, 
-        isLoading: metricsLoading,
-        refetch: refetchMetrics,
-    } = useQuery({
-        queryKey: ['sourceMetrics', dateRange.from?.toISOString(), dateRange.to?.toISOString()],
-        queryFn: () => fetchSourceMetrics(dateRange.from, dateRange.to),
-        staleTime: 60_000,
-        enabled: isAuthorized && !profileLoading,
-    });
-    
+
     const handleRefresh = useCallback(() => {
-        refetchFeedback();
-        refetchMetrics();
-    }, [refetchFeedback, refetchMetrics]);
-    
+        refetchAll();
+    }, [refetchAll]);
+
     const handleLoadMore = useCallback(() => {
         setFeedbackLimit(prev => prev + 20);
     }, []);
 
-    const summary = feedbackData?.summary;
-
-    const feedbackItems = feedbackData?.items;
-    const trendData = useMemo(
-        () => (feedbackItems ? aggregateFeedbackByDay(feedbackItems) : []),
-        [feedbackItems]
+    // Transform trend data for chart (rename fields for recharts)
+    const chartTrendData = useMemo(
+        () => trendData.map(d => ({
+            date: format(new Date(d.date), 'MMM d'),
+            positive: d.positive_count,
+            negative: d.negative_count,
+        })),
+        [trendData]
     );
 
     const ratingDistData = useMemo(
@@ -334,14 +222,14 @@ export default function FeedbackAnalyticsPage() {
                     </div>
                 }
             />
-            
+
             {/* Date Range Display */}
             {dateRange.from && dateRange.to && (
                 <p className="text-sm text-muted-foreground -mt-4">
                     Showing data from {format(dateRange.from, 'MMM d, yyyy')} to {format(dateRange.to, 'MMM d, yyyy')}
                 </p>
             )}
-            
+
             {/* Summary Cards */}
             <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
                 <SettingsStatCard
@@ -349,14 +237,14 @@ export default function FeedbackAnalyticsPage() {
                     iconColorClass="text-primary"
                     iconBgClass="bg-primary/10"
                     label="Total Feedback"
-                    value={feedbackLoading ? "..." : summary?.total_count ?? 0}
+                    value={isLoadingFeedback ? "..." : summary?.total_count ?? 0}
                 />
                 <SettingsStatCard
                     icon={ThumbsUp}
                     iconColorClass="text-green-500"
                     iconBgClass="bg-green-500/10"
                     label="Positive"
-                    value={feedbackLoading ? "..." : summary?.positive_count ?? 0}
+                    value={isLoadingFeedback ? "..." : summary?.positive_count ?? 0}
                     className="border-green-200 dark:border-green-900"
                 />
                 <SettingsStatCard
@@ -364,7 +252,7 @@ export default function FeedbackAnalyticsPage() {
                     iconColorClass="text-red-500"
                     iconBgClass="bg-red-500/10"
                     label="Negative"
-                    value={feedbackLoading ? "..." : summary?.negative_count ?? 0}
+                    value={isLoadingFeedback ? "..." : summary?.negative_count ?? 0}
                     className="border-red-200 dark:border-red-900"
                 />
                 <SettingsStatCard
@@ -372,7 +260,7 @@ export default function FeedbackAnalyticsPage() {
                     iconColorClass="text-amber-500"
                     iconBgClass="bg-amber-500/10"
                     label="Negative Rate"
-                    value={feedbackLoading ? "..." : `${summary?.negative_rate_pct ?? 0}%`}
+                    value={isLoadingFeedback ? "..." : `${summary?.negative_rate_pct ?? 0}%`}
                     description={
                         (summary?.negative_rate_pct ?? 0) > 20
                             ? "Above average"
@@ -380,9 +268,9 @@ export default function FeedbackAnalyticsPage() {
                     }
                 />
             </div>
-            
+
             {/* Charts */}
-            {!feedbackLoading && trendData.length > 1 && (
+            {!isLoadingFeedback && chartTrendData.length > 1 && (
                 <div className="grid gap-4 md:grid-cols-2">
                     {/* Feedback Trend Line Chart */}
                     <Card>
@@ -392,7 +280,7 @@ export default function FeedbackAnalyticsPage() {
                         </CardHeader>
                         <CardContent>
                             <ChartContainer config={feedbackChartConfig} className="h-[220px] w-full">
-                                <LineChart data={trendData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                                <LineChart data={chartTrendData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                                     <XAxis dataKey="date" fontSize={12} tickLine={false} axisLine={false} />
                                     <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
@@ -437,7 +325,7 @@ export default function FeedbackAnalyticsPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {metricsLoading ? (
+                    {isLoadingMetrics ? (
                         <div className="space-y-2">
                             {[...Array(5)].map((_, i) => (
                                 <Skeleton key={i} className="h-12 w-full" />
@@ -480,10 +368,10 @@ export default function FeedbackAnalyticsPage() {
                                         <TableCell className="text-right">
                                             <span className={cn(
                                                 "font-medium",
-                                                source.negative_rate_pct > 50 
-                                                    ? "text-red-600" 
-                                                    : source.negative_rate_pct > 25 
-                                                        ? "text-amber-600" 
+                                                source.negative_rate_pct > 50
+                                                    ? "text-red-600"
+                                                    : source.negative_rate_pct > 25
+                                                        ? "text-amber-600"
                                                         : "text-muted-foreground"
                                             )}>
                                                 {source.negative_rate_pct}%
@@ -496,7 +384,7 @@ export default function FeedbackAnalyticsPage() {
                     )}
                 </CardContent>
             </Card>
-            
+
             {/* Recent Feedback */}
             <Card>
                 <CardHeader>
@@ -521,7 +409,7 @@ export default function FeedbackAnalyticsPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {feedbackLoading ? (
+                    {isLoadingFeedback ? (
                         <div className="space-y-4">
                             {[...Array(5)].map((_, i) => (
                                 <Skeleton key={i} className="h-24 w-full" />
@@ -531,7 +419,7 @@ export default function FeedbackAnalyticsPage() {
                         <div className="text-center py-8 text-muted-foreground">
                             <p>Failed to load feedback. You may not have admin access.</p>
                         </div>
-                    ) : feedbackData?.items.length === 0 ? (
+                    ) : feedbackItems.length === 0 ? (
                         <SettingsEmptyState
                             icon={MessageSquare}
                             title="No feedback collected yet"
@@ -539,19 +427,19 @@ export default function FeedbackAnalyticsPage() {
                         />
                     ) : (
                         <div className="space-y-4">
-                            {feedbackData?.items.map((item) => (
+                            {feedbackItems.map((item) => (
                                 <FeedbackCard key={item.id} feedback={item} />
                             ))}
-                            
-                            {feedbackData?.has_more && (
+
+                            {hasMoreFeedback && (
                                 <div className="text-center pt-4">
-                                    <Button 
-                                        variant="outline" 
+                                    <Button
+                                        variant="outline"
                                         size="sm"
                                         onClick={handleLoadMore}
-                                        disabled={feedbackFetching}
+                                        disabled={isFetchingFeedback}
                                     >
-                                        {feedbackFetching && <Spinner className="h-4 w-4 mr-2 animate-spin" />}
+                                        {isFetchingFeedback && <Spinner className="h-4 w-4 mr-2 animate-spin" />}
                                         Load More
                                     </Button>
                                 </div>
@@ -574,12 +462,12 @@ interface FeedbackCardProps {
 
 function FeedbackCard({ feedback }: FeedbackCardProps) {
     const isNegative = feedback.rating === 'negative';
-    
+
     return (
         <div className={cn(
             "p-4 rounded-lg border",
-            isNegative 
-                ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20" 
+            isNegative
+                ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20"
                 : "border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/20"
         )}>
             <div className="flex items-start justify-between gap-4">
@@ -589,7 +477,7 @@ function FeedbackCard({ feedback }: FeedbackCardProps) {
                         <p className="text-xs font-medium text-muted-foreground">Question</p>
                         <p className="text-sm truncate">{feedback.query_text}</p>
                     </div>
-                    
+
                     {/* Answer Preview */}
                     <div>
                         <p className="text-xs font-medium text-muted-foreground">Response</p>
@@ -597,7 +485,7 @@ function FeedbackCard({ feedback }: FeedbackCardProps) {
                             {feedback.answer_preview}
                         </p>
                     </div>
-                    
+
                     {/* Comment (if any) */}
                     {feedback.feedback_text && (
                         <div className="pt-2 border-t">
@@ -605,7 +493,7 @@ function FeedbackCard({ feedback }: FeedbackCardProps) {
                             <p className="text-sm italic">&quot;{feedback.feedback_text}&quot;</p>
                         </div>
                     )}
-                    
+
                     {/* Sources */}
                     {feedback.sources.length > 0 && (
                         <div className="flex flex-wrap gap-1 pt-1">
@@ -622,7 +510,7 @@ function FeedbackCard({ feedback }: FeedbackCardProps) {
                         </div>
                     )}
                 </div>
-                
+
                 {/* Rating & Meta */}
                 <div className="flex flex-col items-end gap-1 text-right shrink-0">
                     <div className={cn(

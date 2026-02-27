@@ -106,7 +106,7 @@ class FeedbackService:
             .maybe_single()\
             .execute()
 
-        is_update = bool(existing.data)
+        is_update = existing is not None and bool(existing.data)
 
         if is_update:
             # Update existing feedback
@@ -224,12 +224,13 @@ class FeedbackService:
 
         total = result.count if result.count is not None else 0
 
-        # Get user emails for display (service role can access auth.users)
-        items = []
-        for row in (result.data or []):
-            # Fetch user email
-            user_email = await self._get_user_email(supabase, row["user_id"])
+        # Batch-fetch user emails (single query instead of N)
+        rows = result.data or []
+        user_ids = [row["user_id"] for row in rows]
+        email_map = await self._get_user_emails_batch(supabase, user_ids)
 
+        items = []
+        for row in rows:
             items.append({
                 "id": row["id"],
                 "rating": row["rating"],
@@ -237,7 +238,7 @@ class FeedbackService:
                 "query_text": row["query_text"],
                 "answer_preview": row["answer_preview"],
                 "sources": row.get("sources_snapshot", []),
-                "user_email": user_email,
+                "user_email": email_map.get(row["user_id"], "unknown"),
                 "created_at": row["created_at"],
             })
 
@@ -258,12 +259,15 @@ class FeedbackService:
         min_feedback_count: int = 5,
         sort_by: str = "negative_rate_pct",
         sort_order: str = "desc",
-        limit: int = 20
+        limit: int = 20,
+        from_date: str | None = None,
+        to_date: str | None = None,
     ) -> dict[str, Any]:
         """
         Get aggregated source quality metrics.
 
-        Shows which source documents appear most frequently in negative feedback.
+        When from_date/to_date are provided, uses the RPC function for date-filtered
+        results. Otherwise falls back to the fast materialized view.
 
         Args:
             supabase: Supabase client
@@ -272,6 +276,8 @@ class FeedbackService:
             sort_by: Column to sort by
             sort_order: 'asc' or 'desc'
             limit: Max items to return (max 50)
+            from_date: ISO date string for start of range
+            to_date: ISO date string for end of range
 
         Returns:
             dict with items and total
@@ -284,41 +290,89 @@ class FeedbackService:
         if sort_by not in valid_sort_columns:
             sort_by = "negative_rate_pct"
 
-        # Query materialized view
-        query = supabase.table("source_feedback_metrics")\
-            .select("*", count="exact")\
-            .eq("organization_id", organization_id)\
-            .gte("total_feedback", min_feedback_count)
+        # Use RPC for date-filtered queries, materialized view otherwise
+        if from_date or to_date:
+            rpc_params: dict[str, Any] = {
+                "p_organization_id": organization_id,
+                "p_min_feedback_count": min_feedback_count,
+                "p_sort_by": sort_by,
+                "p_sort_order": sort_order,
+                "p_limit": limit,
+            }
+            if from_date:
+                rpc_params["p_from_date"] = from_date
+            if to_date:
+                rpc_params["p_to_date"] = to_date
 
-        # Apply sorting
-        if sort_order == "asc":
-            query = query.order(sort_by, desc=False)
+            result = supabase.rpc("get_source_metrics_filtered", rpc_params).execute()
+            rows = result.data or []
         else:
-            query = query.order(sort_by, desc=True)
+            # Fast path: materialized view (no date filtering)
+            query = supabase.table("source_feedback_metrics")\
+                .select("*", count="exact")\
+                .eq("organization_id", organization_id)\
+                .gte("total_feedback", min_feedback_count)
 
-        # Execute with limit
-        result = query.limit(limit).execute()
+            if sort_order == "asc":
+                query = query.order(sort_by, desc=False)
+            else:
+                query = query.order(sort_by, desc=True)
 
-        total = result.count if result.count is not None else 0
+            result = query.limit(limit).execute()
+            rows = result.data or []
 
         items = [
             {
                 "source_label": row["source_label"],
-                "source_type": row["source_type"],
+                "source_type": row.get("source_type"),
                 "source_url": row.get("source_url"),
-                "positive_count": row["positive_count"],
-                "negative_count": row["negative_count"],
-                "total_feedback": row["total_feedback"],
-                "negative_rate_pct": float(row["negative_rate_pct"]) if row["negative_rate_pct"] else 0.0,
+                "positive_count": int(row["positive_count"]),
+                "negative_count": int(row["negative_count"]),
+                "total_feedback": int(row["total_feedback"]),
+                "negative_rate_pct": float(row["negative_rate_pct"]) if row.get("negative_rate_pct") else 0.0,
                 "last_feedback_at": row.get("last_feedback_at"),
             }
-            for row in (result.data or [])
+            for row in rows
         ]
 
         return {
             "items": items,
-            "total": total,
+            "total": len(items),
         }
+
+    async def get_feedback_trend(
+        self,
+        supabase,
+        organization_id: str,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get daily feedback counts for the trend chart.
+
+        Uses the get_feedback_trend RPC function to aggregate by day.
+
+        Returns:
+            List of { date, positive_count, negative_count } dicts
+        """
+        rpc_params: dict[str, Any] = {
+            "p_organization_id": organization_id,
+        }
+        if from_date:
+            rpc_params["p_from_date"] = from_date
+        if to_date:
+            rpc_params["p_to_date"] = to_date
+
+        result = supabase.rpc("get_feedback_trend", rpc_params).execute()
+
+        return [
+            {
+                "date": row["date"],
+                "positive_count": int(row["positive_count"]),
+                "negative_count": int(row["negative_count"]),
+            }
+            for row in (result.data or [])
+        ]
 
     async def get_platform_feedback(
         self,
@@ -372,29 +426,26 @@ class FeedbackService:
 
         total = result.count if result.count is not None else 0
 
-        # Get org names for context
+        # Batch-fetch user emails and org names (single query each instead of N)
+        rows = result.data or []
+        user_ids = [row["user_id"] for row in rows]
+        org_ids = [row["organization_id"] for row in rows]
+        email_map = await self._get_user_emails_batch(supabase, user_ids)
+        org_name_map = await self._get_org_names_batch(supabase, org_ids)
+
         items = []
-        org_cache: dict[str, str] = {}
-
-        for row in (result.data or []):
+        for row in rows:
             org_id = row["organization_id"]
-
-            # Cache org name lookups
-            if org_id not in org_cache:
-                org_cache[org_id] = await self._get_org_name(supabase, org_id)
-
-            user_email = await self._get_user_email(supabase, row["user_id"])
-
             items.append({
                 "id": row["id"],
                 "organization_id": org_id,
-                "organization_name": org_cache[org_id],
+                "organization_name": org_name_map.get(org_id, f"org-{org_id[:8]}..."),
                 "rating": row["rating"],
                 "feedback_text": row.get("feedback_text"),
                 "query_text": row["query_text"],
                 "answer_preview": row["answer_preview"],
                 "sources": row.get("sources_snapshot", []),
-                "user_email": user_email,
+                "user_email": email_map.get(row["user_id"], "unknown"),
                 "created_at": row["created_at"],
             })
 
@@ -427,22 +478,21 @@ class FeedbackService:
         organization_id: str
     ) -> dict[str, Any]:
         """Get summary statistics for an organization."""
-        # Get counts by rating
-        positive = supabase.table("message_feedback")\
-            .select("id", count="exact")\
+        # Use count-only queries (no row data fetched) and derive positive = total - negative
+        total_result = supabase.table("message_feedback")\
+            .select("*", count="exact", head=True)\
             .eq("organization_id", organization_id)\
-            .eq("rating", "positive")\
             .execute()
 
         negative = supabase.table("message_feedback")\
-            .select("id", count="exact")\
+            .select("*", count="exact", head=True)\
             .eq("organization_id", organization_id)\
             .eq("rating", "negative")\
             .execute()
 
-        positive_count = positive.count or 0
+        total = total_result.count or 0
         negative_count = negative.count or 0
-        total = positive_count + negative_count
+        positive_count = total - negative_count
 
         return {
             "positive_count": positive_count,
@@ -455,26 +505,26 @@ class FeedbackService:
 
     async def _get_platform_summary(self, supabase) -> dict[str, Any]:
         """Get platform-wide summary statistics."""
-        positive = supabase.table("message_feedback")\
-            .select("id", count="exact")\
-            .eq("rating", "positive")\
+        total_result = supabase.table("message_feedback")\
+            .select("*", count="exact", head=True)\
             .execute()
 
         negative = supabase.table("message_feedback")\
-            .select("id", count="exact")\
+            .select("*", count="exact", head=True)\
             .eq("rating", "negative")\
             .execute()
 
-        # Count unique organizations with feedback
+        # Count unique organizations with feedback (capped for performance)
         orgs = supabase.table("message_feedback")\
             .select("organization_id")\
+            .limit(1000)\
             .execute()
 
         unique_orgs = len(set(row["organization_id"] for row in (orgs.data or [])))
 
-        positive_count = positive.count or 0
+        total = total_result.count or 0
         negative_count = negative.count or 0
-        total = positive_count + negative_count
+        positive_count = total - negative_count
 
         return {
             "positive_count": positive_count,
@@ -485,6 +535,52 @@ class FeedbackService:
             ),
             "organizations_with_feedback": unique_orgs,
         }
+
+    async def _get_user_emails_batch(self, supabase, user_ids: list[str]) -> dict[str, str]:
+        """Get emails for multiple users in a single query via user_profiles table."""
+        if not user_ids:
+            return {}
+        unique_ids = list(set(user_ids))
+        result_map: dict[str, str] = {}
+        try:
+            profiles = supabase.table("user_profiles")\
+                .select("user_id, email")\
+                .in_("user_id", unique_ids)\
+                .execute()
+            for row in (profiles.data or []):
+                email = row.get("email")
+                if email:
+                    result_map[row["user_id"]] = email
+                else:
+                    result_map[row["user_id"]] = f"user-{row['user_id'][:8]}..."
+        except Exception as e:
+            logger.debug(f"[Feedback] Batch email lookup failed: {e}")
+        # Fill in any missing user_ids
+        for uid in unique_ids:
+            if uid not in result_map:
+                result_map[uid] = "unknown"
+        return result_map
+
+    async def _get_org_names_batch(self, supabase, org_ids: list[str]) -> dict[str, str]:
+        """Get organization names for multiple orgs in a single query."""
+        if not org_ids:
+            return {}
+        unique_ids = list(set(org_ids))
+        result_map: dict[str, str] = {}
+        try:
+            teams = supabase.table("teams")\
+                .select("id, name")\
+                .in_("id", unique_ids)\
+                .execute()
+            for row in (teams.data or []):
+                result_map[row["id"]] = row["name"]
+        except Exception as e:
+            logger.debug(f"[Feedback] Batch org name lookup failed: {e}")
+        # Fill in any missing org_ids
+        for oid in unique_ids:
+            if oid not in result_map:
+                result_map[oid] = f"org-{oid[:8]}..."
+        return result_map
 
     async def _get_user_email(self, supabase, user_id: str) -> str:
         """Get user email by ID (for display in analytics)."""
@@ -503,7 +599,7 @@ class FeedbackService:
                 .eq("user_id", user_id)\
                 .maybe_single()\
                 .execute()
-            if profile.data:
+            if profile is not None and profile.data:
                 return f"user-{user_id[:8]}..."
         except Exception as e:
             logger.debug(f"[Feedback] Failed to fetch user profile: {e}")
@@ -518,7 +614,7 @@ class FeedbackService:
                 .eq("id", organization_id)\
                 .maybe_single()\
                 .execute()
-            if team.data:
+            if team is not None and team.data:
                 return team.data["name"]
         except Exception as e:
             logger.debug(f"[Feedback] Failed to fetch organization name: {e}")

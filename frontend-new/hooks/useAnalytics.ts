@@ -123,6 +123,15 @@ export interface SourceMetricsResponse {
 }
 
 /**
+ * Daily trend data point for the feedback trend chart.
+ */
+export interface TrendDataPoint {
+  date: string;
+  positive_count: number;
+  negative_count: number;
+}
+
+/**
  * Date range for filtering analytics data.
  */
 export interface DateRange {
@@ -267,6 +276,27 @@ async function fetchSourceMetrics(
   return response.data;
 }
 
+/**
+ * Fetches daily feedback trend data from the analytics API.
+ */
+async function fetchTrend(
+  fromDate?: Date | null,
+  toDate?: Date | null
+): Promise<TrendDataPoint[]> {
+  const params = new URLSearchParams();
+  if (fromDate) {
+    params.set('from_date', startOfDay(fromDate).toISOString());
+  }
+  if (toDate) {
+    params.set('to_date', endOfDay(toDate).toISOString());
+  }
+
+  const response = await api.get<TrendDataPoint[]>(
+    `/analytics/feedback/trend?${params.toString()}`
+  );
+  return response.data;
+}
+
 // =============================================================================
 // Hook
 // =============================================================================
@@ -324,13 +354,28 @@ export function useAnalytics(options: UseAnalyticsOptions = {}) {
     },
   });
 
+  // Trend query (daily counts from dedicated endpoint)
+  const trendQuery = useQuery({
+    queryKey: ['analytics-trend', dateFromKey, dateToKey],
+    queryFn: () => fetchTrend(dateRange.from, dateRange.to),
+    staleTime: STALE_TIME,
+    enabled,
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes('403')) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
+
   /**
-   * Refetch both feedback and source metrics data.
+   * Refetch all analytics data.
    */
   const refetchAll = async () => {
     await Promise.all([
       feedbackQuery.refetch(),
       metricsQuery.refetch(),
+      trendQuery.refetch(),
     ]);
   };
 
@@ -340,6 +385,7 @@ export function useAnalytics(options: UseAnalyticsOptions = {}) {
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['analytics-feedback'] });
     queryClient.invalidateQueries({ queryKey: ['analytics-source-metrics'] });
+    queryClient.invalidateQueries({ queryKey: ['analytics-trend'] });
   };
 
   return {
@@ -354,6 +400,10 @@ export function useAnalytics(options: UseAnalyticsOptions = {}) {
     sourceMetrics: metricsQuery.data ?? null,
     sourceItems: metricsQuery.data?.items ?? [],
     totalSources: metricsQuery.data?.total ?? 0,
+
+    // Trend data
+    trendData: trendQuery.data ?? [],
+    isLoadingTrend: trendQuery.isLoading,
 
     // Loading states
     isLoadingFeedback: feedbackQuery.isLoading,

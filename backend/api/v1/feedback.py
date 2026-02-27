@@ -173,7 +173,7 @@ async def require_platform_admin(user_id: str = Depends(get_current_user)) -> st
             .maybe_single()\
             .execute()
 
-        if profile.data and profile.data.get("is_platform_admin"):
+        if profile is not None and profile.data and profile.data.get("is_platform_admin"):
             return user_id
 
     except Exception as e:
@@ -220,7 +220,7 @@ async def submit_feedback(
             .maybe_single()\
             .execute()
 
-        if not message.data:
+        if message is None or not message.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Message not found"
@@ -242,7 +242,7 @@ async def submit_feedback(
             .maybe_single()\
             .execute()
 
-        if not conversation.data:
+        if conversation is None or not conversation.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found"
@@ -315,7 +315,7 @@ async def get_conversation_feedback(
             .maybe_single()\
             .execute()
 
-        if not conversation.data:
+        if conversation is None or not conversation.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found"
@@ -407,7 +407,9 @@ async def get_source_metrics(
     min_feedback_count: int = Query(default=5, ge=1, description="Min feedback to include"),
     sort_by: str = Query(default="negative_rate_pct", description="Sort column"),
     sort_order: str = Query(default="desc", description="'asc' or 'desc'"),
-    limit: int = Query(default=20, le=50, ge=1)
+    limit: int = Query(default=20, le=50, ge=1),
+    from_date: str | None = Query(default=None, description="ISO date for start of range"),
+    to_date: str | None = Query(default=None, description="ISO date for end of range"),
 ):
     """
     Get aggregated quality metrics by source document.
@@ -434,6 +436,8 @@ async def get_source_metrics(
             sort_by=sort_by,
             sort_order=sort_order,
             limit=limit,
+            from_date=from_date,
+            to_date=to_date,
         )
 
         return SourceMetricsResponse(
@@ -446,6 +450,39 @@ async def get_source_metrics(
     except Exception as e:
         logger.error(f"[Feedback] Get source metrics failed: {e}")
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_source_metrics")
+
+
+@router.get("/analytics/feedback/trend")
+@limiter.limit("30/minute")
+async def get_feedback_trend(
+    request: Request,
+    user_id: str = Depends(require_admin),
+    organization_id: str = Depends(get_user_organization_id),
+    from_date: str | None = Query(default=None, description="ISO date for start of range"),
+    to_date: str | None = Query(default=None, description="ISO date for end of range"),
+):
+    """
+    Get daily feedback counts for trend chart.
+
+    Returns an array of { date, positive_count, negative_count } objects,
+    one per day that has feedback within the date range.
+    """
+    supabase = get_supabase()
+
+    try:
+        result = await feedback_service.get_feedback_trend(
+            supabase=supabase,
+            organization_id=organization_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Feedback] Get feedback trend failed: {e}")
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "get_feedback_trend")
 
 
 # =============================================================================
