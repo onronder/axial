@@ -1,7 +1,11 @@
 /**
  * Unit Tests for useTeamMembers Hook
- * 
+ *
  * Tests team member CRUD operations, stats, and filtering.
+ *
+ * NOTE: The hook does NOT auto-fetch members on mount.
+ * Only fetchStats() runs on mount. Members must be fetched
+ * explicitly via refresh() with pagination params.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -52,11 +56,24 @@ const mockMembers: TeamMember[] = [
     },
 ];
 
+const mockMemberResponse = { items: mockMembers, total: 2, has_more: false };
+
 const mockStats = {
     total_seats: 20,
     active_members: 1,
     pending_invites: 1,
 };
+
+/**
+ * Helper: render the hook and fetch members so isLoading becomes false.
+ */
+async function renderAndLoad() {
+    const hook = renderHook(() => useTeamMembers());
+    await act(async () => {
+        await hook.result.current.refresh();
+    });
+    return hook;
+}
 
 describe('useTeamMembers', () => {
     beforeEach(() => {
@@ -65,7 +82,7 @@ describe('useTeamMembers', () => {
             if (url.includes('stats')) {
                 return Promise.resolve({ data: mockStats });
             }
-            return Promise.resolve({ data: mockMembers });
+            return Promise.resolve({ data: mockMemberResponse });
         });
     });
 
@@ -73,17 +90,16 @@ describe('useTeamMembers', () => {
         it('should start with loading true', async () => {
             const { result } = renderHook(() => useTeamMembers());
             expect(result.current.isLoading).toBe(true);
-            await waitFor(() => {
-                expect(result.current.isLoading).toBe(false);
+
+            // Trigger member fetch to resolve loading state
+            await act(async () => {
+                await result.current.refresh();
             });
+            expect(result.current.isLoading).toBe(false);
         });
 
-        it('should fetch members and stats on mount', async () => {
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => {
-                expect(result.current.isLoading).toBe(false);
-            });
+        it('should fetch stats on mount and members on refresh', async () => {
+            const { result } = await renderAndLoad();
 
             expect(mockApiGet).toHaveBeenCalledWith('/team/members', { params: {} });
             expect(mockApiGet).toHaveBeenCalledWith('/team/stats');
@@ -96,10 +112,11 @@ describe('useTeamMembers', () => {
 
             const { result } = renderHook(() => useTeamMembers());
 
-            await waitFor(() => {
-                expect(result.current.isLoading).toBe(false);
+            await act(async () => {
+                await result.current.refresh();
             });
 
+            expect(result.current.isLoading).toBe(false);
             expect(result.current.error).toBe('Network error');
         });
 
@@ -108,10 +125,11 @@ describe('useTeamMembers', () => {
 
             const { result } = renderHook(() => useTeamMembers());
 
-            await waitFor(() => {
-                expect(result.current.isLoading).toBe(false);
+            await act(async () => {
+                await result.current.refresh();
             });
 
+            expect(result.current.isLoading).toBe(false);
             expect(result.current.error).toBe('bad');
         });
     });
@@ -130,9 +148,7 @@ describe('useTeamMembers', () => {
             };
             mockApiPost.mockResolvedValue({ data: newMember });
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -154,9 +170,7 @@ describe('useTeamMembers', () => {
         it('should handle invite error', async () => {
             mockApiPost.mockRejectedValue({ response: { data: { detail: 'Email exists' } } });
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -175,9 +189,7 @@ describe('useTeamMembers', () => {
         it('should fall back to default message when invite error lacks detail', async () => {
             mockApiPost.mockRejectedValue({});
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -198,9 +210,7 @@ describe('useTeamMembers', () => {
             const updatedMember = { ...mockMembers[1], role: 'editor' as const };
             mockApiPatch.mockResolvedValue({ data: updatedMember });
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -217,9 +227,7 @@ describe('useTeamMembers', () => {
         it('should handle role update error', async () => {
             mockApiPatch.mockRejectedValue(new Error('Failed'));
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -235,9 +243,7 @@ describe('useTeamMembers', () => {
         it('should handle non-error role update failure', async () => {
             mockApiPatch.mockRejectedValue('bad');
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -251,9 +257,7 @@ describe('useTeamMembers', () => {
         });
 
         it('should return false when member not found', async () => {
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -277,9 +281,7 @@ describe('useTeamMembers', () => {
             const updatedMember = { ...mockMembers[1], status: 'active' as const };
             mockApiPatch.mockResolvedValue({ data: updatedMember });
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -293,9 +295,7 @@ describe('useTeamMembers', () => {
         it('should handle status update error', async () => {
             mockApiPatch.mockRejectedValue(new Error('Failed'));
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -311,9 +311,7 @@ describe('useTeamMembers', () => {
         it('should handle non-error status update failure', async () => {
             mockApiPatch.mockRejectedValue('bad');
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -328,9 +326,9 @@ describe('useTeamMembers', () => {
         it('should remove a member', async () => {
             mockApiDelete.mockResolvedValue({});
 
-            const { result } = renderHook(() => useTeamMembers());
+            const { result } = await renderAndLoad();
 
-            await waitFor(() => expect(result.current.members.length).toBe(2));
+            expect(result.current.members.length).toBe(2);
 
             let success: boolean;
             await act(async () => {
@@ -348,9 +346,7 @@ describe('useTeamMembers', () => {
         it('should handle remove error', async () => {
             mockApiDelete.mockRejectedValue(new Error('Failed'));
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -363,9 +359,7 @@ describe('useTeamMembers', () => {
         it('should handle non-error remove failure', async () => {
             mockApiDelete.mockRejectedValue('bad');
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -376,9 +370,7 @@ describe('useTeamMembers', () => {
         });
 
         it('should return false when member not found', async () => {
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -399,9 +391,9 @@ describe('useTeamMembers', () => {
         it('should update stats correctly for pending member removal', async () => {
             mockApiDelete.mockResolvedValue({});
 
-            const { result } = renderHook(() => useTeamMembers());
+            const { result } = await renderAndLoad();
 
-            await waitFor(() => expect(result.current.members.length).toBe(2));
+            expect(result.current.members.length).toBe(2);
 
             // Remove pending member (id: '2')
             await act(async () => {
@@ -417,9 +409,7 @@ describe('useTeamMembers', () => {
         it('should resend invite', async () => {
             mockApiPost.mockResolvedValue({});
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -436,9 +426,7 @@ describe('useTeamMembers', () => {
         it('should handle resend invite error', async () => {
             mockApiPost.mockRejectedValue(new Error('Failed'));
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -454,9 +442,7 @@ describe('useTeamMembers', () => {
         it('should handle non-error resend invite failure', async () => {
             mockApiPost.mockRejectedValue('bad');
 
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             let success: boolean;
             await act(async () => {
@@ -469,9 +455,7 @@ describe('useTeamMembers', () => {
 
     describe('refresh', () => {
         it('should re-fetch members with filters', async () => {
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             await act(async () => {
                 await result.current.refresh({ role: 'admin', status: 'active' });
@@ -483,9 +467,7 @@ describe('useTeamMembers', () => {
         });
 
         it('should include search filter when provided', async () => {
-            const { result } = renderHook(() => useTeamMembers());
-
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            const { result } = await renderAndLoad();
 
             await act(async () => {
                 await result.current.refresh({ search: 'admin' });
@@ -501,12 +483,15 @@ describe('useTeamMembers', () => {
                 if (url.includes('stats')) {
                     return Promise.reject('bad');
                 }
-                return Promise.resolve({ data: mockMembers });
+                return Promise.resolve({ data: mockMemberResponse });
             });
 
             const { result } = renderHook(() => useTeamMembers());
 
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            // Trigger member fetch so isLoading becomes false
+            await act(async () => {
+                await result.current.refresh();
+            });
 
             await act(async () => {
                 await result.current.refreshStats();

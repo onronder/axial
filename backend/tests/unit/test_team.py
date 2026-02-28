@@ -317,15 +317,28 @@ class TestRemoveMemberEndpoint:
 
         mock_supabase = MagicMock()
         table = MagicMock()
-        table.delete.return_value = table
+        table.select.return_value = table
         table.eq.return_value = table
-        table.execute.return_value = MagicMock(data=[{"id": "member-123"}])
+        table.update.return_value = table
+        table.delete.return_value = table
+        # First execute: member lookup returns member data with member_user_id != owner
+        # Second execute: status update returns success
+        table.execute.side_effect = [
+            MagicMock(data=[{"id": "member-123", "role": "viewer", "status": "active", "member_user_id": "other-user", "email": "other@test.com"}]),
+            MagicMock(data=[{"id": "member-123"}]),
+        ]
         mock_supabase.table.return_value = table
 
-        with patch("api.v1.team.get_supabase", return_value=mock_supabase):
-            result = asyncio.run(remove_team_member(request=_make_mock_request(method="DELETE"), member_id="member-123", user_id="owner-1"))
+        with patch("api.v1.team.get_supabase", return_value=mock_supabase), \
+             patch("api.v1.team.audit_logger"):
+            result = asyncio.run(remove_team_member(
+                request=_make_mock_request(method="DELETE"),
+                member_id="member-123",
+                background_tasks=MagicMock(),
+                user_id="owner-1",
+            ))
 
-        assert result == {"status": "success", "id": "member-123"}
+        assert result["status"] == "success"
 
     @pytest.mark.unit
     def test_cannot_remove_self(self):

@@ -32,6 +32,8 @@ def _make_table(data=None, count=None, execute_side_effect=None):
     table.update.return_value = table
     table.insert.return_value = table
     table.delete.return_value = table
+    table.in_.return_value = table
+    table.maybe_single.return_value = table
     if execute_side_effect is not None:
         table.execute.side_effect = execute_side_effect
     else:
@@ -484,22 +486,12 @@ class TestGetUserTeam:
     async def test_returns_team_with_role(self, team_service):
         """get_user_team returns team details with user's role."""
         mock_supabase = Mock()
-
-        # Mock team membership query
-        mock_supabase.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = Mock(
-            data=[{"team_id": TEAM_UUID, "role": "editor", "joined_at": "2024-01-01T00:00:00Z"}]
-        )
-
-        # Mock team details query - now using maybe_single() instead of single()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
-            data={
-                "id": TEAM_UUID,
-                "name": "Acme Corp",
-                "slug": "acme-corp",
-                "owner_id": OWNER_UUID,
-                "created_at": "2024-01-01T00:00:00Z"
-            }
-        )
+        members_table = _make_table(data=[{"team_id": TEAM_UUID, "role": "editor", "joined_at": "2024-01-01T00:00:00Z"}])
+        teams_table = _make_table(data={"id": TEAM_UUID, "name": "Acme Corp", "slug": "acme-corp", "owner_id": OWNER_UUID, "created_at": "2024-01-01T00:00:00Z"})
+        mock_supabase.table.side_effect = lambda name: {
+            "team_members": members_table,
+            "teams": teams_table,
+        }.get(name, _make_table([]))
 
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
             team = await team_service.get_user_team(MEMBER_UUID)
@@ -515,21 +507,12 @@ class TestGetUserTeam:
     async def test_owner_is_marked_as_owner(self, team_service):
         """Team owner should have is_owner=True."""
         mock_supabase = Mock()
-
-        mock_supabase.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = Mock(
-            data=[{"team_id": TEAM_UUID, "role": "admin", "joined_at": "2024-01-01T00:00:00Z"}]
-        )
-
-        # Mock team details query - now using maybe_single() instead of single()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(
-            data={
-                "id": TEAM_UUID,
-                "name": "My Team",
-                "slug": None,
-                "owner_id": OWNER_UUID,  # Same as user
-                "created_at": "2024-01-01T00:00:00Z"
-            }
-        )
+        members_table = _make_table(data=[{"team_id": TEAM_UUID, "role": "admin", "joined_at": "2024-01-01T00:00:00Z"}])
+        teams_table = _make_table(data={"id": TEAM_UUID, "name": "My Team", "slug": None, "owner_id": OWNER_UUID, "created_at": "2024-01-01T00:00:00Z"})
+        mock_supabase.table.side_effect = lambda name: {
+            "team_members": members_table,
+            "teams": teams_table,
+        }.get(name, _make_table([]))
 
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
             team = await team_service.get_user_team(OWNER_UUID)

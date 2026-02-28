@@ -127,6 +127,7 @@ class TestDocumentListEndpoint:
                 response=MagicMock(spec=Response),
                 user_id="test-user",
                 organization_id="org-1",
+                allowed_scopes=None,
                 limit=10,
                 offset=0
             ))
@@ -168,6 +169,7 @@ class TestDocumentListEndpoint:
                 response=mock_response,
                 user_id="test-user",
                 organization_id="org-1",
+                allowed_scopes=None,
                 limit=10,
                 offset=20
             ))
@@ -206,6 +208,7 @@ class TestDocumentListEndpoint:
                 response=mock_response,
                 user_id="test-user",
                 organization_id="org-1",
+                allowed_scopes=None,
                 q="budget report"
             ))
         query.ilike.assert_called_with("title", "%budget report%")
@@ -256,6 +259,7 @@ class TestDocumentListEndpoint:
                 response=mock_response,
                 user_id="test-user",
                 organization_id="org-1",
+                allowed_scopes=None,
                 limit=10,
                 offset=0,
                 include_failed=True,
@@ -287,6 +291,7 @@ class TestDocumentListEndpoint:
                 response=mock_response,
                 user_id="test-user",
                 organization_id="org-1",
+                allowed_scopes=None,
             ))
 
             # Verify ordering
@@ -318,6 +323,7 @@ class TestDocumentDeleteEndpoint:
                         BackgroundTasks(),
                         user_id="user-1",
                         organization_id="org-1",
+                        allowed_scopes=None,
                     )
                 )
 
@@ -345,6 +351,7 @@ class TestDocumentDeleteEndpoint:
                     BackgroundTasks(),
                     user_id="user-1",
                     organization_id="org-1",
+                    allowed_scopes=None,
                 )
             )
 
@@ -375,6 +382,7 @@ class TestDocumentDeleteEndpoint:
                         BackgroundTasks(),
                         user_id="user-1",
                         organization_id="org-1",
+                        allowed_scopes=None,
                     )
                 )
         assert exc.value.status_code == 404
@@ -816,6 +824,7 @@ class TestDocumentErrorPaths:
                 response=MagicMock(spec=Response),
                 user_id="test-user",
                 organization_id="org-1",
+                allowed_scopes=None,
                 limit=10,
                 offset=0,
                 include_failed=True,
@@ -844,6 +853,7 @@ class TestDocumentErrorPaths:
                     response=MagicMock(spec=Response),
                     user_id="test-user",
                     organization_id="org-1",
+                    allowed_scopes=None,
                     limit=10,
                     offset=0,
                 ))
@@ -863,6 +873,7 @@ class TestDocumentErrorPaths:
                     background_tasks=BackgroundTasks(),
                     user_id="user-1",
                     organization_id="org-1",
+                    allowed_scopes=None,
                 ))
         assert exc.value.status_code == 403
 
@@ -888,6 +899,7 @@ class TestDocumentErrorPaths:
                     background_tasks=BackgroundTasks(),
                     user_id="user-1",
                     organization_id="org-1",
+                    allowed_scopes=None,
                 ))
         assert exc.value.status_code == 500
 
