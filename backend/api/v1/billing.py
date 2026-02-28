@@ -15,6 +15,7 @@ Polar API Reference:
 - GET /v1/customers/{id} - Get customer details
 """
 import logging
+import time
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -31,6 +32,11 @@ router = APIRouter(dependencies=[Depends(validate_team_access)])
 logger = logging.getLogger(__name__)
 
 POLAR_API_BASE = "https://api.polar.sh/v1"
+
+# In-memory cache for plans (rarely change, avoids hitting Polar on every request)
+_plans_cache: list | None = None
+_plans_cache_time: float = 0
+PLANS_CACHE_TTL = 300  # 5 minutes
 
 
 # ============================================================
@@ -226,10 +232,17 @@ async def get_customer_id_for_user(user_id: str) -> str | None:
 async def list_plans(request: Request):
     """
     Fetch available plans from Polar with real prices.
+    Uses in-memory cache to avoid hitting Polar on every request.
     """
+    global _plans_cache, _plans_cache_time
+
     if not settings.POLAR_ACCESS_TOKEN:
         logger.warning("[Billing] Polar token not configured")
         return []
+
+    # Return cached result if fresh
+    if _plans_cache is not None and (time.monotonic() - _plans_cache_time) < PLANS_CACHE_TTL:
+        return _plans_cache
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         try:
@@ -239,8 +252,8 @@ async def list_plans(request: Request):
             )
 
             if response.status_code != 200:
-                logger.error(f"[Billing] Polar API Error: {response.status_code}")
-                return []
+                logger.warning(f"[Billing] Polar API returned {response.status_code}, serving {'stale cache' if _plans_cache is not None else 'empty list'}")
+                return _plans_cache if _plans_cache is not None else []
 
             data = response.json()
             items = data.get("items", [])
@@ -285,7 +298,6 @@ async def list_plans(request: Request):
             plans.sort(key=lambda x: order.get(x.type, 99))
 
             # Ensure Enterprise is present even if not in Polar (as "Contact Us" fallback)
-            # This is optional but good if Enterprise is not a real Polar product yet
             has_enterprise = any(p.type == "enterprise" for p in plans)
             if not has_enterprise:
                 ent_meta = PLAN_METADATA["enterprise"]
@@ -303,11 +315,15 @@ async def list_plans(request: Request):
                     popular=ent_meta["popular"]
                 ))
 
+            # Update cache on success
+            _plans_cache = plans
+            _plans_cache_time = time.monotonic()
+
             return plans
 
         except Exception as e:
-            logger.error(f"[Billing] Failed to fetch plans: {e}")
-            return []
+            logger.warning(f"[Billing] Failed to fetch plans: {e}, serving {'stale cache' if _plans_cache is not None else 'empty list'}")
+            return _plans_cache if _plans_cache is not None else []
 
 
 # ============================================================
