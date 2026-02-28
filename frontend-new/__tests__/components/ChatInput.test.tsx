@@ -364,16 +364,8 @@ describe('ChatInput Component', () => {
         it('works without onFileSelect callback', () => {
             render(<ChatInput {...defaultProps} onFileSelect={undefined} />);
 
-            const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-
-            const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });
-            Object.defineProperty(fileInput, 'files', {
-                value: [file],
-                writable: false,
-            });
-
-            // Should not throw
-            expect(() => fireEvent.change(fileInput)).not.toThrow();
+            const fileInput = document.querySelector('input[type="file"]');
+            expect(fileInput).toBeNull();
         });
     });
 

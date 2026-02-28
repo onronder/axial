@@ -350,7 +350,7 @@ describe('SourcePillList', () => {
       
       render(<SourcePillList sources={sources} />);
       
-      expect(screen.getByTitle('2 more sources not shown')).toBeInTheDocument();
+      expect(screen.getByTitle('Show 2 more sources')).toBeInTheDocument();
     });
   });
 

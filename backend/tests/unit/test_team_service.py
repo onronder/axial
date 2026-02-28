@@ -381,27 +381,12 @@ class TestTeamServiceAdditional:
 
         mock_supabase.rpc.return_value.execute.side_effect = Exception("RPC fail")
 
-        member_table = Mock()
-        member_table.select.return_value.eq.return_value.neq.return_value.limit.return_value.execute.return_value = Mock(data=[])
-
-        teams_table = Mock()
-        teams_table.select.return_value.eq.return_value.limit.return_value.execute.return_value = Mock(data=[])
-
-        profile_table = Mock()
-        profile_table.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
-            data={"plan": "pro"}
-        )
-
-        def table_side_effect(name):
-            if name == "team_members":
-                return member_table
-            if name == "teams":
-                return teams_table
-            if name == "user_profiles":
-                return profile_table
-            return Mock()
-
-        mock_supabase.table.side_effect = table_side_effect
+        tables = {
+            "team_members": _make_table(data=[]),
+            "teams": _make_table(data=[]),
+            "user_profiles": _make_table(data={"plan": "pro"}),
+        }
+        mock_supabase.table.side_effect = lambda name: tables.get(name, _make_table([]))
 
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
             plan = await team_service.get_effective_plan(OWNER_UUID)
@@ -416,14 +401,12 @@ class TestTeamServiceAdditional:
         # Mock RPC returning None (no user found)
         mock_supabase.rpc.return_value.execute.return_value = Mock(data=None)
 
-        # Mock direct query fallback also returning nothing
-        mock_eq = mock_supabase.table.return_value.select.return_value.eq.return_value
-        mock_eq.neq.return_value.limit.return_value.execute.return_value = Mock(data=[])
-
-        # Mock own_team check (empty)
-        mock_eq.limit.return_value.execute.return_value = Mock(data=[])
-
-        mock_eq.single.return_value.execute.return_value = Mock(data=None)
+        tables = {
+            "team_members": _make_table(data=[]),
+            "teams": _make_table(data=[]),
+            "user_profiles": _make_table(data=None),
+        }
+        mock_supabase.table.side_effect = lambda name: tables.get(name, _make_table([]))
 
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
             plan = await team_service.get_effective_plan("nonexistent-user-id")
@@ -439,23 +422,15 @@ class TestTeamServiceAdditional:
         # Mock RPC to raise exception
         mock_supabase.rpc.return_value.execute.side_effect = Exception("RPC unavailable")
 
-        # Mock direct query path
-        # Step 1: Find team membership
-        mock_eq = mock_supabase.table.return_value.select.return_value.eq.return_value
-        mock_eq.neq.return_value.limit.return_value.execute.return_value = Mock(
-            data=[{"team_id": TEAM_UUID}]
-        )
-        # Step 2: Get team owner
-        mock_eq.single.return_value.execute.return_value = Mock(
-            data={"owner_id": OWNER_UUID}
-        )
-
-        # Mock own_team check (empty)
-        mock_eq.limit.return_value.execute.return_value = Mock(data=[])
+        tables = {
+            "team_members": _make_table(data=[{"team_id": TEAM_UUID}]),
+            "teams": _make_table(data={"owner_id": OWNER_UUID}),
+            "subscriptions": _make_table(data=[]),
+            "user_profiles": _make_table(data=None),
+        }
+        mock_supabase.table.side_effect = lambda name: tables.get(name, _make_table([]))
 
         with patch("services.team_service.get_supabase", return_value=mock_supabase):
-            # The fallback should work
-            # Note: Due to mock chaining complexity, just verify it doesn't crash
             plan = await team_service.get_effective_plan(MEMBER_UUID)
             assert plan in ["free", "starter", "pro", "enterprise"]
 
