@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Request
 from langchain_openai import OpenAIEmbeddings
 from pydantic import BaseModel, Field
 
-from api.v1.dependencies import require_paid_access, validate_team_access
+from api.v1.dependencies import get_user_allowed_scopes, require_paid_access, validate_team_access
 from api.v1.error_utils import ApiErrorCode, api_error
 from core.config import settings
 from core.db import get_supabase
@@ -110,7 +110,8 @@ class SearchResponse(BaseModel):
 async def search_documents(
     request: Request,
     payload: SearchRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    allowed_scopes: list[str] | None = Depends(get_user_allowed_scopes),
 ):
     """
     Search documents with optional scope filtering and distribution analysis.
@@ -118,6 +119,7 @@ async def search_documents(
     Features:
     - Hybrid search (vector + keyword)
     - Optional scope filtering via scope_ids
+    - Scope-level access control via consent system
     - Scope distribution analysis for Dominance Guard
     """
     supabase = get_supabase()
@@ -136,15 +138,29 @@ async def search_documents(
     # 2. Execute Hybrid Search (scope-aware)
     organization_id = await team_service.get_organization_id(user_id)
 
+    # Apply scope-level access control: intersect requested scopes with allowed scopes
+    effective_scope_ids = payload.scope_ids
+    if allowed_scopes is not None:
+        if effective_scope_ids:
+            # Intersect: only allow scopes user has access to
+            effective_scope_ids = [s for s in effective_scope_ids if s in allowed_scopes]
+        else:
+            # No explicit filter — restrict to allowed scopes
+            effective_scope_ids = allowed_scopes
+
+        # All scopes revoked or no intersection — return empty results
+        if not effective_scope_ids:
+            return SearchResponse(results=[], scope_analysis=None)
+
     try:
-        if payload.scope_ids:
-            # Use scoped search when explicit scope filter provided
+        if effective_scope_ids:
+            # Use scoped search (explicit filter or access-controlled)
             response = supabase.rpc("hybrid_search_scoped", {
                 "query_text": payload.query,
                 "query_embedding": query_vector,
                 "match_count": payload.limit,
                 "filter_org_id": organization_id,
-                "filter_scope_ids": payload.scope_ids,
+                "filter_scope_ids": effective_scope_ids,
                 "similarity_threshold": payload.threshold,
             }).execute()
         else:

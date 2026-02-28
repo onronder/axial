@@ -121,6 +121,8 @@ export interface UseAuditLogsOptions {
   resourceType?: string;
   /** Date range preset (e.g., '7d', '30d', 'all') */
   dateRange?: string;
+  /** Server-side search query */
+  search?: string;
   /** Current page (0-indexed) */
   page?: number;
   /** Number of items per page */
@@ -140,25 +142,75 @@ const DEFAULT_PAGE_SIZE = 20;
 const STALE_TIME = 30_000;
 
 /**
- * Available action types for filtering.
- * SYNC WARNING: This list should match backend/api/v1/admin.py AUDIT_ACTIONS
+ * Format an action string into a human-readable label.
+ * e.g., 'document.create' -> 'Document Create'
  */
-export const AUDIT_ACTIONS: AuditAction[] = [
-  { value: 'all', label: 'All Actions' },
-  { value: 'document.delete', label: 'Document Delete' },
-  { value: 'document.update', label: 'Document Update' },
-  { value: 'document.wipe', label: 'Document Wipe' },
-  { value: 'chat.delete', label: 'Chat Delete' },
-  { value: 'connector.sync_start', label: 'Sync Started' },
-  { value: 'connector.sync_success', label: 'Sync Success' },
-  { value: 'connector.sync_fail', label: 'Sync Failed' },
-  { value: 'scope.delete', label: 'Scope Delete' },
-  { value: 'settings.update', label: 'Settings Update' },
-  { value: 'team.member_invite', label: 'Team Invite' },
-  { value: 'team.member_remove', label: 'Team Remove' },
-  { value: 'gdpr.anonymization_requested', label: 'GDPR Request' },
-  { value: 'gdpr.anonymization_completed', label: 'GDPR Completed' },
+function actionToLabel(action: string): string {
+  return action
+    .split('.')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).replace(/_/g, ' '))
+    .join(' ');
+}
+
+/**
+ * Fallback action types for offline/initial render.
+ * The canonical list is fetched from GET /admin/audit-logs/actions.
+ */
+const FALLBACK_ACTIONS: string[] = [
+  'document.create', 'document.update', 'document.delete', 'document.wipe',
+  'chat.create', 'chat.delete',
+  'connector.create', 'connector.update', 'connector.delete',
+  'scope.create', 'scope.update', 'scope.delete', 'scope.wipe',
+  'ingestion.queued', 'ingestion.started', 'ingestion.completed', 'ingestion.failed',
+  'security.document_wiped', 'security.scope_deleted',
+  'security.ghost_protocol_activated', 'security.ghost_protocol_completed',
+  'settings.update', 'settings.configure',
+  'team.create', 'team.update', 'team.member_invite', 'team.member_remove',
+  'team.member_role_change', 'team.member_status_change',
+  'approval.request', 'approval.approve', 'approval.reject', 'approval.execute',
+  'consent.granted', 'consent.revoked', 'consent.updated',
+  'mcp.api_key_created', 'mcp.api_key_rotated', 'mcp.api_key_revoked',
+  'safety.content_flagged', 'safety.content_blocked',
 ];
+
+/**
+ * Build AuditAction[] from a list of action strings.
+ */
+function buildAuditActions(actions: string[]): AuditAction[] {
+  return [
+    { value: 'all', label: 'All Actions' },
+    ...actions.map((a) => ({ value: a, label: actionToLabel(a) })),
+  ];
+}
+
+/** Default actions for initial render (before API fetch completes). */
+export const AUDIT_ACTIONS: AuditAction[] = buildAuditActions(FALLBACK_ACTIONS);
+
+/**
+ * Fetch the canonical audit action list from the backend.
+ * Falls back to FALLBACK_ACTIONS on error.
+ */
+async function fetchAuditActions(): Promise<AuditAction[]> {
+  try {
+    const response = await api.get<{ actions: string[] }>('/admin/audit-logs/actions');
+    return buildAuditActions(response.data.actions);
+  } catch {
+    return AUDIT_ACTIONS;
+  }
+}
+
+/**
+ * Hook to fetch audit action types from the backend.
+ * Keeps frontend in sync without hardcoded lists.
+ */
+export function useAuditActions() {
+  return useQuery({
+    queryKey: ['audit-actions'],
+    queryFn: fetchAuditActions,
+    staleTime: 300_000, // 5 minutes
+    placeholderData: AUDIT_ACTIONS,
+  });
+}
 
 /**
  * Available resource types for filtering.
@@ -171,6 +223,11 @@ export const RESOURCE_TYPES: ResourceType[] = [
   { value: 'user', label: 'Users' },
   { value: 'team', label: 'Team' },
   { value: 'scope', label: 'Scopes' },
+  { value: 'settings', label: 'Settings' },
+  { value: 'organization', label: 'Organization' },
+  { value: 'mcp_api_key', label: 'MCP API Keys' },
+  { value: 'mcp', label: 'MCP' },
+  { value: 'ingestion_job', label: 'Ingestion Jobs' },
 ];
 
 /**
@@ -200,6 +257,7 @@ async function fetchAuditLogs(options: {
   action?: string;
   resourceType?: string;
   dateRange?: string;
+  search?: string;
   limit: number;
   offset: number;
 }): Promise<AuditLogResponse> {
@@ -219,6 +277,9 @@ async function fetchAuditLogs(options: {
       const fromDate = subDays(new Date(), preset.days);
       params.set('from_date', fromDate.toISOString());
     }
+  }
+  if (options.search) {
+    params.set('search', options.search);
   }
 
   const response = await api.get<AuditLogResponse>(
@@ -326,6 +387,7 @@ export function useAuditLogs(options: UseAuditLogsOptions = {}) {
     action = 'all',
     resourceType = 'all',
     dateRange = '7d',
+    search,
     page = 0,
     pageSize = DEFAULT_PAGE_SIZE,
     enabled = true,
@@ -334,12 +396,13 @@ export function useAuditLogs(options: UseAuditLogsOptions = {}) {
   const offset = page * pageSize;
 
   const query = useQuery({
-    queryKey: ['audit-logs', { action, resourceType, dateRange, page, pageSize }],
+    queryKey: ['audit-logs', { action, resourceType, dateRange, search, page, pageSize }],
     queryFn: () =>
       fetchAuditLogs({
         action,
         resourceType,
         dateRange,
+        search,
         limit: pageSize,
         offset,
       }),
@@ -391,15 +454,29 @@ export function useAuditLogs(options: UseAuditLogsOptions = {}) {
   };
 
   /**
-   * Export current logs as CSV file.
-   * 
+   * Export all matching logs as CSV file.
+   * Fetches up to 10,000 records from the API to ensure complete export.
+   *
    * @param searchQuery - Optional search query to filter before export
    */
-  const exportToCSV = (searchQuery?: string) => {
-    const logsToExport = searchQuery
-      ? filterBySearch(searchQuery)
-      : query.data?.items ?? [];
-    downloadAuditLogCSV(logsToExport);
+  const exportToCSV = async (searchQuery?: string) => {
+    try {
+      const allData = await fetchAuditLogs({
+        action,
+        resourceType,
+        dateRange,
+        search: searchQuery || search,
+        limit: 10000,
+        offset: 0,
+      });
+      downloadAuditLogCSV(allData.items);
+    } catch {
+      // Fallback to current page data if full fetch fails
+      const logsToExport = searchQuery
+        ? filterBySearch(searchQuery)
+        : query.data?.items ?? [];
+      downloadAuditLogCSV(logsToExport);
+    }
   };
 
   return {

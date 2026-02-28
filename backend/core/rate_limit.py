@@ -30,11 +30,25 @@ def get_user_id_or_ip(request: Request) -> str:
 
     This provides per-user rate limiting for authenticated users,
     and per-IP limiting for anonymous requests.
+
+    Parses the JWT from the Authorization header directly. This is safe because:
+    - Actual auth verification happens in the get_current_user endpoint dependency
+    - Rate limiting by a forged user_id only hurts the attacker
     """
-    # Try to get user from request state (set by auth middleware)
-    user = getattr(request.state, "user", None)
-    if user and hasattr(user, "id"):
-        return f"user:{user.id}"
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            import jwt
+
+            token = auth_header[7:]
+            # Decode without verification — we only need the sub claim for rate limiting.
+            # Auth verification happens separately in get_current_user dependency.
+            payload = jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256"])
+            user_id = payload.get("sub")
+            if user_id:
+                return f"user:{user_id}"
+        except Exception:
+            pass
 
     # Fall back to IP address
     return get_remote_address(request)
@@ -42,6 +56,9 @@ def get_user_id_or_ip(request: Request) -> str:
 
 # Main limiter instance - use IP by default for simplicity
 limiter = Limiter(key_func=get_remote_address)
+
+# Per-user limiter for LLM/chat endpoints — prevents abuse in shared network environments
+user_limiter = Limiter(key_func=get_user_id_or_ip)
 
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:

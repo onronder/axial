@@ -14,6 +14,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from api.v1.dependencies import (
+    get_user_allowed_scopes,
     get_user_organization_id,
     require_editor,
     require_paid_access,
@@ -251,6 +252,7 @@ async def list_documents(
     response: Response,
     user_id: str = Depends(validate_team_access),  # Validates team access
     organization_id: str = Depends(get_user_organization_id),  # Org-scoped query
+    allowed_scopes: list[str] | None = Depends(get_user_allowed_scopes),
     limit: int = 50,
     offset: int = 0,
     q: str | None = None,
@@ -265,6 +267,16 @@ async def list_documents(
             .eq("organization_id", organization_id)\
             .neq("source_type", "identity")\
             .neq("source_type", "scope_identity")  # Org-wide access
+
+        # Scope-level access control: filter to allowed scopes if restricted
+        # Include documents with NULL scope_id (org-level docs without a specific scope)
+        if allowed_scopes is not None:
+            if allowed_scopes:
+                scope_filter = ",".join(allowed_scopes)
+                query = query.or_(f"scope_id.in.({scope_filter}),scope_id.is.null")
+            else:
+                # All scopes revoked — only show unscoped org-level documents
+                query = query.is_("scope_id", "null")
 
         # Apply search filter
         if q and q.strip():
@@ -574,6 +586,7 @@ async def delete_document(
     background_tasks: BackgroundTasks,
     user_id: str = Depends(require_editor),
     organization_id: str = Depends(get_user_organization_id),
+    allowed_scopes: list[str] | None = Depends(get_user_allowed_scopes),
 ):
     """Delete a document. Org-scoped: team editors can delete shared docs."""
     supabase = get_supabase()
@@ -589,13 +602,19 @@ async def delete_document(
         # First, get document info for audit log (org-scoped access)
         # Use maybe_single() to gracefully handle missing documents (PGRST116 prevention)
         doc_response = supabase.table("documents")\
-            .select("title")\
+            .select("title, scope_id")\
             .eq("id", doc_id)\
             .eq("organization_id", organization_id)\
             .maybe_single()\
             .execute()
         if doc_response is None or not doc_response.data:
             raise HTTPException(status_code=404, detail="Document not found")
+
+        # Scope-level access control: check if user can access this document's scope
+        if allowed_scopes is not None:
+            doc_scope = doc_response.data.get("scope_id")
+            if doc_scope is not None and doc_scope not in allowed_scopes:
+                raise HTTPException(status_code=403, detail="Access denied: document scope restricted")
 
         doc_title = doc_response.data.get("title", "Unknown")
 
@@ -628,6 +647,7 @@ async def update_document(
     background_tasks: BackgroundTasks,
     user_id: str = Depends(require_editor),
     organization_id: str = Depends(get_user_organization_id),
+    allowed_scopes: list[str] | None = Depends(get_user_allowed_scopes),
 ):
     """
     Update document metadata (title, description, tags).
@@ -656,6 +676,12 @@ async def update_document(
 
         if not doc_response.data:
             raise HTTPException(status_code=404, detail="Document not found")
+
+        # Scope-level access control: check if user can access this document's scope
+        if allowed_scopes is not None:
+            doc_scope = doc_response.data.get("scope_id")
+            if doc_scope is not None and doc_scope not in allowed_scopes:
+                raise HTTPException(status_code=403, detail="Access denied: document scope restricted")
 
         old_doc = doc_response.data
 
@@ -734,6 +760,7 @@ async def get_document_chunks(
     request: Request,
     user_id: str = Depends(get_current_user),
     organization_id: str = Depends(get_user_organization_id),
+    allowed_scopes: list[str] | None = Depends(get_user_allowed_scopes),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -752,7 +779,7 @@ async def get_document_chunks(
     try:
         # Verify document exists in organization (org-scoped access)
         doc_check = supabase.table("documents")\
-            .select("id")\
+            .select("id, scope_id")\
             .eq("id", document_id)\
             .eq("organization_id", organization_id)\
             .single()\
@@ -760,6 +787,12 @@ async def get_document_chunks(
 
         if not doc_check.data:
             raise HTTPException(status_code=404, detail="Document not found")
+
+        # Scope-level access control: check if user can access this document's scope
+        if allowed_scopes is not None:
+            doc_scope = doc_check.data.get("scope_id")
+            if doc_scope is not None and doc_scope not in allowed_scopes:
+                raise HTTPException(status_code=403, detail="Access denied: document scope restricted")
 
         # Fetch chunks
         chunks_response = supabase.table("document_chunks")\
@@ -908,6 +941,7 @@ async def initiate_wipe(
     background_tasks: BackgroundTasks,
     user_id: str = Depends(require_editor),
     organization_id: str = Depends(get_user_organization_id),
+    allowed_scopes: list[str] | None = Depends(get_user_allowed_scopes),
 ):
     """
     Initiate DoD 5220.22-M secure wipe for document.
@@ -942,6 +976,11 @@ async def initiate_wipe(
 
         doc_title = doc_response.data.get("title", "Unknown")
         scope_id = doc_response.data.get("scope_id")
+
+        # Scope-level access control: check if user can access this document's scope
+        if allowed_scopes is not None:
+            if scope_id is not None and scope_id not in allowed_scopes:
+                raise HTTPException(status_code=403, detail="Access denied: document scope restricted")
 
         # Generate wipe request ID
         wipe_id = str(uuid.uuid4())
@@ -1143,23 +1182,19 @@ async def _execute_secure_wipe(
     Uses cleanup_service which performs DoD 5220.22-M compliant deletion.
     Updates the compliance tombstone on completion.
     """
-    import time
     from datetime import timezone
 
-    from services.audit import log_security_wipe
-
     supabase = get_supabase()
-    start_time = time.time()
 
     try:
         # Execute the secure wipe via cleanup service
+        # Note: cleanup_service.delete_single_document() already logs
+        # the security.document_wiped event internally via _log_security_event
         await cleanup_service.delete_single_document(
             document_id,
             user_id,
             organization_id=organization_id
         )
-
-        duration_ms = int((time.time() - start_time) * 1000)
 
         # Mark tombstone as completed
         supabase.table("compliance_tombstones")\
@@ -1171,21 +1206,8 @@ async def _execute_secure_wipe(
             .eq("organization_id", organization_id)\
             .execute()
 
-        # Log security event
-        log_security_wipe(
-            user_id=user_id,
-            event_type="document_wiped",
-            resource_id=document_id,
-            resource_name=doc_title,
-            wipe_pattern="dod_5220_22_m",
-            wipe_verified=True,
-            duration_ms=duration_ms,
-            metadata={"wipe_id": wipe_id},
-        )
-
         logger.info(
-            f"[GhostProtocol] Secure wipe completed: {document_id[:8]}... "
-            f"({duration_ms}ms)"
+            f"[GhostProtocol] Secure wipe completed: {document_id[:8]}..."
         )
 
     except Exception as e:

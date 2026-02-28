@@ -157,7 +157,12 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
             setError('Invalid rating');
             return;
         }
-        
+
+        // Skip if same rating already submitted for this message
+        if (feedbackState[messageId] === rating) {
+            return;
+        }
+
         setIsSubmitting(true);
         setError(null);
         
@@ -220,7 +225,7 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
         } finally {
             setIsSubmitting(false);
         }
-    }, [toast]);
+    }, [toast, feedbackState]);
     
     return {
         submitFeedback,

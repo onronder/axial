@@ -228,6 +228,7 @@ export function NotificationCenter() {
                     variant="ghost"
                     size="sm"
                     className="relative h-9 w-9 p-0"
+                    aria-label="Notifications"
                 >
                     <Bell className="h-5 w-5" />
                     {unreadCount > 0 && (
@@ -266,6 +267,7 @@ export function NotificationCenter() {
                             size="sm"
                             className="h-8 w-8 p-0"
                             onClick={clearAll}
+                            aria-label="Clear all notifications"
                         >
                             <Trash2 className="h-4 w-4" />
                         </Button>

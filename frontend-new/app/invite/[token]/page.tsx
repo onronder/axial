@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/components/providers/SessionProvider";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, XCircle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,6 +33,7 @@ export default function AcceptInvitePage() {
     const params = useParams();
     const token = params.token as string;
     const { session, loading: sessionLoading } = useSession();
+    const queryClient = useQueryClient();
 
     const [state, setState] = useState<InviteState>("loading");
     const [teamName, setTeamName] = useState<string>("");
@@ -60,6 +62,12 @@ export default function AcceptInvitePage() {
                 if (data.success) {
                     setTeamName(data.team_name || "the team");
                     setState("success");
+
+                    // Invalidate stale caches before navigating
+                    queryClient.invalidateQueries({ queryKey: ['team'] });
+                    queryClient.invalidateQueries({ queryKey: ['usage'] });
+                    queryClient.invalidateQueries({ queryKey: ['profile'] });
+                    queryClient.invalidateQueries({ queryKey: ['pending-invites'] });
 
                     // Redirect to dashboard after a short delay
                     setTimeout(() => {

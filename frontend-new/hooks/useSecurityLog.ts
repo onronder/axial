@@ -16,7 +16,7 @@ export interface SecurityEvent {
   resource_type: string;
   resource_name: string;
   resource_id: string;
-  wipe_pattern: WipePattern;
+  wipe_pattern: WipePattern | null;
   wipe_verified: boolean;
   performed_by: string;
   performed_at: string;

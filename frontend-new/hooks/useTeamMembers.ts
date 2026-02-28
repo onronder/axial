@@ -48,12 +48,20 @@ export interface TeamMember {
     last_active: string | null;
     created_at: string;
     invited_at: string | null;
+    expires_at?: string | null;
 }
 
 export interface TeamStats {
     total_seats: number;
     active_members: number;
     pending_invites: number;
+    suspended_members: number;
+}
+
+export interface TeamMemberListResponse {
+    items: TeamMember[];
+    total: number;
+    has_more: boolean;
 }
 
 export interface TeamFilters {
@@ -70,6 +78,7 @@ const DEFAULT_STATS: TeamStats = {
     total_seats: 20,
     active_members: 0,
     pending_invites: 0,
+    suspended_members: 0,
 };
 
 // =============================================================================
@@ -86,6 +95,8 @@ export const useTeamMembers = () => {
     // State
     const [members, setMembers] = useState<TeamMember[]>([]);
     const [stats, setStats] = useState<TeamStats>(DEFAULT_STATS);
+    const [total, setTotal] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     
@@ -104,22 +115,26 @@ export const useTeamMembers = () => {
     // =========================================================================
 
     /**
-     * Fetch team members with optional filters.
+     * Fetch team members with optional filters and server-side pagination.
      */
-    const fetchMembers = useCallback(async (filters?: Partial<TeamFilters>) => {
+    const fetchMembers = useCallback(async (filters?: Partial<TeamFilters>, limit?: number, offset?: number) => {
         setIsLoading(true);
         setError(null);
-        
+
         try {
             const params: Record<string, string> = {};
             if (filters?.role && filters.role !== 'all') params.role = filters.role;
             if (filters?.status && filters.status !== 'all') params.status = filters.status;
             if (filters?.search) params.search = filters.search;
+            if (limit !== undefined) params.limit = String(limit);
+            if (offset !== undefined) params.offset = String(offset);
 
-            const { data } = await api.get('/team/members', { params });
-            
+            const { data } = await api.get<TeamMemberListResponse>('/team/members', { params });
+
             if (mountedRef.current) {
-                setMembers(data);
+                setMembers(data.items);
+                setTotal(data.total);
+                setHasMore(data.has_more);
             }
         } catch (err) {
             const message = extractErrorMessage(err, 'Failed to fetch team');
@@ -154,11 +169,10 @@ export const useTeamMembers = () => {
         }
     }, []);
 
-    // Initial fetch
+    // Initial stats fetch (members are fetched by the component with pagination params)
     useEffect(() => {
-        fetchMembers();
         fetchStats();
-    }, [fetchMembers, fetchStats]);
+    }, [fetchStats]);
 
     // =========================================================================
     // Mutation Operations (with Optimistic Updates)
@@ -192,11 +206,13 @@ export const useTeamMembers = () => {
                 setMembers(prev => prev.map(m => m.id === tempId ? data : m));
             }
             
+            fetchStats();
+
             toast({
                 title: 'Invitation sent',
                 description: `Invitation sent to ${email}`,
             });
-            
+
             return true;
         } catch (err) {
             const message = extractErrorMessage(err, 'Failed to send invitation');
@@ -436,16 +452,18 @@ export const useTeamMembers = () => {
         // Data
         members,
         stats,
+        total,
+        hasMore,
         isLoading,
         error,
-        
+
         // Mutations
         inviteMember,
         updateMemberRole,
         updateMemberStatus,
         removeMember,
         resendInvite,
-        
+
         // Refresh
         refresh: fetchMembers,
         refreshStats: fetchStats,

@@ -149,12 +149,56 @@ Input: "{query}"
 Output:"""
 
 
+# ============================================================
+# PROMPT INJECTION DETECTION (Heuristic)
+# ============================================================
+
+# Patterns that indicate prompt injection attempts in queries or retrieved chunks.
+# These catch instruction-override attacks like "ignore previous instructions".
+_INJECTION_PATTERNS = [
+    re.compile(r"ignore\s+(all\s+)?previous\s+(instructions|prompts|context)", re.IGNORECASE),
+    re.compile(r"disregard\s+(all\s+)?(?:above|prior|previous)", re.IGNORECASE),
+    re.compile(r"you\s+are\s+now\s+(?:a|an)\s+", re.IGNORECASE),
+    re.compile(r"new\s+instructions?\s*:", re.IGNORECASE),
+    re.compile(r"system\s*prompt\s*:", re.IGNORECASE),
+    re.compile(r"\[INST\]|\[/INST\]|<<SYS>>|<\|im_start\|>", re.IGNORECASE),
+    re.compile(r"pretend\s+(?:you(?:'re|\s+are)|to\s+be)\s+", re.IGNORECASE),
+    re.compile(r"override\s+(?:your|the|all)\s+(?:instructions|rules|guidelines)", re.IGNORECASE),
+    re.compile(r"forget\s+(?:everything|all|your)\s+(?:you|instructions|rules)", re.IGNORECASE),
+    re.compile(r"act\s+as\s+(?:if|though)\s+you\s+(?:have|had)\s+no\s+(?:restrictions|rules)", re.IGNORECASE),
+    re.compile(r"do\s+not\s+follow\s+(?:your|the|any)\s+(?:rules|guidelines|instructions)", re.IGNORECASE),
+]
+
+
+def detect_prompt_injection(text: str) -> bool:
+    """
+    Fast heuristic check for prompt injection patterns.
+
+    Args:
+        text: User query or retrieved document chunk content
+
+    Returns:
+        True if injection pattern detected
+    """
+    if not text:
+        return False
+    for pattern in _INJECTION_PATTERNS:
+        if pattern.search(text):
+            logger.warning(
+                "🛡️ [Guardrails] Prompt injection pattern detected: %s",
+                pattern.pattern[:60],
+            )
+            return True
+    return False
+
+
 class GuardrailService:
     """
     Ultra-fast query analysis using Llama-3.1-8B via Groq.
 
     Provides:
     - Safety check (blocks harmful content)
+    - Prompt injection detection (heuristic patterns)
     - Language detection (ISO 639-1 code)
     - Intent classification (GREETING, OFF_TOPIC, RAG_QUERY)
     - Complexity assessment (SIMPLE, COMPLEX)
@@ -305,6 +349,16 @@ class GuardrailService:
         Returns:
             GuardrailResult with analysis fields
         """
+        # Fast heuristic check for prompt injection
+        if detect_prompt_injection(query):
+            return GuardrailResult(
+                language="en",
+                is_safe=False,
+                intent="OFF_TOPIC",
+                complexity="SIMPLE",
+                reply="I cannot process that request."
+            )
+
         try:
             model = self._get_model()
             prompt = GUARDRAIL_PROMPT.replace("{query}", query.replace('"', '\\"'))

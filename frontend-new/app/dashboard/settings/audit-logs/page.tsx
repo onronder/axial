@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useDeferredValue } from "react";
 import { format, parseISO, subDays } from "date-fns";
 import {
   ScrollText,
@@ -15,6 +15,18 @@ import {
   Users,
   Shield,
   Download,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Lock,
+  Database,
+  Folder,
+  Key,
+  Upload,
+  Ban,
+  Clock,
+  RotateCcw,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,32 +79,164 @@ interface AuditLogResponse {
 
 // Action type to icon mapping
 const actionIcons: Record<string, React.ElementType> = {
-  "document.delete": FileText,
+  // Document
+  "document.create": FileText,
   "document.update": FileText,
+  "document.delete": FileText,
+  "document.wipe": Ban,
+  // Chat
+  "chat.create": MessageSquare,
   "chat.delete": MessageSquare,
+  // Connector
+  "connector.create": Link2,
+  "connector.update": Link2,
+  "connector.delete": Link2,
+  "connector.connect": Link2,
+  "connector.disconnect": Link2,
   "connector.sync_start": Link2,
-  "connector.sync_success": Link2,
-  "connector.sync_fail": Link2,
+  "connector.sync_success": CheckCircle,
+  "connector.sync_fail": XCircle,
+  // Scope
+  "scope.create": Folder,
+  "scope.update": Folder,
+  "scope.delete": Folder,
+  "scope.wipe": Ban,
+  // Ingestion
+  "ingestion.queued": Clock,
+  "ingestion.started": Upload,
+  "ingestion.completed": CheckCircle,
+  "ingestion.failed": XCircle,
+  "ingestion.skipped": Ban,
+  "ingestion.timeout": Clock,
+  // Chunk / Org
+  "chunk.purge": Database,
+  "organization.purge": Database,
+  // Security / Ghost Protocol
+  "security.document_wiped": Shield,
+  "security.scope_deleted": Shield,
+  "security.chunk_purged": Shield,
+  "security.organization_purged": Shield,
+  "security.ghost_protocol_activated": Lock,
+  "security.ghost_protocol_completed": Lock,
+  // Settings
   "settings.update": Settings,
+  "settings.configure": Settings,
+  // Team
+  "team.create": Users,
+  "team.update": Users,
   "team.member_invite": Users,
   "team.member_remove": Users,
+  "team.member_role_change": Users,
+  "team.member_status_change": Users,
+  "team.member_resend_invite": Send,
+  // Approval
+  "approval.request": Shield,
+  "approval.approve": CheckCircle,
+  "approval.reject": XCircle,
+  "approval.execute": Shield,
+  "approval.approval_requested": Shield,
+  // Consent
+  "consent.granted": CheckCircle,
+  "consent.revoked": Ban,
+  "consent.updated": Settings,
+  // GDPR
   "gdpr.anonymization_requested": Shield,
   "gdpr.anonymization_completed": Shield,
+  "gdpr.data_export_requested": Download,
+  "gdpr.data_export_completed": Download,
+  "gdpr.deletion_requested": Ban,
+  "gdpr.deletion_completed": Ban,
+  // Compliance
+  "compliance.audit_requested": ScrollText,
+  "compliance.audit_completed": ScrollText,
+  // MCP
+  "mcp.api_key_created": Key,
+  "mcp.api_key_rotated": RotateCcw,
+  "mcp.api_key_revoked": Ban,
+  // Safety
+  "safety.content_flagged": Shield,
+  "safety.content_blocked": Ban,
 };
 
 // Action type to color mapping
 const actionColors: Record<string, string> = {
-  "document.delete": "bg-red-500/10 text-red-600 dark:text-red-400",
+  // Document
+  "document.create": "bg-green-500/10 text-green-600 dark:text-green-400",
   "document.update": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  "document.delete": "bg-red-500/10 text-red-600 dark:text-red-400",
+  "document.wipe": "bg-red-500/10 text-red-600 dark:text-red-400",
+  // Chat
+  "chat.create": "bg-green-500/10 text-green-600 dark:text-green-400",
   "chat.delete": "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-  "connector.sync_start": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+  // Connector
+  "connector.create": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "connector.update": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  "connector.delete": "bg-red-500/10 text-red-600 dark:text-red-400",
+  "connector.connect": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "connector.disconnect": "bg-red-500/10 text-red-600 dark:text-red-400",
+  "connector.sync_start": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   "connector.sync_success": "bg-green-500/10 text-green-600 dark:text-green-400",
   "connector.sync_fail": "bg-red-500/10 text-red-600 dark:text-red-400",
+  // Scope
+  "scope.create": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "scope.update": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  "scope.delete": "bg-red-500/10 text-red-600 dark:text-red-400",
+  "scope.wipe": "bg-red-500/10 text-red-600 dark:text-red-400",
+  // Ingestion
+  "ingestion.queued": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  "ingestion.started": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  "ingestion.completed": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "ingestion.failed": "bg-red-500/10 text-red-600 dark:text-red-400",
+  "ingestion.skipped": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  "ingestion.timeout": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  // Chunk / Org
+  "chunk.purge": "bg-red-500/10 text-red-600 dark:text-red-400",
+  "organization.purge": "bg-red-500/10 text-red-600 dark:text-red-400",
+  // Security / Ghost Protocol
+  "security.document_wiped": "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  "security.scope_deleted": "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  "security.chunk_purged": "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  "security.organization_purged": "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  "security.ghost_protocol_activated": "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  "security.ghost_protocol_completed": "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  // Settings
   "settings.update": "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+  "settings.configure": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  // Team
+  "team.create": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "team.update": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   "team.member_invite": "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
   "team.member_remove": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  "team.member_role_change": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  "team.member_status_change": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  "team.member_resend_invite": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  // Approval
+  "approval.request": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  "approval.approve": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "approval.reject": "bg-red-500/10 text-red-600 dark:text-red-400",
+  "approval.execute": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "approval.approval_requested": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  // Consent
+  "consent.granted": "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+  "consent.revoked": "bg-red-500/10 text-red-600 dark:text-red-400",
+  "consent.updated": "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+  // GDPR
   "gdpr.anonymization_requested": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   "gdpr.anonymization_completed": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "gdpr.data_export_requested": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  "gdpr.data_export_completed": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "gdpr.deletion_requested": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  "gdpr.deletion_completed": "bg-red-500/10 text-red-600 dark:text-red-400",
+  // Compliance
+  "compliance.audit_requested": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  "compliance.audit_completed": "bg-green-500/10 text-green-600 dark:text-green-400",
+  // MCP
+  "mcp.api_key_created": "bg-green-500/10 text-green-600 dark:text-green-400",
+  "mcp.api_key_rotated": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  "mcp.api_key_revoked": "bg-red-500/10 text-red-600 dark:text-red-400",
+  // Safety
+  "safety.content_flagged": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  "safety.content_blocked": "bg-red-500/10 text-red-600 dark:text-red-400",
 };
 
 const PAGE_SIZE = 20;
@@ -108,6 +252,7 @@ export default function AuditLogsPage() {
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [page, setPage] = useState(0);
 
   // Filters
@@ -115,21 +260,90 @@ export default function AuditLogsPage() {
   const [resourceFilter, setResourceFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<string>("7d");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const deferredSearch = useDeferredValue(debouncedSearch);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Available actions for filter
+  // Available actions for filter (complete list matching backend)
   const availableActions = [
     { value: "all", label: "All Actions" },
-    { value: "document.delete", label: "Document Delete" },
+    // Document
+    { value: "document.create", label: "Document Create" },
     { value: "document.update", label: "Document Update" },
+    { value: "document.delete", label: "Document Delete" },
+    { value: "document.wipe", label: "Document Wipe" },
+    // Chat
+    { value: "chat.create", label: "Chat Create" },
     { value: "chat.delete", label: "Chat Delete" },
+    // Connector
+    { value: "connector.create", label: "Connector Create" },
+    { value: "connector.update", label: "Connector Update" },
+    { value: "connector.delete", label: "Connector Delete" },
+    { value: "connector.connect", label: "Connector Connect" },
+    { value: "connector.disconnect", label: "Connector Disconnect" },
     { value: "connector.sync_start", label: "Sync Started" },
     { value: "connector.sync_success", label: "Sync Success" },
     { value: "connector.sync_fail", label: "Sync Failed" },
+    // Scope
+    { value: "scope.create", label: "Scope Create" },
+    { value: "scope.update", label: "Scope Update" },
+    { value: "scope.delete", label: "Scope Delete" },
+    { value: "scope.wipe", label: "Scope Wipe" },
+    // Ingestion
+    { value: "ingestion.queued", label: "Ingestion Queued" },
+    { value: "ingestion.started", label: "Ingestion Started" },
+    { value: "ingestion.completed", label: "Ingestion Completed" },
+    { value: "ingestion.failed", label: "Ingestion Failed" },
+    { value: "ingestion.skipped", label: "Ingestion Skipped" },
+    { value: "ingestion.timeout", label: "Ingestion Timeout" },
+    // Chunk / Org
+    { value: "chunk.purge", label: "Chunk Purge" },
+    { value: "organization.purge", label: "Organization Purge" },
+    // Security / Ghost Protocol
+    { value: "security.document_wiped", label: "Document Wiped" },
+    { value: "security.scope_deleted", label: "Scope Deleted" },
+    { value: "security.chunk_purged", label: "Chunk Purged" },
+    { value: "security.organization_purged", label: "Org Purged" },
+    { value: "security.ghost_protocol_activated", label: "Ghost Protocol Activated" },
+    { value: "security.ghost_protocol_completed", label: "Ghost Protocol Completed" },
+    // Settings
     { value: "settings.update", label: "Settings Update" },
+    { value: "settings.configure", label: "Settings Configure" },
+    // Team
+    { value: "team.create", label: "Team Create" },
+    { value: "team.update", label: "Team Update" },
     { value: "team.member_invite", label: "Team Invite" },
     { value: "team.member_remove", label: "Team Remove" },
-    { value: "gdpr.anonymization_requested", label: "GDPR Request" },
-    { value: "gdpr.anonymization_completed", label: "GDPR Completed" },
+    { value: "team.member_role_change", label: "Team Role Change" },
+    { value: "team.member_status_change", label: "Team Status Change" },
+    { value: "team.member_resend_invite", label: "Team Resend Invite" },
+    // Approval
+    { value: "approval.request", label: "Approval Request" },
+    { value: "approval.approve", label: "Approval Approve" },
+    { value: "approval.reject", label: "Approval Reject" },
+    { value: "approval.execute", label: "Approval Execute" },
+    { value: "approval.approval_requested", label: "Approval Requested" },
+    // Consent
+    { value: "consent.granted", label: "Consent Granted" },
+    { value: "consent.revoked", label: "Consent Revoked" },
+    { value: "consent.updated", label: "Consent Updated" },
+    // GDPR
+    { value: "gdpr.anonymization_requested", label: "GDPR Anonymization Requested" },
+    { value: "gdpr.anonymization_completed", label: "GDPR Anonymization Completed" },
+    { value: "gdpr.data_export_requested", label: "GDPR Export Requested" },
+    { value: "gdpr.data_export_completed", label: "GDPR Export Completed" },
+    { value: "gdpr.deletion_requested", label: "GDPR Deletion Requested" },
+    { value: "gdpr.deletion_completed", label: "GDPR Deletion Completed" },
+    // Compliance
+    { value: "compliance.audit_requested", label: "Compliance Audit Requested" },
+    { value: "compliance.audit_completed", label: "Compliance Audit Completed" },
+    // MCP
+    { value: "mcp.api_key_created", label: "MCP Key Created" },
+    { value: "mcp.api_key_rotated", label: "MCP Key Rotated" },
+    { value: "mcp.api_key_revoked", label: "MCP Key Revoked" },
+    // Safety
+    { value: "safety.content_flagged", label: "Content Flagged" },
+    { value: "safety.content_blocked", label: "Content Blocked" },
   ];
 
   const resourceTypes = [
@@ -139,6 +353,12 @@ export default function AuditLogsPage() {
     { value: "connector", label: "Connectors" },
     { value: "user", label: "Users" },
     { value: "team", label: "Team" },
+    { value: "scope", label: "Scopes" },
+    { value: "settings", label: "Settings" },
+    { value: "organization", label: "Organization" },
+    { value: "mcp_api_key", label: "MCP API Keys" },
+    { value: "mcp", label: "MCP" },
+    { value: "ingestion_job", label: "Ingestion Jobs" },
   ];
 
   const dateRanges = [
@@ -155,6 +375,43 @@ export default function AuditLogsPage() {
       router.push("/dashboard/settings/general");
     }
   }, [profile, profileLoading, router]);
+
+  // Search debounce handler
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value);
+    setPage(0);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(value);
+    }, 300);
+  }, []);
+
+  // Cleanup debounce timer
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Filter change handlers that reset page
+  const handleActionFilterChange = useCallback((value: string) => {
+    setPage(0);
+    setActionFilter(value);
+  }, []);
+
+  const handleResourceFilterChange = useCallback((value: string) => {
+    setPage(0);
+    setResourceFilter(value);
+  }, []);
+
+  const handleDateRangeChange = useCallback((value: string) => {
+    setPage(0);
+    setDateRange(value);
+  }, []);
 
   // Fetch audit logs
   const fetchLogs = useCallback(async (showRefreshing = false) => {
@@ -180,6 +437,9 @@ export default function AuditLogsPage() {
         const fromDate = subDays(new Date(), days);
         params.set("from_date", fromDate.toISOString());
       }
+      if (deferredSearch) {
+        params.set("search", deferredSearch);
+      }
 
       const response = await api.get<AuditLogResponse>(
         `/admin/audit-logs?${params.toString()}`
@@ -200,7 +460,7 @@ export default function AuditLogsPage() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [page, actionFilter, resourceFilter, dateRange, toast]);
+  }, [page, actionFilter, resourceFilter, dateRange, deferredSearch, toast]);
 
   // Initial fetch and refetch on filter changes
   useEffect(() => {
@@ -209,17 +469,8 @@ export default function AuditLogsPage() {
     }
   }, [fetchLogs, profile?.role]);
 
-  // Filter logs by search query (client-side)
-  const filteredLogs = logs.filter((log) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      log.action.toLowerCase().includes(query) ||
-      log.resource_type?.toLowerCase().includes(query) ||
-      log.resource_id?.toLowerCase().includes(query) ||
-      JSON.stringify(log.details).toLowerCase().includes(query)
-    );
-  });
+  // Use server-filtered logs directly (no client-side filtering)
+  const filteredLogs = logs;
 
   // Format action for display
   const formatAction = (action: string) => {
@@ -228,29 +479,68 @@ export default function AuditLogsPage() {
     ).join(" ");
   };
 
-  // Export logs as CSV
-  const exportLogs = () => {
-    const csvContent = [
-      ["Timestamp", "User Name", "User Email", "Action", "Resource Type", "Resource ID", "Details", "IP Address"],
-      ...filteredLogs.map((log) => [
-        log.created_at,
-        log.user_name || "",
-        log.user_email || "",
-        log.action,
-        log.resource_type || "",
-        log.resource_id || "",
-        JSON.stringify(log.details),
-        log.ip_address || "",
-      ]),
-    ]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+  // Export logs as CSV — fetches ALL matching events from API
+  const exportLogs = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", "10000");
+      params.set("offset", "0");
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `audit-logs-${format(new Date(), "yyyy-MM-dd")}.csv`;
-    link.click();
+      if (actionFilter !== "all") {
+        params.set("action", actionFilter);
+      }
+      if (resourceFilter !== "all") {
+        params.set("resource_type", resourceFilter);
+      }
+      if (dateRange !== "all") {
+        const days = parseInt(dateRange.replace("d", ""));
+        const fromDate = subDays(new Date(), days);
+        params.set("from_date", fromDate.toISOString());
+      }
+      if (deferredSearch) {
+        params.set("search", deferredSearch);
+      }
+
+      const response = await api.get<AuditLogResponse>(
+        `/admin/audit-logs?${params.toString()}`
+      );
+      const allLogs = response.data.items;
+
+      const csvContent = [
+        ["Timestamp", "User Name", "User Email", "Action", "Resource Type", "Resource ID", "Details", "IP Address"],
+        ...allLogs.map((log) => [
+          log.created_at,
+          log.user_name || "",
+          log.user_email || "",
+          log.action,
+          log.resource_type || "",
+          log.resource_id || "",
+          JSON.stringify(log.details),
+          log.ip_address || "",
+        ]),
+      ]
+        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+        .join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `audit-logs-${format(new Date(), "yyyy-MM-dd")}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Failed to export audit logs:", error);
+      }
+      toast({
+        title: "Error",
+        description: "Failed to export audit logs. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Loading state
@@ -277,10 +567,14 @@ export default function AuditLogsPage() {
               variant="outline"
               size="sm"
               onClick={exportLogs}
-              disabled={filteredLogs.length === 0}
+              disabled={isExporting || total === 0}
             >
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
+              {isExporting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              {isExporting ? "Exporting..." : "Export CSV"}
             </Button>
             <Button
               variant="outline"
@@ -299,15 +593,15 @@ export default function AuditLogsPage() {
       <SettingsToolbar
         searchPlaceholder="Search logs..."
         searchValue={searchQuery}
-        onSearchChange={(v) => setSearchQuery(v)}
+        onSearchChange={handleSearchChange}
       >
         <div className="flex flex-wrap gap-2">
-          <Select value={actionFilter} onValueChange={setActionFilter}>
-            <SelectTrigger className="w-[160px]">
+          <Select value={actionFilter} onValueChange={handleActionFilterChange}>
+            <SelectTrigger className="w-[200px]">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Action" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[300px]">
               {availableActions.map((action) => (
                 <SelectItem key={action.value} value={action.value}>
                   {action.label}
@@ -315,7 +609,7 @@ export default function AuditLogsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={resourceFilter} onValueChange={setResourceFilter}>
+          <Select value={resourceFilter} onValueChange={handleResourceFilterChange}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Resource" />
             </SelectTrigger>
@@ -327,7 +621,7 @@ export default function AuditLogsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={dateRange} onValueChange={setDateRange}>
+          <Select value={dateRange} onValueChange={handleDateRangeChange}>
             <SelectTrigger className="w-[140px]">
               <Calendar className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Date range" />
@@ -461,35 +755,14 @@ export default function AuditLogsPage() {
             </>
           )}
 
-      {/* Summary Stats Card */}
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+      {/* Summary Stats Card — only server-side total */}
+      <div className="grid gap-4 grid-cols-1">
         <SettingsStatCard
           icon={ScrollText}
           iconColorClass="text-primary"
           iconBgClass="bg-primary/10"
-          label="Total Logs"
+          label="Total Matching Logs"
           value={total}
-        />
-        <SettingsStatCard
-          icon={Shield}
-          iconColorClass="text-green-600"
-          iconBgClass="bg-green-500/10"
-          label="Successful Actions"
-          value={logs.filter((l) => l.action.includes("success")).length}
-        />
-        <SettingsStatCard
-          icon={FileText}
-          iconColorClass="text-red-600"
-          iconBgClass="bg-red-500/10"
-          label="Failed/Deletions"
-          value={logs.filter((l) => l.action.includes("fail") || l.action.includes("delete")).length}
-        />
-        <SettingsStatCard
-          icon={Shield}
-          iconColorClass="text-amber-600"
-          iconBgClass="bg-amber-500/10"
-          label="GDPR Requests"
-          value={logs.filter((l) => l.action.includes("gdpr")).length}
         />
       </div>
     </div>

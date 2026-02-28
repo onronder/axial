@@ -219,6 +219,56 @@ def cleanup_old_audit_logs():
 
 
 # ============================================================
+# INVITE EXPIRY CLEANUP
+# ============================================================
+
+@celery_app.task(
+    name="worker.periodic_tasks.cleanup_expired_invites",
+    ignore_result=True,
+    autoretry_for=(ConnectionError, TimeoutError, OSError),
+    retry_backoff=True,
+    max_retries=2,
+    soft_time_limit=120,
+    time_limit=150,
+)
+def cleanup_expired_invites():
+    """
+    Mark expired pending invites as 'expired'.
+
+    Invites have a 30-day TTL (expires_at column). This task marks
+    any pending invites past their expiry as status='expired' so they
+    no longer appear in user dashboards or count toward team limits.
+
+    Runs daily at 2:30 AM via Celery Beat.
+    """
+    if not _acquire_periodic_lock("cleanup_expired_invites", ttl=3600):
+        logger.info("🔒 [Cleanup] cleanup_expired_invites: lock held, skipping")
+        return {"skipped": True}
+
+    try:
+        supabase = get_supabase()
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Find pending invites where expires_at has passed
+        result = supabase.table("team_members").update({
+            "status": "expired"
+        }).eq(
+            "status", "pending"
+        ).lt(
+            "expires_at", now
+        ).execute()
+
+        expired_count = len(result.data) if result.data else 0
+        logger.info(f"🧹 [Cleanup] Marked {expired_count} expired invites")
+
+        return {"expired": expired_count}
+
+    except Exception as e:
+        logger.error(f"❌ [Cleanup] Failed to clean up expired invites: {e}")
+        return {"error": str(e)}
+
+
+# ============================================================
 # STUCK JOB DETECTION
 # ============================================================
 

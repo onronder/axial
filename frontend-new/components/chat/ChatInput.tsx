@@ -125,28 +125,30 @@ export function ChatInput({ onSend, onFileSelect, disabled, selectedModel, onMod
             <div className="absolute inset-0 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 via-accent/20 to-primary/10 blur-2xl opacity-60" />
           )}
 
-          {/* Hidden file input */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            multiple
-            accept={ACCEPTED_FILE_TYPES}
-            className="hidden"
-            aria-label="Upload files"
-          />
-
-          {/* Attachment button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 h-9 w-9 text-muted-foreground hover:text-primary hover:bg-accent transition-colors"
-            disabled={disabled}
-            onClick={handleFileClick}
-            aria-label="Attach files"
-          >
-            <Paperclip className="h-5 w-5" />
-          </Button>
+          {/* Attachment button - only show if handler provided */}
+          {onFileSelect && (
+            <>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                multiple
+                accept={ACCEPTED_FILE_TYPES}
+                className="hidden"
+                aria-label="Upload files"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 h-9 w-9 text-muted-foreground hover:text-primary hover:bg-accent transition-colors"
+                disabled={disabled}
+                onClick={handleFileClick}
+                aria-label="Attach files"
+              >
+                <Paperclip className="h-5 w-5" />
+              </Button>
+            </>
+          )}
 
           {/* Input area */}
           <Textarea

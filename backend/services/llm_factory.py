@@ -135,23 +135,46 @@ class LLMFactory:
 
         # --- 3. INSTANTIATE ---
 
-        try:
-            if final_provider == "openai":
-                llm = LLMFactory._create_openai(final_model, temperature, streaming, max_tokens)
-            elif final_provider == "grok":
-                llm = LLMFactory._create_grok(final_model, temperature, streaming, max_tokens)
-            elif final_provider == "groq":
-                llm = LLMFactory._create_groq(final_model, temperature, streaming, max_tokens)
-            else:
-                raise ValueError(f"Unsupported LLM provider: {final_provider}")
+        # --- FAILOVER CHAIN ---
+        # Try primary provider, then fall back to Groq (fast), then OpenAI (smart)
+        failover_chain = [(final_provider, final_model)]
 
-            metadata["provider"] = final_provider
-            metadata["model"] = final_model
-            return llm, metadata
+        # Build failover options (avoid duplicates)
+        if final_provider != "groq" and settings.GROQ_API_KEY:
+            failover_chain.append(("groq", settings.SECONDARY_MODEL_NAME))
+        if final_provider != "openai":
+            failover_chain.append(("openai", settings.PRIMARY_MODEL_NAME))
 
-        except Exception as e:
-            logger.error(f"❌ [LLMFactory] Failed to initialize {final_provider}/{final_model}: {e}")
-            raise
+        last_error = None
+        for provider, model in failover_chain:
+            try:
+                if provider == "openai":
+                    llm = LLMFactory._create_openai(model, temperature, streaming, max_tokens)
+                elif provider == "grok":
+                    llm = LLMFactory._create_grok(model, temperature, streaming, max_tokens)
+                elif provider == "groq":
+                    llm = LLMFactory._create_groq(model, temperature, streaming, max_tokens)
+                else:
+                    raise ValueError(f"Unsupported LLM provider: {provider}")
+
+                if provider != final_provider:
+                    logger.warning(
+                        f"⚠️ [LLMFactory] Primary {final_provider}/{final_model} failed, "
+                        f"using failover {provider}/{model}"
+                    )
+                    metadata["failover"] = True
+
+                metadata["provider"] = provider
+                metadata["model"] = model
+                return llm, metadata
+
+            except Exception as e:
+                last_error = e
+                logger.warning(f"⚠️ [LLMFactory] {provider}/{model} failed: {e}")
+                continue
+
+        logger.error(f"❌ [LLMFactory] All providers failed. Last error: {last_error}")
+        raise last_error or RuntimeError("No LLM providers available")
 
     # CLIENT POOLING: Create or retrieve pooled LLM instances
     # Temperature and max_tokens are set per-request via model.bind() if needed

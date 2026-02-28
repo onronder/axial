@@ -325,6 +325,7 @@ export function DataSourceCard({
                   className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
                   onClick={handleSync}
                   disabled={isLoading || isSyncing || disabled}
+                  aria-label="Sync now"
                 >
                   <RefreshCw
                     className={cn("h-4 w-4", isSyncing && "animate-spin")}
@@ -344,6 +345,7 @@ export function DataSourceCard({
                   className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   onClick={handleDisconnect}
                   disabled={isLoading || isSyncing || disabled}
+                  aria-label="Disconnect"
                 >
                   {isLoading ? (
                     <Spinner className="h-4 w-4 animate-spin" />

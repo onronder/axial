@@ -32,6 +32,21 @@ function formatInviteDate(dateString: string): string {
   }
 }
 
+function formatExpiryInfo(expiresAt: string | null): { text: string; isUrgent: boolean } | null {
+  if (!expiresAt) return null;
+  try {
+    const expiry = new Date(expiresAt);
+    const now = new Date();
+    const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysLeft <= 0) return { text: 'Expired', isUrgent: true };
+    if (daysLeft <= 3) return { text: `Expires in ${daysLeft}d`, isUrgent: true };
+    if (daysLeft <= 7) return { text: `Expires in ${daysLeft}d`, isUrgent: false };
+    return { text: `Expires ${formatDistanceToNow(expiry, { addSuffix: true })}`, isUrgent: false };
+  } catch {
+    return null;
+  }
+}
+
 interface InviteCardProps {
   invite: PendingInvite;
   onAccept: (id: string) => Promise<unknown>;
@@ -63,6 +78,7 @@ function InviteCard({ invite, onAccept, onDecline, isAccepting, isDeclining }: I
   };
 
   const isProcessing = processingAction !== null;
+  const expiryInfo = formatExpiryInfo(invite.expires_at);
 
   return (
     <div className="flex items-center justify-between gap-4 py-3 px-4 bg-muted/30 rounded-lg">
@@ -79,6 +95,11 @@ function InviteCard({ invite, onAccept, onDecline, isAccepting, isDeclining }: I
           </div>
           <p className="text-xs text-muted-foreground">
             Invited {formatInviteDate(invite.invited_at)}
+            {expiryInfo && (
+              <span className={cn('ml-2', expiryInfo.isUrgent ? 'text-destructive font-medium' : 'text-muted-foreground')}>
+                · {expiryInfo.text}
+              </span>
+            )}
           </p>
         </div>
       </div>

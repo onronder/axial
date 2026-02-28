@@ -46,7 +46,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { WipeVerificationBadge } from './WipeVerificationBadge';
-import { useSecurityLog, SecurityEvent } from '@/hooks/useSecurityLog';
+import { useSecurityLog, SecurityEvent, SecurityLogResponse } from '@/hooks/useSecurityLog';
+import { api } from '@/lib/api';
 import { SettingsToolbar } from '@/components/settings/SettingsToolbar';
 import { SettingsPagination } from '@/components/settings/SettingsPagination';
 
@@ -204,26 +205,38 @@ export function SecurityLogTable() {
   // Show subtle loading indicator when input doesn't match API search
   const isSearchPending = searchInput !== deferredSearch;
 
-  const handleExport = () => {
-    const csv = [
-      ['Timestamp', 'Event Type', 'Resource', 'Pattern', 'Verified', 'Duration (ms)'],
-      ...(events || []).map((e: SecurityEvent) => [
-        e.performed_at,
-        e.event_type,
-        e.resource_name,
-        e.wipe_pattern,
-        e.wipe_verified ? 'Yes' : 'No',
-        e.duration_ms,
-      ]),
-    ].map(row => row.join(',')).join('\n');
+  const handleExport = async () => {
+    try {
+      // Fetch all matching events (not just current page)
+      const params: Record<string, string> = { limit: '10000', offset: '0' };
+      if (deferredSearch) params.search = deferredSearch;
+      if (eventTypeFilter !== 'all') params.event_type = eventTypeFilter;
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `security-log-${formatDateForFilename(new Date())}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const response = await api.get<SecurityLogResponse>('/admin/security-log', { params });
+      const allEvents = response.data.items;
+
+      const csv = [
+        ['Timestamp', 'Event Type', 'Resource', 'Pattern', 'Verified', 'Duration (ms)'],
+        ...allEvents.map((e: SecurityEvent) => [
+          e.performed_at,
+          e.event_type,
+          e.resource_name,
+          e.wipe_pattern ?? '',
+          e.wipe_verified ? 'Yes' : 'No',
+          e.duration_ms,
+        ]),
+      ].map(row => row.join(',')).join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `security-log-${formatDateForFilename(new Date())}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export security log:', error);
+    }
   };
 
   return (
@@ -325,12 +338,16 @@ export function SecurityLogTable() {
                       </div>
                     </TableCell>
                     <TableCell className="text-center">
-                      <WipeVerificationBadge
-                        wipedAt={event.performed_at}
-                        pattern={event.wipe_pattern}
-                        verified={event.wipe_verified}
-                        variant="compact"
-                      />
+                      {event.wipe_pattern ? (
+                        <WipeVerificationBadge
+                          wipedAt={event.performed_at}
+                          pattern={event.wipe_pattern}
+                          verified={event.wipe_verified}
+                          variant="compact"
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
                       {event.duration_ms}ms

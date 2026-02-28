@@ -14,6 +14,7 @@ from enum import Enum
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     Query,
@@ -34,6 +35,7 @@ from api.v1.error_utils import (
 from core.db import get_supabase
 from core.rate_limit import limiter
 from core.security import get_current_user
+from services.audit import audit_logger
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,7 @@ class TeamMemberResponse(BaseModel):
     last_active: str | None = None
     created_at: str
     invited_at: str | None = None
+    expires_at: str | None = None
 
 class TeamMemberCreate(BaseModel):
     email: EmailStr
@@ -82,10 +85,17 @@ class TeamMemberUpdate(BaseModel):
     role: TeamRole | None = None
     status: str | None = Field(None, max_length=30)
 
+class TeamMemberListResponse(BaseModel):
+    """Paginated team member list response."""
+    items: list[TeamMemberResponse]
+    total: int
+    has_more: bool
+
 class TeamStatsResponse(BaseModel):
     total_seats: int = 20
     active_members: int
     pending_invites: int
+    suspended_members: int = 0
 
 class EffectivePlanResponse(BaseModel):
     """Response for effective plan lookup."""
@@ -127,6 +137,11 @@ class BulkInviteResponse(BaseModel):
     code: str | None = None
 
 
+class DeclineInviteRequest(BaseModel):
+    """Request to decline a team invitation."""
+    token: str
+
+
 class AcceptInviteRequest(BaseModel):
     """Request to accept a team invitation."""
     token: str  # The invite token (member_id from the URL)
@@ -148,6 +163,7 @@ class PendingInvite(BaseModel):
     role: str
     invited_by: str | None = None
     invited_at: str
+    expires_at: str | None = None
 
 
 class PendingInvitesResponse(BaseModel):
@@ -199,13 +215,24 @@ async def get_pending_invites(
 
         user_email = user_response.data["email"]
 
-        # Find pending invites for this email
+        # Find pending invites for this email (exclude expired)
         invites_response = supabase.table("team_members").select(
-            "id, team_id, role, invited_by, created_at, teams(id, name)"
+            "id, team_id, role, invited_by, created_at, expires_at, teams(id, name)"
         ).eq("email", user_email).eq("status", "pending").execute()
 
+        now = datetime.now(timezone.utc)
         invites = []
         for invite in (invites_response.data or []):
+            # Skip expired invites
+            expires_at_str = invite.get("expires_at")
+            if expires_at_str:
+                try:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+                    if now > expires_at:
+                        continue
+                except (ValueError, TypeError):
+                    continue  # Fail-closed: skip unparseable expiry
+
             team_info = invite.get("teams", {})
             if team_info:
                 invites.append(PendingInvite(
@@ -214,7 +241,8 @@ async def get_pending_invites(
                     team_name=team_info.get("name", "Unknown Team"),
                     role=invite.get("role", "viewer"),
                     invited_by=invite.get("invited_by"),
-                    invited_at=invite.get("created_at", "")
+                    invited_at=invite.get("created_at", ""),
+                    expires_at=invite.get("expires_at"),
                 ))
 
         return PendingInvitesResponse(invites=invites, count=len(invites))
@@ -381,7 +409,7 @@ async def get_effective_plan(request: Request, user_id: str = Depends(get_curren
     )
 
 
-@router.get("/team/members", response_model=list[TeamMemberResponse], dependencies=_paid_team_deps)
+@router.get("/team/members", response_model=TeamMemberListResponse, dependencies=_paid_team_deps)
 @limiter.limit("60/minute")
 async def list_team_members(
     request: Request,
@@ -392,13 +420,14 @@ async def list_team_members(
     limit: int = 50,
     offset: int = 0
 ):
-    """List team members with optional filters."""
+    """List team members with optional filters and server-side pagination."""
     supabase = get_supabase()
 
     try:
         query = supabase.table("team_members")\
-            .select("*")\
+            .select("*", count="exact")\
             .eq("owner_user_id", user_id)\
+            .neq("status", "removed")\
             .order("created_at", desc=True)
 
         # Apply filters
@@ -407,24 +436,25 @@ async def list_team_members(
         if status and status != "all":
             query = query.eq("status", status)
 
-        # Note: Supabase doesn't support ILIKE easily through client,
-        # so search would need to be done client-side or via RPC
+        # Server-side search via Supabase .or_() with ilike
+        if search:
+            query = query.or_(
+                f"name.ilike.%{search}%,"
+                f"email.ilike.%{search}%"
+            )
 
         query = query.range(offset, offset + limit - 1)
 
         response = query.execute()
 
-        # Client-side search filter if provided
-        results = response.data or []
-        if search:
-            search_lower = search.lower()
-            results = [
-                m for m in results
-                if search_lower in (m.get("name", "") or "").lower()
-                or search_lower in (m.get("email", "") or "").lower()
-            ]
+        total = response.count or 0
+        items = response.data or []
 
-        return results
+        return TeamMemberListResponse(
+            items=items,
+            total=total,
+            has_more=(offset + limit) < total,
+        )
 
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_team_members")
@@ -452,11 +482,13 @@ async def get_team_stats(request: Request, user_id: str = Depends(get_current_us
 
         active = sum(1 for m in members if m.get("status") == "active")
         pending = sum(1 for m in members if m.get("status") == "pending")
+        suspended = sum(1 for m in members if m.get("status") == "suspended")
 
         return TeamStatsResponse(
             total_seats=plan_limits.max_team_seats,
             active_members=active,
-            pending_invites=pending
+            pending_invites=pending,
+            suspended_members=suspended,
         )
 
     except Exception as e:
@@ -468,6 +500,7 @@ async def get_team_stats(request: Request, user_id: str = Depends(get_current_us
 async def invite_team_member(
     request: Request,
     payload: InviteRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
     """
@@ -495,9 +528,17 @@ async def invite_team_member(
         else:
             raise api_error_400(result.get("error", "Invite failed"))
 
+    member_data = result.get("member")
+    audit_logger.log(
+        background_tasks, user_id=user_id, action="team.member_invite",
+        resource_type="team", resource_id=member_data.get("id") if member_data else None,
+        details={"email": str(payload.email), "role": payload.role.value},
+        request=request,
+    )
+
     return InviteResponse(
         success=True,
-        member=result.get("member")
+        member=member_data,
     )
 
 
@@ -520,10 +561,17 @@ async def bulk_invite_team_members(
     bob@example.com,viewer,Bob
     ```
     """
-    # Read CSV content
+    # Read CSV content with size limit
     try:
-        content = await file.read()
+        MAX_CSV_SIZE = 1 * 1024 * 1024  # 1 MB
+        if file.size and file.size > MAX_CSV_SIZE:
+            raise api_error_400("CSV file too large. Maximum size is 1MB.")
+        content = await file.read(MAX_CSV_SIZE + 1)
+        if len(content) > MAX_CSV_SIZE:
+            raise api_error_400("CSV file too large. Maximum size is 1MB.")
         csv_content = content.decode("utf-8")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to read CSV: {e}")
         raise api_error_400("Unable to read CSV file. Please check the file format.")
@@ -545,6 +593,7 @@ async def bulk_invite_team_members(
 async def invite_team_member_legacy(
     request: Request,
     payload: TeamMemberCreate,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
     """
@@ -576,6 +625,12 @@ async def invite_team_member_legacy(
 
     # Return the member data in legacy format
     if result.get("member"):
+        audit_logger.log(
+            background_tasks, user_id=user_id, action="team.member_invite",
+            resource_type="team", resource_id=result["member"].get("id"),
+            details={"email": str(payload.email), "role": payload.role.value},
+            request=request,
+        )
         return result["member"]
 
     raise api_error(ApiErrorCode.INTERNAL_ERROR, None, "invite_member")
@@ -587,12 +642,33 @@ async def update_team_member(
     request: Request,
     member_id: str,
     payload: TeamMemberUpdate,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
     """Update a team member's role or status."""
     supabase = get_supabase()
 
+    # Role hierarchy: owner > admin > editor > viewer
+    # Only owner can assign admin. Admins can only assign editor/viewer.
+    ROLE_HIERARCHY = {"owner": 3, "admin": 2, "editor": 1, "viewer": 0}
+
     try:
+        # Determine requester's role in the team
+        requester_member = supabase.table("team_members")\
+            .select("role, member_user_id")\
+            .eq("member_user_id", user_id)\
+            .eq("owner_user_id", user_id)\
+            .eq("status", "active")\
+            .limit(1)\
+            .execute()
+
+        # Check if requester is the team owner
+        team = await team_service.get_user_team(user_id)
+        is_owner = team and team.get("is_owner", False)
+        requester_role = "owner" if is_owner else (
+            requester_member.data[0].get("role", "viewer") if requester_member.data else "viewer"
+        )
+
         # Build update data
         update_data = {}
 
@@ -600,6 +676,16 @@ async def update_team_member(
             update_data["name"] = payload.name
 
         if payload.role is not None:
+            # Role escalation prevention
+            target_role_level = ROLE_HIERARCHY.get(payload.role, 0)
+            requester_role_level = ROLE_HIERARCHY.get(requester_role, 0)
+
+            if target_role_level >= requester_role_level:
+                raise api_error_403(
+                    f"Cannot assign '{payload.role}' role. "
+                    f"Only users with a higher role can grant this level."
+                )
+
             # Last-admin protection: prevent demoting the last admin
             if payload.role != "admin":
                 # Check if this member is currently an admin
@@ -663,7 +749,15 @@ async def update_team_member(
             .execute()
 
         if response.data and len(response.data) > 0:
-            return response.data[0]
+            updated = response.data[0]
+            action = "team.member_role_change" if payload.role is not None else "team.member_status_change"
+            audit_logger.log(
+                background_tasks, user_id=user_id, action=action,
+                resource_type="team", resource_id=member_id,
+                details={"member_id": member_id, "changes": update_data},
+                request=request,
+            )
+            return updated
 
         raise api_error_404("member", member_id)
 
@@ -678,6 +772,7 @@ async def update_team_member(
 async def remove_team_member(
     request: Request,
     member_id: str,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
     """Remove a team member."""
@@ -686,7 +781,7 @@ async def remove_team_member(
     try:
         # Last-admin protection: check if we're removing the last admin
         member_check = supabase.table("team_members")\
-            .select("role, status, member_user_id")\
+            .select("role, status, member_user_id, email")\
             .eq("id", member_id)\
             .eq("owner_user_id", user_id)\
             .execute()
@@ -713,14 +808,27 @@ async def remove_team_member(
             if admin_count <= 1:
                 raise api_error_400("Cannot remove the last admin. Promote another member to admin first.")
 
+        now = datetime.now(timezone.utc).isoformat()
         response = supabase.table("team_members")\
-            .delete()\
+            .update({"status": "removed", "removed_at": now})\
             .eq("id", member_id)\
             .eq("owner_user_id", user_id)\
             .execute()
 
         if not response.data:
             raise api_error_404("member", member_id)
+
+        audit_logger.log(
+            background_tasks, user_id=user_id, action="team.member_remove",
+            resource_type="team", resource_id=member_id,
+            details={"email": member_data.get("email"), "role": member_data.get("role")},
+            request=request,
+        )
+
+        # Invalidate removed member's plan cache
+        removed_user_id = member_data.get("member_user_id")
+        if removed_user_id:
+            team_service.invalidate_plan_cache(removed_user_id)
 
         return {"status": "success", "id": member_id}
 
@@ -735,6 +843,7 @@ async def remove_team_member(
 async def resend_invitation(
     request: Request,
     member_id: str,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
     """Resend invitation to a pending member."""
@@ -749,10 +858,75 @@ async def resend_invitation(
         else:
             raise api_error(ApiErrorCode.INTERNAL_ERROR, None, "resend_invite")
 
+    audit_logger.log(
+        background_tasks, user_id=user_id, action="team.member_resend_invite",
+        resource_type="team", resource_id=member_id,
+        details={"member_id": member_id},
+        request=request,
+    )
+
     return {"status": "success", "message": "Invitation resent"}
 
 
-@router.post("/team/accept", response_model=AcceptInviteResponse, dependencies=_paid_team_deps)
+@router.post("/team/decline")
+@limiter.limit("10/minute")
+async def decline_invite(
+    request: Request,
+    payload: DeclineInviteRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user)
+):
+    """Decline a team invitation. The token is the member_id from the invite."""
+    supabase = get_supabase()
+
+    try:
+        invite_response = supabase.table("team_members").select(
+            "id, email, team_id, status"
+        ).eq("id", payload.token).eq("status", "pending").execute()
+
+        if not invite_response.data:
+            raise api_error_404("invite")
+
+        invite = invite_response.data[0]
+
+        # Verify declining user's email matches the invite
+        user_profile = supabase.table("user_profiles").select(
+            "email"
+        ).eq("user_id", user_id).single().execute()
+
+        if not user_profile.data:
+            raise api_error_403("Unable to verify your identity")
+
+        declining_email = (user_profile.data.get("email") or "").lower().strip()
+        invite_target = (invite.get("email") or "").lower().strip()
+
+        if not declining_email or not invite_target or declining_email != invite_target:
+            raise api_error_403(
+                "This invitation was sent to a different email address."
+            )
+
+        now = datetime.now(timezone.utc).isoformat()
+        supabase.table("team_members").update({
+            "status": "removed",
+            "removed_at": now
+        }).eq("id", payload.token).execute()
+
+        audit_logger.log(
+            background_tasks, user_id=user_id, action="team.member_decline_invite",
+            resource_type="team", resource_id=payload.token,
+            details={"email": invite.get("email"), "team_id": invite.get("team_id")},
+            request=request,
+        )
+
+        return {"status": "success", "message": "Invitation declined"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "decline_invite")
+
+
+@router.post("/team/accept", response_model=AcceptInviteResponse, dependencies=[Depends(validate_team_access)])
 @limiter.limit("10/minute")
 async def accept_invite(
     request: Request,
@@ -774,18 +948,57 @@ async def accept_invite(
     try:
         # Step 1: Find the pending invite by token (which is the member_id)
         invite_response = supabase.table("team_members").select(
-            "id, team_id, email, status, teams(id, name)"
+            "id, team_id, email, status, expires_at, teams(id, name)"
         ).eq("id", payload.token).eq("status", "pending").execute()
 
         if not invite_response.data or len(invite_response.data) == 0:
             raise api_error_404("invite")
 
         invite = invite_response.data[0]
+        invite_email = invite.get("email")
         team_info = invite.get("teams", {})
         team_name = team_info.get("name", "Team")
         team_id = invite.get("team_id")
 
-        # Step 2: Update the member record - link to accepting user
+        # Step 2: Verify accepting user's email matches the invite
+        user_profile = supabase.table("user_profiles").select(
+            "email"
+        ).eq("user_id", user_id).single().execute()
+
+        if not user_profile.data:
+            raise api_error_403("Unable to verify your identity")
+
+        accepting_email = (user_profile.data.get("email") or "").lower().strip()
+        invite_target = (invite_email or "").lower().strip()
+
+        if not accepting_email or not invite_target or accepting_email != invite_target:
+            logger.warning(
+                f"[AcceptInvite] Email mismatch: user {user_id[:8]}... "
+                f"tried to accept invite for {invite_target}"
+            )
+            raise api_error_403(
+                "This invitation was sent to a different email address. "
+                "Please sign in with the correct account."
+            )
+
+        # Step 3: Check invite expiry — fail-closed (reject if unparseable)
+        expires_at_str = invite.get("expires_at")
+        if expires_at_str:
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) > expires_at:
+                    raise HTTPException(
+                        status_code=410,
+                        detail="This invitation has expired. Please ask the team admin to resend it."
+                    )
+            except (ValueError, TypeError):
+                logger.error(f"[AcceptInvite] Unparseable expires_at '{expires_at_str}' for invite {payload.token}")
+                raise HTTPException(
+                    status_code=410,
+                    detail="This invitation has expired. Please ask the team admin to resend it."
+                )
+
+        # Step 4: Update the member record - link to accepting user
         now = datetime.now(timezone.utc).isoformat()
 
         update_response = supabase.table("team_members").update({

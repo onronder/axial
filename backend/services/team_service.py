@@ -39,6 +39,9 @@ from core.resilience import is_retryable_error
 
 logger = logging.getLogger(__name__)
 
+# Invite expiry: pending invites expire after this many days
+INVITE_EXPIRY_DAYS = 30
+
 
 class TeamService:
     """
@@ -198,7 +201,7 @@ class TeamService:
             # Step 1: Find user's team membership
             member_response = supabase.table("team_members").select(
                 "team_id"
-            ).eq("member_user_id", user_id).neq("status", "removed").limit(1).execute()
+            ).eq("member_user_id", user_id).in_("status", ["active", "pending"]).limit(1).execute()
 
             if member_response.data and member_response.data[0].get("team_id"):
                 team_id = member_response.data[0]["team_id"]
@@ -304,10 +307,10 @@ class TeamService:
         try:
             supabase = get_supabase()
 
-            # Get user's team membership
+            # Get user's team membership (allowlist: only active/pending)
             member_response = supabase.table("team_members").select(
                 "team_id, role"
-            ).eq("member_user_id", user_id).neq("status", "removed").limit(1).execute()
+            ).eq("member_user_id", user_id).in_("status", ["active", "pending"]).limit(1).execute()
 
             if not member_response.data or not member_response.data[0].get("team_id"):
                 # User has no team - solo user, always allowed
@@ -408,7 +411,7 @@ class TeamService:
             supabase = get_supabase()
             response = supabase.table("team_members").select(
                 "team_id, member_user_id"
-            ).eq("member_user_id", user_id).limit(1).execute()
+            ).eq("member_user_id", user_id).eq("status", "active").limit(1).execute()
 
             if response.data:
                 from models import TeamMember
@@ -439,10 +442,10 @@ class TeamService:
             try:
                 supabase = get_supabase()
 
-                # Find user's team via membership
+                # Find user's team via membership (only active members)
                 member_response = supabase.table("team_members").select(
                     "team_id, role, joined_at"
-                ).eq("member_user_id", user_id).limit(1).execute()
+                ).eq("member_user_id", user_id).eq("status", "active").limit(1).execute()
 
                 if not member_response.data:
                     return None
@@ -708,7 +711,7 @@ class TeamService:
             PermissionError: If plan doesn't allow team management
         """
         import uuid
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
 
         # Step 1: Check plan allows team feature
         allowed, error_msg, limits = await self._check_team_feature_access(owner_id)
@@ -773,6 +776,8 @@ class TeamService:
             auto_activate = bool(existing_user_id)
 
             # Create invite
+            expires_at = (datetime.now(timezone.utc) + timedelta(days=INVITE_EXPIRY_DAYS)).isoformat()
+
             member_data = {
                 "team_id": team_id,
                 "owner_user_id": owner_id,
@@ -783,7 +788,8 @@ class TeamService:
                 "status": "active" if auto_activate else "pending",
                 "joined_at": now if auto_activate else None,
                 "created_at": now,
-                "invited_at": now
+                "invited_at": now,
+                "expires_at": expires_at if not auto_activate else None,
             }
 
             try:
@@ -873,10 +879,11 @@ class TeamService:
             member = response.data[0]
             team_name = member.get("teams", {}).get("name", "Axial Team")
 
-            # Update invited_at
-            from datetime import datetime, timezone
+            # Update invited_at and refresh expiry
+            from datetime import datetime, timedelta, timezone
             supabase.table("team_members").update({
-                "invited_at": datetime.now(timezone.utc).isoformat()
+                "invited_at": datetime.now(timezone.utc).isoformat(),
+                "expires_at": (datetime.now(timezone.utc) + timedelta(days=INVITE_EXPIRY_DAYS)).isoformat(),
             }).eq("id", member_id).execute()
 
             # Send email

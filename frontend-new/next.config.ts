@@ -205,9 +205,8 @@ const nextConfig: NextConfig = {
   },
 };
 
-// NOTE: withSentryConfig removed for Turbopack compatibility (Next.js 16)
-// Sentry error tracking still works via sentry.client.config.ts runtime initialization
-// Source maps are NOT uploaded during build - errors will have minified stack traces
+// Sentry wraps the Next.js config to upload source maps during build.
+// Source maps are deleted after upload to prevent 404 errors in browser DevTools.
 
 export default withSentryConfig(nextConfig, {
   // For all available options, see:
@@ -235,6 +234,7 @@ export default withSentryConfig(nextConfig, {
   // Ignore Next.js internal files that don't have source maps
   // This suppresses warnings like "could not determine a source map reference"
   sourcemaps: {
+    deleteSourcemapsAfterUpload: true,
     ignore: [
       "node_modules/**",
       // Next.js client reference manifests (React Server Components)

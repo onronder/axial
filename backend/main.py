@@ -148,9 +148,48 @@ app = FastAPI(
     redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,
 )
 
-# Register rate limiter
+# Register rate limiters (IP-based default + per-user for LLM endpoints)
+from core.rate_limit import user_limiter
 app.state.limiter = limiter
+app.state.user_limiter = user_limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Normalize all HTTP error responses to structured format
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _normalize_http_errors(request: Request, exc: StarletteHTTPException):
+    """Ensure all error responses use the structured {error, detail} format."""
+    detail = exc.detail
+    if isinstance(detail, str):
+        # Normalize plain string detail to structured format
+        body = {"error": f"HTTP_{exc.status_code}", "detail": detail}
+    elif isinstance(detail, dict):
+        # Already structured — pass through
+        body = detail
+    else:
+        body = {"error": f"HTTP_{exc.status_code}", "detail": str(detail)}
+
+    return JSONResponse(status_code=exc.status_code, content=body)
+
+
+from fastapi.exceptions import RequestValidationError
+
+
+@app.exception_handler(RequestValidationError)
+async def _normalize_validation_errors(request: Request, exc: RequestValidationError):
+    """Normalize FastAPI validation errors to structured {error, detail} format."""
+    messages = "; ".join(
+        f"{'.'.join(str(loc) for loc in e['loc'][1:]) or 'request'}: {e['msg']}"
+        for e in exc.errors()
+    )
+    return JSONResponse(
+        status_code=422,
+        content={"error": "VALIDATION_ERROR", "detail": messages or "Invalid request data"},
+    )
 
 # =============================================================================
 # CORS Configuration - Production Hardened
@@ -306,9 +345,10 @@ app.include_router(notifications_router, prefix="/api/v1", tags=["notifications"
 app.include_router(usage_router, prefix="/api/v1", tags=["usage"])
 app.include_router(webhooks_router, prefix="/api/v1", tags=["webhooks"])
 
-from api.v1.admin import router as admin_router
+from api.v1.admin import router as admin_router, user_router as admin_user_router
 
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(admin_user_router, prefix="/api/v1/admin", tags=["admin-user"])
 
 from api.v1.dlq import router as dlq_router
 

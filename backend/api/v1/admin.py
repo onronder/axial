@@ -13,10 +13,14 @@ from api.v1.dependencies import require_admin, require_paid_access, validate_tea
 from api.v1.error_utils import ApiErrorCode, api_error
 from core.db import get_supabase
 from core.rate_limit import limiter
+from core.security import get_current_user
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
+
+# Separate router for user-accessible (non-admin) endpoints
+user_router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 
 # =============================================================================
@@ -53,12 +57,13 @@ class AuditLogListResponse(BaseModel):
 async def get_audit_logs(
     request: Request,
     user_id: str = Depends(require_admin),
-    limit: int = Query(default=50, le=100),
+    limit: int = Query(default=50, le=10000),
     offset: int = Query(default=0, ge=0),
     action: str | None = None,
     resource_type: str | None = None,
     from_date: str | None = None,
-    to_date: str | None = None
+    to_date: str | None = None,
+    search: str | None = None,
 ):
     """
     Get audit logs for the user's team/account.
@@ -111,6 +116,14 @@ async def get_audit_logs(
             query = query.gte("created_at", from_date)
         if to_date:
             query = query.lte("created_at", to_date)
+
+        # Apply search filter at DB level (before pagination)
+        if search:
+            query = query.or_(
+                f"action.ilike.%{search}%,"
+                f"resource_type.ilike.%{search}%,"
+                f"resource_id.ilike.%{search}%"
+            )
 
         # Execute with pagination
         result = query\
@@ -183,32 +196,49 @@ async def get_audit_log_actions(
     Get list of distinct action types in audit logs.
 
     Useful for populating filter dropdowns in the UI.
+    Returns actions actually present in the database plus known action types.
     """
-    # Return static list of known actions for efficiency
-    # SYNC WARNING: This list must be manually updated when new audit actions are added.
-    # For dynamic list, use: SELECT DISTINCT action FROM audit_logs
-    return {
-        "actions": [
-            "document.delete",
-            "document.update",
-            "document.wipe",
-            "chat.delete",
-            "connector.sync_start",
-            "connector.sync_success",
-            "connector.sync_fail",
-            "scope.delete",
-            "scope.wipe",
-            "chunk.purge",
-            "organization.purge",
-            "settings.update",
-            "team.member_invite",
-            "team.member_remove",
-            "approval.request",
-            "approval.approve",
-            "approval.reject",
-            "approval.execute"
-        ]
-    }
+    supabase = get_supabase()
+
+    # Known actions (superset) — always included so filters show even before first event
+    KNOWN_ACTIONS = [
+        "document.create", "document.update", "document.delete", "document.wipe",
+        "chat.create", "chat.delete",
+        "connector.create", "connector.update", "connector.delete",
+        "connector.connect", "connector.disconnect",
+        "connector.sync_start", "connector.sync_success", "connector.sync_fail",
+        "scope.create", "scope.update", "scope.delete", "scope.wipe",
+        "ingestion.queued", "ingestion.started", "ingestion.completed",
+        "ingestion.failed", "ingestion.skipped", "ingestion.timeout",
+        "chunk.purge", "organization.purge",
+        "security.document_wiped", "security.scope_deleted",
+        "security.chunk_purged", "security.organization_purged",
+        "security.ghost_protocol_activated", "security.ghost_protocol_completed",
+        "settings.update", "settings.configure",
+        "team.create", "team.update", "team.member_invite", "team.member_remove",
+        "team.member_role_change", "team.member_status_change", "team.member_resend_invite",
+        "team.member_decline_invite",
+        "approval.request", "approval.approve", "approval.reject",
+        "approval.execute", "approval.approval_requested",
+        "consent.granted", "consent.revoked", "consent.updated",
+        "gdpr.anonymization_requested", "gdpr.anonymization_completed",
+        "gdpr.data_export_requested", "gdpr.data_export_completed",
+        "gdpr.deletion_requested", "gdpr.deletion_completed",
+        "compliance.audit_requested", "compliance.audit_completed",
+        "mcp.api_key_created", "mcp.api_key_rotated", "mcp.api_key_revoked",
+        "safety.content_flagged", "safety.content_blocked",
+    ]
+
+    try:
+        # Merge known actions with any new ones from DB
+        result = supabase.rpc("get_distinct_audit_actions", {}).execute()
+        db_actions = result.data if result.data else []
+        all_actions = sorted(set(KNOWN_ACTIONS) | set(db_actions))
+    except Exception:
+        # Fallback to known actions if RPC doesn't exist
+        all_actions = sorted(KNOWN_ACTIONS)
+
+    return {"actions": all_actions}
 
 
 # =============================================================================
@@ -222,8 +252,8 @@ class SecurityEventEntry(BaseModel):
     resource_type: str
     resource_name: str
     resource_id: str
-    wipe_pattern: str = "dod_5220_22_m"
-    wipe_verified: bool = True
+    wipe_pattern: str | None = None
+    wipe_verified: bool = False
     performed_by: str
     performed_at: str
     duration_ms: int = 0
@@ -240,10 +270,16 @@ class SecurityLogResponse(BaseModel):
 # audit actions are added. For dynamic list, query: SELECT DISTINCT action FROM audit_logs
 # WHERE action LIKE '%.wipe' OR action LIKE '%.delete' OR action LIKE '%.purge'
 SECURITY_ACTIONS = [
+    # Initiation events (logged when user triggers wipe)
     "document.wipe",
-    "document.delete",
-    "scope.delete",
     "scope.wipe",
+    # Completion events (logged by Ghost Protocol after wipe finishes)
+    "security.document_wiped",
+    "security.scope_deleted",
+    "security.chunk_purged",
+    "security.organization_purged",
+    # Legacy action names
+    "scope.delete",
     "chunk.purge",
     "organization.purge",
 ]
@@ -254,7 +290,7 @@ SECURITY_ACTIONS = [
 async def get_security_log(
     request: Request,
     user_id: str = Depends(require_admin),
-    limit: int = Query(default=50, le=100),
+    limit: int = Query(default=50, le=10000),
     offset: int = Query(default=0, ge=0),
     event_type: str | None = None,
     search: str | None = None,
@@ -306,21 +342,31 @@ async def get_security_log(
 
         # Apply event type filter
         if event_type:
-            # Map frontend event types to audit action names
+            # Map frontend event types to ALL matching audit action names
             action_map = {
-                "document_wiped": "document.wipe",
-                "scope_deleted": "scope.delete",
-                "chunk_purged": "chunk.purge",
-                "organization_purged": "organization.purge",
+                "document_wiped": ["document.wipe", "security.document_wiped"],
+                "scope_deleted": ["scope.delete", "scope.wipe", "security.scope_deleted"],
+                "chunk_purged": ["chunk.purge", "security.chunk_purged"],
+                "organization_purged": ["organization.purge", "security.organization_purged"],
             }
-            mapped_action = action_map.get(event_type, event_type)
-            query = query.eq("action", mapped_action)
+            mapped_actions = action_map.get(event_type)
+            if mapped_actions:
+                query = query.in_("action", mapped_actions)
+            else:
+                query = query.eq("action", event_type)
 
         # Apply date filters
         if from_date:
             query = query.gte("created_at", from_date)
         if to_date:
             query = query.lte("created_at", to_date)
+
+        # Apply search filter at DB level (Bug 2 fix: before pagination)
+        if search:
+            query = query.or_(
+                f"details->>resource_name.ilike.%{search}%,"
+                f"resource_id.ilike.%{search}%"
+            )
 
         # Execute with pagination
         result = query\
@@ -331,24 +377,22 @@ async def get_security_log(
         total = result.count if result.count is not None else 0
 
         # Transform to security event format
+        event_type_map = {
+            "document.wipe": "document_wiped",
+            "security.document_wiped": "document_wiped",
+            "scope.delete": "scope_deleted",
+            "scope.wipe": "scope_deleted",
+            "security.scope_deleted": "scope_deleted",
+            "chunk.purge": "chunk_purged",
+            "security.chunk_purged": "chunk_purged",
+            "organization.purge": "organization_purged",
+            "security.organization_purged": "organization_purged",
+        }
+
         items = []
         for log in (result.data or []):
-            # Map action to event_type
-            event_type_map = {
-                "document.wipe": "document_wiped",
-                "document.delete": "document_wiped",
-                "scope.delete": "scope_deleted",
-                "scope.wipe": "scope_deleted",
-                "chunk.purge": "chunk_purged",
-                "organization.purge": "organization_purged",
-            }
-
             details = log.get("details", {})
-
-            # Apply search filter on resource name
             resource_name = details.get("resource_name", log.get("resource_id", "Unknown"))
-            if search and search.lower() not in resource_name.lower():
-                continue
 
             items.append(SecurityEventEntry(
                 id=log["id"],
@@ -356,8 +400,8 @@ async def get_security_log(
                 resource_type=log.get("resource_type", "document"),
                 resource_name=resource_name,
                 resource_id=log.get("resource_id", ""),
-                wipe_pattern=details.get("wipe_pattern", "dod_5220_22_m"),
-                wipe_verified=details.get("wipe_verified", True),
+                wipe_pattern=details.get("wipe_pattern"),
+                wipe_verified=details.get("wipe_verified", False),
                 performed_by=log.get("user_id", "system"),
                 performed_at=log["created_at"],
                 duration_ms=details.get("duration_ms", 0),
@@ -374,3 +418,73 @@ async def get_security_log(
     except Exception as e:
         logger.error(f"[Admin] Security log fetch error: {e}")
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_security_log")
+
+
+# =============================================================================
+# User Audit Trail (Non-Admin)
+# =============================================================================
+
+@user_router.get("/audit-logs/me", response_model=AuditLogListResponse)
+@limiter.limit("30/minute")
+async def get_my_audit_logs(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+    limit: int = Query(default=50, le=1000),
+    offset: int = Query(default=0, ge=0),
+    action: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+):
+    """
+    Get the requesting user's own audit trail.
+
+    Unlike /audit-logs (admin-only), this endpoint returns only actions
+    performed BY or ON the requesting user. Supports GDPR transparency
+    requirements by allowing users to see who accessed their data.
+    """
+    supabase = get_supabase()
+
+    try:
+        query = supabase.table("audit_logs")\
+            .select("*", count="exact")\
+            .eq("user_id", user_id)
+
+        if action:
+            query = query.eq("action", action)
+        if from_date:
+            query = query.gte("created_at", from_date)
+        if to_date:
+            query = query.lte("created_at", to_date)
+
+        result = query\
+            .order("created_at", desc=True)\
+            .range(offset, offset + limit - 1)\
+            .execute()
+
+        total = result.count if result.count is not None else 0
+
+        items = []
+        for log in (result.data or []):
+            items.append(AuditLogEntry(
+                id=log["id"],
+                user_id=log.get("user_id"),
+                user_email=None,
+                user_name=None,
+                action=log["action"],
+                resource_type=log.get("resource_type"),
+                resource_id=log.get("resource_id"),
+                details=log.get("details", {}),
+                ip_address=log.get("ip_address"),
+                created_at=log["created_at"]
+            ))
+
+        return AuditLogListResponse(
+            items=items,
+            total=total,
+            has_more=(offset + limit) < total
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_my_audit_logs")

@@ -165,12 +165,13 @@ async def require_admin(user_id: str = Depends(validate_team_access)) -> str:
         if result.data and len(result.data) > 0:
             return user_id  # User is a team owner, grant admin access
 
-        # Check if user has admin role in team_members
+        # Check if user has admin role in team_members (must be active)
         member_result = (
             supabase.table("team_members")
             .select("role")
             .eq("member_user_id", user_id)
             .eq("role", "admin")
+            .eq("status", "active")
             .execute()
         )
 
@@ -270,6 +271,71 @@ async def get_user_organization_id(user_id: str = Depends(validate_team_access))
         return user_id
 
 
+async def get_user_allowed_scopes(
+    user_id: str = Depends(get_current_user),
+) -> list[str] | None:
+    """
+    Get the list of scope IDs the user is allowed to access.
+
+    Returns:
+        - None: User has access to ALL scopes (owner/admin or no restrictions)
+        - list[str]: Specific scope IDs the user can access
+
+    This checks the data_consents table for scope-level consent revocations.
+    If a scope's consent is revoked for the organization, viewers/editors
+    cannot access documents within that scope.
+    """
+    try:
+        team = await team_service.get_user_team(user_id)
+        if not team:
+            return None  # Solo user — full access
+
+        # Owners and admins see everything
+        if team.get("is_owner") or team.get("user_role") == "admin":
+            return None
+
+        org_id = team.get("id")
+        if not org_id:
+            return None
+
+        supabase = get_supabase()
+
+        # Check for revoked scopes (consent.status = 'revoked')
+        revoked_res = supabase.table("data_consents").select(
+            "scope_id"
+        ).eq(
+            "organization_id", org_id
+        ).eq(
+            "status", "revoked"
+        ).not_.is_("scope_id", "null").execute()
+
+        if not revoked_res.data:
+            return None  # No revocations — full access
+
+        revoked_scope_ids = {r["scope_id"] for r in revoked_res.data if r.get("scope_id")}
+
+        if not revoked_scope_ids:
+            return None
+
+        # Get all scopes and exclude revoked ones
+        all_scopes_res = supabase.table("scope_identities").select(
+            "id"
+        ).eq("organization_id", org_id).execute()
+
+        all_scope_ids = [s["id"] for s in (all_scopes_res.data or [])]
+        allowed = [sid for sid in all_scope_ids if sid not in revoked_scope_ids]
+
+        logger.info(
+            f"[ScopeAccess] User {user_id[:8]}... has access to {len(allowed)}/{len(all_scope_ids)} scopes "
+            f"({len(revoked_scope_ids)} revoked)"
+        )
+        return allowed
+
+    except Exception as e:
+        logger.warning(f"[ScopeAccess] Failed to resolve scopes for {user_id[:8]}...: {e}")
+        return None  # Fail-open for now
+
+
 # Re-export get_current_user for convenience
 __all__ = [
     'get_current_user',
@@ -280,4 +346,5 @@ __all__ = [
     'require_admin',
     'require_editor',
     'get_user_organization_id',
+    'get_user_allowed_scopes',
 ]

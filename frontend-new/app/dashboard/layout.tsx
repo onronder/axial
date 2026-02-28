@@ -17,6 +17,8 @@ import { MobileNav } from "@/components/layout/MobileNav";
 import { LazyGlobalIngestModal, LazyGlobalProgress } from "@/components/lazy";
 import { ModalLoadingFallback } from "@/components/lazy/ModalLoadingFallback";
 import { UsageWarningBanner } from "@/components/UsageWarningBanner";
+import { PendingInvitesBanner } from "@/components/team/PendingInvitesBanner";
+import { TeamAccessDeniedBanner } from "@/components/team/TeamAccessDeniedBanner";
 import { PaywallGuard } from "@/components/PaywallGuard";
 import { AppErrorBoundary, SidebarErrorBoundary } from "@/components/providers/ErrorBoundary";
 import { ConnectionStatusIndicator } from "@/components/layout/ConnectionStatusIndicator";
@@ -75,6 +77,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                             <IngestionProgressProvider>
                             <PaywallGuard>
                             <div className="min-h-screen bg-background">
+                                {/* Skip to main content link for keyboard/screen reader users */}
+                                <a
+                                    href="#main-content"
+                                    className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:shadow-lg"
+                                >
+                                    Skip to main content
+                                </a>
                                 <OfflineBanner />
                                 {/* DESKTOP SIDEBAR - Isolated error boundary */}
                                 <aside
@@ -98,9 +107,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
                                     {/* Usage Warning Banner */}
                                     <UsageWarningBanner />
+                                    <PendingInvitesBanner />
+                                    <TeamAccessDeniedBanner />
 
                                     {/* Page content - with error boundary */}
-                                    <main className="h-[calc(100vh-56px)] md:h-screen">
+                                    <main id="main-content" className="h-[calc(100vh-56px)] md:h-screen">
                                         <AppErrorBoundary name="PageContent">
                                             {children}
                                         </AppErrorBoundary>

@@ -72,6 +72,8 @@ def verify_mime_type(file_bytes: bytes, claimed_mime: str) -> bool:
     """
     Verify file content matches claimed MIME type using magic numbers.
 
+    Fail-closed in production: rejects uploads if python-magic is unavailable.
+
     Args:
         file_bytes: First 2KB+ of file content
         claimed_mime: Client-provided MIME type
@@ -90,11 +92,19 @@ def verify_mime_type(file_bytes: bytes, claimed_mime: str) -> bool:
         logger.warning(f"[Upload] MIME mismatch: claimed={claimed_mime}, actual={actual_mime}")
         return False
     except ImportError:
-        logger.warning("[Upload] python-magic not installed, skipping MIME verification")
-        return True  # Fail-open if library not available
+        from core.config import settings
+        if settings.ENVIRONMENT == "production":
+            logger.error("[Upload] python-magic not installed — rejecting upload in production (fail-closed)")
+            return False
+        logger.warning("[Upload] python-magic not installed, skipping MIME verification (dev mode)")
+        return True
     except Exception as e:
+        from core.config import settings
+        if settings.ENVIRONMENT == "production":
+            logger.error(f"[Upload] MIME verification error — rejecting upload in production: {e}")
+            return False
         logger.warning(f"[Upload] MIME verification failed: {e}")
-        return True  # Fail-open on errors
+        return True
 
 
 def get_idempotency_key(request: Request) -> str | None:

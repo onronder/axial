@@ -30,6 +30,7 @@ from langchain_openai import OpenAIEmbeddings
 from pydantic import BaseModel, Field
 
 from api.v1.dependencies import (
+    get_user_allowed_scopes,
     get_user_organization_id,
     require_paid_access,
     validate_team_access,
@@ -44,7 +45,7 @@ from core.config import settings
 from core.db import get_supabase
 from core.exceptions import QuotaExceededError
 from core.ingestion_utils import normalize_source_type
-from core.rate_limit import limiter
+from core.rate_limit import limiter, user_limiter
 from core.resilience import CircuitBreakerOpen, is_retryable_error, openai_breaker
 from core.security import get_current_user
 from services.audit import audit_logger, log_chat_delete
@@ -1065,11 +1066,13 @@ def format_context_with_citations(docs: list[dict]) -> tuple:
 
 @router.post("/chat")
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
+@user_limiter.limit("30/minute")
 async def chat_endpoint(
     request: Request,
     payload: ChatRequest,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    allowed_scopes: list[str] | None = Depends(get_user_allowed_scopes),
 ):
     """
     Intelligent Conversational RAG Chat Endpoint with Scope-Aware Dominance Guard.
@@ -1270,6 +1273,15 @@ async def chat_endpoint(
         explicit_scope = None
         force_all_scopes = True
 
+    # Scope-level access control: intersect with allowed scopes (same pattern as search.py)
+    if allowed_scopes is not None:
+        if explicit_scope:
+            if explicit_scope not in allowed_scopes:
+                explicit_scope = None  # Revoked scope — will fall through to allowed scopes
+        if force_all_scopes:
+            force_all_scopes = False  # Restricted user cannot search all scopes
+            logger.info("🔒 [Chat] User requested __all__ but has scope restrictions, restricting to allowed scopes")
+
     try:
         if explicit_scope:
             # User explicitly selected a scope - use scoped search
@@ -1282,7 +1294,7 @@ async def chat_endpoint(
                 "filter_scope_ids": [explicit_scope],
                 "similarity_threshold": 0.25
             }).execute()
-        elif force_all_scopes:
+        elif force_all_scopes and allowed_scopes is None:
             # Search all sources using scoped RPC (wildcard scope filter)
             response = supabase.rpc("hybrid_search_scoped", {
                 "query_text": search_query,
@@ -1290,6 +1302,19 @@ async def chat_endpoint(
                 "match_count": 15,
                 "filter_org_id": organization_id,
                 "filter_scope_ids": None,
+                "vector_weight": 0.7,
+                "keyword_weight": 0.3,
+                "similarity_threshold": 0.25
+            }).execute()
+        elif allowed_scopes is not None:
+            # Scope-restricted user — always use scoped search with allowed scopes
+            logger.info(f"🔒 [Chat] Scope-restricted search: {len(allowed_scopes)} allowed scopes")
+            response = supabase.rpc("hybrid_search_scoped", {
+                "query_text": search_query,
+                "query_embedding": query_vector,
+                "match_count": 15,
+                "filter_org_id": organization_id,
+                "filter_scope_ids": allowed_scopes,
                 "vector_weight": 0.7,
                 "keyword_weight": 0.3,
                 "similarity_threshold": 0.25

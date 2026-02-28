@@ -118,6 +118,7 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
                   // Prevent any bubbling to parent elements
                   e.stopPropagation();
                 }}
+                aria-label="Chat options"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>

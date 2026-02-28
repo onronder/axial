@@ -81,19 +81,32 @@ const STEPS_ORDER: ThinkingStatus['step'][] = ['searching', 'analyzing', 'found'
 
 export function ThinkingIndicator({ status, className }: ThinkingIndicatorProps) {
     const [animatedDots, setAnimatedDots] = useState('');
-    
+    const [isTimedOut, setIsTimedOut] = useState(false);
+
     // Animate dots for active status
     useEffect(() => {
         if (status.step === 'complete') return;
-        
+
         const interval = setInterval(() => {
             setAnimatedDots(prev => {
                 if (prev.length >= 3) return '';
                 return prev + '.';
             });
         }, 400);
-        
+
         return () => clearInterval(interval);
+    }, [status.step]);
+
+    // Timeout fallback - if thinking for too long, show message
+    useEffect(() => {
+        if (status.step === 'complete' || status.step === 'generating') {
+            setIsTimedOut(false);
+            return;
+        }
+
+        setIsTimedOut(false);
+        const timer = setTimeout(() => setIsTimedOut(true), 60000);
+        return () => clearTimeout(timer);
     }, [status.step]);
     
     const currentStepIndex = STEPS_ORDER.indexOf(status.step);
@@ -188,6 +201,15 @@ export function ThinkingIndicator({ status, className }: ThinkingIndicatorProps)
                                 </div>
                             )}
                         </div>
+                    </div>
+                )}
+
+                {/* Timeout fallback */}
+                {isTimedOut && (
+                    <div className="mt-3 pt-2 border-t border-border/30">
+                        <p className="text-xs text-muted-foreground">
+                            This is taking longer than expected. The response is still processing.
+                        </p>
                     </div>
                 )}
             </div>

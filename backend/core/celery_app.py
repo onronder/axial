@@ -218,6 +218,11 @@ celery_app.conf.update(
             "task": "cleanup_orphan_scope_placeholders",
             "schedule": crontab(hour=5, minute=0),
         },
+        # Cleanup expired team invites daily at 2:30am UTC
+        "cleanup-expired-invites-daily": {
+            "task": "worker.periodic_tasks.cleanup_expired_invites",
+            "schedule": crontab(hour=2, minute=30),
+        },
     },
 )
 

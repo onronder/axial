@@ -118,6 +118,18 @@ api.interceptors.response.use(
     async (error: AxiosError) => {
         log.error(error);
 
+        // If 403 with TEAM_ACCESS_DENIED, dispatch custom event
+        if (error.response?.status === 403) {
+            const detail = (error.response.data as Record<string, unknown>)?.detail;
+            if (typeof detail === 'object' && detail !== null && (detail as Record<string, unknown>).error === 'TEAM_ACCESS_DENIED') {
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('team-access-denied', {
+                        detail: { reason: (detail as Record<string, unknown>).reason, message: (detail as Record<string, unknown>).message }
+                    }));
+                }
+            }
+        }
+
         // If 401 Unauthorized, clear cached token and redirect to login
         if (error.response?.status === 401) {
             cachedToken = null;
@@ -141,6 +153,38 @@ api.interceptors.response.use(
 
 // Legacy export alias
 export const authFetch = api;
+
+/**
+ * Extract a user-friendly error message from an API error response.
+ * Handles both structured {error, detail, message} and plain string formats.
+ */
+export function extractErrorMessage(error: unknown, fallback = 'Something went wrong'): string {
+    if (error && typeof error === 'object' && 'response' in error) {
+        const axiosErr = error as AxiosError<Record<string, unknown>>;
+        const data = axiosErr.response?.data;
+        if (data) {
+            // Structured format: {error: "CODE", detail: "message"} or {error: "CODE", message: "message"}
+            if (typeof data.detail === 'string') return data.detail;
+            if (typeof data.message === 'string') return data.message;
+            // Array format from validation errors: {detail: [{loc: [...], msg: "...", type: "..."}]}
+            if (Array.isArray(data.detail) && data.detail.length > 0) {
+                const first = data.detail[0];
+                if (typeof first === 'object' && first !== null && typeof (first as Record<string, unknown>).msg === 'string') {
+                    return (first as Record<string, unknown>).msg as string;
+                }
+            }
+            // Nested structured format: {detail: {error: "CODE", message: "..."}}
+            if (typeof data.detail === 'object' && data.detail !== null) {
+                const nested = data.detail as Record<string, unknown>;
+                if (typeof nested.message === 'string') return nested.message;
+                if (typeof nested.detail === 'string') return nested.detail;
+            }
+        }
+        if (axiosErr.message) return axiosErr.message;
+    }
+    if (error instanceof Error) return error.message;
+    return fallback;
+}
 
 /**
  * Clear cached token (call on logout)

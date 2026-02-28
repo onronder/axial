@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, HTMLAttributes } from "react";
+import { forwardRef, HTMLAttributes, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SourceMetadata } from "./SourceCard";
@@ -43,7 +43,7 @@ export const SourcePill = forwardRef<HTMLAnchorElement, SourcePillProps>(
         const pillContent = (
             <>
                 <span className="text-secondary" aria-hidden="true">•</span>
-                <span className="truncate max-w-[200px]">{displayLabel}</span>
+                <span className="truncate max-w-[200px]" title={displayLabel}>{displayLabel}</span>
                 {showExternalIcon && hasUrl && (
                     <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
                 )}
@@ -179,11 +179,12 @@ export function SourcePillList({
     highlightedIndex = null,
     onSourceHover,
 }: SourcePillListProps) {
+    const [isExpanded, setIsExpanded] = useState(false);
+
     if (!sources || sources.length === 0) return null;
 
-    // Deduplicate sources to avoid showing 10 identical pills
     const deduplicated = deduplicateSources(sources);
-    const visibleSources = deduplicated.slice(0, MAX_VISIBLE_SOURCES);
+    const visibleSources = isExpanded ? deduplicated : deduplicated.slice(0, MAX_VISIBLE_SOURCES);
     const overflowCount = deduplicated.length - MAX_VISIBLE_SOURCES;
 
     return (
@@ -192,9 +193,7 @@ export function SourcePillList({
             className={cn("flex flex-wrap items-center gap-2", className)}
         >
             {visibleSources.map((item, idx) => {
-                // Check if any of this source's indices are highlighted
                 const isHighlighted = item.indices.some(i => i === highlightedIndex);
-
                 return (
                     <SourcePill
                         key={`source-pill-${idx}`}
@@ -208,15 +207,27 @@ export function SourcePillList({
                     />
                 );
             })}
-            
-            {/* Overflow indicator */}
-            {overflowCount > 0 && (
-                <span 
-                    className="px-3 py-1.5 text-sm text-muted-foreground border border-dashed border-muted-foreground/30 rounded-full"
-                    title={`${overflowCount} more sources not shown`}
+
+            {overflowCount > 0 && !isExpanded && (
+                <button
+                    type="button"
+                    className="px-3 py-1.5 text-sm text-muted-foreground border border-dashed border-muted-foreground/30 rounded-full hover:bg-muted/50 hover:border-muted-foreground/50 transition-colors cursor-pointer"
+                    title={`Show ${overflowCount} more sources`}
+                    onClick={() => setIsExpanded(true)}
                 >
                     +{overflowCount} more
-                </span>
+                </button>
+            )}
+
+            {isExpanded && overflowCount > 0 && (
+                <button
+                    type="button"
+                    className="px-3 py-1.5 text-sm text-muted-foreground border border-dashed border-muted-foreground/30 rounded-full hover:bg-muted/50 hover:border-muted-foreground/50 transition-colors cursor-pointer"
+                    title="Show fewer sources"
+                    onClick={() => setIsExpanded(false)}
+                >
+                    Show less
+                </button>
             )}
         </nav>
     );

@@ -1,10 +1,10 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { UserPlus, Upload, MoreHorizontal, Users, Clock, Mail, UserCog, UserX, Send, Filter, Download, Lock, Sparkles } from "lucide-react";
+import { UserPlus, Upload, MoreHorizontal, Users, Clock, Mail, UserCog, UserX, Send, Filter, Download, Lock, Sparkles, RefreshCw, AlertTriangle, Ban, UserCheck, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,12 +54,26 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { formatDistanceToNow } from "date-fns";
 import { useTeamMembers, Role, MemberStatus, TeamMember } from "@/hooks/useTeamMembers";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
-import { bulkInvite } from "@/lib/api";
+import { api, bulkInvite } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Spinner } from "@/components/ui/spinner";
+
+// Email validation regex - requires at least 2 chars in TLD (Bug 14: moved to module scope)
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 const statusStyles: Record<MemberStatus, { label: string; className: string }> = {
   active: { label: "Active", className: "bg-success/10 text-success border-success/20" },
@@ -75,9 +89,12 @@ export function TeamSettings() {
   const {
     members,
     stats,
+    total,
     isLoading,
+    error,
     inviteMember,
     updateMemberRole,
+    updateMemberStatus,
     removeMember,
     resendInvite,
     refresh: refreshMembers,
@@ -88,8 +105,6 @@ export function TeamSettings() {
   const [inviteRole, setInviteRole] = useState<Role>("viewer");
   const [isInviting, setIsInviting] = useState(false);
 
-  // Email validation - requires at least 2 chars in TLD
-  const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   const [emailError, setEmailError] = useState<string | null>(null);
   
   const validateEmail = (email: string): string | null => {
@@ -122,10 +137,20 @@ export function TeamSettings() {
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [selectedRole, setSelectedRole] = useState<Role>("viewer");
 
+  // Revoke access confirmation state (Bug 4)
+  const [revokeTargetId, setRevokeTargetId] = useState<string | null>(null);
+  const revokeTargetMember = members.find(m => m.id === revokeTargetId);
+
+  // Admin promotion confirmation state (Bug 11)
+  const [pendingPromotion, setPendingPromotion] = useState<{ memberId: string; email: string } | null>(null);
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
+
+  // Debounce timer ref for search
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // CSV Template data URI
   const CSV_TEMPLATE = "data:text/csv;charset=utf-8,email,role,name%0Aalice%40example.com,editor,Alice%0Abob%40example.com,viewer,Bob";
@@ -205,24 +230,22 @@ export function TeamSettings() {
     }
   };
 
-  // Filtered members (client-side filtering for immediate responsiveness)
-  const filteredMembers = useMemo(() => {
-    return members.filter((member) => {
-      const matchesSearch =
-        (member.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
-        member.email.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesRole = roleFilter === "all" || member.role === roleFilter;
-      const matchesStatus = statusFilter === "all" || member.status === statusFilter;
-      return matchesSearch && matchesRole && matchesStatus;
-    });
-  }, [members, searchQuery, roleFilter, statusFilter]);
+  // Server-side pagination: total pages computed from API total
+  const totalPages = Math.ceil(total / pageSize);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredMembers.length / pageSize);
-  const paginatedMembers = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredMembers.slice(start, start + pageSize);
-  }, [filteredMembers, currentPage, pageSize]);
+  // Fetch members from server when filters/pagination change
+  const fetchWithCurrentParams = useCallback(() => {
+    const offset = (currentPage - 1) * pageSize;
+    refreshMembers(
+      { role: roleFilter, status: statusFilter, search: searchQuery },
+      pageSize,
+      offset,
+    );
+  }, [refreshMembers, currentPage, pageSize, roleFilter, statusFilter, searchQuery]);
+
+  useEffect(() => {
+    fetchWithCurrentParams();
+  }, [fetchWithCurrentParams]);
 
   const handleInvite = async () => {
     if (!ensureCanManage("invite team members")) return;
@@ -256,9 +279,16 @@ export function TeamSettings() {
     setEditingMember(null);
   };
 
-  const handleRevokeAccess = async (memberId: string) => {
+  const handleRevokeAccess = (memberId: string) => {
     if (!ensureCanManage("remove team members")) return;
-    await removeMember(memberId);
+    setRevokeTargetId(memberId);
+  };
+
+  const confirmRevokeAccess = async () => {
+    if (revokeTargetId) {
+      await removeMember(revokeTargetId);
+      setRevokeTargetId(null);
+    }
   };
 
   const handleResendInvite = async (member: TeamMember) => {
@@ -285,6 +315,15 @@ export function TeamSettings() {
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     setCurrentPage(1);
+    // Debounce the API call for search (300ms)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      refreshMembers(
+        { role: roleFilter, status: statusFilter, search: value },
+        pageSize,
+        0,
+      );
+    }, 300);
   };
 
   const handleRoleFilterChange = (value: Role | "all") => {
@@ -298,6 +337,49 @@ export function TeamSettings() {
   };
 
   const hasActiveFilters = searchQuery || roleFilter !== "all" || statusFilter !== "all";
+
+  // CSV export handler (Bug 8)
+  const handleExportCSV = async () => {
+    try {
+      const { data } = await api.get('/team/members', { params: { limit: '10000', offset: '0' } });
+      const allMembers = data.items || [];
+      const escapeCSV = (field: string) => `"${String(field).replace(/"/g, '""')}"`;
+      const header = ["name","email","role","status","last_active","created_at"].map(escapeCSV).join(",");
+      const rows = allMembers.map((m: TeamMember) =>
+        [m.name || "", m.email, m.role, m.status, m.last_active || "", m.created_at].map(escapeCSV).join(",")
+      );
+      const csv = [header, ...rows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `team-members-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast({ title: "Export complete", description: `Exported ${allMembers.length} members to CSV.` });
+    } catch {
+      toast({ title: "Export failed", description: "Failed to export team members.", variant: "destructive" });
+    }
+  };
+
+  // Suspend/Reactivate handler (Bug 10)
+  const handleSuspendMember = async (memberId: string) => {
+    if (!ensureCanManage("suspend members")) return;
+    const success = await updateMemberStatus(memberId, "suspended");
+    if (success) {
+      toast({ title: "Member suspended", description: "The member has been suspended." });
+    }
+  };
+
+  const handleReactivateMember = async (memberId: string) => {
+    if (!ensureCanManage("reactivate members")) return;
+    const success = await updateMemberStatus(memberId, "active");
+    if (success) {
+      toast({ title: "Member reactivated", description: "The member has been reactivated." });
+    }
+  };
 
   const getAvatarInitials = (member: TeamMember) => {
     if (member.name) {
@@ -314,6 +396,28 @@ export function TeamSettings() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <SettingsPageHeader
+          icon={Users}
+          title="Team Members"
+          description="Manage access and roles for your organization"
+        />
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Failed to load team members</AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span>{error}</span>
+            <Button variant="outline" size="sm" onClick={() => fetchWithCurrentParams()}>
+              Try Again
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <SettingsPageHeader
@@ -322,6 +426,20 @@ export function TeamSettings() {
         description="Manage access and roles for your organization"
         actions={
           <div className="flex flex-wrap gap-3">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={() => fetchWithCurrentParams()}>
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p>Refresh members</p></TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <Button variant="outline" className="gap-2" onClick={handleExportCSV}>
+              <FileDown className="h-4 w-4" />
+              Export CSV
+            </Button>
             <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -442,6 +560,7 @@ export function TeamSettings() {
                       bob@example.com,viewer,Bob
                     </code>
                   </div>
+                  <p className="text-xs text-muted-foreground">Maximum file size: 1MB</p>
                   <a
                     href={CSV_TEMPLATE}
                     download="team_invite_template.csv"
@@ -515,13 +634,20 @@ export function TeamSettings() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
         <SettingsStatCard
           icon={Users}
           iconColorClass="text-primary"
           iconBgClass="bg-primary/10"
           label="Total Seats"
           value={<>{stats.active_members + stats.pending_invites}<span className="text-muted-foreground text-lg">/{stats.total_seats}</span></>}
+        />
+        <SettingsStatCard
+          icon={Clock}
+          iconColorClass="text-success"
+          iconBgClass="bg-success/10"
+          label="Active Members"
+          value={stats.active_members}
         />
         <SettingsStatCard
           icon={Mail}
@@ -531,11 +657,11 @@ export function TeamSettings() {
           value={stats.pending_invites}
         />
         <SettingsStatCard
-          icon={Clock}
-          iconColorClass="text-success"
-          iconBgClass="bg-success/10"
-          label="Active Members"
-          value={stats.active_members}
+          icon={Ban}
+          iconColorClass="text-destructive"
+          iconBgClass="bg-destructive/10"
+          label="Suspended"
+          value={stats.suspended_members}
         />
       </div>
 
@@ -590,14 +716,14 @@ export function TeamSettings() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedMembers.length === 0 ? (
+            {members.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-40 text-center">
                   <SettingsEmptyState
                     icon={Users}
-                    title={members.length === 0 ? "No team members yet" : "No members match your filters"}
+                    title={total === 0 && !hasActiveFilters ? "No team members yet" : "No members match your filters"}
                     description={
-                      members.length === 0
+                      total === 0 && !hasActiveFilters
                         ? "You haven't invited anyone yet. Start collaborating by adding your team."
                         : "Try adjusting your search or filter criteria."
                     }
@@ -613,8 +739,8 @@ export function TeamSettings() {
                 </TableCell>
               </TableRow>
             ) : (
-              paginatedMembers.map((member) => {
-                const status = statusStyles[member.status];
+              members.map((member) => {
+                const statusStyle = statusStyles[member.status];
                 return (
                   <TableRow key={member.id}>
                     <TableCell>
@@ -636,6 +762,11 @@ export function TeamSettings() {
                           value={member.role}
                           onValueChange={(value) => {
                             if (!ensureCanManage("change roles")) return;
+                            // Bug 11: Confirm before promoting to admin
+                            if (value === "admin" && member.role !== "admin") {
+                              setPendingPromotion({ memberId: member.id, email: member.email });
+                              return;
+                            }
                             updateMemberRole(member.id, value as Role);
                           }}
                           disabled={!canManageMembers || isLastAdmin(member.id)}
@@ -664,9 +795,16 @@ export function TeamSettings() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={status.className}>
-                        {status.label}
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className={statusStyle.className}>
+                          {statusStyle.label}
+                        </Badge>
+                        {member.status === "pending" && member.expires_at && (
+                          <span className="text-xs text-muted-foreground">
+                            (expires {formatDistanceToNow(new Date(member.expires_at), { addSuffix: true })})
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDate(member.last_active)}
@@ -701,6 +839,25 @@ export function TeamSettings() {
                               Resend Invite
                             </DropdownMenuItem>
                           )}
+                          {/* Bug 10: Suspend/Reactivate actions */}
+                          {member.status === "active" && (
+                            <DropdownMenuItem
+                              onClick={() => handleSuspendMember(member.id)}
+                              disabled={!canManageMembers || isLastAdmin(member.id)}
+                            >
+                              <Ban className="mr-2 h-4 w-4" />
+                              Suspend Member
+                            </DropdownMenuItem>
+                          )}
+                          {member.status === "suspended" && (
+                            <DropdownMenuItem
+                              onClick={() => handleReactivateMember(member.id)}
+                              disabled={!canManageMembers}
+                            >
+                              <UserCheck className="mr-2 h-4 w-4" />
+                              Reactivate
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => handleRevokeAccess(member.id)}
@@ -722,12 +879,12 @@ export function TeamSettings() {
       </div>
 
       {/* Pagination */}
-      {filteredMembers.length > 0 && (
+      {total > 0 && (
         <SettingsPagination
           currentPage={currentPage}
           totalPages={totalPages}
           pageSize={pageSize}
-          totalItems={filteredMembers.length}
+          totalItems={total}
           onPageChange={setCurrentPage}
           onPageSizeChange={(size) => {
             setPageSize(size);
@@ -802,6 +959,56 @@ export function TeamSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Revoke Access Confirmation Dialog (Bug 4) */}
+      <AlertDialog open={!!revokeTargetId} onOpenChange={(open) => !open && setRevokeTargetId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke Access</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove{" "}
+              <strong>{revokeTargetMember?.name || revokeTargetMember?.email}</strong> from the team?
+              This will revoke access for this member.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRevokeAccess}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Revoke Access
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Admin Promotion Confirmation Dialog (Bug 11) */}
+      <AlertDialog open={!!pendingPromotion} onOpenChange={(open) => !open && setPendingPromotion(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Promote to Admin</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to promote{" "}
+              <strong>{pendingPromotion?.email}</strong> to Admin?
+              Admins have full access to all team settings, member management, and billing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (pendingPromotion) {
+                  await updateMemberRole(pendingPromotion.memberId, "admin");
+                  setPendingPromotion(null);
+                }
+              }}
+            >
+              Promote to Admin
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

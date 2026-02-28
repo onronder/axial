@@ -64,7 +64,7 @@ def _get_org_user_ids(supabase, org_id: str) -> list[str]:
         logger.warning("⚠️ [Quotas] Failed to fetch team owner for %s: %s", org_id, exc)
 
     try:
-        members_res = supabase.table("team_members").select("member_user_id").eq("team_id", org_id).execute()
+        members_res = supabase.table("team_members").select("member_user_id").eq("team_id", org_id).neq("status", "removed").execute()
         for row in members_res.data or []:
             member_id = row.get("member_user_id")
             if member_id:

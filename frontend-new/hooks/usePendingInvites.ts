@@ -22,6 +22,7 @@ export interface PendingInvite {
   role: string;
   invited_by: string | null;
   invited_at: string;
+  expires_at: string | null;
 }
 
 interface PendingInvitesResponse {
@@ -51,9 +52,7 @@ async function acceptInviteApi(token: string): Promise<AcceptInviteResponse> {
 }
 
 async function declineInviteApi(inviteId: string): Promise<{ status: string }> {
-  // Decline by updating status to 'declined' or by deleting
-  // For now, we'll mark it as declined
-  const response = await api.delete<{ status: string }>(`/team/members/${inviteId}`);
+  const response = await api.post<{ status: string }>('/team/decline', { token: inviteId });
   return response.data;
 }
 
