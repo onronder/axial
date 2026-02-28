@@ -159,6 +159,46 @@ describe('DashboardSidebar Component', () => {
         });
     });
 
+    describe('Help & Support Link', () => {
+        it('should render help link', () => {
+            render(<DashboardSidebar />);
+            expect(screen.getByText('Help & Support')).toBeInTheDocument();
+        });
+
+        it('should link to help page', () => {
+            render(<DashboardSidebar />);
+            const link = screen.getByText('Help & Support').closest('a');
+            expect(link?.getAttribute('href')).toBe('/dashboard/help');
+        });
+
+        it('should mark help as active when on help page', () => {
+            mockUsePathname.mockReturnValue('/dashboard/help');
+
+            render(<DashboardSidebar />);
+
+            const link = screen.getByText('Help & Support').closest('a');
+            expect(link?.className).toContain('bg-primary/10');
+        });
+
+        it('should mark help as active when on help article page', () => {
+            mockUsePathname.mockReturnValue('/dashboard/help/getting-started');
+
+            render(<DashboardSidebar />);
+
+            const link = screen.getByText('Help & Support').closest('a');
+            expect(link?.className).toContain('bg-primary/10');
+        });
+
+        it('should not mark help as active when on other page', () => {
+            mockUsePathname.mockReturnValue('/dashboard/chat');
+
+            render(<DashboardSidebar />);
+
+            const link = screen.getByText('Help & Support').closest('a');
+            expect(link?.className).not.toContain('bg-primary/10');
+        });
+    });
+
     describe('Settings Link', () => {
         it('should render settings link', () => {
             render(<DashboardSidebar />);

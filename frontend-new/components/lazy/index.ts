@@ -23,9 +23,3 @@ export const LazySftpConnectModal = lazy(() =>
     default: module.SftpConnectModal,
   }))
 );
-
-export const LazyHelpModal = lazy(() =>
-  import("@/components/help/HelpModal").then((module) => ({
-    default: module.HelpModal,
-  }))
-);

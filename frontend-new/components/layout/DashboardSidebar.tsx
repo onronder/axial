@@ -6,13 +6,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { useTheme } from "@/hooks/useTheme";
-import { Settings, LogOut, User, Moon, Sun, ChevronUp, MessageSquarePlus } from "lucide-react";
+import { Settings, LogOut, User, Moon, Sun, ChevronUp, MessageSquarePlus, HelpCircle } from "lucide-react";
 import { ChatHistoryList } from "@/components/layout/ChatHistoryList";
 import { NotificationCenter } from "@/components/layout/NotificationCenter";
 import { UsageIndicator } from "@/components/UsageIndicator";
-import { HelpTrigger } from "@/components/help/HelpTrigger";
-import { Suspense } from "react";
-import { LazyHelpModal } from "@/components/lazy";
 import { AxioLogo } from "@/components/branding/AxioLogo";
 import { Button } from "@/components/ui/button";
 import { DeterministicAvatar } from "@/components/ui/DeterministicAvatar"; // New import
@@ -58,6 +55,7 @@ export function DashboardSidebar() {
     };
 
     const isSettingsActive = pathname?.startsWith("/dashboard/settings");
+    const isHelpActive = pathname?.startsWith("/dashboard/help");
     const planLabel = effectivePlan
         ? (isFreePlan
             ? "No Active Plan"
@@ -103,7 +101,16 @@ export function DashboardSidebar() {
 
             {/* Help & Support */}
             <div className="px-1">
-                <HelpTrigger />
+                <Link
+                    href="/dashboard/help"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border border-transparent ${isHelpActive
+                        ? 'bg-primary/10 text-sidebar-foreground shadow-sm border-primary/20'
+                        : 'hover:bg-sidebar-accent hover:border-sidebar-border'
+                        }`}
+                >
+                    <HelpCircle className="h-4 w-4" />
+                    <span>Help & Support</span>
+                </Link>
             </div>
 
             {/* Settings Link */}
@@ -119,11 +126,6 @@ export function DashboardSidebar() {
                     <span>Settings</span>
                 </Link>
             </div>
-
-            {/* Help Modal */}
-            <Suspense fallback={null}>
-              <LazyHelpModal />
-            </Suspense>
 
             {/* User Menu */}
             <div className="pt-2 border-t border-sidebar-border">

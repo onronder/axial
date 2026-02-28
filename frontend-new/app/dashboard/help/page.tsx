@@ -87,7 +87,7 @@ export default function HelpCenterPage() {
         .slice(0, 4);
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-muted/30 to-background">
+        <>
             {/* Hero Section */}
             <div className="relative overflow-hidden border-b border-border/50">
                 {/* Background Pattern */}
@@ -282,19 +282,7 @@ export default function HelpCenterPage() {
                     </div>
                 </section>
 
-                {/* Keyboard Shortcut Hint */}
-                <div className="mt-8 text-center">
-                    <p className="text-sm text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5">
-                            Press
-                            <kbd className="px-2 py-1 rounded bg-muted border border-border text-xs font-mono">
-                                ?
-                            </kbd>
-                            anywhere in the Help Modal for keyboard shortcuts
-                        </span>
-                    </p>
-                </div>
             </div>
-        </div>
+        </>
     );
 }
