@@ -87,3 +87,35 @@ def test_metrics_system_info_exception_is_handled(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "prometheus_client", fake_prom)
     _reload_metrics(monkeypatch)
+
+
+# =============================================================================
+# H8: LLM Operational Metrics Tests
+# =============================================================================
+
+def test_llm_metrics_defined():
+    """H8: LLM operational metrics must be registered."""
+    from core.metrics import (
+        llm_request_duration,
+        llm_tokens_total,
+        llm_routing_decisions,
+        retrieval_score,
+        semantic_cache_ops,
+        guardrail_classifications,
+    )
+    assert llm_request_duration is not None
+    assert llm_tokens_total is not None
+    assert llm_routing_decisions is not None
+    assert retrieval_score is not None
+    assert semantic_cache_ops is not None
+    assert guardrail_classifications is not None
+
+
+def test_llm_metrics_have_correct_labels():
+    """H8: Verify metric label names."""
+    from core.metrics import METRICS_ENABLED, llm_request_duration, llm_tokens_total
+
+    if METRICS_ENABLED:
+        assert "provider" in llm_request_duration._labelnames
+        assert "model" in llm_request_duration._labelnames
+        assert "type" in llm_tokens_total._labelnames

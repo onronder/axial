@@ -21,7 +21,25 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from core.config import settings
+
 logger = logging.getLogger(__name__)
+
+# Build Redis storage URI for distributed rate limiting.
+# Falls back to in-memory storage only if Redis is unavailable.
+_redis_url = settings.REDIS_URL
+_storage_uri: str | None = None
+
+if _redis_url:
+    try:
+        # SlowAPI uses limits library which expects "redis://..." or "memory://"
+        _storage_uri = _redis_url
+        logger.info("🔒 [RateLimit] Using Redis backend for distributed rate limiting")
+    except Exception as e:
+        logger.warning(f"⚠️ [RateLimit] Redis unavailable, falling back to in-memory: {e}")
+        _storage_uri = None
+else:
+    logger.warning("⚠️ [RateLimit] REDIS_URL not set, using in-memory rate limiting (not suitable for multi-instance)")
 
 
 def get_user_id_or_ip(request: Request) -> str:
@@ -54,11 +72,11 @@ def get_user_id_or_ip(request: Request) -> str:
     return get_remote_address(request)
 
 
-# Main limiter instance - use IP by default for simplicity
-limiter = Limiter(key_func=get_remote_address)
+# Main limiter instance - IP-based, with Redis backend for multi-instance deployments
+limiter = Limiter(key_func=get_remote_address, storage_uri=_storage_uri)
 
 # Per-user limiter for LLM/chat endpoints — prevents abuse in shared network environments
-user_limiter = Limiter(key_func=get_user_id_or_ip)
+user_limiter = Limiter(key_func=get_user_id_or_ip, storage_uri=_storage_uri)
 
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:

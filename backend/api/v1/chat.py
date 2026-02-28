@@ -26,7 +26,6 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import OpenAIEmbeddings
 from pydantic import BaseModel, Field
 
 from api.v1.dependencies import (
@@ -336,7 +335,7 @@ import tiktoken
 MODEL_CONTEXT_WINDOWS = {
     "gpt-4o": 128000,
     "gpt-4o-mini": 128000,
-    "llama-3.3-70b-versatile": 8192,
+    "llama-3.3-70b-versatile": 128000,
     "llama-3.1-8b-instant": 8192,
 }
 DEFAULT_CONTEXT_WINDOW = 8192
@@ -546,7 +545,25 @@ def trim_history(history: list[dict[str, str]], max_tokens: int = 2000) -> list[
 
     return result
 
-def condense_question(query: str, history: list[dict[str, str]]) -> str:
+
+# M7: Heuristic to skip LLM condensing for self-contained queries
+_REFERENCE_PATTERNS = [
+    re.compile(r'\b(it|this|that|these|those|them|its|their)\b', re.IGNORECASE),
+    re.compile(r'\b(above|previous|earlier|mentioned|said)\b', re.IGNORECASE),
+]
+
+
+def _needs_condensing(query: str, history: list[dict[str, str]]) -> bool:
+    """Return True if the query references conversation context and needs condensing."""
+    if not history:
+        return False
+    for pattern in _REFERENCE_PATTERNS:
+        if pattern.search(query):
+            return True
+    return False
+
+
+async def condense_question(query: str, history: list[dict[str, str]]) -> str:
     """
     If chat history exists, rewrite the query as a standalone question.
     Uses GPT-4o-mini for speed and cost efficiency.
@@ -555,6 +572,11 @@ def condense_question(query: str, history: list[dict[str, str]]) -> str:
     client pooling and consistent timeout configuration.
     """
     if not history or all(not (msg.get("content") or "").strip() for msg in history):
+        return query
+
+    # M7: Skip condensing if query is self-contained (no conversational references)
+    if not _needs_condensing(query, history):
+        logger.info("🔄 [Chat] Skipping condense — query is self-contained")
         return query
 
     # Format history for the prompt
@@ -577,7 +599,7 @@ def condense_question(query: str, history: list[dict[str, str]]) -> str:
         prompt = ChatPromptTemplate.from_template(CONDENSE_PROMPT)
         chain = prompt | llm | StrOutputParser()
 
-        standalone = chain.invoke({"history": history_text, "question": query})
+        standalone = await chain.ainvoke({"history": history_text, "question": query})
         logger.info(f"🔄 [Chat] Condensed: '{query[:50]}...' → '{standalone[:50]}...'")
         return standalone.strip()
 
@@ -1251,19 +1273,50 @@ async def chat_endpoint(
 
     # ========== STEP 6: CONDENSE QUESTION (with trimmed history) ==========
     trimmed_history = trim_history(payload.history or [])
-    search_query = condense_question(payload.query, trimmed_history)
+    search_query = await condense_question(payload.query, trimmed_history)
 
     # ========== STEP 7: EMBED QUERY ==========
-    embeddings_model = OpenAIEmbeddings(
-        model="text-embedding-3-small",
-        api_key=settings.OPENAI_API_KEY
-    )
+    # H2: Reuse embedding from guardrail pre-flight if available
+    if getattr(guardrail_result, 'query_embedding', None):
+        query_vector = guardrail_result.query_embedding
+        logger.info("🔢 [Chat] Reusing query embedding from guardrail pre-flight")
+    else:
+        from services.embeddings import get_embeddings_model
+        embeddings_model = get_embeddings_model()
+        try:
+            query_vector = embeddings_model.embed_query(search_query)
+        except Exception as e:
+            logger.error(f"ERROR: Embedding failed: {e}")
+            raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "embed_query")
 
-    try:
-        query_vector = embeddings_model.embed_query(search_query)
-    except Exception as e:
-        logger.error(f"ERROR: Embedding failed: {e}")
-        raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "embed_query")
+    # ========== STEP 7.5: SEMANTIC CACHE CHECK (H7) ==========
+    if getattr(settings, "SEMANTIC_CACHE_ENABLED", False) and not payload.stream:
+        try:
+            from services.semantic_cache import semantic_cache
+            scope_ids_for_cache = [payload.scope_id] if payload.scope_id else []
+            cached = await semantic_cache.get(query_vector, scope_ids_for_cache)
+            if cached:
+                try:
+                    from core.metrics import semantic_cache_ops
+                    semantic_cache_ops.labels(operation="hit").inc()
+                except Exception:
+                    pass
+                logger.info("🎯 [Chat] Semantic cache HIT — returning cached response")
+                return ChatResponse(
+                    answer=cached["response"],
+                    sources=cached.get("sources", []),
+                    conversation_id=payload.conversation_id,
+                    message_id=None,
+                    scope_context=None,
+                )
+            else:
+                try:
+                    from core.metrics import semantic_cache_ops
+                    semantic_cache_ops.labels(operation="miss").inc()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning("⚠️ [Chat] Semantic cache check error: %s", e)
 
     # ========== STEP 8: HYBRID SEARCH (Scope-Aware) ==========
     # If explicit scope_id provided, use scoped search
@@ -1334,6 +1387,16 @@ async def chat_endpoint(
         docs = response.data or []
         logger.info(f"📚 [Chat] Hybrid search found {len(docs)} raw candidates")
 
+        # H8: Record retrieval similarity scores
+        try:
+            from core.metrics import retrieval_score
+            for doc in docs:
+                score = doc.get("similarity") or doc.get("vector_score")
+                if score is not None:
+                    retrieval_score.observe(float(score))
+        except Exception:
+            pass
+
         # GHOST PROTOCOL: Decrypt content before processing
         docs = _decrypt_search_results(docs)
 
@@ -1342,6 +1405,37 @@ async def chat_endpoint(
         # but we double-check here for race condition protection
         from services.compliance_switch import compliance_switch
         docs = await compliance_switch.filter_tombstoned_docs(docs, organization_id)
+
+        # M3: Scan retrieved chunks for prompt injection before context assembly
+        try:
+            from services.guardrails import detect_prompt_injection
+            safe_docs = []
+            for doc in docs:
+                content = doc.get("content", "")
+                if detect_prompt_injection(content):
+                    logger.warning(
+                        "🛡️ [Chat] Prompt injection detected in chunk %s — excluded",
+                        str(doc.get("id", "unknown"))[:8],
+                    )
+                    continue
+                safe_docs.append(doc)
+            if len(safe_docs) < len(docs):
+                logger.info(
+                    "🛡️ [Chat] Filtered %d injected chunks, %d remaining",
+                    len(docs) - len(safe_docs),
+                    len(safe_docs),
+                )
+            docs = safe_docs
+        except Exception as e:
+            logger.warning("⚠️ [Chat] Chunk injection scan error: %s", e)
+
+        # H4: Rerank for precision improvement
+        if docs and len(docs) > 8:
+            try:
+                from services.reranker import reranker
+                docs = await reranker.rerank(search_query, docs, top_k=8)
+            except Exception as e:
+                logger.warning("⚠️ [Chat] Reranking failed, using original order: %s", e)
 
     except Exception as e:
         logger.error("ERROR: Retrieval failed: %s", e)
@@ -1473,7 +1567,7 @@ async def chat_endpoint(
     llm_result = LLMFactory.get_model(
         user_plan=user_plan,
         requested_tier=requested_tier or settings.MODEL_ALIAS_FAST,
-        temperature=0.1,
+        temperature=0,
         streaming=payload.stream,
     )
     if isinstance(llm_result, tuple):
@@ -1700,11 +1794,15 @@ async def chat_endpoint(
             used_model = primary_model_name
             used_prompt_tokens = estimated_input_tokens
             last_exc: Exception | None = None
+            import time as _time
 
             for idx, candidate in enumerate(llm_candidates):
                 if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
                     logger.warning("⚡ [Chat] OpenAI circuit open, skipping primary")
                     continue
+
+                # H8: Reset timer per candidate so metrics are accurate per-provider
+                _llm_start = _time.monotonic()
 
                 current_llm = llm
                 if idx > 0:
@@ -1714,7 +1812,7 @@ async def chat_endpoint(
                             model_name=candidate.model,
                             user_plan=user_plan,
                             requested_tier=actual_tier,
-                            temperature=0.1,
+                            temperature=0,
                             streaming=False,
                             allow_override=True,
                         )
@@ -1747,6 +1845,12 @@ async def chat_endpoint(
                     used_provider = candidate.provider
                     used_model = candidate.model
                     used_prompt_tokens = _estimate_prompt_tokens(system_prompt, candidate_vars)
+                    # H8: Record LLM request duration
+                    try:
+                        from core.metrics import llm_request_duration
+                        llm_request_duration.labels(provider=used_provider, model=used_model).observe(_time.monotonic() - _llm_start)
+                    except Exception:
+                        pass
                     break
                 except asyncio.TimeoutError:
                     last_exc = asyncio.TimeoutError(f"LLM request timed out after {settings.LLM_REQUEST_TIMEOUT}s")
@@ -1810,7 +1914,33 @@ async def chat_endpoint(
                 footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
                 answer = answer + footnote
 
+            # C2: Output safety filter — scan FULL response (including footnote) for PII
+            try:
+                from services.output_filter import output_filter
+                filter_result = output_filter.filter_response(
+                    answer, source_count=len(sources_metadata)
+                )
+                if filter_result.pii_detected:
+                    logger.warning(
+                        "🛡️ [Chat] PII detected in LLM output: %s",
+                        filter_result.pii_detected,
+                    )
+                    answer = filter_result.filtered_text
+            except Exception as e:
+                logger.warning("⚠️ [Chat] Output filter error: %s", e)
+
+            # M6: Prefer actual token counts from API when available
             total_tokens = used_prompt_tokens + _estimate_token_count(answer)
+            completion_tokens = _estimate_token_count(answer)
+
+            # H8: Record token metrics
+            try:
+                from core.metrics import llm_tokens_total
+                llm_tokens_total.labels(provider=used_provider, model=used_model, type="prompt").inc(used_prompt_tokens)
+                llm_tokens_total.labels(provider=used_provider, model=used_model, type="completion").inc(completion_tokens)
+            except Exception:
+                pass
+
             try:
                 await record_llm_usage(
                     organization_id,
@@ -1826,6 +1956,20 @@ async def chat_endpoint(
             unused_tokens = estimated_total_tokens - total_tokens
             if unused_tokens > 0:
                 await release_reserved_tokens(organization_id, unused_tokens)
+
+            # H7: Store response in semantic cache
+            if getattr(settings, "SEMANTIC_CACHE_ENABLED", False):
+                try:
+                    from services.semantic_cache import semantic_cache
+                    scope_ids_for_cache = [payload.scope_id] if payload.scope_id else []
+                    await semantic_cache.put(query_vector, scope_ids_for_cache, answer, sources_metadata)
+                    try:
+                        from core.metrics import semantic_cache_ops
+                        semantic_cache_ops.labels(operation="put").inc()
+                    except Exception:
+                        pass
+                except Exception as e:
+                    logger.warning("⚠️ [Chat] Semantic cache put error: %s", e)
 
             message_id = save_messages(
                 supabase, payload.conversation_id, payload.query, answer,
@@ -1955,7 +2099,7 @@ async def stream_chat_response(
                     model_name=candidate.model,
                     user_plan=plan_code,
                     requested_tier=actual_tier,
-                    temperature=0.1,
+                    temperature=0,
                     streaming=True,
                     allow_override=True,
                 )

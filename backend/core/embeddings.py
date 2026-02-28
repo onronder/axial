@@ -24,6 +24,10 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# C1 SAFETY: All vectors in the DB index are vector(1536).
+# Any embedding tier producing a different dimension will corrupt search results.
+REQUIRED_DIMENSION = 1536
+
 
 class EmbeddingTier(Enum):
     """Embedding model tiers ordered by cost."""
@@ -135,26 +139,32 @@ class EmbeddingFactory:
         Returns:
             The recommended EmbeddingTier
         """
+        # Determine what the original logic would have selected
         if force_local:
-            return EmbeddingTier.LOCAL
+            selected = EmbeddingTier.LOCAL
+        elif priority == "high":
+            selected = EmbeddingTier.PREMIUM
+        elif doc_count > 1000:
+            selected = EmbeddingTier.LOCAL
+        elif doc_count > 100:
+            selected = EmbeddingTier.STANDARD
+        else:
+            selected = EmbeddingTier.PREMIUM
 
-        # High priority always gets premium
-        if priority == "high":
-            logger.info("🔢 [Embeddings] High priority → PREMIUM tier")
-            return EmbeddingTier.PREMIUM
-
-        # Large batches use local to save cost
-        if doc_count > 1000:
-            logger.info(f"🔢 [Embeddings] Large batch ({doc_count} docs) → LOCAL tier")
-            return EmbeddingTier.LOCAL
-
-        # Medium batches use standard
-        if doc_count > 100:
-            logger.info(f"🔢 [Embeddings] Medium batch ({doc_count} docs) → STANDARD tier")
-            return EmbeddingTier.STANDARD
-
-        # Small batches use premium for best quality
-        logger.info(f"🔢 [Embeddings] Small batch ({doc_count} docs) → PREMIUM tier")
+        # C1 SAFETY: Always return PREMIUM to match DB vector(1536) index
+        if selected != EmbeddingTier.PREMIUM:
+            dimensions = {
+                EmbeddingTier.LOCAL: 384,
+                EmbeddingTier.STANDARD: 1024,
+                EmbeddingTier.PREMIUM: 1536,
+            }
+            logger.warning(
+                "[Embeddings] auto_select() tried to select %s "
+                "(dimension %d), but DB requires %d. Forcing PREMIUM tier.",
+                selected.value,
+                dimensions.get(selected, 0),
+                REQUIRED_DIMENSION,
+            )
         return EmbeddingTier.PREMIUM
 
     @staticmethod

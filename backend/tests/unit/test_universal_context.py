@@ -225,12 +225,13 @@ async def test_chat_dominant_scope_proceeds_with_generation():
          patch("api.v1.chat.record_llm_usage", new_callable=AsyncMock, return_value=None), \
          patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
          patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
-         patch("api.v1.chat.OpenAIEmbeddings.embed_query", return_value=[0.1, 0.2]), \
+         patch("api.v1.chat.get_embeddings_model") as mock_embed_model, \
          patch("api.v1.chat.analyze_scope_distribution", return_value=analysis), \
          patch("api.v1.chat.fetch_scope_identity", return_value={"type": "github_repo"}), \
          patch("api.v1.chat.filter_docs_by_scope", return_value=docs), \
          patch("api.v1.chat.stream_chat_response", side_effect=fake_stream), \
          patch("api.v1.chat.LLMFactory.get_model", return_value=(object(), {})):
+        mock_embed_model.return_value.embed_query.return_value = [0.1, 0.2]
         response = await chat_endpoint(
             request=_make_request(),
             payload=ChatRequest(query="test", stream=True, history=[]),
@@ -274,10 +275,11 @@ async def test_chat_fragmented_scope_returns_300():
          patch("api.v1.chat.check_llm_quota", new_callable=AsyncMock, return_value={"balance": 100}), \
          patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
          patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
-         patch("api.v1.chat.OpenAIEmbeddings.embed_query", return_value=[0.1, 0.2]), \
+         patch("api.v1.chat.get_embeddings_model") as mock_embed_model, \
          patch("api.v1.chat.analyze_scope_distribution", return_value=analysis), \
          patch("api.v1.chat.fetch_scope_candidates_with_summaries", return_value=scope_infos), \
          patch("api.v1.chat.LLMFactory.get_model", return_value=(object(), {})) as get_model:
+        mock_embed_model.return_value.embed_query.return_value = [0.1, 0.2]
         response = await chat_endpoint(
             request=_make_request(),
             payload=ChatRequest(query="test", stream=False, history=[]),

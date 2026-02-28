@@ -3,8 +3,10 @@ Request Tracing Middleware
 
 Adds request tracing and observability to the FastAPI application.
 Each request gets a unique request ID for correlation across logs.
+Emits structured log entries for observability pipelines.
 """
 
+import json
 import logging
 import time
 import uuid
@@ -14,6 +16,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
+_access_logger = logging.getLogger("axio.access")
 
 
 class RequestTracingMiddleware(BaseHTTPMiddleware):
@@ -69,12 +72,22 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Response-Time"] = f"{duration:.1f}ms"
 
-        # Log request completion
+        # Log request completion (human-readable)
         status_emoji = "✅" if response.status_code < 400 else "⚠️" if response.status_code < 500 else "❌"
         logger.info(
             f"{status_emoji} [{request_id[:8]}] {request.method} {request.url.path} "
             f"→ {response.status_code} ({duration:.1f}ms)"
         )
+
+        # Structured access log for observability pipelines
+        _access_logger.info(json.dumps({
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": round(duration, 1),
+            "user": user_hint,
+        }))
 
         return response
 

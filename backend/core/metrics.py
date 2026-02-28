@@ -393,4 +393,45 @@ vision_llm_diagram_types = Counter(
     ['diagram_type']  # flowchart, architecture, chart, etc.
 )
 
-logger.info("📊 Prometheus metrics initialized (including Ghost Protocol)")
+# =============================================================================
+# LLM Operational Metrics (H8)
+# =============================================================================
+
+llm_request_duration = Histogram(
+    "llm_request_duration_seconds",
+    "LLM request duration",
+    ["provider", "model"],
+    buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60],
+)
+
+llm_tokens_total = Counter(
+    "llm_tokens_total",
+    "Total LLM tokens consumed",
+    ["provider", "model", "type"],  # type: prompt|completion
+)
+
+llm_routing_decisions = Counter(
+    "llm_routing_decisions_total",
+    "Model routing decisions",
+    ["plan", "complexity", "model"],
+)
+
+retrieval_score = Histogram(
+    "retrieval_similarity_score",
+    "Similarity scores from hybrid search",
+    buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+)
+
+semantic_cache_ops = Counter(
+    "semantic_cache_operations_total",
+    "Semantic cache operations",
+    ["operation"],  # hit|miss|put|error
+)
+
+guardrail_classifications = Counter(
+    "guardrail_classifications_total",
+    "Guardrail intent classifications",
+    ["intent", "complexity"],
+)
+
+logger.info("📊 Prometheus metrics initialized (including Ghost Protocol + LLM ops)")

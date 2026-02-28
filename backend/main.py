@@ -13,9 +13,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.gzip import GZipMiddleware
 
 import core.suppress_warnings  # noqa: F401
@@ -135,9 +134,9 @@ async def lifespan(app: FastAPI):
 
 
 # =============================================================================
-# Rate Limiting Configuration
+# Rate Limiting Configuration (uses Redis backend from core.rate_limit)
 # =============================================================================
-limiter = Limiter(key_func=get_remote_address)
+from core.rate_limit import limiter
 
 
 app = FastAPI(
@@ -217,6 +216,29 @@ def configure_cors() -> list[str]:
             if origin.strip()
         ]
         logger.info(f"🔒 CORS: Loaded {len(origins)} origin(s) from ALLOWED_ORIGINS")
+
+    # Validate origin format (applies to all environments)
+    validated_origins: list[str] = []
+    for origin in origins:
+        # Strip trailing slashes (common misconfiguration)
+        origin = origin.rstrip("/")
+
+        # Validate scheme is present
+        if origin != "*" and not (origin.startswith("http://") or origin.startswith("https://")):
+            logger.warning(f"⚠️ CORS: Dropping malformed origin (missing scheme): {origin}")
+            continue
+
+        # Validate no path component (origins should be scheme://host[:port] only)
+        if origin != "*":
+            from urllib.parse import urlparse
+            parsed = urlparse(origin)
+            if parsed.path and parsed.path != "/":
+                logger.warning(f"⚠️ CORS: Dropping origin with path component: {origin}")
+                continue
+
+        validated_origins.append(origin)
+
+    origins = validated_origins
 
     # Environment-specific handling
     if environment == "production":
@@ -299,8 +321,9 @@ from core.tracing import RequestTracingMiddleware
 
 app.add_middleware(RequestTracingMiddleware)
 
-# Add GZip compression for responses > 500 bytes
-app.add_middleware(GZipMiddleware, minimum_size=500)
+# Add GZip compression for responses > 1500 bytes
+# (avoids CPU overhead from compressing small JSON responses)
+app.add_middleware(GZipMiddleware, minimum_size=1500)
 
 # Request body size limit (100MB) to prevent large-payload DoS
 MAX_REQUEST_BODY_BYTES = settings.MAX_FILE_SIZE  # 100MB from config

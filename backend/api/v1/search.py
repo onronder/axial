@@ -11,7 +11,6 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from langchain_openai import OpenAIEmbeddings
 from pydantic import BaseModel, Field
 
 from api.v1.dependencies import (
@@ -129,10 +128,8 @@ async def search_documents(
     supabase = get_supabase()
 
     # 1. Embed Query
-    embeddings_model = OpenAIEmbeddings(
-        model="text-embedding-3-small",
-        api_key=settings.OPENAI_API_KEY
-    )
+    from services.embeddings import get_embeddings_model
+    embeddings_model = get_embeddings_model()
 
     try:
         query_vector = embeddings_model.embed_query(payload.query)

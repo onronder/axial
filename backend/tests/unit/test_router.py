@@ -343,3 +343,58 @@ class TestFallbackModels:
         providers = {fallback.provider for fallback in fallbacks}
         assert "grok" in providers
         assert "groq" in providers
+
+
+# =============================================================================
+# M5: Strengthened Complexity Classifier Tests
+# =============================================================================
+
+class TestComplexityEvaluatorM5:
+    """M5: Tests for enhanced complexity heuristics."""
+
+    @pytest.fixture
+    def router(self):
+        return LLMRouter()
+
+    @pytest.mark.unit
+    def test_multi_question_routes_to_pro(self):
+        """M5: Multiple questions should route to intelligence model."""
+        from services.router import ComplexityEvaluator
+        assert ComplexityEvaluator.should_force_pro(
+            "How does auth work? And how does billing work?"
+        )
+
+    @pytest.mark.unit
+    def test_long_query_routes_to_pro(self):
+        """M5: Long queries (>400 chars) should route to intelligence model."""
+        from services.router import ComplexityEvaluator
+        long_query = "Explain " + "the implementation details of " * 20
+        assert ComplexityEvaluator.should_force_pro(long_query)
+
+    @pytest.mark.unit
+    def test_conditional_query_routes_to_pro(self):
+        """M5: Conditional/comparative queries should route to intelligence model."""
+        from services.router import ComplexityEvaluator
+        assert ComplexityEvaluator.should_force_pro(
+            "Compare REST vs GraphQL for our use case"
+        )
+
+    @pytest.mark.unit
+    def test_simple_query_stays_on_speed(self):
+        """M5: Simple queries should NOT be forced to pro."""
+        from services.router import ComplexityEvaluator
+        assert not ComplexityEvaluator.should_force_pro("What is Python?")
+
+    @pytest.mark.unit
+    def test_versus_detected(self):
+        """M5: 'versus' keyword should trigger pro routing."""
+        from services.router import ComplexityEvaluator
+        assert ComplexityEvaluator.should_force_pro("React versus Vue for dashboards")
+
+    @pytest.mark.unit
+    def test_difference_between_detected(self):
+        """M5: 'difference between' should trigger pro routing."""
+        from services.router import ComplexityEvaluator
+        assert ComplexityEvaluator.should_force_pro(
+            "What is the difference between REST and gRPC?"
+        )

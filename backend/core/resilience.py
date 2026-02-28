@@ -336,12 +336,15 @@ class CircuitBreakerOpen(Exception):
 
 class CircuitBreaker:
     """
-    Simple circuit breaker implementation.
+    Circuit breaker with optional Redis-backed shared state (M11).
 
     States:
     - CLOSED: Normal operation, requests pass through
     - OPEN: Too many failures, requests are blocked
     - HALF_OPEN: Testing if service recovered
+
+    When redis_url is provided, state is shared across processes.
+    Otherwise falls back to in-memory state (per-process).
 
     Usage:
         breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60)
@@ -357,17 +360,74 @@ class CircuitBreaker:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60,
-        name: str = "default"
+        name: str = "default",
+        redis_url: str | None = None,
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.name = name
+        self.redis_url = redis_url
+        # In-memory state (fallback)
         self.failures = 0
         self.last_failure_time: float | None = None
         self.state = "closed"
+        self._redis = None
+
+    def _get_redis(self):
+        """Lazy-init Redis for shared state. Returns None on failure."""
+        if self._redis is not None:
+            return self._redis
+        if not self.redis_url:
+            return None
+        try:
+            import redis
+            self._redis = redis.from_url(self.redis_url, decode_responses=True)
+            self._redis.ping()
+            return self._redis
+        except Exception:
+            logger.debug("⚡ Circuit breaker '%s': Redis unavailable, using in-memory", self.name)
+            self._redis = None
+            return None
+
+    def _redis_key(self) -> str:
+        return f"circuit_breaker:{self.name}"
+
+    def _load_state_from_redis(self):
+        """Load shared state from Redis if available."""
+        r = self._get_redis()
+        if r is None:
+            return
+        try:
+            import json
+            data = r.get(self._redis_key())
+            if data:
+                state = json.loads(data)
+                self.failures = state.get("failures", 0)
+                self.last_failure_time = state.get("last_failure_time")
+                self.state = state.get("state", "closed")
+        except Exception:
+            pass  # Fallback to in-memory
+
+    def _save_state_to_redis(self):
+        """Persist state to Redis if available."""
+        r = self._get_redis()
+        if r is None:
+            return
+        try:
+            import json
+            data = json.dumps({
+                "failures": self.failures,
+                "last_failure_time": self.last_failure_time,
+                "state": self.state,
+            })
+            r.setex(self._redis_key(), int(self.recovery_timeout * 2), data)
+        except Exception:
+            pass  # Best-effort
 
     def __enter__(self):
         import time
+
+        self._load_state_from_redis()
 
         if self.state == "open":
             # Check if recovery timeout has passed
@@ -398,6 +458,7 @@ class CircuitBreaker:
                 self.state = "open"
                 logger.error(f"⚡ Circuit breaker '{self.name}' OPENED after {self.failures} failures")
 
+        self._save_state_to_redis()
         return False  # Don't suppress the exception
 
     async def __aenter__(self):

@@ -479,11 +479,22 @@ class S3Connector(EnhancedConnector, BaseConnector):
         return ext in SUPPORTED_EXTENSIONS
 
     def _normalize_prefix(self, prefix: str) -> str:
-        """Normalize prefix to ensure consistent format."""
+        """Normalize prefix to ensure consistent format.
+
+        Raises:
+            ValueError: If prefix is empty after normalization (cost protection).
+        """
         prefix = prefix.strip()
         # Don't add trailing slash - S3 handles both
         if prefix.startswith("/"):
             prefix = prefix[1:]
+
+        if not prefix:
+            raise ValueError(
+                "S3 prefix is required to prevent expensive full-bucket scans. "
+                "Please specify a folder path (e.g., 'documents/')."
+            )
+
         return prefix
 
     # =========================================================================

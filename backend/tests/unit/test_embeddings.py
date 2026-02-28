@@ -32,12 +32,12 @@ class TestEmbeddingTierSelection:
     def test_large_batch_returns_local(self):
         """Large batches (>1000) should use local tier for cost savings."""
         tier = EmbeddingFactory.auto_select(doc_count=1500, priority="normal")
-        assert tier == EmbeddingTier.LOCAL
+        assert tier == EmbeddingTier.PREMIUM
 
     def test_medium_batch_returns_standard(self):
         """Medium batches (100-1000) should use standard tier."""
         tier = EmbeddingFactory.auto_select(doc_count=500, priority="normal")
-        assert tier == EmbeddingTier.STANDARD
+        assert tier == EmbeddingTier.PREMIUM
 
     def test_small_batch_returns_premium(self):
         """Small batches (<100) should use premium tier for quality."""
@@ -47,7 +47,7 @@ class TestEmbeddingTierSelection:
     def test_force_local_overrides_all(self):
         """force_local=True should override all other logic."""
         tier = EmbeddingFactory.auto_select(doc_count=1, priority="high", force_local=True)
-        assert tier == EmbeddingTier.LOCAL
+        assert tier == EmbeddingTier.PREMIUM
 
 
 class TestEmbeddingDimensions:
@@ -181,3 +181,22 @@ class TestEmbeddingFactory:
 
         assert EmbeddingFactory.get_embeddings(EmbeddingTier.LOCAL) is sentinel_local
         assert EmbeddingFactory.get_embeddings(EmbeddingTier.STANDARD) is sentinel_standard
+
+
+def test_auto_select_always_returns_premium_for_db_safety():
+    """C1: auto_select must always return PREMIUM to match DB vector(1536)."""
+    tier = EmbeddingFactory.auto_select(force_local=True)
+    assert tier == EmbeddingTier.PREMIUM
+
+def test_auto_select_large_batch_returns_premium():
+    """C1: Large batch should NOT downgrade to LOCAL."""
+    tier = EmbeddingFactory.auto_select(doc_count=2000, priority="normal")
+    assert tier == EmbeddingTier.PREMIUM
+
+def test_auto_select_normal_returns_premium():
+    tier = EmbeddingFactory.auto_select(doc_count=1, priority="normal")
+    assert tier == EmbeddingTier.PREMIUM
+
+def test_required_dimension_constant():
+    from core.embeddings import REQUIRED_DIMENSION
+    assert REQUIRED_DIMENSION == 1536

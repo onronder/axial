@@ -43,7 +43,7 @@ class TestSearchDocuments:
         mock_embeddings.embed_query.return_value = [0.1, 0.2]
 
         with patch("api.v1.search.get_supabase", return_value=supabase), \
-             patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
+             patch("api.v1.search.get_embeddings_model", return_value=mock_embeddings):
             result = await search_documents(
                 request=_make_mock_request(),
                 payload=SearchRequest(query="hello", limit=5, threshold=0.2),
@@ -60,7 +60,7 @@ class TestSearchDocuments:
         mock_embeddings.embed_query.side_effect = Exception("embed failed")
 
         with patch("api.v1.search.get_supabase", return_value=supabase), \
-             patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
+             patch("api.v1.search.get_embeddings_model", return_value=mock_embeddings):
             with pytest.raises(HTTPException) as excinfo:
                 await search_documents(
                     request=_make_mock_request(),
@@ -79,7 +79,7 @@ class TestSearchDocuments:
         mock_embeddings.embed_query.return_value = [0.1, 0.2]
 
         with patch("api.v1.search.get_supabase", return_value=supabase), \
-             patch("api.v1.search.OpenAIEmbeddings", return_value=mock_embeddings):
+             patch("api.v1.search.get_embeddings_model", return_value=mock_embeddings):
             with pytest.raises(HTTPException) as excinfo:
                 await search_documents(
                     request=_make_mock_request(),

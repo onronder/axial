@@ -20,6 +20,7 @@ import time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from api.v1.dependencies import validate_team_access
 from api.v1.error_utils import ApiErrorCode, api_error
@@ -145,6 +146,38 @@ def get_polar_headers() -> dict:
     }
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError)),
+    reraise=True,
+)
+async def polar_request(
+    method: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    json: dict | None = None,
+    timeout: float = 30.0,
+) -> httpx.Response:
+    """Make a resilient HTTP request to the Polar API with retry/backoff."""
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        response = await client.request(
+            method,
+            f"{POLAR_API_BASE}{path}",
+            params=params,
+            json=json,
+            headers=get_polar_headers(),
+        )
+        # Retry on 502/503/504 (Polar infra issues)
+        if response.status_code in (502, 503, 504):
+            raise httpx.RemoteProtocolError(
+                f"Polar returned {response.status_code}",
+                request=response.request,
+            )
+        return response
+
+
 async def get_customer_id_for_user(user_id: str) -> str | None:
     """
     Get Polar customer_id for a user.
@@ -244,86 +277,82 @@ async def list_plans(request: Request):
     if _plans_cache is not None and (time.monotonic() - _plans_cache_time) < PLANS_CACHE_TTL:
         return _plans_cache
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-        try:
-            response = await client.get(
-                f"{POLAR_API_BASE}/products?is_archived=false",
-                headers=get_polar_headers()
-            )
+    try:
+        response = await polar_request("GET", "/products", params={"is_archived": "false"})
 
-            if response.status_code != 200:
-                logger.warning(f"[Billing] Polar API returned {response.status_code}, serving {'stale cache' if _plans_cache is not None else 'empty list'}")
-                return _plans_cache if _plans_cache is not None else []
+        if response.status_code != 200:
+            logger.warning(f"[Billing] Polar API returned {response.status_code}, serving {'stale cache' if _plans_cache is not None else 'empty list'}")
+            return _plans_cache if _plans_cache is not None else []
 
-            data = response.json()
-            items = data.get("items", [])
-            plans = []
+        data = response.json()
+        items = data.get("items", [])
+        plans = []
 
-            # Map Polar Product IDs to plan types
-            product_mapping = {
-                settings.POLAR_PRODUCT_ID_STARTER_MONTHLY: "starter",
-                settings.POLAR_PRODUCT_ID_PRO_MONTHLY: "pro",
-            }
+        # Map Polar Product IDs to plan types
+        product_mapping = {
+            settings.POLAR_PRODUCT_ID_STARTER_MONTHLY: "starter",
+            settings.POLAR_PRODUCT_ID_PRO_MONTHLY: "pro",
+        }
 
-            if hasattr(settings, 'POLAR_PRODUCT_ID_ENTERPRISE') and settings.POLAR_PRODUCT_ID_ENTERPRISE:
-                product_mapping[settings.POLAR_PRODUCT_ID_ENTERPRISE] = "enterprise"
+        if hasattr(settings, 'POLAR_PRODUCT_ID_ENTERPRISE') and settings.POLAR_PRODUCT_ID_ENTERPRISE:
+            product_mapping[settings.POLAR_PRODUCT_ID_ENTERPRISE] = "enterprise"
 
-            for item in items:
-                product_id = item.get("id")
-                if product_id in product_mapping:
-                    prices = item.get("prices", [])
-                    if not prices:
-                        continue
+        for item in items:
+            product_id = item.get("id")
+            if product_id in product_mapping:
+                prices = item.get("prices", [])
+                if not prices:
+                    continue
 
-                    price = prices[0]
-                    plan_type = product_mapping[product_id]
-                    meta = PLAN_METADATA.get(plan_type, {})
+                price = prices[0]
+                plan_type = product_mapping[product_id]
+                meta = PLAN_METADATA.get(plan_type, {})
 
-                    plans.append(PlanResponse(
-                        id=product_id,
-                        name=item.get("name", ""),
-                        description=item.get("description", ""),
-                        price_amount=price.get("price_amount", 0),
-                        price_currency=price.get("price_currency", "usd"),
-                        interval=price.get("recurring_interval", "month"),
-                        type=plan_type,
-                        features=meta.get("features", []),
-                        button_text=meta.get("button_text", "Subscribe"),
-                        button_variant=meta.get("button_variant", "default"),
-                        popular=meta.get("popular", False)
-                    ))
-
-            # Sort: starter, pro, enterprise
-            order = {"starter": 0, "pro": 1, "enterprise": 2}
-            plans.sort(key=lambda x: order.get(x.type, 99))
-
-            # Ensure Enterprise is present even if not in Polar (as "Contact Us" fallback)
-            has_enterprise = any(p.type == "enterprise" for p in plans)
-            if not has_enterprise:
-                ent_meta = PLAN_METADATA["enterprise"]
                 plans.append(PlanResponse(
-                    id="enterprise-contact-us",
-                    name="Enterprise",
-                    description="For organizations at scale",
-                    price_amount=0,
-                    price_currency="usd",
-                    interval="",
-                    type="enterprise",
-                    features=ent_meta["features"],
-                    button_text=ent_meta["button_text"],
-                    button_variant=ent_meta["button_variant"],
-                    popular=ent_meta["popular"]
+                    id=product_id,
+                    name=item.get("name", ""),
+                    description=item.get("description", ""),
+                    price_amount=price.get("price_amount", 0),
+                    price_currency=price.get("price_currency", "usd"),
+                    interval=price.get("recurring_interval", "month"),
+                    type=plan_type,
+                    features=meta.get("features", []),
+                    button_text=meta.get("button_text", "Subscribe"),
+                    button_variant=meta.get("button_variant", "default"),
+                    popular=meta.get("popular", False)
                 ))
 
-            # Update cache on success
-            _plans_cache = plans
-            _plans_cache_time = time.monotonic()
+        # Sort: starter, pro, enterprise
+        order = {"starter": 0, "pro": 1, "enterprise": 2}
+        plans.sort(key=lambda x: order.get(x.type, 99))
 
-            return plans
+        # Ensure Enterprise is present even if not in Polar (as "Contact Us" fallback)
+        has_enterprise = any(p.type == "enterprise" for p in plans)
+        if not has_enterprise:
+            ent_meta = PLAN_METADATA["enterprise"]
+            plans.append(PlanResponse(
+                id="enterprise-contact-us",
+                name="Enterprise",
+                description="For organizations at scale",
+                price_amount=0,
+                price_currency="usd",
+                interval="",
+                type="enterprise",
+                features=ent_meta["features"],
+                button_text=ent_meta["button_text"],
+                button_variant=ent_meta["button_variant"],
+                popular=ent_meta["popular"]
+            ))
 
-        except Exception as e:
-            logger.warning(f"[Billing] Failed to fetch plans: {e}, serving {'stale cache' if _plans_cache is not None else 'empty list'}")
-            return _plans_cache if _plans_cache is not None else []
+        # Update cache on success
+        _plans_cache = plans
+        _plans_cache_time = time.monotonic()
+
+        return plans
+
+    except Exception as e:
+        logger.warning(f"[Billing] Failed to fetch plans: {e}, serving {'stale cache' if _plans_cache is not None else 'empty list'}")
+        return _plans_cache if _plans_cache is not None else []
 
 
 # ============================================================

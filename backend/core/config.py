@@ -124,6 +124,14 @@ class Settings(BaseSettings):
 
     RAG_SIMILARITY_THRESHOLD: float = 0.35  # Lowered from 0.50 for better recall on conversational content
 
+    # Cohere (Reranking)
+    COHERE_API_KEY: str | None = None
+    COHERE_RERANK_MODEL: str = "rerank-v3.5"
+
+    # Semantic Cache (H7)
+    SEMANTIC_CACHE_ENABLED: bool = False  # Disabled by default until Redis is verified in production
+    SEMANTIC_CACHE_TTL: int = 3600  # 1 hour
+
     # =========================================================================
     # Guardrails Pre-Flight Search Configuration
     # =========================================================================
@@ -160,9 +168,9 @@ class Settings(BaseSettings):
     MAX_CHUNK_BATCH_SIZE: int = 100  # Process 100 chunks at a time
     MEMORY_WARNING_THRESHOLD: float = 0.85  # Warn at 85% memory
     MEMORY_CRITICAL_THRESHOLD: float = 0.95  # Stop at 95% memory
-    EMBEDDING_BATCH_SIZE: int = 10  # Safe default for OpenAI embeddings
+    EMBEDDING_BATCH_SIZE: int = 200  # M9: Increased from 10 for throughput (1000 safety cap in service)
     EMBEDDING_MAX_TOKENS_PER_REQUEST: int = 250000  # Safety cap below OpenAI 300k limit
-    EMBEDDING_SLEEP_INTERVAL: float = 0.5  # Seconds between embedding batches
+    EMBEDDING_SLEEP_INTERVAL: float = 0.1  # M9: Reduced from 0.5 for throughput
     EMBEDDING_MAX_CONCURRENCY: int = 3  # Max concurrent embedding requests (async path)
     CHUNK_INSERT_BATCH_SIZE: int = 100  # Batch size for PostgREST chunk inserts
     EMBEDDING_ADAPTIVE_LATENCY_FACTOR: float = 0.05  # Extra sleep = batch_duration * factor

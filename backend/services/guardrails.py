@@ -74,6 +74,9 @@ class GuardrailResult:
     preflight_match_count: int = 0  # Number of matching documents found
     preflight_top_score: float = 0.0  # Best similarity score from pre-flight
 
+    # H2: Cache query embedding from pre-flight to avoid duplicate embedding calls
+    query_embedding: list[float] | None = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -234,11 +237,8 @@ class GuardrailService:
         """Lazy load embeddings model for pre-flight search."""
         if self._embeddings_model is None:
             try:
-                from langchain_openai import OpenAIEmbeddings
-                self._embeddings_model = OpenAIEmbeddings(
-                    model="text-embedding-3-small",
-                    api_key=settings.OPENAI_API_KEY
-                )
+                from services.embeddings import get_embeddings_model
+                self._embeddings_model = get_embeddings_model()
                 logger.debug("🛡️ [Guardrails] Embeddings model initialized for pre-flight")
             except Exception as e:
                 logger.warning(f"⚠️ [Guardrails] Failed to init embeddings: {e}")
@@ -279,6 +279,7 @@ class GuardrailService:
             "match_count": 0,
             "top_score": 0.0,
             "top_title": None,
+            "query_embedding": None,  # H2: cache embedding for reuse
         }
 
         if not supabase_client or not organization_id:
@@ -294,6 +295,8 @@ class GuardrailService:
 
             # Generate query embedding
             query_vector = embeddings_model.embed_query(query)
+            # H2: Store embedding for reuse in chat endpoint
+            result["query_embedding"] = query_vector
 
             # Quick similarity search using match_documents RPC
             # This is faster than hybrid_search for a simple existence check
@@ -452,6 +455,18 @@ class GuardrailService:
         llm_result.original_intent = original_intent
         llm_result.preflight_match_count = preflight_result["match_count"]
         llm_result.preflight_top_score = preflight_result["top_score"]
+        # H2: Carry cached query embedding for reuse in chat endpoint
+        llm_result.query_embedding = preflight_result.get("query_embedding")
+
+        # H8: Record guardrail classification metric
+        try:
+            from core.metrics import guardrail_classifications
+            guardrail_classifications.labels(
+                intent=llm_result.intent or "UNKNOWN",
+                complexity=llm_result.complexity or "UNKNOWN",
+            ).inc()
+        except Exception:
+            pass  # Metrics should never break guardrails
 
         return llm_result
 

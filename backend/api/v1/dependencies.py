@@ -332,8 +332,8 @@ async def get_user_allowed_scopes(
         return allowed
 
     except Exception as e:
-        logger.warning(f"[ScopeAccess] Failed to resolve scopes for {user_id[:8]}...: {e}")
-        return None  # Fail-open for now
+        logger.error(f"[ScopeAccess] Failed to resolve scopes for {user_id[:8]}...: {e}")
+        return []  # Fail-closed: deny access to all scopes on error
 
 
 # Re-export get_current_user for convenience

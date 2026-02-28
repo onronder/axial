@@ -47,15 +47,38 @@ class ComplexityEvaluator:
     """Lightweight intent override for routing."""
 
     FORCE_PRO_KEYWORDS = ("refactor", "architect", "optimize")
+    CONDITIONAL_PATTERNS = [
+        re.compile(r"\bif\b.*\bthen\b", re.IGNORECASE),
+        re.compile(r"\bcompare\b", re.IGNORECASE),
+        re.compile(r"\bvs\.?\b", re.IGNORECASE),
+        re.compile(r"\bversus\b", re.IGNORECASE),
+        re.compile(r"\bdifference\s+between\b", re.IGNORECASE),
+    ]
 
     @classmethod
     def should_force_pro(cls, prompt: str | None) -> bool:
         if not prompt:
             return False
         lowered = prompt.lower()
+
+        # Existing keyword check
         for keyword in cls.FORCE_PRO_KEYWORDS:
-            if re.search(rf"\\b{re.escape(keyword)}\\b", lowered):
+            if re.search(rf"\b{re.escape(keyword)}\b", lowered):
                 return True
+
+        # M5: Multi-part questions (multiple "?")
+        if prompt.count("?") > 1:
+            return True
+
+        # M5: Long queries (>400 chars suggest complex reasoning)
+        if len(prompt) > 400:
+            return True
+
+        # M5: Conditional/comparative query patterns
+        for pattern in cls.CONDITIONAL_PATTERNS:
+            if pattern.search(prompt):
+                return True
+
         return False
 
 
@@ -120,33 +143,48 @@ class LLMRouter:
         # STANDARD tier: ALWAYS use speed model (no GPT-4o access ever)
         if model_tier == "standard":
             logger.info(f"🚀 [Router] Plan={plan_lower}, Tier=STANDARD → Speed model (strict gate)")
-            return ModelSelection(
+            selection = ModelSelection(
                 provider=self.SPEED_MODEL["provider"],
                 model=self.SPEED_MODEL["model"],
                 reason="Standard tier uses the fast model for all queries (upgrade for GPT-4o access)"
             )
+            self._record_routing_metric(plan_lower, complexity_upper, selection.model)
+            return selection
 
         # PREMIUM tier: Smart routing or Priority
         # Use simple heuristic for now: Pro/Enterprise get hybrid routing
 
         if complexity_upper == "SIMPLE":
             logger.info(f"🚀 [Router] Plan={plan_lower}, Tier=PREMIUM, Complexity=SIMPLE → Speed model")
-            return ModelSelection(
+            selection = ModelSelection(
                 provider=self.SPEED_MODEL["provider"],
                 model=self.SPEED_MODEL["model"],
                 reason="Simple query routed to speed model efficiently"
             )
+            self._record_routing_metric(plan_lower, complexity_upper, selection.model)
+            return selection
 
         # PREMIUM + COMPLEX: Use intelligence model
         logger.info(f"🧠 [Router] Plan={plan_lower}, Tier=PREMIUM, Complexity=COMPLEX → Intelligence model")
         reason = "Complex query routed to GPT-4o for best results"
         if force_pro:
             reason = "Intent keyword forced smart routing"
-        return ModelSelection(
+        selection = ModelSelection(
             provider=self.INTELLIGENCE_MODEL["provider"],
             model=self.INTELLIGENCE_MODEL["model"],
             reason=reason
         )
+        self._record_routing_metric(plan_lower, complexity_upper, selection.model)
+        return selection
+
+    @staticmethod
+    def _record_routing_metric(plan: str, complexity: str, model: str) -> None:
+        """H8: Record routing decision metric."""
+        try:
+            from core.metrics import llm_routing_decisions
+            llm_routing_decisions.labels(plan=plan, complexity=complexity, model=model).inc()
+        except Exception:
+            pass  # Metrics should never break routing
 
     def get_model_for_plan(self, plan: str) -> ModelSelection:
         """

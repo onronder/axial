@@ -52,11 +52,19 @@ if ENVIRONMENT == "production" and not ENCRYPTION_KEYS:
     )
 
 if ENCRYPTION_KEYS and _CRYPTO_AVAILABLE:
-    cipher_suite = Fernet(ENCRYPTION_KEYS[0].encode())
-    cipher_suites = [cipher_suite]
-    for key in ENCRYPTION_KEYS[1:]:
-        cipher_suites.append(Fernet(key.encode()))
-    HAS_ENCRYPTION = True
+    try:
+        cipher_suite = Fernet(ENCRYPTION_KEYS[0].encode())
+        cipher_suites = [cipher_suite]
+        for key in ENCRYPTION_KEYS[1:]:
+            cipher_suites.append(Fernet(key.encode()))
+        HAS_ENCRYPTION = True
+    except (ValueError, Exception) as e:
+        raise RuntimeError(
+            f"FATAL: Invalid ENCRYPTION_KEY format. "
+            f"Keys must be 32 url-safe base64-encoded bytes. "
+            f"Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())' "
+            f"Error: {e}"
+        ) from e
 else:
     cipher_suite = None
     cipher_suites = None
@@ -87,9 +95,17 @@ if ENVIRONMENT == "production" and not _CHUNK_ENCRYPTION_KEYS:
 
 # Initialize cipher suites for key rotation support
 if _CHUNK_ENCRYPTION_KEYS and _CRYPTO_AVAILABLE:
-    _chunk_cipher = Fernet(_CHUNK_ENCRYPTION_KEYS[0].encode())  # Primary for encryption
-    _chunk_ciphers = [Fernet(key.encode()) for key in _CHUNK_ENCRYPTION_KEYS]  # All for decryption
-    HAS_CHUNK_ENCRYPTION = True
+    try:
+        _chunk_cipher = Fernet(_CHUNK_ENCRYPTION_KEYS[0].encode())  # Primary for encryption
+        _chunk_ciphers = [Fernet(key.encode()) for key in _CHUNK_ENCRYPTION_KEYS]  # All for decryption
+        HAS_CHUNK_ENCRYPTION = True
+    except (ValueError, Exception) as e:
+        raise RuntimeError(
+            f"FATAL: Invalid CHUNK_ENCRYPTION_KEY format. "
+            f"Keys must be 32 url-safe base64-encoded bytes. "
+            f"Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())' "
+            f"Error: {e}"
+        ) from e
 else:
     _chunk_cipher = None
     _chunk_ciphers = []

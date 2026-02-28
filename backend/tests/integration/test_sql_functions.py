@@ -342,3 +342,16 @@ class TestSchemaConsistency:
             }
             missing = expected_columns - columns
             assert not missing, f"Missing expected columns in document_chunks: {missing}"
+
+
+class TestEfSearchMigration:
+    """H5: Verify ef_search tuning migration."""
+
+    def test_hybrid_search_sets_ef_search_128(self):
+        """H5: Verify ef_search=128 is set for recall improvement."""
+        from pathlib import Path
+        migration_path = Path("supabase/migrations/")
+        ef_search_migrations = [f for f in migration_path.glob("*tune_ef_search*")]
+        assert len(ef_search_migrations) == 1
+        content = ef_search_migrations[0].read_text()
+        assert "SET LOCAL hnsw.ef_search = 128" in content

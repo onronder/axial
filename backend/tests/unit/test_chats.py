@@ -223,8 +223,8 @@ class TestRAGChatEndpoint:
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
-             patch("api.v1.chat.condense_question", return_value="Condensed Question?") as mock_condense, \
-             patch("api.v1.chat.OpenAIEmbeddings"), \
+             patch("api.v1.chat.condense_question", new_callable=AsyncMock, return_value="Condensed Question?") as mock_condense, \
+             patch("services.embeddings.get_embeddings_model") as mock_embed, \
              patch("api.v1.chat.LLMFactory") as mock_llm_factory, \
              patch("api.v1.chat.save_messages") as mock_save_messages:
 
@@ -289,8 +289,8 @@ class TestRAGChatEndpoint:
 
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
-             patch("api.v1.chat.condense_question", return_value="Q"), \
-             patch("api.v1.chat.OpenAIEmbeddings"), \
+             patch("api.v1.chat.condense_question", new_callable=AsyncMock, return_value="Q"), \
+             patch("services.embeddings.get_embeddings_model"), \
              patch("api.v1.chat.LLMFactory"), \
              patch("api.v1.chat.sentry_sdk") as mock_sentry:
 
@@ -324,8 +324,8 @@ class TestRAGChatEndpoint:
         with patch("api.v1.chat.get_supabase", return_value=mock_supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
-             patch("api.v1.chat.condense_question", return_value="Q"), \
-             patch("api.v1.chat.OpenAIEmbeddings"), \
+             patch("api.v1.chat.condense_question", new_callable=AsyncMock, return_value="Q"), \
+             patch("services.embeddings.get_embeddings_model"), \
              patch("api.v1.chat.LLMFactory"), \
              patch("api.v1.chat.sentry_sdk") as mock_sentry:
 
@@ -369,12 +369,14 @@ class TestChatHelpers:
         assert result[0]["role"] == "system"
         assert result[-1]["content"] == "final"
 
-    def test_condense_question_returns_original_without_history(self):
-        assert api.v1.chat.condense_question("Hello?", []) == "Hello?"
+    @pytest.mark.asyncio
+    async def test_condense_question_returns_original_without_history(self):
+        assert await api.v1.chat.condense_question("Hello?", []) == "Hello?"
 
-    def test_condense_question_falls_back_on_error(self):
+    @pytest.mark.asyncio
+    async def test_condense_question_falls_back_on_error(self):
         with patch("api.v1.chat.ChatOpenAI", side_effect=Exception("boom")):
-            result = api.v1.chat.condense_question("Hello?", [{"role": "user", "content": "Context"}])
+            result = await api.v1.chat.condense_question("Hello?", [{"role": "user", "content": "Context"}])
         assert result == "Hello?"
 
     def test_format_context_with_citations(self):
@@ -398,20 +400,23 @@ class TestChatHelpers:
         assert sources[0]["label"] == "Doc"
         assert sources[1]["url"] == "https://example.com"
 
-    def test_condense_question_returns_original_on_blank_history(self):
+    @pytest.mark.asyncio
+    async def test_condense_question_returns_original_on_blank_history(self):
         history = [{"role": "user", "content": ""}]
-        assert api.v1.chat.condense_question("Hello?", history) == "Hello?"
+        assert await api.v1.chat.condense_question("Hello?", history) == "Hello?"
 
-    def test_condense_question_success_path(self):
+    @pytest.mark.asyncio
+    async def test_condense_question_success_path(self):
         chain = MagicMock()
-        chain.invoke.return_value = "Standalone"
+        chain.ainvoke = AsyncMock(return_value="Standalone")
 
         prompt = MagicMock()
         prompt.__or__.return_value = MagicMock(__or__=MagicMock(return_value=chain))
 
-        with patch("api.v1.chat.ChatOpenAI", return_value=MagicMock()), \
-             patch("api.v1.chat.ChatPromptTemplate.from_template", return_value=prompt):
-            result = api.v1.chat.condense_question("Hello?", [{"role": "user", "content": "Context"}])
+        with patch("api.v1.chat.LLMFactory") as mock_factory:
+            mock_factory.get_model.return_value = (MagicMock(), {})
+            with patch("api.v1.chat.ChatPromptTemplate.from_template", return_value=prompt):
+                result = await api.v1.chat.condense_question("Hello?", [{"role": "user", "content": "Context"}])
 
         assert result == "Standalone"
 
@@ -522,8 +527,8 @@ class TestChatEndpointErrors:
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
-             patch("api.v1.chat.condense_question", return_value="Q"), \
-             patch("api.v1.chat.OpenAIEmbeddings") as mock_embeddings, \
+             patch("api.v1.chat.condense_question", new_callable=AsyncMock, return_value="Q"), \
+             patch("services.embeddings.get_embeddings_model") as mock_embeddings, \
              patch("api.v1.chat.LLMFactory") as mock_factory, \
              patch("api.v1.chat.ChatPromptTemplate.from_messages") as mock_prompt, \
              patch("api.v1.chat.StrOutputParser"):
@@ -560,8 +565,8 @@ class TestChatEndpointErrors:
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model") as mock_router, \
-             patch("api.v1.chat.condense_question", return_value="Q"), \
-             patch("api.v1.chat.OpenAIEmbeddings") as mock_embeddings:
+             patch("api.v1.chat.condense_question", new_callable=AsyncMock, return_value="Q"), \
+             patch("services.embeddings.get_embeddings_model") as mock_embeddings:
             mock_router.return_value.provider = "openai"
             mock_router.return_value.model = "gpt-4o"
             mock_embeddings.return_value.embed_query.return_value = [0.1]
@@ -764,7 +769,7 @@ class TestChatEndpointPaths:
 
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
-             patch("api.v1.chat.OpenAIEmbeddings", return_value=embeddings):
+             patch("services.embeddings.get_embeddings_model", return_value=embeddings):
             from api.v1.chat import ChatRequest, chat_endpoint
             with pytest.raises(HTTPException) as exc:
                 await chat_endpoint(request, ChatRequest(query="ask"), background_tasks, user_id="user-1")
@@ -793,7 +798,7 @@ class TestChatEndpointPaths:
         with patch("api.v1.chat.get_supabase", return_value=supabase), \
              patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
              patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
-             patch("api.v1.chat.OpenAIEmbeddings", return_value=embeddings), \
+             patch("services.embeddings.get_embeddings_model", return_value=embeddings), \
              patch("api.v1.chat.settings.RAG_SIMILARITY_THRESHOLD", 0.1):
             from api.v1.chat import ChatRequest, chat_endpoint
             with pytest.raises(HTTPException) as exc:
@@ -1049,13 +1054,14 @@ def test_trim_history_fallback_without_tiktoken():
     assert isinstance(trimmed, list)
 
 
-def test_condense_question_returns_original_for_blank_history():
+@pytest.mark.asyncio
+async def test_condense_question_returns_original_for_blank_history():
     from api.v1.chat import condense_question
 
     query = "What now?"
     history = [{"role": "user", "content": ""}]
 
-    assert condense_question(query, history) == query
+    assert await condense_question(query, history) == query
 
 
 def test_format_context_with_citations_variants():
@@ -1124,7 +1130,7 @@ async def test_chat_endpoint_streaming_returns_response():
     with patch("api.v1.chat.get_supabase", return_value=supabase), \
          patch("api.v1.chat.guardrail_service.analyze_query") as mock_guard, \
          patch("api.v1.chat.llm_router.select_model") as mock_router, \
-         patch("api.v1.chat.OpenAIEmbeddings"), \
+         patch("services.embeddings.get_embeddings_model"), \
          patch("api.v1.chat.LLMFactory.get_model", return_value=(MagicMock(), {"meta": True})), \
          patch("api.v1.chat.ChatPromptTemplate.from_messages", return_value=MagicMock()), \
          patch("api.v1.chat.stream_chat_response", side_effect=fake_stream):
@@ -1158,3 +1164,75 @@ def test_save_messages_success():
     message_id = save_messages(supabase, "conv-1", "q", "a", ["src"])
 
     assert message_id == "assistant-msg"
+
+
+# ============================================================
+# Phase 1 RAG System Tests
+# ============================================================
+
+def test_model_context_window_llama_33_70b():
+    """H1: Llama 3.3 70B has 128k context, not 8k."""
+    from api.v1.chat import MODEL_CONTEXT_WINDOWS
+    assert MODEL_CONTEXT_WINDOWS["llama-3.3-70b-versatile"] == 128000
+
+def test_model_context_window_llama_31_8b_unchanged():
+    """Guardrails model stays at 8192."""
+    from api.v1.chat import MODEL_CONTEXT_WINDOWS
+    assert MODEL_CONTEXT_WINDOWS["llama-3.1-8b-instant"] == 8192
+
+@pytest.mark.asyncio
+async def test_condense_question_is_async():
+    """M2: condense_question must be async to avoid blocking event loop."""
+    import inspect
+    from api.v1.chat import condense_question
+    assert inspect.iscoroutinefunction(condense_question)
+
+def test_rag_temperature_is_zero():
+    """L1: RAG responses should use temperature=0 for deterministic citations."""
+    import inspect
+    from api.v1 import chat as chat_module
+    # Read source and check for temperature=0 (not 0.1)
+    source = inspect.getsource(chat_module)
+    assert "temperature=0.1" not in source, "Found temperature=0.1 — should be temperature=0"
+
+
+# ============================================================
+# Phase 3: M7 Condense Skip Heuristic Tests
+# ============================================================
+
+def test_needs_condensing_with_pronouns():
+    """M7: Queries with pronouns should trigger condensing."""
+    from api.v1.chat import _needs_condensing
+    assert _needs_condensing("Tell me more about it", [{"role": "user", "content": "hi"}])
+
+
+def test_no_condensing_for_standalone_query():
+    """M7: Self-contained queries should skip condensing."""
+    from api.v1.chat import _needs_condensing
+    assert not _needs_condensing("What is Python?", [{"role": "user", "content": "hi"}])
+
+
+def test_no_condensing_without_history():
+    """M7: No history means no condensing needed."""
+    from api.v1.chat import _needs_condensing
+    assert not _needs_condensing("What is Python?", [])
+
+
+def test_needs_condensing_with_reference_words():
+    """M7: Reference words like 'previous', 'above' should trigger condensing."""
+    from api.v1.chat import _needs_condensing
+    assert _needs_condensing("Explain the previous point in detail", [{"role": "user", "content": "hi"}])
+
+
+# ============================================================
+# Phase 3: M9 Embedding Batch Size Tests
+# ============================================================
+
+def test_embedding_batch_size_is_200():
+    from core.config import settings
+    assert settings.EMBEDDING_BATCH_SIZE == 200
+
+
+def test_embedding_sleep_interval_reduced():
+    from core.config import settings
+    assert settings.EMBEDDING_SLEEP_INTERVAL <= 0.1
