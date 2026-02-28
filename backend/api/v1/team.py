@@ -214,24 +214,13 @@ async def get_pending_invites(
 
         user_email = user_response.data["email"]
 
-        # Find pending invites for this email (exclude expired)
+        # Find pending invites for this email
         invites_response = supabase.table("team_members").select(
-            "id, team_id, role, created_at, expires_at, teams(id, name)"
+            "id, team_id, role, created_at, teams(id, name)"
         ).eq("email", user_email).eq("status", "pending").execute()
 
-        now = datetime.now(timezone.utc)
         invites = []
         for invite in (invites_response.data or []):
-            # Skip expired invites
-            expires_at_str = invite.get("expires_at")
-            if expires_at_str:
-                try:
-                    expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-                    if now > expires_at:
-                        continue
-                except (ValueError, TypeError):
-                    continue  # Fail-closed: skip unparseable expiry
-
             team_info = invite.get("teams", {})
             if team_info:
                 invites.append(PendingInvite(
@@ -240,7 +229,6 @@ async def get_pending_invites(
                     team_name=team_info.get("name", "Unknown Team"),
                     role=invite.get("role", "viewer"),
                     invited_at=invite.get("created_at", ""),
-                    expires_at=invite.get("expires_at"),
                 ))
 
         return PendingInvitesResponse(invites=invites, count=len(invites))
@@ -946,7 +934,7 @@ async def accept_invite(
     try:
         # Step 1: Find the pending invite by token (which is the member_id)
         invite_response = supabase.table("team_members").select(
-            "id, team_id, email, status, expires_at, teams(id, name)"
+            "id, team_id, email, status, teams(id, name)"
         ).eq("id", payload.token).eq("status", "pending").execute()
 
         if not invite_response.data or len(invite_response.data) == 0:
@@ -979,24 +967,7 @@ async def accept_invite(
                 "Please sign in with the correct account."
             )
 
-        # Step 3: Check invite expiry — fail-closed (reject if unparseable)
-        expires_at_str = invite.get("expires_at")
-        if expires_at_str:
-            try:
-                expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-                if datetime.now(timezone.utc) > expires_at:
-                    raise HTTPException(
-                        status_code=410,
-                        detail="This invitation has expired. Please ask the team admin to resend it."
-                    )
-            except (ValueError, TypeError):
-                logger.error(f"[AcceptInvite] Unparseable expires_at '{expires_at_str}' for invite {payload.token}")
-                raise HTTPException(
-                    status_code=410,
-                    detail="This invitation has expired. Please ask the team admin to resend it."
-                )
-
-        # Step 4: Update the member record - link to accepting user
+        # Step 3: Update the member record - link to accepting user
         now = datetime.now(timezone.utc).isoformat()
 
         update_response = supabase.table("team_members").update({

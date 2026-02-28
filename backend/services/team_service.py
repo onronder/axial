@@ -40,7 +40,6 @@ from core.resilience import is_retryable_error
 logger = logging.getLogger(__name__)
 
 # Invite expiry: pending invites expire after this many days
-INVITE_EXPIRY_DAYS = 30
 
 
 class TeamService:
@@ -711,7 +710,7 @@ class TeamService:
             PermissionError: If plan doesn't allow team management
         """
         import uuid
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
 
         # Step 1: Check plan allows team feature
         allowed, error_msg, limits = await self._check_team_feature_access(owner_id)
@@ -776,8 +775,6 @@ class TeamService:
             auto_activate = bool(existing_user_id)
 
             # Create invite
-            expires_at = (datetime.now(timezone.utc) + timedelta(days=INVITE_EXPIRY_DAYS)).isoformat()
-
             member_data = {
                 "team_id": team_id,
                 "owner_user_id": owner_id,
@@ -789,7 +786,6 @@ class TeamService:
                 "joined_at": now if auto_activate else None,
                 "created_at": now,
                 "invited_at": now,
-                "expires_at": expires_at if not auto_activate else None,
             }
 
             try:
@@ -879,11 +875,10 @@ class TeamService:
             member = response.data[0]
             team_name = member.get("teams", {}).get("name", "Axial Team")
 
-            # Update invited_at and refresh expiry
-            from datetime import datetime, timedelta, timezone
+            # Update invited_at
+            from datetime import datetime, timezone
             supabase.table("team_members").update({
                 "invited_at": datetime.now(timezone.utc).isoformat(),
-                "expires_at": (datetime.now(timezone.utc) + timedelta(days=INVITE_EXPIRY_DAYS)).isoformat(),
             }).eq("id", member_id).execute()
 
             # Send email
