@@ -388,7 +388,9 @@ class TestBillingErrorPaths:
         response.text = "error"
         client = _make_async_client(get_responses=[response])
 
-        with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
+        with patch.object(billing, "_plans_cache", None), \
+             patch.object(billing, "_plans_cache_time", 0), \
+             patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch("api.v1.billing.httpx.AsyncClient", return_value=client):
             result = await billing.list_plans(request=_make_mock_request())
 
@@ -404,7 +406,9 @@ class TestBillingErrorPaths:
         response.json.return_value = {"items": items}
         client = _make_async_client(get_responses=[response])
 
-        with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
+        with patch.object(billing, "_plans_cache", None), \
+             patch.object(billing, "_plans_cache_time", 0), \
+             patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch.object(billing.settings, "POLAR_PRODUCT_ID_STARTER_MONTHLY", "prod-starter", create=True), \
              patch.object(billing.settings, "POLAR_PRODUCT_ID_PRO_MONTHLY", "prod-pro", create=True), \
              patch.object(billing.settings, "POLAR_PRODUCT_ID_ENTERPRISE", None, create=True), \
