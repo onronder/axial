@@ -161,7 +161,6 @@ class PendingInvite(BaseModel):
     team_id: str
     team_name: str
     role: str
-    invited_by: str | None = None
     invited_at: str
     expires_at: str | None = None
 
@@ -217,7 +216,7 @@ async def get_pending_invites(
 
         # Find pending invites for this email (exclude expired)
         invites_response = supabase.table("team_members").select(
-            "id, team_id, role, invited_by, created_at, expires_at, teams(id, name)"
+            "id, team_id, role, created_at, expires_at, teams(id, name)"
         ).eq("email", user_email).eq("status", "pending").execute()
 
         now = datetime.now(timezone.utc)
@@ -240,7 +239,6 @@ async def get_pending_invites(
                     team_id=invite["team_id"],
                     team_name=team_info.get("name", "Unknown Team"),
                     role=invite.get("role", "viewer"),
-                    invited_by=invite.get("invited_by"),
                     invited_at=invite.get("created_at", ""),
                     expires_at=invite.get("expires_at"),
                 ))

@@ -150,13 +150,13 @@ app = FastAPI(
 
 # Register rate limiters (IP-based default + per-user for LLM endpoints)
 from core.rate_limit import user_limiter
+
 app.state.limiter = limiter
 app.state.user_limiter = user_limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # Normalize all HTTP error responses to structured format
-from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
@@ -345,7 +345,8 @@ app.include_router(notifications_router, prefix="/api/v1", tags=["notifications"
 app.include_router(usage_router, prefix="/api/v1", tags=["usage"])
 app.include_router(webhooks_router, prefix="/api/v1", tags=["webhooks"])
 
-from api.v1.admin import router as admin_router, user_router as admin_user_router
+from api.v1.admin import router as admin_router
+from api.v1.admin import user_router as admin_user_router
 
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(admin_user_router, prefix="/api/v1/admin", tags=["admin-user"])

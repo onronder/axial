@@ -72,6 +72,7 @@ class _NoopLimiter:
 _mock_limiter = _NoopLimiter()
 _mock_rate_limit_module = type(sys)('core.rate_limit')
 _mock_rate_limit_module.limiter = _mock_limiter
+_mock_rate_limit_module.user_limiter = _mock_limiter
 _mock_rate_limit_module.RATE_LIMITS = {}
 
 # Add the real functions that tests might import

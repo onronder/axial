@@ -20,7 +20,6 @@ export interface PendingInvite {
   team_id: string;
   team_name: string;
   role: string;
-  invited_by: string | null;
   invited_at: string;
   expires_at: string | null;
 }

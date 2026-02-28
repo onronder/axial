@@ -14,7 +14,11 @@ from fastapi import APIRouter, Depends, Request
 from langchain_openai import OpenAIEmbeddings
 from pydantic import BaseModel, Field
 
-from api.v1.dependencies import get_user_allowed_scopes, require_paid_access, validate_team_access
+from api.v1.dependencies import (
+    get_user_allowed_scopes,
+    require_paid_access,
+    validate_team_access,
+)
 from api.v1.error_utils import ApiErrorCode, api_error
 from core.config import settings
 from core.db import get_supabase
