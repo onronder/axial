@@ -67,6 +67,8 @@ export function ChatHistoryItem({ conversation, isActive }: ChatHistoryItemProps
         router.replace("/dashboard/chat/new");
       }
     } catch (error) {
+      // Fix 2.5: Don't close dialog on error - leave it open so user can retry.
+      // Toast is shown by useChatHistory mutation's onError handler.
       if (process.env.NODE_ENV !== 'production') {
         console.error("Delete failed:", error);
       }

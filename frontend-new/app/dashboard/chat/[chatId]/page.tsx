@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, startTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useChatHistory, Message } from "@/hooks/useChatHistory";
 import { useDocumentCount } from "@/hooks/useDocumentCount";
@@ -30,8 +30,12 @@ const MODEL_STORAGE_KEY = 'axio-chat-model-preference';
  */
 function getPersistedModel(): ModelId {
     if (typeof window === 'undefined') return 'fast';
-    const saved = localStorage.getItem(MODEL_STORAGE_KEY);
-    return (saved === 'fast' || saved === 'smart') ? saved as ModelId : 'fast';
+    try {
+        const saved = localStorage.getItem(MODEL_STORAGE_KEY);
+        return (saved === 'fast' || saved === 'smart') ? saved as ModelId : 'fast';
+    } catch {
+        return 'fast';
+    }
 }
 
 /**
@@ -39,7 +43,11 @@ function getPersistedModel(): ModelId {
  */
 function persistModel(model: ModelId): void {
     if (typeof window === 'undefined') return;
-    localStorage.setItem(MODEL_STORAGE_KEY, model);
+    try {
+        localStorage.setItem(MODEL_STORAGE_KEY, model);
+    } catch {
+        // localStorage unavailable (e.g. Safari private browsing) - silently ignore
+    }
 }
 
 /** Conditional logging - only logs in development */
@@ -224,7 +232,7 @@ export default function ChatPage() {
 
     const normalizeSources = (rawSources: unknown): Source[] => {
         if (!Array.isArray(rawSources)) return [];
-        return rawSources.map((entry, idx) => {
+        return rawSources.filter(entry => entry != null).map((entry, idx) => {
             if (typeof entry === "string") {
                 return {
                     index: idx + 1,
@@ -270,8 +278,10 @@ export default function ChatPage() {
                 abortControllerRef.current.abort();
                 abortControllerRef.current = null;
             }
-            // Reset streaming state
+            // Reset streaming state and pending refs to prevent stale fires on remount
             isStreamingRef.current = false;
+            pendingUrlUpdateRef.current = null;
+            isSendLockedRef.current = false;
         };
     }, []);
     
@@ -660,11 +670,11 @@ export default function ChatPage() {
             
             devLog('✅ [ChatPage] Stream complete, content length:', aiContent.length);
             setIsTyping(false);
-            setStreamingMessage(null);
-            setThinkingStatus(null);
 
-            // Add final AI message to state
-            // P1 FIX: Use server message_id if available, otherwise use local ID
+            // Fix 3.6: Transition through 'complete' status before clearing
+            setThinkingStatus({ step: 'complete', message: 'Done' });
+
+            // Fix 4.2: Batch streaming→final transition to prevent visual jump
             const aiMessage: Message = {
                 id: serverMessageId || aiMessageId,
                 role: "assistant",
@@ -673,8 +683,18 @@ export default function ChatPage() {
                 sources: aiSources,
                 scope_context: aiScopeContext,
             };
-            setMessages(prev => [...prev, aiMessage]);
+            startTransition(() => {
+                setStreamingMessage(null);
+                setMessages(prev => [...prev, aiMessage]);
+            });
             devLog('✅ [ChatPage] Final message added to state');
+
+            // Fix 3.6: Clear thinking status after brief animation delay
+            setTimeout(() => {
+                if (isMountedRef.current) {
+                    setThinkingStatus(null);
+                }
+            }, 300);
             
             // NOW it's safe to update the URL (after streaming is complete and state is stable)
             flushPendingUrlUpdate();

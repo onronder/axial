@@ -1,8 +1,20 @@
--- Migration: Tune HNSW ef_search for improved recall
--- H5: Set ef_search=128 (from default 40) for ~97% recall@10
--- This is a session-level GUC — no index rebuild needed.
+-- Migration: Harden hybrid search, fix NULL org leakage, cap match_count,
+-- optimize messages RLS, validate search_language
+--
+-- Fixes:
+-- 1.8  - NULL org_id guard prevents cross-org data leakage
+-- 1.9  - Cap match_count to prevent DoS, reduce CTE multiplier
+-- 2.6  - Replace correlated EXISTS in messages RLS with IN-subquery
+-- 3.10 - Validate search_language parameter
 
 BEGIN;
+
+-- ==========================================================================
+-- Fix 1.8 + 1.9 + 3.10: hybrid_search with NULL guard, match_count cap, language validation
+-- ==========================================================================
+
+-- Drop existing 8-param hybrid_search (from multilang migration)
+DROP FUNCTION IF EXISTS hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT, TEXT);
 
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_text TEXT,
@@ -11,7 +23,8 @@ CREATE OR REPLACE FUNCTION hybrid_search(
     filter_org_id UUID DEFAULT NULL,
     vector_weight FLOAT DEFAULT 0.7,
     keyword_weight FLOAT DEFAULT 0.3,
-    similarity_threshold FLOAT DEFAULT 0.25
+    similarity_threshold FLOAT DEFAULT 0.25,
+    search_language TEXT DEFAULT 'english'
 )
 RETURNS TABLE (
     id UUID,
@@ -27,6 +40,22 @@ RETURNS TABLE (
     combined_score FLOAT
 ) AS $$
 BEGIN
+    -- Fix 1.8: Reject NULL org_id to prevent cross-org data leakage
+    IF filter_org_id IS NULL THEN
+        RAISE EXCEPTION 'filter_org_id is required and cannot be NULL';
+    END IF;
+
+    -- Fix 1.9: Cap match_count to prevent DoS
+    match_count := LEAST(match_count, 100);
+
+    -- Fix 3.10: Validate search_language
+    IF search_language NOT IN ('english', 'french', 'german', 'spanish', 'italian',
+                               'portuguese', 'dutch', 'russian', 'swedish', 'norwegian',
+                               'danish', 'finnish', 'hungarian', 'romanian', 'turkish',
+                               'simple') THEN
+        search_language := 'simple';
+    END IF;
+
     RETURN QUERY
     WITH semantic_results AS (
         SELECT
@@ -42,13 +71,13 @@ BEGIN
             ROW_NUMBER() OVER (ORDER BY dc.embedding <=> query_embedding) as rank
         FROM document_chunks dc
         JOIN documents d ON dc.document_id = d.id
-        WHERE (filter_org_id IS NULL OR d.organization_id = filter_org_id)
+        WHERE d.organization_id = filter_org_id
           AND COALESCE(d.source_type::text, '') NOT IN ('identity', 'scope_identity')
           AND COALESCE(d.metadata->>'type', '') != 'identity_card'
           AND COALESCE(lower(d.metadata->>'is_identity'), 'false') != 'true'
           AND (1 - (dc.embedding <=> query_embedding)) >= similarity_threshold
         ORDER BY dc.embedding <=> query_embedding
-        LIMIT match_count * 3
+        LIMIT match_count * 2
     ),
     keyword_results AS (
         SELECT
@@ -61,26 +90,27 @@ BEGIN
             d.title,
             d.metadata,
             ts_rank_cd(
-                to_tsvector('english', dc.content),
-                plainto_tsquery('english', query_text),
+                to_tsvector(search_language, dc.content),
+                plainto_tsquery(search_language, query_text),
                 32
             )::FLOAT as score,
             ROW_NUMBER() OVER (
                 ORDER BY ts_rank_cd(
-                    to_tsvector('english', dc.content),
-                    plainto_tsquery('english', query_text),
+                    to_tsvector(search_language, dc.content),
+                    plainto_tsquery(search_language, query_text),
                     32
                 ) DESC
             ) as rank
         FROM document_chunks dc
         JOIN documents d ON dc.document_id = d.id
-        WHERE (filter_org_id IS NULL OR d.organization_id = filter_org_id)
+        WHERE d.organization_id = filter_org_id
           AND COALESCE(d.source_type::text, '') NOT IN ('identity', 'scope_identity')
           AND COALESCE(d.metadata->>'type', '') != 'identity_card'
           AND COALESCE(lower(d.metadata->>'is_identity'), 'false') != 'true'
-          AND to_tsvector('english', dc.content) @@ plainto_tsquery('english', query_text)
+          AND to_tsvector(search_language, dc.content)
+              @@ plainto_tsquery(search_language, query_text)
         ORDER BY score DESC
-        LIMIT match_count * 3
+        LIMIT match_count * 2
     ),
     combined AS (
         SELECT
@@ -117,9 +147,15 @@ BEGIN
     ORDER BY c.combined_score DESC
     LIMIT match_count;
 END;
-$$ LANGUAGE plpgsql STABLE SET hnsw.ef_search = 128;
+$$ LANGUAGE plpgsql STABLE;
 
--- Also update hybrid_search_scoped with ef_search=128
+-- ==========================================================================
+-- Fix 1.8 + 1.9 + 3.10: hybrid_search_scoped with same guards
+-- ==========================================================================
+
+-- Drop existing 9-param hybrid_search_scoped (from multilang migration)
+DROP FUNCTION IF EXISTS hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT, TEXT);
+
 CREATE OR REPLACE FUNCTION hybrid_search_scoped(
     query_text TEXT,
     query_embedding VECTOR(1536),
@@ -128,7 +164,8 @@ CREATE OR REPLACE FUNCTION hybrid_search_scoped(
     filter_scope_ids TEXT[] DEFAULT NULL,
     vector_weight FLOAT DEFAULT 0.7,
     keyword_weight FLOAT DEFAULT 0.3,
-    similarity_threshold FLOAT DEFAULT 0.25
+    similarity_threshold FLOAT DEFAULT 0.25,
+    search_language TEXT DEFAULT 'english'
 )
 RETURNS TABLE (
     id UUID,
@@ -144,6 +181,22 @@ RETURNS TABLE (
     combined_score FLOAT
 ) AS $$
 BEGIN
+    -- Fix 1.8: Reject NULL org_id to prevent cross-org data leakage
+    IF filter_org_id IS NULL THEN
+        RAISE EXCEPTION 'filter_org_id is required and cannot be NULL';
+    END IF;
+
+    -- Fix 1.9: Cap match_count to prevent DoS
+    match_count := LEAST(match_count, 100);
+
+    -- Fix 3.10: Validate search_language
+    IF search_language NOT IN ('english', 'french', 'german', 'spanish', 'italian',
+                               'portuguese', 'dutch', 'russian', 'swedish', 'norwegian',
+                               'danish', 'finnish', 'hungarian', 'romanian', 'turkish',
+                               'simple') THEN
+        search_language := 'simple';
+    END IF;
+
     RETURN QUERY
     WITH semantic_results AS (
         SELECT
@@ -159,14 +212,14 @@ BEGIN
             ROW_NUMBER() OVER (ORDER BY dc.embedding <=> query_embedding) as rank
         FROM document_chunks dc
         JOIN documents d ON dc.document_id = d.id
-        WHERE (filter_org_id IS NULL OR d.organization_id = filter_org_id)
+        WHERE d.organization_id = filter_org_id
           AND (filter_scope_ids IS NULL OR d.scope_id = ANY(filter_scope_ids))
           AND COALESCE(d.source_type::text, '') NOT IN ('identity', 'scope_identity')
           AND COALESCE(d.metadata->>'type', '') != 'identity_card'
           AND COALESCE(lower(d.metadata->>'is_identity'), 'false') != 'true'
           AND (1 - (dc.embedding <=> query_embedding)) >= similarity_threshold
         ORDER BY dc.embedding <=> query_embedding
-        LIMIT match_count * 3
+        LIMIT match_count * 2
     ),
     keyword_results AS (
         SELECT
@@ -179,27 +232,28 @@ BEGIN
             d.title,
             d.metadata,
             ts_rank_cd(
-                to_tsvector('english', dc.content),
-                plainto_tsquery('english', query_text),
+                to_tsvector(search_language, dc.content),
+                plainto_tsquery(search_language, query_text),
                 32
             )::FLOAT as score,
             ROW_NUMBER() OVER (
                 ORDER BY ts_rank_cd(
-                    to_tsvector('english', dc.content),
-                    plainto_tsquery('english', query_text),
+                    to_tsvector(search_language, dc.content),
+                    plainto_tsquery(search_language, query_text),
                     32
                 ) DESC
             ) as rank
         FROM document_chunks dc
         JOIN documents d ON dc.document_id = d.id
-        WHERE (filter_org_id IS NULL OR d.organization_id = filter_org_id)
+        WHERE d.organization_id = filter_org_id
           AND (filter_scope_ids IS NULL OR d.scope_id = ANY(filter_scope_ids))
           AND COALESCE(d.source_type::text, '') NOT IN ('identity', 'scope_identity')
           AND COALESCE(d.metadata->>'type', '') != 'identity_card'
           AND COALESCE(lower(d.metadata->>'is_identity'), 'false') != 'true'
-          AND to_tsvector('english', dc.content) @@ plainto_tsquery('english', query_text)
+          AND to_tsvector(search_language, dc.content)
+              @@ plainto_tsquery(search_language, query_text)
         ORDER BY score DESC
-        LIMIT match_count * 3
+        LIMIT match_count * 2
     ),
     combined AS (
         SELECT
@@ -236,12 +290,35 @@ BEGIN
     ORDER BY c.combined_score DESC
     LIMIT match_count;
 END;
-$$ LANGUAGE plpgsql STABLE SET hnsw.ef_search = 128;
+$$ LANGUAGE plpgsql STABLE;
 
--- Preserve existing permissions (fully-qualified to avoid ambiguity)
-GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT) TO authenticated;
-GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT) TO service_role;
-GRANT EXECUTE ON FUNCTION hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT) TO authenticated;
-GRANT EXECUTE ON FUNCTION hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT) TO service_role;
+-- ==========================================================================
+-- Fix 2.6: Optimize messages RLS - replace correlated EXISTS with IN subquery
+-- ==========================================================================
+
+-- Drop the existing per-row correlated EXISTS policy
+DROP POLICY IF EXISTS "messages_org_select" ON messages;
+
+-- New optimized policy: materializes accessible conversation IDs once
+CREATE POLICY "messages_org_select" ON messages
+    FOR SELECT
+    USING (
+        conversation_id IN (
+            SELECT c.id FROM conversations c
+            WHERE public.is_org_member(c.organization_id, (SELECT auth.uid()))
+        )
+    );
+
+-- Ensure index exists for the join
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+
+-- ==========================================================================
+-- Grants
+-- ==========================================================================
+
+GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT, TEXT) TO service_role;
 
 COMMIT;

@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import re
+import uuid as _uuid
 from collections import Counter
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
@@ -26,7 +27,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from api.v1.dependencies import (
     get_user_allowed_scopes,
@@ -69,16 +70,43 @@ logger = logging.getLogger(__name__)
 
 # Global semaphore to limit concurrent LLM calls (Issue #13)
 _llm_semaphore: asyncio.Semaphore | None = None
+_semaphore_lock = asyncio.Lock()
 
 
-def _get_llm_semaphore() -> asyncio.Semaphore:
-    """Get or create global LLM concurrency semaphore (lazy init for async context)."""
+async def _get_llm_semaphore() -> asyncio.Semaphore:
+    """Get or create global LLM concurrency semaphore with double-check locking."""
     global _llm_semaphore
-    if _llm_semaphore is None:
-        max_concurrent = getattr(settings, 'LLM_MAX_CONCURRENT_REQUESTS', 20)
-        _llm_semaphore = asyncio.Semaphore(max_concurrent)
-        logger.info(f"🔒 [Chat] Initialized LLM semaphore with max_concurrent={max_concurrent}")
+    if _llm_semaphore is not None:
+        return _llm_semaphore
+    async with _semaphore_lock:
+        if _llm_semaphore is None:
+            max_concurrent = getattr(settings, 'LLM_MAX_CONCURRENT_REQUESTS', 20)
+            _llm_semaphore = asyncio.Semaphore(max_concurrent)
+            logger.info(f"🔒 [Chat] Initialized LLM semaphore with max_concurrent={max_concurrent}")
     return _llm_semaphore
+
+
+# Max match_count allowed for hybrid search RPCs
+MATCH_COUNT_CAP = 50
+
+
+def _safe_sse_json(data: dict) -> str:
+    """Safely serialize data to an SSE event string. Falls back to error event on failure."""
+    try:
+        return f"data: {json.dumps(data, default=str)}\n\n"
+    except (TypeError, ValueError, OverflowError) as exc:
+        logger.warning("SSE JSON serialization failed: %s", exc)
+        fallback = {"type": "error", "message": "Server serialization error", "error": "SSE_SERIALIZE_ERROR"}
+        return f"data: {json.dumps(fallback, default=str)}\n\n"
+
+
+def _categorize_exception(e: Exception) -> str:
+    """Map exception types to ApiErrorCode strings for consistent error handling."""
+    if isinstance(e, TimeoutError) or isinstance(e, asyncio.TimeoutError):
+        return "EXTERNAL_SERVICE_ERROR"
+    if isinstance(e, ConnectionError) or isinstance(e, OSError):
+        return "SERVICE_UNAVAILABLE"
+    return "DATABASE_ERROR"
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 # ============================================================
@@ -280,6 +308,40 @@ class ChatRequest(BaseModel):
         max_length=500,
         description="Explicit scope URI to search within. Use '__all__' to search across sources."
     )
+
+    @field_validator('query')
+    @classmethod
+    def query_not_whitespace(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError('Query must not be empty or whitespace-only')
+        return stripped
+
+    @field_validator('conversation_id')
+    @classmethod
+    def conversation_id_uuid(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            _uuid.UUID(v)
+        except ValueError:
+            raise ValueError('conversation_id must be a valid UUID')
+        return v
+
+    @field_validator('history')
+    @classmethod
+    def history_token_limit(cls, v: list[dict[str, str]] | None) -> list[dict[str, str]] | None:
+        if not v:
+            return v
+        max_total_chars = 100_000
+        total = 0
+        cutoff = len(v)
+        for i, msg in enumerate(v):
+            total += len(msg.get('content', ''))
+            if total > max_total_chars:
+                cutoff = i
+                break
+        return v[:cutoff] if cutoff < len(v) else v
 
 
 class ScopeCandidate(BaseModel):
@@ -1113,13 +1175,17 @@ async def chat_endpoint(
     8. Streaming Support - Optional SSE streaming
     """
     supabase = get_supabase()
+    request_id = str(_uuid.uuid4())[:8]
 
     # ========== STEP 1: RESOLVE ORG SCOPE ==========
     try:
         organization_id = await team_service.get_organization_id(user_id)
     except Exception as e:
-        logger.warning("⚠️ [Chat] Could not resolve org for %s: %s", user_id, e)
+        logger.warning("[%s] ⚠️ [Chat] Could not resolve org for %s: %s", request_id, user_id, e)
         organization_id = user_id
+
+    if not organization_id:
+        raise api_error(ApiErrorCode.DATABASE_ERROR, None, "organization_id is required")
 
     # ========== STEP 2: FETCH USER PLAN ==========
     try:
@@ -1335,54 +1401,64 @@ async def chat_endpoint(
             force_all_scopes = False  # Restricted user cannot search all scopes
             logger.info("🔒 [Chat] User requested __all__ but has scope restrictions, restricting to allowed scopes")
 
+    _DB_RPC_TIMEOUT = 15  # seconds
+
     try:
         if explicit_scope:
             # User explicitly selected a scope - use scoped search
             logger.info(f"🎯 [Chat] Explicit scope search: {explicit_scope[:50]}...")
-            response = supabase.rpc("hybrid_search_scoped", {
-                "query_text": search_query,
-                "query_embedding": query_vector,
-                "match_count": 10,
-                "filter_org_id": organization_id,
-                "filter_scope_ids": [explicit_scope],
-                "similarity_threshold": 0.25
-            }).execute()
+            response = await asyncio.wait_for(asyncio.to_thread(
+                lambda: supabase.rpc("hybrid_search_scoped", {
+                    "query_text": search_query,
+                    "query_embedding": query_vector,
+                    "match_count": min(10, MATCH_COUNT_CAP),
+                    "filter_org_id": organization_id,
+                    "filter_scope_ids": [explicit_scope],
+                    "similarity_threshold": 0.25
+                }).execute()
+            ), timeout=_DB_RPC_TIMEOUT)
         elif force_all_scopes and allowed_scopes is None:
             # Search all sources using scoped RPC (wildcard scope filter)
-            response = supabase.rpc("hybrid_search_scoped", {
-                "query_text": search_query,
-                "query_embedding": query_vector,
-                "match_count": 15,
-                "filter_org_id": organization_id,
-                "filter_scope_ids": None,
-                "vector_weight": 0.7,
-                "keyword_weight": 0.3,
-                "similarity_threshold": 0.25
-            }).execute()
+            response = await asyncio.wait_for(asyncio.to_thread(
+                lambda: supabase.rpc("hybrid_search_scoped", {
+                    "query_text": search_query,
+                    "query_embedding": query_vector,
+                    "match_count": min(15, MATCH_COUNT_CAP),
+                    "filter_org_id": organization_id,
+                    "filter_scope_ids": None,
+                    "vector_weight": 0.7,
+                    "keyword_weight": 0.3,
+                    "similarity_threshold": 0.25
+                }).execute()
+            ), timeout=_DB_RPC_TIMEOUT)
         elif allowed_scopes is not None:
             # Scope-restricted user — always use scoped search with allowed scopes
             logger.info(f"🔒 [Chat] Scope-restricted search: {len(allowed_scopes)} allowed scopes")
-            response = supabase.rpc("hybrid_search_scoped", {
-                "query_text": search_query,
-                "query_embedding": query_vector,
-                "match_count": 15,
-                "filter_org_id": organization_id,
-                "filter_scope_ids": allowed_scopes,
-                "vector_weight": 0.7,
-                "keyword_weight": 0.3,
-                "similarity_threshold": 0.25
-            }).execute()
+            response = await asyncio.wait_for(asyncio.to_thread(
+                lambda: supabase.rpc("hybrid_search_scoped", {
+                    "query_text": search_query,
+                    "query_embedding": query_vector,
+                    "match_count": min(15, MATCH_COUNT_CAP),
+                    "filter_org_id": organization_id,
+                    "filter_scope_ids": allowed_scopes,
+                    "vector_weight": 0.7,
+                    "keyword_weight": 0.3,
+                    "similarity_threshold": 0.25
+                }).execute()
+            ), timeout=_DB_RPC_TIMEOUT)
         else:
             # Standard search - Dominance Guard will analyze distribution
-            response = supabase.rpc("hybrid_search", {
-                "query_text": search_query,
-                "query_embedding": query_vector,
-                "match_count": 15,  # Fetch more for scope analysis
-                "filter_org_id": organization_id,
-                "vector_weight": 0.7,
-                "keyword_weight": 0.3,
-                "similarity_threshold": 0.25
-            }).execute()
+            response = await asyncio.wait_for(asyncio.to_thread(
+                lambda: supabase.rpc("hybrid_search", {
+                    "query_text": search_query,
+                    "query_embedding": query_vector,
+                    "match_count": min(15, MATCH_COUNT_CAP),
+                    "filter_org_id": organization_id,
+                    "vector_weight": 0.7,
+                    "keyword_weight": 0.3,
+                    "similarity_threshold": 0.25
+                }).execute()
+            ), timeout=_DB_RPC_TIMEOUT)
 
         docs = response.data or []
         logger.info(f"📚 [Chat] Hybrid search found {len(docs)} raw candidates")
@@ -1437,6 +1513,9 @@ async def chat_endpoint(
             except Exception as e:
                 logger.warning("⚠️ [Chat] Reranking failed, using original order: %s", e)
 
+    except asyncio.TimeoutError:
+        logger.error("[%s] ERROR: Hybrid search RPC timed out after %ss", request_id, _DB_RPC_TIMEOUT)
+        raise api_error(ApiErrorCode.PROCESSING_ERROR, TimeoutError("hybrid search timed out"), "retrieve_documents")
     except Exception as e:
         logger.error("ERROR: Retrieval failed: %s", e)
         raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "retrieve_documents")
@@ -1725,7 +1804,7 @@ async def chat_endpoint(
             if scope_name:
                 searching_message = f"Searching {scope_name}..."
 
-            yield f"data: {json.dumps({'type': 'status', 'step': 'searching', 'message': searching_message, 'details': {'scopeName': scope_name}})}\n\n"
+            yield _safe_sse_json({'type': 'status', 'step': 'searching', 'message': searching_message, 'details': {'scopeName': scope_name}})
 
             # Small delay to ensure event is rendered before next
             await asyncio.sleep(0.15)
@@ -1735,7 +1814,7 @@ async def chat_endpoint(
             if source_count > 10:
                 analyzing_message = f"Analyzing {source_count} documents..."
 
-            yield f"data: {json.dumps({'type': 'status', 'step': 'analyzing', 'message': analyzing_message, 'details': {'sourceCount': source_count}})}\n\n"
+            yield _safe_sse_json({'type': 'status', 'step': 'analyzing', 'message': analyzing_message, 'details': {'sourceCount': source_count}})
 
             await asyncio.sleep(0.15)
 
@@ -1747,7 +1826,7 @@ async def chat_endpoint(
             else:
                 found_message = "No specific sources found, using general knowledge"
 
-            yield f"data: {json.dumps({'type': 'status', 'step': 'found', 'message': found_message, 'details': {'sourceCount': source_count, 'scopeName': scope_name}})}\n\n"
+            yield _safe_sse_json({'type': 'status', 'step': 'found', 'message': found_message, 'details': {'sourceCount': source_count, 'scopeName': scope_name}})
 
             await asyncio.sleep(0.1)
 
@@ -1759,7 +1838,7 @@ async def chat_endpoint(
             elif is_smart_model:
                 generating_message = "Generating comprehensive response..."
 
-            yield f"data: {json.dumps({'type': 'status', 'step': 'generating', 'message': generating_message, 'details': {'model': actual_tier, 'isComplex': is_complex}})}\n\n"
+            yield _safe_sse_json({'type': 'status', 'step': 'generating', 'message': generating_message, 'details': {'model': actual_tier, 'isComplex': is_complex}})
 
             # Yield all events from the actual streaming response
             async for event in stream_chat_response(
@@ -1786,7 +1865,7 @@ async def chat_endpoint(
         )
     else:
         # GAP 3 FIX: Acquire semaphore to limit concurrent LLM calls (non-streaming path)
-        semaphore = _get_llm_semaphore()
+        semaphore = await _get_llm_semaphore()
 
         async with semaphore:
             answer = None
@@ -1894,7 +1973,10 @@ async def chat_endpoint(
                 logger.error("ERROR: All LLM providers failed: %s", last_exc)
                 sentry_sdk.capture_exception(last_exc)
                 # GAP 1 FIX: Release reserved tokens when all providers fail
-                await release_reserved_tokens(organization_id, estimated_total_tokens)
+                try:
+                    await release_reserved_tokens(organization_id, estimated_total_tokens)
+                except Exception as rel_err:
+                    logger.error("Failed to release tokens: %s", rel_err)
                 if _is_timeout_error(last_exc):
                     raise_http_error(
                         status.HTTP_504_GATEWAY_TIMEOUT,
@@ -1911,7 +1993,8 @@ async def chat_endpoint(
 
             # Add scope footnote for DOMINANT/CONTESTED classifications
             if scope_context and scope_context.classification in ("dominant", "contested"):
-                footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
+                scope_display = scope_context.scope_name or "your knowledge base"
+                footnote = f"\n\n---\n*Answered based on context from **{scope_display}**.*"
                 answer = answer + footnote
 
             # C2: Output safety filter — scan FULL response (including footnote) for PII
@@ -2125,29 +2208,30 @@ async def stream_chat_response(
                 ):
                     if event_type == "heartbeat":
                         # Send heartbeat to keep connection alive and signal health
-                        yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                        yield _safe_sse_json({'type': 'heartbeat'})
                     elif event_type == "chunk":
                         chunk = event_data
                         if hasattr(chunk, "content") and chunk.content:
                             sent_any = True
                             response_chunks.append(chunk.content)  # O(1) amortized
-                            yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+                            yield _safe_sse_json({'type': 'token', 'content': chunk.content})
 
                 # Join all chunks at end (O(n) total instead of O(n^2))
                 full_response = "".join(response_chunks)
 
                 # Add scope footnote for DOMINANT/CONTESTED classifications
                 if scope_context and scope_context.classification in ("dominant", "contested"):
-                    footnote = f"\n\n---\n*Answered based on context from **{scope_context.scope_name}**.*"
+                    scope_display = scope_context.scope_name or "your knowledge base"
+                    footnote = f"\n\n---\n*Answered based on context from **{scope_display}**.*"
                     full_response += footnote
-                    yield f"data: {json.dumps({'type': 'token', 'content': footnote})}\n\n"
+                    yield _safe_sse_json({'type': 'token', 'content': footnote})
 
                 # Send sources after completion
-                yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+                yield _safe_sse_json({'type': 'sources', 'sources': sources})
 
                 # Send scope context if available
                 if scope_context:
-                    yield f"data: {json.dumps({'type': 'scope_context', 'scope_context': scope_context.model_dump()})}\n\n"
+                    yield _safe_sse_json({'type': 'scope_context', 'scope_context': scope_context.model_dump()})
 
                 # Save messages (org-scoped validation)
                 message_id = save_messages(
@@ -2156,7 +2240,16 @@ async def stream_chat_response(
                     organization_id=organization_id
                 )
 
+                # Emit SSE error if message save returned None but we had a conversation
+                if message_id is None and conversation_id:
+                    sentry_sdk.capture_message(
+                        f"Message save failed: conv={conversation_id[:8]}... org={organization_id[:8]}...",
+                        level="error",
+                    )
+                    yield _safe_sse_json({'type': 'error', 'message': 'Failed to save message', 'error': 'MESSAGE_SAVE_FAILED'})
+
                 total_tokens = _estimate_prompt_tokens(system_prompt, input_vars) + _estimate_token_count(full_response)
+                usage_recorded = False
                 try:
                     await record_llm_usage(
                         organization_id,
@@ -2165,15 +2258,23 @@ async def stream_chat_response(
                         provider=candidate.provider,
                         model=candidate.model,
                     )
+                    usage_recorded = True
                 except Exception as e:
                     logger.warning("⚠️ [Chat] Failed to record LLM usage: %s", e)
 
-                # GAP 1 FIX: Release unused reserved tokens after recording actual usage
-                unused_tokens = estimated_total_tokens - total_tokens
-                if unused_tokens > 0:
-                    await release_reserved_tokens(organization_id, unused_tokens)
+                # GAP 1 FIX: Release reserved tokens based on whether usage was recorded
+                try:
+                    if usage_recorded:
+                        unused_tokens = estimated_total_tokens - total_tokens
+                        if unused_tokens > 0:
+                            await release_reserved_tokens(organization_id, unused_tokens)
+                    else:
+                        # Usage not recorded, release full reservation
+                        await release_reserved_tokens(organization_id, estimated_total_tokens)
+                except Exception as rel_err:
+                    logger.error("Failed to release tokens: %s", rel_err)
 
-                yield f"data: {json.dumps({'type': 'done', 'message_id': message_id})}\n\n"
+                yield _safe_sse_json({'type': 'done', 'message_id': message_id})
                 return
 
             except Exception as e:
@@ -2187,7 +2288,10 @@ async def stream_chat_response(
                     partial_response = "".join(response_chunks)
 
                     # GAP 1 FIX: Release reserved tokens on error (partial response)
-                    await release_reserved_tokens(organization_id, estimated_total_tokens)
+                    try:
+                        await release_reserved_tokens(organization_id, estimated_total_tokens)
+                    except Exception as rel_err:
+                        logger.error("Failed to release tokens: %s", rel_err)
 
                     payload = build_error_payload(
                         "LLM_STREAM_INTERRUPTED",
@@ -2198,7 +2302,7 @@ async def stream_chat_response(
                             "recoverable": False,
                         },
                     )
-                    yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
+                    yield _safe_sse_json({'type': 'error', **payload})
                     return
 
                 if _should_failover(e):
@@ -2208,7 +2312,10 @@ async def stream_chat_response(
                 logger.error("Streaming error: %s", e)
                 sentry_sdk.capture_exception(e)
                 # GAP 1 FIX: Release reserved tokens on error
-                await release_reserved_tokens(organization_id, estimated_total_tokens)
+                try:
+                    await release_reserved_tokens(organization_id, estimated_total_tokens)
+                except Exception as rel_err:
+                    logger.error("Failed to release tokens: %s", rel_err)
                 if _is_timeout_error(e):
                     payload = build_error_payload(
                         "LLM_TIMEOUT",
@@ -2221,20 +2328,23 @@ async def stream_chat_response(
                         "LLM generation failed.",
                         {"reason": str(e)[:500]},
                     )
-                yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
+                yield _safe_sse_json({'type': 'error', **payload})
                 return
 
         if last_exc:
             logger.error("Streaming error: %s", last_exc)
             sentry_sdk.capture_exception(last_exc)
             # GAP 1 FIX: Release reserved tokens when all providers fail
-            await release_reserved_tokens(organization_id, estimated_total_tokens)
+            try:
+                await release_reserved_tokens(organization_id, estimated_total_tokens)
+            except Exception as rel_err:
+                logger.error("Failed to release tokens: %s", rel_err)
             payload = build_error_payload(
                 "LLM_FAILED",
                 "LLM generation failed.",
                 {"reason": str(last_exc)[:500]},
             )
-            yield f"data: {json.dumps({'type': 'error', **payload})}\n\n"
+            yield _safe_sse_json({'type': 'error', **payload})
 
 
 def save_messages(
@@ -2271,29 +2381,34 @@ def save_messages(
                     f"⚠️ [SaveMessages] Org mismatch: conv {conversation_id[:8]}... "
                     f"not in org {organization_id[:8]}..."
                 )
+                sentry_sdk.capture_message(
+                    f"Org mismatch in save_messages: conv={conversation_id[:8]}... org={organization_id[:8]}...",
+                    level="error",
+                )
                 return None  # Silent fail - don't leak info about other orgs
 
-        # Save user message
-        supabase.table("messages").insert({
-            "conversation_id": conversation_id,
-            "role": "user",
-            "content": query,
-            "sources": [],
-            "created_at": now
-        }).execute()
-
-        # Save assistant message
-        assistant_msg = supabase.table("messages").insert({
-            "conversation_id": conversation_id,
-            "role": "assistant",
-            "content": answer,
-            "sources": sources or [],
-            "created_at": now
-        }).execute()
+        # Batch insert both messages atomically to prevent orphaned user messages
+        messages_to_insert = [
+            {
+                "conversation_id": conversation_id,
+                "role": "user",
+                "content": query,
+                "sources": [],
+                "created_at": now,
+            },
+            {
+                "conversation_id": conversation_id,
+                "role": "assistant",
+                "content": answer,
+                "sources": sources or [],
+                "created_at": now,
+            },
+        ]
+        result = supabase.table("messages").insert(messages_to_insert).execute()
 
         message_id = None
-        if assistant_msg.data:
-            message_id = assistant_msg.data[0]['id']
+        if result.data and len(result.data) >= 2:
+            message_id = result.data[1]["id"]
 
         # Update conversation timestamp (org-scoped if provided)
         update_query = supabase.table("conversations").update({

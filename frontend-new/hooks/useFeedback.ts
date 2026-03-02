@@ -28,7 +28,7 @@
  *   });
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
@@ -110,6 +110,9 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [feedbackState, setFeedbackState] = useState<Record<string, FeedbackRating>>({});
+
+    // Fix 2.4: Per-message submission lock to prevent duplicate rapid clicks
+    const submittingRef = useRef<Set<string>>(new Set());
     
     /**
      * Fetch existing feedback for the conversation.
@@ -132,11 +135,11 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
     }, [conversationId]);
     
     // Load existing feedback when conversation changes
+    // Fix 4.3: Don't clear feedbackState before refresh to prevent flicker
     useEffect(() => {
         if (conversationId) {
             refreshFeedback();
         } else {
-            // Clear state when no conversation
             setFeedbackState({});
         }
     }, [conversationId, refreshFeedback]);
@@ -146,13 +149,13 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
      */
     const submitFeedback = useCallback(async (params: SubmitFeedbackParams): Promise<void> => {
         const { messageId, rating, queryText, answerPreview, sources, feedbackText } = params;
-        
+
         // Validate
         if (!messageId) {
             setError('Message ID is required');
             return;
         }
-        
+
         if (!['positive', 'negative'].includes(rating)) {
             setError('Invalid rating');
             return;
@@ -163,9 +166,15 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
             return;
         }
 
+        // Fix 2.4: Per-message lock to prevent duplicate rapid clicks
+        if (submittingRef.current.has(messageId)) {
+            return;
+        }
+        submittingRef.current.add(messageId);
+
         setIsSubmitting(true);
         setError(null);
-        
+
         try {
             const response = await api.post('/chat/feedback', {
                 message_id: messageId,
@@ -182,15 +191,15 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
                 })),
                 feedback_text: feedbackText?.slice(0, 100) || null,
             });
-            
+
             const data = response.data as FeedbackResponse;
-            
+
             // Update local state
             setFeedbackState(prev => ({
                 ...prev,
                 [messageId]: rating,
             }));
-            
+
             // Show success feedback (subtle, no toast for positive to reduce noise)
             if (rating === 'negative' && feedbackText) {
                 toast({
@@ -199,7 +208,7 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
                     duration: 2000,
                 });
             }
-            
+
             // Log for debugging
             if (process.env.NODE_ENV !== 'production') {
                 console.debug(
@@ -207,22 +216,23 @@ export function useFeedback(conversationId?: string): UseFeedbackReturn {
                     data.is_update ? '(updated)' : '(new)'
                 );
             }
-            
+
         } catch (err) {
             const errorMessage = getErrorMessage(err);
             setError(errorMessage);
-            
+
             toast({
                 title: 'Failed to submit feedback',
                 description: errorMessage,
                 variant: 'destructive',
                 duration: 4000,
             });
-            
+
             if (process.env.NODE_ENV !== 'production') {
                 console.error('[useFeedback] Submit failed:', err);
             }
         } finally {
+            submittingRef.current.delete(messageId);
             setIsSubmitting(false);
         }
     }, [toast, feedbackState]);

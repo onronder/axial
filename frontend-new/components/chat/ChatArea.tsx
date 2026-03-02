@@ -114,8 +114,11 @@ export function ChatArea({
   }, [messages, getPreviousUserQuery, submitFeedback]);
 
   // Smooth scroll to bottom when new messages arrive or thinking status changes
+  // Fix 4.1: Use requestAnimationFrame to scroll after DOM paint
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
   }, [messages.length, isTyping, streamingMessage, thinkingStatus]);
 
   const backgroundLayer = (

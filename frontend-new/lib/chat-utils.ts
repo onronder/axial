@@ -310,6 +310,9 @@ export async function* streamChatResponse(
     const decoder = new TextDecoder();
     let buffer = "";
 
+    // Fix 1.7: Per-chunk timeout to detect silent connection drops
+    const CHUNK_TIMEOUT_MS = 90_000;
+
     try {
         while (true) {
             // Check abort signal before each read
@@ -317,7 +320,23 @@ export async function* streamChatResponse(
                 break;
             }
 
-            const { done, value } = await reader.read();
+            // Fix 1.7: Race reader.read() against a timeout
+            let timeoutId: ReturnType<typeof setTimeout>;
+            const readPromise = reader.read();
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error('Stream chunk timeout')), CHUNK_TIMEOUT_MS);
+            });
+
+            let result: ReadableStreamReadResult<Uint8Array>;
+            try {
+                result = await Promise.race([readPromise, timeoutPromise]);
+                clearTimeout(timeoutId!);
+            } catch (timeoutErr) {
+                yield { type: 'error' as const, message: 'Connection timed out. Please try again.', error: 'STREAM_TIMEOUT' };
+                break;
+            }
+
+            const { done, value } = result;
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
@@ -338,7 +357,12 @@ export async function* streamChatResponse(
                         const event = JSON.parse(jsonStr) as StreamEvent;
                         yield event;
                     } catch {
-                        if (process.env.NODE_ENV !== 'production') {
+                        // Fix 1.6: Check for critical event types in malformed JSON
+                        if (jsonStr.includes('"type":"done"') || jsonStr.includes('"type": "done"')) {
+                            yield { type: 'done' as const } satisfies StreamEvent;
+                        } else if (jsonStr.includes('"type":"error"') || jsonStr.includes('"type": "error"')) {
+                            yield { type: 'error' as const, message: 'Malformed server response', error: 'PARSE_ERROR' };
+                        } else if (process.env.NODE_ENV !== 'production') {
                             console.warn("Failed to parse SSE event:", jsonStr);
                         }
                     }

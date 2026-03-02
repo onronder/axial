@@ -39,9 +39,6 @@ RETURNS TABLE (
     combined_score FLOAT
 ) AS $$
 BEGIN
-    -- H5: Increase ef_search for better recall
-    SET LOCAL hnsw.ef_search = 128;
-
     RETURN QUERY
     WITH semantic_results AS (
         SELECT
@@ -133,7 +130,7 @@ BEGIN
     ORDER BY c.combined_score DESC
     LIMIT match_count;
 END;
-$$ LANGUAGE plpgsql STABLE;
+$$ LANGUAGE plpgsql STABLE SET hnsw.ef_search = 128;
 
 -- Update hybrid_search_scoped with language parameter
 CREATE OR REPLACE FUNCTION hybrid_search_scoped(
@@ -161,8 +158,6 @@ RETURNS TABLE (
     combined_score FLOAT
 ) AS $$
 BEGIN
-    SET LOCAL hnsw.ef_search = 128;
-
     RETURN QUERY
     WITH semantic_results AS (
         SELECT
@@ -256,7 +251,7 @@ BEGIN
     ORDER BY c.combined_score DESC
     LIMIT match_count;
 END;
-$$ LANGUAGE plpgsql STABLE;
+$$ LANGUAGE plpgsql STABLE SET hnsw.ef_search = 128;
 
 -- Preserve existing permissions (fully-qualified to avoid ambiguity)
 GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT, TEXT) TO authenticated;

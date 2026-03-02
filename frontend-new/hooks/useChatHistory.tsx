@@ -398,7 +398,10 @@ export const groupConversationsByDate = (conversations: ChatConversation[]): Gro
     conversations.forEach(conv => {
         const date = new Date(conv.updated_at);
 
-        if (date >= today) {
+        // Fix 3.9: Guard against invalid dates - fall back to "Older" group
+        if (isNaN(date.getTime())) {
+            groups[3].conversations.push(conv);
+        } else if (date >= today) {
             groups[0].conversations.push(conv);
         } else if (date >= yesterday) {
             groups[1].conversations.push(conv);
