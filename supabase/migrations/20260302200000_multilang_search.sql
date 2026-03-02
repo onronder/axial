@@ -130,7 +130,7 @@ BEGIN
     ORDER BY c.combined_score DESC
     LIMIT match_count;
 END;
-$$ LANGUAGE plpgsql STABLE SET hnsw.ef_search = 128;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Update hybrid_search_scoped with language parameter
 CREATE OR REPLACE FUNCTION hybrid_search_scoped(
@@ -251,7 +251,7 @@ BEGIN
     ORDER BY c.combined_score DESC
     LIMIT match_count;
 END;
-$$ LANGUAGE plpgsql STABLE SET hnsw.ef_search = 128;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Preserve existing permissions (fully-qualified to avoid ambiguity)
 GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT, TEXT) TO authenticated;
