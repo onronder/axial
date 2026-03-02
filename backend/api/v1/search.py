@@ -19,7 +19,6 @@ from api.v1.dependencies import (
     validate_team_access,
 )
 from api.v1.error_utils import ApiErrorCode, api_error
-from core.config import settings
 from core.db import get_supabase
 from core.rate_limit import limiter
 from core.security import get_current_user

@@ -20,6 +20,7 @@ from starlette.middleware.gzip import GZipMiddleware
 import core.suppress_warnings  # noqa: F401
 from core.config import settings
 from core.db import check_connection, get_supabase
+from core.rate_limit import limiter
 from core.shutdown import register_cleanup_handlers
 
 # Configure logging
@@ -136,8 +137,6 @@ async def lifespan(app: FastAPI):
 # =============================================================================
 # Rate Limiting Configuration (uses Redis backend from core.rate_limit)
 # =============================================================================
-from core.rate_limit import limiter
-
 
 app = FastAPI(
     title="Axio Hub RAG API",

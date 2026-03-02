@@ -1184,12 +1184,14 @@ def test_model_context_window_llama_31_8b_unchanged():
 async def test_condense_question_is_async():
     """M2: condense_question must be async to avoid blocking event loop."""
     import inspect
+
     from api.v1.chat import condense_question
     assert inspect.iscoroutinefunction(condense_question)
 
 def test_rag_temperature_is_zero():
     """L1: RAG responses should use temperature=0 for deterministic citations."""
     import inspect
+
     from api.v1 import chat as chat_module
     # Read source and check for temperature=0 (not 0.1)
     source = inspect.getsource(chat_module)

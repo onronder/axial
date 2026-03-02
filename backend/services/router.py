@@ -75,11 +75,7 @@ class ComplexityEvaluator:
             return True
 
         # M5: Conditional/comparative query patterns
-        for pattern in cls.CONDITIONAL_PATTERNS:
-            if pattern.search(prompt):
-                return True
-
-        return False
+        return any(pattern.search(prompt) for pattern in cls.CONDITIONAL_PATTERNS)
 
 
 class LLMRouter:

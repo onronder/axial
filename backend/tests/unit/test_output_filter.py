@@ -6,7 +6,7 @@ Tests PII detection, redaction, citation validation, and clean passthrough.
 
 import pytest
 
-from services.output_filter import OutputFilter, OutputFilterResult
+from services.output_filter import OutputFilter
 
 
 class TestOutputFilter:

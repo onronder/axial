@@ -96,12 +96,12 @@ def test_metrics_system_info_exception_is_handled(monkeypatch):
 def test_llm_metrics_defined():
     """H8: LLM operational metrics must be registered."""
     from core.metrics import (
+        guardrail_classifications,
         llm_request_duration,
-        llm_tokens_total,
         llm_routing_decisions,
+        llm_tokens_total,
         retrieval_score,
         semantic_cache_ops,
-        guardrail_classifications,
     )
     assert llm_request_duration is not None
     assert llm_tokens_total is not None

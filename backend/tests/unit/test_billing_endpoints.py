@@ -23,7 +23,7 @@ def _make_mock_request(method="GET", path="/api/v1/billing"):
     return Request(scope=scope)
 
 
-def _make_async_client(get_responses=None, post_responses=None, patch_responses=None):
+def _make_async_client(get_responses=None, post_responses=None, patch_responses=None, request_responses=None):
     client = AsyncMock()
     client.__aenter__.return_value = client
     client.__aexit__.return_value = False
@@ -33,6 +33,8 @@ def _make_async_client(get_responses=None, post_responses=None, patch_responses=
         client.post = AsyncMock(side_effect=post_responses)
     if patch_responses is not None:
         client.patch = AsyncMock(side_effect=patch_responses)
+    if request_responses is not None:
+        client.request = AsyncMock(side_effect=request_responses)
     return client
 
 
@@ -133,9 +135,11 @@ class TestListPlans:
         ]
         response = Mock(status_code=200)
         response.json.return_value = {"items": items}
-        client = _make_async_client(get_responses=[response])
+        client = _make_async_client(request_responses=[response])
 
-        with patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
+        with patch.object(billing, "_plans_cache", None), \
+             patch.object(billing, "_plans_cache_time", 0), \
+             patch.object(billing.settings, "POLAR_ACCESS_TOKEN", "token", create=True), \
              patch.object(billing.settings, "POLAR_PRODUCT_ID_STARTER_MONTHLY", "prod-starter", create=True), \
              patch.object(billing.settings, "POLAR_PRODUCT_ID_PRO_MONTHLY", "prod-pro", create=True), \
              patch.object(billing.settings, "POLAR_PRODUCT_ID_ENTERPRISE", None, create=True), \
@@ -404,7 +408,7 @@ class TestBillingErrorPaths:
         ]
         response = Mock(status_code=200)
         response.json.return_value = {"items": items}
-        client = _make_async_client(get_responses=[response])
+        client = _make_async_client(request_responses=[response])
 
         with patch.object(billing, "_plans_cache", None), \
              patch.object(billing, "_plans_cache_time", 0), \

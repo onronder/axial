@@ -102,9 +102,9 @@ def _safe_sse_json(data: dict) -> str:
 
 def _categorize_exception(e: Exception) -> str:
     """Map exception types to ApiErrorCode strings for consistent error handling."""
-    if isinstance(e, TimeoutError) or isinstance(e, asyncio.TimeoutError):
+    if isinstance(e, (TimeoutError, asyncio.TimeoutError)):
         return "EXTERNAL_SERVICE_ERROR"
-    if isinstance(e, ConnectionError) or isinstance(e, OSError):
+    if isinstance(e, (ConnectionError, OSError)):
         return "SERVICE_UNAVAILABLE"
     return "DATABASE_ERROR"
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
@@ -619,10 +619,7 @@ def _needs_condensing(query: str, history: list[dict[str, str]]) -> bool:
     """Return True if the query references conversation context and needs condensing."""
     if not history:
         return False
-    for pattern in _REFERENCE_PATTERNS:
-        if pattern.search(query):
-            return True
-    return False
+    return any(pattern.search(query) for pattern in _REFERENCE_PATTERNS)
 
 
 async def condense_question(query: str, history: list[dict[str, str]]) -> str:
