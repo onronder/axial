@@ -8,6 +8,12 @@ BEGIN;
 ALTER TABLE document_chunks
     ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'english';
 
+-- Drop old 7-param hybrid_search (tune_ef_search created this overload)
+DROP FUNCTION IF EXISTS hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT);
+
+-- Drop old 8-param hybrid_search_scoped (tune_ef_search created this overload)
+DROP FUNCTION IF EXISTS hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT);
+
 -- Update hybrid_search to accept search_language parameter
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_text TEXT,
@@ -252,10 +258,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- Preserve existing permissions
-GRANT EXECUTE ON FUNCTION hybrid_search TO authenticated;
-GRANT EXECUTE ON FUNCTION hybrid_search TO service_role;
-GRANT EXECUTE ON FUNCTION hybrid_search_scoped TO authenticated;
-GRANT EXECUTE ON FUNCTION hybrid_search_scoped TO service_role;
+-- Preserve existing permissions (fully-qualified to avoid ambiguity)
+GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT, TEXT) TO service_role;
 
 COMMIT;

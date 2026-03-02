@@ -244,10 +244,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- Preserve existing permissions
-GRANT EXECUTE ON FUNCTION hybrid_search TO authenticated;
-GRANT EXECUTE ON FUNCTION hybrid_search TO service_role;
-GRANT EXECUTE ON FUNCTION hybrid_search_scoped TO authenticated;
-GRANT EXECUTE ON FUNCTION hybrid_search_scoped TO service_role;
+-- Preserve existing permissions (fully-qualified to avoid ambiguity)
+GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT) TO authenticated;
+GRANT EXECUTE ON FUNCTION hybrid_search(TEXT, VECTOR, INT, UUID, FLOAT, FLOAT, FLOAT) TO service_role;
+GRANT EXECUTE ON FUNCTION hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT) TO authenticated;
+GRANT EXECUTE ON FUNCTION hybrid_search_scoped(TEXT, VECTOR, INT, UUID, TEXT[], FLOAT, FLOAT, FLOAT) TO service_role;
 
 COMMIT;
