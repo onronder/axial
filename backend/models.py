@@ -62,6 +62,7 @@ class User(BaseModel):
 class TeamMember(BaseModel):
     """Team member model."""
     team_id: UUID
+    member_user_id: str | None = None
 
 
 class ConnectorDefinitionResponse(BaseModel):

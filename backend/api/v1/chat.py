@@ -585,7 +585,7 @@ def trim_history(history: list[dict[str, str]], max_tokens: int = 2000) -> list[
     logger.info(f"✂️ [Chat] Trimming history: {current_tokens} > {max_tokens}")
 
     # Preserve key messages
-    system_msg = vocab_msg = None
+    system_msg = None
     if history and history[0].get("role") == "system":
         system_msg = history.pop(0)
 
@@ -2161,7 +2161,7 @@ async def stream_chat_response(
     heartbeat_interval = getattr(settings, 'LLM_HEARTBEAT_INTERVAL', 10.0)
 
     # Acquire semaphore to limit concurrent LLM calls
-    semaphore = _get_llm_semaphore()
+    semaphore = await _get_llm_semaphore()
 
     async with semaphore:
         for candidate in llm_candidates:
@@ -2350,7 +2350,7 @@ def save_messages(
     query: str,
     answer: str,
     sources: list[Any],
-    organization_id: str = None,
+    organization_id: str | None = None,
 ) -> str | None:
     """
     Save user and assistant messages to database.

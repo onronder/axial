@@ -300,6 +300,8 @@ async def synthesize_and_save_identity(
         "organization_id": organization_id,
     }
     embedding = generate_embeddings_batch_sync([summary])[0]
+    if embedding is None:
+        raise RuntimeError(f"Failed to generate embedding for scope identity: {scope_id}")
     embedding_text = json.dumps(embedding)
 
     response = supabase.rpc(

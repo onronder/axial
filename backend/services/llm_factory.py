@@ -283,23 +283,6 @@ class LLMFactory:
 
         return base_client.bind(**bind_kwargs) if bind_kwargs else base_client
 
-
-def get_llm_pool_stats() -> dict[str, int]:
-    """Get statistics about the LLM client pool."""
-    with _llm_pool_lock:
-        return {
-            "total_clients": len(_llm_client_pool),
-            "clients": list(_llm_client_pool.keys()),
-        }
-
-
-def clear_llm_pool():
-    """Clear the LLM client pool (useful for testing or shutdown)."""
-    global _llm_client_pool
-    with _llm_pool_lock:
-        _llm_client_pool.clear()
-        logger.info("🧹 [LLMFactory] Cleared LLM client pool")
-
     # Convenience methods updated to use new signature if needed, or removed if obsolete.
     # We will keep them for backward compatibility but redirecting to get_model is safer.
     @staticmethod
@@ -316,3 +299,20 @@ def clear_llm_pool():
     def get_guardrail_model(streaming: bool = False, temperature: float = 0) -> BaseChatModel:
         # Guardrail always uses the specifically configured guardrail model, ignoring tiers
         return LLMFactory._create_groq(settings.GUARDRAIL_MODEL_NAME, temperature, streaming, None)
+
+
+def get_llm_pool_stats() -> dict[str, int]:
+    """Get statistics about the LLM client pool."""
+    with _llm_pool_lock:
+        return {
+            "total_clients": len(_llm_client_pool),
+            "clients": list(_llm_client_pool.keys()),
+        }
+
+
+def clear_llm_pool():
+    """Clear the LLM client pool (useful for testing or shutdown)."""
+    global _llm_client_pool
+    with _llm_pool_lock:
+        _llm_client_pool.clear()
+        logger.info("🧹 [LLMFactory] Cleared LLM client pool")
