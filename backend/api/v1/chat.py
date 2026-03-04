@@ -683,11 +683,8 @@ def _needs_condensing(query: str, history: list[dict[str, str]]) -> bool:
         return True
 
     # Long query with a question word and no reference/continuation → standalone
-    if _QUESTION_WORDS.search(query):
-        return False
-
     # Long but no question structure → likely a follow-up
-    return True
+    return not _QUESTION_WORDS.search(query)
 
 
 async def condense_question(query: str, history: list[dict[str, str]]) -> str:
