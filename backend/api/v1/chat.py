@@ -89,6 +89,13 @@ async def _get_llm_semaphore() -> asyncio.Semaphore:
 # Max match_count allowed for hybrid search RPCs
 MATCH_COUNT_CAP = 50
 
+# Token budget for citation chunk content (avoids mid-word truncation)
+CITATION_CHUNK_TOKEN_BUDGET = 375
+
+# Reranker top_k constants (Fix 3: preserve scope diversity before Dominance Guard)
+RERANK_TOP_K_DEFAULT = 12
+RERANK_TOP_K_COMPARISON = 20
+
 
 def _safe_sse_json(data: dict) -> str:
     """Safely serialize data to an SSE event string. Falls back to error event on failure."""
@@ -504,9 +511,18 @@ def _build_prompt_bundle(
     scope_identity_context: str | None = None,
     scope_name: str | None = None,
     multi_scope_identity_context: str | None = None,
+    is_comparison: bool = False,
 ) -> tuple[ChatPromptTemplate, dict[str, Any], str]:
     is_grok = provider == "grok"
-    if multi_scope_identity_context:
+    if multi_scope_identity_context and is_comparison:
+        system_prompt = GROK_COMPARISON_SYSTEM_PROMPT if is_grok else COMPARISON_SYSTEM_PROMPT
+        input_vars = {
+            "context": context_text,
+            "question": question,
+            "language": language,
+            "scope_identities": multi_scope_identity_context,
+        }
+    elif multi_scope_identity_context:
         system_prompt = GROK_MULTI_SCOPE_SYSTEM_PROMPT if is_grok else MULTI_SCOPE_SYSTEM_PROMPT
         input_vars = {
             "context": context_text,
@@ -551,6 +567,18 @@ def _is_long_query(query: str) -> bool:
     if word_count >= LONG_QUERY_WORD_THRESHOLD:
         return True
     return _estimate_token_count(query) >= LONG_QUERY_TOKEN_THRESHOLD
+
+
+_COMPARISON_KEYWORDS = re.compile(
+    r"\b(compare|comparison|contrast|differences?|distinguish|versus|vs\.?|"
+    r"karşılaştır|fark|kıyasla|mukayese|مقایسه|تفاوت)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_comparison_query(query: str) -> bool:
+    """Detect if the query is asking to compare multiple documents/items."""
+    return bool(_COMPARISON_KEYWORDS.search(query))
 
 
 def _is_timeout_error(exc: Exception) -> bool:
@@ -698,10 +726,16 @@ async def condense_question(query: str, history: list[dict[str, str]]) -> str:
         prompt = ChatPromptTemplate.from_template(CONDENSE_PROMPT)
         chain = prompt | llm | StrOutputParser()
 
-        standalone = await chain.ainvoke({"history": history_text, "question": query})
+        standalone = await asyncio.wait_for(
+            chain.ainvoke({"history": history_text, "question": query}),
+            timeout=10,
+        )
         logger.info(f"🔄 [Chat] Condensed: '{query[:50]}...' → '{standalone[:50]}...'")
         return standalone.strip()
 
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ [Chat] Condense timed out after 10s, using original query")
+        return query
     except Exception as e:
         logger.warning(f"⚠️ [Chat] Condense failed, using original query: {e}")
         return query
@@ -847,6 +881,60 @@ Rules:
 - Use ONLY the context provided
 - Cite sources using [1], [2], etc.
 - If missing, say you couldn't find it in the documents
+- Respond in {language}
+
+Context:
+{context}
+"""
+
+
+# Comparison-specific prompts (multi-document article-by-article comparison)
+COMPARISON_SYSTEM_PROMPT = """You are Axio, an intelligent AI assistant with access to the user's knowledge base.
+
+## SCOPE DIRECTORY
+You are comparing content across multiple documents:
+{scope_identities}
+
+## Your Role
+- Compare the provided documents systematically, article by article or section by section
+- Clearly attribute each piece of information to its source document using the document name
+- Highlight differences, similarities, and notable changes between the documents
+- RESPOND IN {language} (the user's detected language)
+
+## Citation Rules (IMPORTANT)
+- Use bracket citations like [1], [2], [3] to reference your sources
+- Place citations at the end of sentences or relevant phrases
+- Each citation number corresponds to the numbered documents below
+- When comparing, always cite BOTH sources so the reader can verify
+
+## Comparison Guidelines
+- Compare every article/section present in either document
+- For identical sections, briefly note they are the same
+- For different sections, detail the specific differences
+- Note any articles/sections that exist in one document but not the other
+- Present the comparison in a structured format (tables or side-by-side where appropriate)
+
+---
+
+## KNOWLEDGE BASE CONTEXT (all sources):
+
+{context}
+
+---
+
+Remember: Cite your sources using [1], [2], etc. Be thorough and compare ALL articles. Respond in {language}."""
+
+
+GROK_COMPARISON_SYSTEM_PROMPT = """You are Axio, an AI assistant.
+
+Scope Directory (do not cite as a source):
+{scope_identities}
+
+Rules:
+- Compare documents systematically, article by article
+- Attribute each fact to its source document
+- Highlight all differences and similarities
+- Cite sources using [1], [2], etc.
 - Respond in {language}
 
 Context:
@@ -1123,6 +1211,8 @@ def format_context_with_citations(docs: list[dict]) -> tuple:
 
     Note: Expects docs to already have decrypted content via _decrypt_search_results()
     """
+    # Pre-filter docs with empty content to avoid wasting citation slots
+    docs = [d for d in docs if (d.get('content') or '').strip()]
     if not docs:
         return "", []
 
@@ -1164,8 +1254,11 @@ def format_context_with_citations(docs: list[dict]) -> tuple:
             page_info = f" ({metadata['header_path']})"
 
         # Format the citation block
-        citation_header = f"[{i}] {source_type_display}: {source_label}{page_info}"
-        context_parts.append(f"{citation_header}\n{content[:1500]}")  # Truncate very long chunks
+        filename_tag = ""
+        if metadata.get("filename"):
+            filename_tag = f" [from: {metadata['filename']}]"
+        citation_header = f"[{i}] {source_type_display}: {source_label}{page_info}{filename_tag}"
+        context_parts.append(f"{citation_header}\n{_truncate_to_token_budget(content, CITATION_CHUNK_TOKEN_BUDGET) if content else ''}")
 
         # Build source metadata for response
         sources.append({
@@ -1310,6 +1403,11 @@ async def chat_endpoint(
             conversation_id=payload.conversation_id
         )
 
+    # ========== STEP 6.5: COMPARISON DETECTION ==========
+    is_comparison = _is_comparison_query(payload.query)
+    if is_comparison:
+        logger.info("📊 [Chat] Comparison query detected - adjusting retrieval strategy")
+
     # ========== STEP 7: SMART ROUTING (Select Model) ==========
     requested_tier: str | None = None
     model_hint = (payload.model or "").strip().lower()
@@ -1450,10 +1548,10 @@ async def chat_endpoint(
                 lambda: supabase.rpc("hybrid_search_scoped", {
                     "query_text": search_query,
                     "query_embedding": query_vector,
-                    "match_count": min(10, MATCH_COUNT_CAP),
+                    "match_count": min(30 if is_comparison else 10, MATCH_COUNT_CAP),
                     "filter_org_id": organization_id,
                     "filter_scope_ids": [explicit_scope],
-                    "similarity_threshold": 0.25
+                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD
                 }).execute()
             ), timeout=_DB_RPC_TIMEOUT)
         elif force_all_scopes and allowed_scopes is None:
@@ -1462,12 +1560,12 @@ async def chat_endpoint(
                 lambda: supabase.rpc("hybrid_search_scoped", {
                     "query_text": search_query,
                     "query_embedding": query_vector,
-                    "match_count": min(15, MATCH_COUNT_CAP),
+                    "match_count": min(40 if is_comparison else 15, MATCH_COUNT_CAP),
                     "filter_org_id": organization_id,
                     "filter_scope_ids": None,
                     "vector_weight": 0.7,
                     "keyword_weight": 0.3,
-                    "similarity_threshold": 0.25
+                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD
                 }).execute()
             ), timeout=_DB_RPC_TIMEOUT)
         elif allowed_scopes is not None:
@@ -1477,12 +1575,12 @@ async def chat_endpoint(
                 lambda: supabase.rpc("hybrid_search_scoped", {
                     "query_text": search_query,
                     "query_embedding": query_vector,
-                    "match_count": min(15, MATCH_COUNT_CAP),
+                    "match_count": min(40 if is_comparison else 15, MATCH_COUNT_CAP),
                     "filter_org_id": organization_id,
                     "filter_scope_ids": allowed_scopes,
                     "vector_weight": 0.7,
                     "keyword_weight": 0.3,
-                    "similarity_threshold": 0.25
+                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD
                 }).execute()
             ), timeout=_DB_RPC_TIMEOUT)
         else:
@@ -1491,11 +1589,11 @@ async def chat_endpoint(
                 lambda: supabase.rpc("hybrid_search", {
                     "query_text": search_query,
                     "query_embedding": query_vector,
-                    "match_count": min(15, MATCH_COUNT_CAP),
+                    "match_count": min(40 if is_comparison else 15, MATCH_COUNT_CAP),
                     "filter_org_id": organization_id,
                     "vector_weight": 0.7,
                     "keyword_weight": 0.3,
-                    "similarity_threshold": 0.25
+                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD
                 }).execute()
             ), timeout=_DB_RPC_TIMEOUT)
 
@@ -1541,14 +1639,22 @@ async def chat_endpoint(
                     len(safe_docs),
                 )
             docs = safe_docs
+        except ImportError:
+            logger.error("🛡️ [Chat] Prompt injection scanner unavailable — security control offline")
+            sentry_sdk.capture_message(
+                "Prompt injection scanner import failed — security control offline",
+                level="error",
+            )
         except Exception as e:
-            logger.warning("⚠️ [Chat] Chunk injection scan error: %s", e)
+            logger.error("🛡️ [Chat] Chunk injection scan error: %s", e)
+            sentry_sdk.capture_exception(e)
 
         # H4: Rerank for precision improvement
-        if docs and len(docs) > 8:
+        rerank_top_k = RERANK_TOP_K_COMPARISON if is_comparison else RERANK_TOP_K_DEFAULT
+        if docs and len(docs) > rerank_top_k:
             try:
                 from services.reranker import reranker
-                docs = await reranker.rerank(search_query, docs, top_k=8)
+                docs = await reranker.rerank(search_query, docs, top_k=rerank_top_k)
             except Exception as e:
                 logger.warning("⚠️ [Chat] Reranking failed, using original order: %s", e)
 
@@ -1602,66 +1708,91 @@ async def chat_endpoint(
         # ========== DOMINANCE GUARD DECISION ==========
 
         if scope_analysis.classification == ScopeClassification.FRAGMENTED:
-            # FRAGMENTED: Return HTTP 300 clarification request
-            logger.info("⚠️ [Chat] FRAGMENTED scope - requesting clarification")
+            if is_comparison:
+                # Comparison queries expect multiple sources - proceed with all scopes
+                logger.info("📊 [Chat] FRAGMENTED scope in comparison mode - proceeding with multi-scope context")
+                scope_ids = _extract_scope_ids(docs)
+                if scope_ids:
+                    scope_infos = fetch_scope_candidates_with_summaries(
+                        supabase, scope_ids, organization_id
+                    )
+                    multi_scope_identity_context = _build_multi_scope_identity_context(
+                        scope_infos, GLOBAL_IDENTITY_TOKEN_BUDGET,
+                    )
+            else:
+                # FRAGMENTED: Return HTTP 300 clarification request
+                logger.info("⚠️ [Chat] FRAGMENTED scope - requesting clarification")
 
-            # Fetch scope summaries for candidates
-            candidate_scope_ids = [
-                s.scope_id for s in
-                ([scope_analysis.primary_scope_stats] if scope_analysis.primary_scope_stats else []) +
-                scope_analysis.secondary_scopes[:4]
-            ]
+                # Fetch scope summaries for candidates
+                candidate_scope_ids = [
+                    s.scope_id for s in
+                    ([scope_analysis.primary_scope_stats] if scope_analysis.primary_scope_stats else []) +
+                    scope_analysis.secondary_scopes[:4]
+                ]
 
-            scope_infos = fetch_scope_candidates_with_summaries(
-                supabase, candidate_scope_ids, organization_id
-            )
-
-            # Build scope_id -> info lookup
-            scope_info_map = {s["id"]: s for s in scope_infos}
-
-            # Build candidates for response
-            candidates = []
-            for scope_stats in ([scope_analysis.primary_scope_stats] if scope_analysis.primary_scope_stats else []) + scope_analysis.secondary_scopes[:4]:
-                info = scope_info_map.get(scope_stats.scope_id, {})
-                candidates.append(ScopeCandidate(
-                    id=scope_stats.scope_id,
-                    summary=info.get("summary", f"{scope_stats.count} relevant documents")[:200],
-                    type=info.get("type", "unknown"),
-                ))
-
-            # Return HTTP 300 Multiple Choices
-            return JSONResponse(
-                status_code=300,
-                content=ClarificationResponse(
-                    action="clarify_scope",
-                    message=(
-                        "I found relevant information across multiple sources. "
-                        "Please specify which source you'd like me to search, "
-                        "or I can search all and clearly attribute each piece."
-                    ),
-                    candidates=candidates,
-                    query=payload.query,
-                ).model_dump(),
-            )
-
-        elif scope_analysis.classification in (ScopeClassification.DOMINANT, ScopeClassification.CONTESTED):
-            # DOMINANT or CONTESTED: Proceed with primary scope
-            selected_scope_id = scope_analysis.primary_scope_id
-
-            if selected_scope_id:
-                scope_identity = fetch_scope_identity(supabase, selected_scope_id, organization_id)
-                scope_context = ScopeContext(
-                    scope_id=selected_scope_id,
-                    scope_name=extract_scope_name(selected_scope_id),
-                    scope_type=scope_identity.get("type") if scope_identity else None,
-                    dominance_ratio=scope_analysis.dominance_ratio,
-                    classification=scope_analysis.classification.value,
+                scope_infos = fetch_scope_candidates_with_summaries(
+                    supabase, candidate_scope_ids, organization_id
                 )
 
-            # For DOMINANT, filter docs to primary scope only
-            if scope_analysis.classification == ScopeClassification.DOMINANT and selected_scope_id:
-                docs = filter_docs_by_scope(docs, selected_scope_id)
-                logger.info(f"✅ [Chat] DOMINANT: filtered to {len(docs)} docs from {selected_scope_id[:50]}...")
+                # Build scope_id -> info lookup
+                scope_info_map = {s["id"]: s for s in scope_infos}
+
+                # Build candidates for response
+                candidates = []
+                for scope_stats in ([scope_analysis.primary_scope_stats] if scope_analysis.primary_scope_stats else []) + scope_analysis.secondary_scopes[:4]:
+                    info = scope_info_map.get(scope_stats.scope_id, {})
+                    candidates.append(ScopeCandidate(
+                        id=scope_stats.scope_id,
+                        summary=info.get("summary", f"{scope_stats.count} relevant documents")[:200],
+                        type=info.get("type", "unknown"),
+                    ))
+
+                # Return HTTP 300 Multiple Choices
+                return JSONResponse(
+                    status_code=300,
+                    content=ClarificationResponse(
+                        action="clarify_scope",
+                        message=(
+                            "I found relevant information across multiple sources. "
+                            "Please specify which source you'd like me to search, "
+                            "or I can search all and clearly attribute each piece."
+                        ),
+                        candidates=candidates,
+                        query=payload.query,
+                    ).model_dump(),
+                )
+
+        elif scope_analysis.classification in (ScopeClassification.DOMINANT, ScopeClassification.CONTESTED):
+            if is_comparison:
+                # Comparison queries need ALL scopes - don't filter to primary
+                logger.info("📊 [Chat] %s scope in comparison mode - keeping all docs, using multi-scope context",
+                            scope_analysis.classification.value)
+                scope_ids = _extract_scope_ids(docs)
+                if scope_ids:
+                    scope_infos = fetch_scope_candidates_with_summaries(
+                        supabase, scope_ids, organization_id
+                    )
+                    multi_scope_identity_context = _build_multi_scope_identity_context(
+                        scope_infos, GLOBAL_IDENTITY_TOKEN_BUDGET,
+                    )
+            else:
+                # DOMINANT or CONTESTED: Proceed with primary scope
+                selected_scope_id = scope_analysis.primary_scope_id
+
+                if selected_scope_id:
+                    scope_identity = fetch_scope_identity(supabase, selected_scope_id, organization_id)
+                    scope_context = ScopeContext(
+                        scope_id=selected_scope_id,
+                        scope_name=extract_scope_name(selected_scope_id),
+                        scope_type=scope_identity.get("type") if scope_identity else None,
+                        dominance_ratio=scope_analysis.dominance_ratio,
+                        classification=scope_analysis.classification.value,
+                    )
+
+                # For DOMINANT, filter docs to primary scope only
+                if scope_analysis.classification == ScopeClassification.DOMINANT and selected_scope_id:
+                    docs = filter_docs_by_scope(docs, selected_scope_id)
+                    logger.info(f"✅ [Chat] DOMINANT: filtered to {len(docs)} docs from {selected_scope_id[:50]}...")
 
     # ========== STEP 10: DYNAMIC CONTEXT INJECTION ==========
     high_quality_docs = [
@@ -1771,6 +1902,7 @@ async def chat_endpoint(
             scope_identity_context=scope_identity_context,
             scope_name=scope_name,
             multi_scope_identity_context=multi_scope_identity_context,
+            is_comparison=is_comparison,
         )
         prompt_cache[provider] = bundle
         return bundle
@@ -2124,6 +2256,8 @@ async def _stream_with_timeout_and_heartbeat(
     import time
 
     last_chunk_time = time.monotonic()
+    stream_start_time = time.monotonic()
+    MAX_STREAM_DURATION = timeout_seconds * 3
 
     async def stream_generator():
         nonlocal last_chunk_time
@@ -2149,11 +2283,17 @@ async def _stream_with_timeout_and_heartbeat(
                 )
                 yield ("chunk", chunk)
             except asyncio.TimeoutError:
-                # Check if we've exceeded total timeout
+                # Check if we've exceeded per-chunk inactivity timeout
                 elapsed = time.monotonic() - last_chunk_time
                 if elapsed >= timeout_seconds:
                     raise asyncio.TimeoutError(
                         f"LLM stream timed out after {timeout_seconds}s without new content"
+                    )
+                # Check absolute duration cap (prevents infinite slow-drip streams)
+                total_elapsed = time.monotonic() - stream_start_time
+                if total_elapsed >= MAX_STREAM_DURATION:
+                    raise asyncio.TimeoutError(
+                        f"LLM stream exceeded absolute duration cap of {MAX_STREAM_DURATION}s"
                     )
                 # Emit heartbeat to keep connection alive
                 yield ("heartbeat", None)
@@ -2279,13 +2419,18 @@ async def stream_chat_response(
                     organization_id=organization_id
                 )
 
-                # Emit SSE error if message save returned None but we had a conversation
+                # Track save failure for done event warning (don't emit separate error event)
+                _save_warning = None
                 if message_id is None and conversation_id:
+                    _save_warning = "MESSAGE_SAVE_FAILED"
+                    logger.error(
+                        "Message save failed: conv=%s org=%s",
+                        conversation_id[:8], organization_id[:8],
+                    )
                     sentry_sdk.capture_message(
                         f"Message save failed: conv={conversation_id[:8]}... org={organization_id[:8]}...",
                         level="error",
                     )
-                    yield _safe_sse_json({'type': 'error', 'message': 'Failed to save message', 'error': 'MESSAGE_SAVE_FAILED'})
 
                 total_tokens = _estimate_prompt_tokens(system_prompt, input_vars) + _estimate_token_count(full_response)
                 usage_recorded = False
@@ -2313,7 +2458,10 @@ async def stream_chat_response(
                 except Exception as rel_err:
                     logger.error("Failed to release tokens: %s", rel_err)
 
-                yield _safe_sse_json({'type': 'done', 'message_id': message_id})
+                done_event = {'type': 'done', 'message_id': message_id}
+                if _save_warning:
+                    done_event['warning'] = _save_warning
+                yield _safe_sse_json(done_event)
                 return
 
             except Exception as e:

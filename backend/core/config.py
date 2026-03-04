@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     GROQ_CHAT_MODEL_NAME: str = "llama-3.3-70b-versatile"
 
     RAG_SIMILARITY_THRESHOLD: float = 0.35  # Lowered from 0.50 for better recall on conversational content
+    # Two-stage filtering: RAG_RETRIEVAL_THRESHOLD (vector search cutoff) then RAG_SIMILARITY_THRESHOLD (post-rerank)
+    RAG_RETRIEVAL_THRESHOLD: float = 0.25  # Minimum similarity for hybrid search RPCs
 
     # Cohere (Reranking)
     COHERE_API_KEY: str | None = None

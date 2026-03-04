@@ -73,7 +73,7 @@ class ScopeAnalysisResult:
 # Configurable thresholds
 DOMINANCE_THRESHOLD = 0.85  # ≥85% = DOMINANT
 CONTESTED_THRESHOLD = 0.60  # 60-84% = CONTESTED, <60% = FRAGMENTED
-MIN_SCORE_FOR_ANALYSIS = 0.3  # Ignore docs below this relevance score
+MIN_SCORE_FOR_ANALYSIS = 0.25  # Must match RAG_RETRIEVAL_THRESHOLD to avoid phantom docs
 
 
 def analyze_scope_distribution(

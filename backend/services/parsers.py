@@ -462,6 +462,8 @@ class PDFProcessor(BaseProcessor):
     - Zero cloud dependency fallback
     """
 
+    MAX_PDF_PAGES = 500  # Safety limit for very large PDFs
+
     # Regex patterns for common headers/footers to remove
     NOISE_PATTERNS = [
         r"Page\s+\d+\s+(of|/)\s+\d+",  # Page 1 of 10
@@ -679,6 +681,9 @@ class PDFProcessor(BaseProcessor):
         try:
             doc = fitz.open(stream=content, filetype="pdf")
             for page_num, page in enumerate(doc, start=1):
+                if page_num > self.MAX_PDF_PAGES:
+                    logger.warning("[PDFProcessor] Reached MAX_PDF_PAGES=%d, stopping", self.MAX_PDF_PAGES)
+                    break
                 text = page.get_text("text")
                 if text.strip():
                     # Clean the text
@@ -803,11 +808,17 @@ class PDFProcessor(BaseProcessor):
         try:
             # Convert PDF pages to images (300 DPI for good OCR quality)
             images = convert_from_bytes(content, dpi=300, fmt='png')
+            if len(images) > self.MAX_PDF_PAGES:
+                logger.warning("[PDFProcessor] OCR: truncating %d pages to MAX_PDF_PAGES=%d", len(images), self.MAX_PDF_PAGES)
+                images = images[:self.MAX_PDF_PAGES]
 
             ocr_texts = []
             for page_num, image in enumerate(images, start=1):
-                # Run OCR on each page
-                text = pytesseract.image_to_string(image, lang='eng')
+                # Run OCR on each page (match DOCX OCR pattern: try multi-lang first)
+                try:
+                    text = pytesseract.image_to_string(image, lang='eng+tur')
+                except Exception:
+                    text = pytesseract.image_to_string(image, lang='eng')
                 if text.strip():
                     cleaned = self._clean_text(text)
                     if cleaned.strip():
@@ -879,6 +890,7 @@ class DocxProcessor(BaseProcessor):
 
     MIN_TOKENS_THRESHOLD = 50   # Below this, trigger OCR fallback
     OCR_QUALITY_THRESHOLD = 30  # Minimum acceptable OCR result
+    MAX_OCR_IMAGES = 50  # Safety limit for embedded image OCR
 
     # Supported image extensions in DOCX media folder
     IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.emf', '.wmf'}
@@ -1017,6 +1029,13 @@ class DocxProcessor(BaseProcessor):
                 # Sort to maintain order (image1, image2, etc.)
                 image_files.sort()
 
+                if len(image_files) > self.MAX_OCR_IMAGES:
+                    logger.warning(
+                        "[DocxProcessor] Truncating %d images to MAX_OCR_IMAGES=%d for %s",
+                        len(image_files), self.MAX_OCR_IMAGES, safe_file_ref(filename=filename),
+                    )
+                    image_files = image_files[:self.MAX_OCR_IMAGES]
+
                 for idx, img_path in enumerate(image_files, start=1):
                     try:
                         # Extract image from ZIP
@@ -1103,11 +1122,35 @@ class DocxProcessor(BaseProcessor):
 
     def _chunk_text(self, text: str, filename: str, parser: str = "docx2txt") -> ProcessedDocument:
         """Chunk extracted text into ProcessedChunks with context injection."""
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
+        # Detect legal/contract documents by presence of article markers
+        # Require strong signals: ≥2 uppercase-only matches OR ≥3 case-insensitive matches
+        # to avoid false positives from casual mentions like "see article 5 for details"
+        _uppercase_article_matches = re.findall(r'(?:^|\n)\s*ARTICLE\s+\d+', text)
+        _any_case_article_matches = re.findall(r'\bARTICLE\s+\d+', text, re.IGNORECASE)
+        has_articles = len(_uppercase_article_matches) >= 2 or len(_any_case_article_matches) >= 3
+
+        if has_articles:
+            # Legal documents: larger chunks with article-boundary-aware splitting
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=2000,
+                chunk_overlap=200,
+                separators=[
+                    "\nARTICLE ",   # Primary: split on article boundaries
+                    "\nART.",       # NDA article boundaries
+                    "\n\n",         # Paragraph breaks
+                    "\n",
+                    ". ",
+                    " ",
+                    "",
+                ],
+            )
+        else:
+            # Standard documents: original settings
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                separators=["\n\n", "\n", ". ", " ", ""],
+            )
         raw_chunks = splitter.split_text(text)
 
         chunks = []
