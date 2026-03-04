@@ -375,7 +375,8 @@ class TestChatHelpers:
 
     @pytest.mark.asyncio
     async def test_condense_question_falls_back_on_error(self):
-        with patch("api.v1.chat.ChatOpenAI", side_effect=Exception("boom")):
+        with patch("api.v1.chat.LLMFactory") as mock_factory:
+            mock_factory.get_model.side_effect = Exception("boom")
             result = await api.v1.chat.condense_question("Hello?", [{"role": "user", "content": "Context"}])
         assert result == "Hello?"
 
@@ -1209,9 +1210,10 @@ def test_needs_condensing_with_pronouns():
 
 
 def test_no_condensing_for_standalone_query():
-    """M7: Self-contained queries should skip condensing."""
+    """M7: Short queries now trigger condensing with history (inverted heuristic)."""
     from api.v1.chat import _needs_condensing
-    assert not _needs_condensing("What is Python?", [{"role": "user", "content": "hi"}])
+    # "What is Python?" is only 3 words — too short to be considered standalone
+    assert _needs_condensing("What is Python?", [{"role": "user", "content": "hi"}])
 
 
 def test_no_condensing_without_history():
@@ -1224,6 +1226,48 @@ def test_needs_condensing_with_reference_words():
     """M7: Reference words like 'previous', 'above' should trigger condensing."""
     from api.v1.chat import _needs_condensing
     assert _needs_condensing("Explain the previous point in detail", [{"role": "user", "content": "hi"}])
+
+
+def test_needs_condensing_implicit_followup():
+    """M7: Implicit follow-ups without pronouns should still trigger condensing."""
+    from api.v1.chat import _needs_condensing
+    history = [{"role": "user", "content": "compare the two consulting agreements"}]
+    assert _needs_condensing(
+        "can you please give me the list of every differentiate items", history
+    )
+
+
+def test_needs_condensing_short_query_with_history():
+    """M7: Short queries with history should trigger condensing."""
+    from api.v1.chat import _needs_condensing
+    assert _needs_condensing("Show details", [{"role": "user", "content": "hi"}])
+
+
+def test_no_condensing_for_long_standalone_question():
+    """M7: Long, self-contained questions should skip condensing."""
+    from api.v1.chat import _needs_condensing
+    assert not _needs_condensing(
+        "What is the annual revenue projection for fiscal year 2025?",
+        [{"role": "user", "content": "hi"}],
+    )
+
+
+def test_needs_condensing_continuation_words():
+    """M7: Continuation words like 'elaborate', 'summarize' trigger condensing."""
+    from api.v1.chat import _needs_condensing
+    history = [{"role": "user", "content": "hi"}]
+    assert _needs_condensing("elaborate on the key findings in a structured way", history)
+    assert _needs_condensing("summarize the main points from the document above", history)
+    assert _needs_condensing("list all the important clauses mentioned", history)
+
+
+def test_needs_condensing_no_question_structure():
+    """M7: Long queries without question structure should trigger condensing."""
+    from api.v1.chat import _needs_condensing
+    assert _needs_condensing(
+        "the key differences between the two agreements in a table format",
+        [{"role": "user", "content": "hi"}],
+    )
 
 
 # ============================================================

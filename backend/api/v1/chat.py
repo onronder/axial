@@ -614,12 +614,52 @@ _REFERENCE_PATTERNS = [
     re.compile(r'\b(above|previous|earlier|mentioned|said)\b', re.IGNORECASE),
 ]
 
+_CONTINUATION_PATTERNS = [
+    re.compile(r'\b(more|also|another|same|again|further)\b', re.IGNORECASE),
+    re.compile(r'\b(list|elaborate|explain|detail|summarize|compare)\b', re.IGNORECASE),
+    re.compile(r'\b(continue|expand|differentiate|difference|every|each)\b', re.IGNORECASE),
+    re.compile(r'\b(yes|no|please)\b', re.IGNORECASE),
+    re.compile(r'\b(what about|how about)\b', re.IGNORECASE),
+]
+
+_QUESTION_WORDS = re.compile(
+    r'\b(who|what|where|when|why|how|which|is|are|was|were|do|does|did|can|could|will|would|should)\b',
+    re.IGNORECASE,
+)
+
+_MIN_STANDALONE_WORDS = 8
+
 
 def _needs_condensing(query: str, history: list[dict[str, str]]) -> bool:
-    """Return True if the query references conversation context and needs condensing."""
+    """Return True if the query likely depends on conversation context.
+
+    Inverted heuristic: always condense when history exists, UNLESS
+    the query is clearly standalone (long enough, has question structure,
+    no reference/continuation patterns).
+    """
     if not history:
         return False
-    return any(pattern.search(query) for pattern in _REFERENCE_PATTERNS)
+
+    # Explicit references → always condense
+    if any(p.search(query) for p in _REFERENCE_PATTERNS):
+        return True
+
+    # Continuation patterns → always condense
+    if any(p.search(query) for p in _CONTINUATION_PATTERNS):
+        return True
+
+    word_count = len(query.split())
+
+    # Short queries rarely carry full context
+    if word_count < _MIN_STANDALONE_WORDS:
+        return True
+
+    # Long query with a question word and no reference/continuation → standalone
+    if _QUESTION_WORDS.search(query):
+        return False
+
+    # Long but no question structure → likely a follow-up
+    return True
 
 
 async def condense_question(query: str, history: list[dict[str, str]]) -> str:
@@ -1340,7 +1380,9 @@ async def chat_endpoint(
 
     # ========== STEP 7: EMBED QUERY ==========
     # H2: Reuse embedding from guardrail pre-flight if available
-    if getattr(guardrail_result, 'query_embedding', None):
+    # Only reuse when query was NOT rewritten by condensing (embedding would mismatch)
+    query_was_condensed = (search_query != payload.query)
+    if getattr(guardrail_result, 'query_embedding', None) and not query_was_condensed:
         query_vector = guardrail_result.query_embedding
         logger.info("🔢 [Chat] Reusing query embedding from guardrail pre-flight")
     else:
