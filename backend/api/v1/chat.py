@@ -1683,7 +1683,7 @@ async def chat_endpoint(
                     user_id=user_id,
                     query_text=payload.query,
                     search_query=search_query,
-                    selected_scope_id=selected_scope_id,
+                    selected_scope_id=explicit_scope,
                     allowed_scope_ids=effective_allowed_scopes,
                     guardrail_result=guardrail_result,
                     docs=[],
