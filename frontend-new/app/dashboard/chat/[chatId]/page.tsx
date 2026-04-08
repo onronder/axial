@@ -129,6 +129,9 @@ export default function ChatPage() {
     
     // P1 FIX: Keep latest messages in ref for accurate history in async callbacks
     const messagesRef = useRef<Message[]>([]);
+    const faithfulnessWarningRef = useRef<string | null>(null);
+    const completionWarningRef = useRef<string | null>(null);
+    const citationsStrippedRef = useRef<number | undefined>(undefined);
     
     // P2 FIX: Lock to prevent rapid double-sends (set immediately, before async work)
     const isSendLockedRef = useRef(false);
@@ -508,6 +511,9 @@ export default function ChatPage() {
         let aiSources: Source[] = [];
         let aiScopeContext: ScopeContext | undefined;
         let serverMessageId: string | undefined;
+        faithfulnessWarningRef.current = null;
+        completionWarningRef.current = null;
+        citationsStrippedRef.current = undefined;
 
         setStreamingMessage("");
 
@@ -594,10 +600,25 @@ export default function ChatPage() {
                     }
                 } else if (event.type === 'done') {
                     // P1 FIX: Handle 'done' event - capture message_id if provided
-                    const doneEvent = event as { type: 'done'; message_id?: string };
+                    const doneEvent = event as {
+                        type: 'done';
+                        message_id?: string;
+                        warning?: string;
+                        faithfulness_warning?: string;
+                        citations_stripped?: number;
+                    };
                     if (doneEvent.message_id) {
                         serverMessageId = doneEvent.message_id;
                         devLog('✅ [ChatPage] Received server message_id:', serverMessageId);
+                    }
+                    if (doneEvent.warning) {
+                        completionWarningRef.current = doneEvent.warning;
+                    }
+                    if (doneEvent.faithfulness_warning) {
+                        faithfulnessWarningRef.current = doneEvent.faithfulness_warning;
+                    }
+                    if (typeof doneEvent.citations_stripped === 'number') {
+                        citationsStrippedRef.current = doneEvent.citations_stripped;
                     }
                 } else if (event.type === 'clarification') {
                     // Handle HTTP 300 clarification request
@@ -682,6 +703,9 @@ export default function ChatPage() {
                 created_at: new Date().toISOString(),
                 sources: aiSources,
                 scope_context: aiScopeContext,
+                warning: completionWarningRef.current ?? undefined,
+                faithfulness_warning: faithfulnessWarningRef.current ?? undefined,
+                citations_stripped: citationsStrippedRef.current,
             };
             startTransition(() => {
                 setStreamingMessage(null);

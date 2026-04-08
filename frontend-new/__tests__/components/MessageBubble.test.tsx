@@ -114,6 +114,28 @@ describe('MessageBubble Component', () => {
             const messageWrapper = container.querySelector('.flex-row-reverse');
             expect(messageWrapper).not.toBeInTheDocument();
         });
+
+        it('renders amber faithfulness warning banner when provided', () => {
+            render(
+                <MessageBubble
+                    message={createAssistantMessage('Answer', {
+                        faithfulness_warning: 'Some claims may not be fully supported',
+                    })}
+                />
+            );
+
+            expect(screen.getByTestId('faithfulness-warning-banner')).toBeInTheDocument();
+            expect(screen.getByTestId('faithfulness-warning-icon')).toBeInTheDocument();
+            expect(
+                screen.getByText('Some claims may not be fully supported')
+            ).toBeInTheDocument();
+        });
+
+        it('does not render warning banner when faithfulness warning is absent', () => {
+            render(<MessageBubble message={createAssistantMessage('Answer')} />);
+
+            expect(screen.queryByTestId('faithfulness-warning-banner')).not.toBeInTheDocument();
+        });
     });
 
     describe('Citation Parsing', () => {

@@ -117,7 +117,8 @@ class TestIngestDocumentChunkRPC:
                     "p_content_encrypted": "gAAAAA_encrypted_content_here",
                     "p_content_plaintext": "This is plaintext for search indexing",
                     "p_embedding": fake_embedding,
-                    "p_chunk_index": 0
+                    "p_chunk_index": 0,
+                    "p_language": "en",
                 }
             ).execute()
 
@@ -130,7 +131,7 @@ class TestIngestDocumentChunkRPC:
             raise
 
     def test_rpc_creates_tsvector(self, supabase_client, test_document):
-        """Verify RPC creates proper TSVECTOR from plaintext."""
+        """Verify RPC creates proper TSVECTOR from plaintext and preserves NULL language."""
         chunk_id = str(uuid4())
         fake_embedding = [0.01] * 1536
 
@@ -150,7 +151,7 @@ class TestIngestDocumentChunkRPC:
 
             # Verify TSVECTOR was created
             result = supabase_client.table("document_chunks")\
-                .select("content, content_search")\
+                .select("content, content_search, language")\
                 .eq("id", chunk_id)\
                 .single()\
                 .execute()
@@ -163,6 +164,40 @@ class TestIngestDocumentChunkRPC:
             tsvector = result.data.get("content_search", "")
             if tsvector:  # May be NULL if migration not applied
                 assert "financ" in tsvector.lower() or "'financ'" in tsvector.lower()
+
+            assert result.data["language"] is None
+
+        except Exception as e:
+            if "function ingest_document_chunk" in str(e).lower():
+                pytest.skip("ingest_document_chunk RPC not yet deployed")
+            raise
+
+    def test_rpc_persists_language_when_provided(self, supabase_client, test_document):
+        """Verify single-row RPC writes ISO language metadata when provided."""
+        chunk_id = str(uuid4())
+        fake_embedding = [0.01] * 1536
+
+        try:
+            supabase_client.rpc(
+                "ingest_document_chunk",
+                {
+                    "p_id": chunk_id,
+                    "p_document_id": test_document,
+                    "p_content_encrypted": "encrypted_data_tr",
+                    "p_content_plaintext": "Merhaba dunya bu icerik arama icin kullanilir",
+                    "p_embedding": fake_embedding,
+                    "p_chunk_index": 7,
+                    "p_language": "tr",
+                }
+            ).execute()
+
+            result = supabase_client.table("document_chunks")\
+                .select("language")\
+                .eq("id", chunk_id)\
+                .single()\
+                .execute()
+
+            assert result.data["language"] == "tr"
 
         except Exception as e:
             if "function ingest_document_chunk" in str(e).lower():
@@ -183,6 +218,7 @@ class TestIngestDocumentChunksBatchRPC:
                 "document_id": test_document,
                 "content_encrypted": "encrypted_chunk_1",
                 "content_plaintext": "First chunk content",
+                "language": "en",
                 "embedding": fake_embedding,
                 "chunk_index": 0
             },
@@ -235,6 +271,53 @@ class TestIngestDocumentChunksBatchRPC:
 
             assert result.data is not None
             assert len(result.data) == 100
+
+        except Exception as e:
+            if "function ingest_document_chunks_batch" in str(e).lower():
+                pytest.skip("ingest_document_chunks_batch RPC not yet deployed")
+            raise
+
+    def test_batch_rpc_persists_language_and_nulls(self, supabase_client, test_document):
+        """Verify batch RPC writes language metadata and preserves NULL fallback."""
+        fake_embedding = [0.01] * 1536
+
+        chunk_one_id = str(uuid4())
+        chunk_two_id = str(uuid4())
+
+        chunks = [
+            {
+                "id": chunk_one_id,
+                "document_id": test_document,
+                "content_encrypted": "encrypted_tr",
+                "content_plaintext": "Merhaba dunya bu metin oldukca uzundur",
+                "language": "tr",
+                "embedding": fake_embedding,
+                "chunk_index": 10,
+            },
+            {
+                "id": chunk_two_id,
+                "document_id": test_document,
+                "content_encrypted": "encrypted_unknown",
+                "content_plaintext": "text without an explicit language payload",
+                "embedding": fake_embedding,
+                "chunk_index": 11,
+            },
+        ]
+
+        try:
+            supabase_client.rpc(
+                "ingest_document_chunks_batch",
+                {"p_chunks": chunks}
+            ).execute()
+
+            result = supabase_client.table("document_chunks")\
+                .select("id, language")\
+                .in_("id", [chunk_one_id, chunk_two_id])\
+                .execute()
+
+            rows_by_id = {row["id"]: row for row in result.data or []}
+            assert rows_by_id[chunk_one_id]["language"] == "tr"
+            assert rows_by_id[chunk_two_id]["language"] is None
 
         except Exception as e:
             if "function ingest_document_chunks_batch" in str(e).lower():

@@ -187,6 +187,7 @@ export function ChatArea({
                     ...message,
                     timestamp: message.created_at,
                   }}
+                  faithfulness_warning={message.faithfulness_warning}
                   previousUserQuery={previousUserQuery}
                   feedbackRating={feedbackState[message.id]}
                   onFeedbackSubmit={handleFeedbackSubmit}

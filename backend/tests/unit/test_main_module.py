@@ -141,6 +141,36 @@ def test_init_sentry_handles_exception(monkeypatch):
     main.init_sentry()
 
 
+def test_warn_optional_reranker_config_missing_key(monkeypatch):
+    main = load_main()
+    monkeypatch.setattr(main.settings, "COHERE_API_KEY", None)
+
+    with patch.object(main.logger, "warning") as mock_warning:
+        main.warn_optional_reranker_config()
+
+    mock_warning.assert_called_once()
+    assert "COHERE_API_KEY" in mock_warning.call_args[0][0]
+
+
+def test_warn_optional_reranker_config_missing_package(monkeypatch):
+    main = load_main()
+    monkeypatch.setattr(main.settings, "COHERE_API_KEY", "key")
+    original_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "cohere":
+            raise ImportError("missing")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with patch.object(main.logger, "warning") as mock_warning:
+        main.warn_optional_reranker_config()
+
+    mock_warning.assert_called_once()
+    assert "cohere package" in mock_warning.call_args[0][0]
+
+
 def test_configure_cors_adds_vercel_preview(monkeypatch):
     main = load_main()
     monkeypatch.setenv("ENVIRONMENT", "development")

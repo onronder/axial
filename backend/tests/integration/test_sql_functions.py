@@ -338,7 +338,7 @@ class TestSchemaConsistency:
             columns = set(result.data[0].keys())
 
             expected_columns = {
-                "id", "document_id", "chunk_index", "content", "embedding"
+                "id", "document_id", "chunk_index", "content", "embedding", "language"
             }
             missing = expected_columns - columns
             assert not missing, f"Missing expected columns in document_chunks: {missing}"

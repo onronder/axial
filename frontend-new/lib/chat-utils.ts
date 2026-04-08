@@ -105,7 +105,13 @@ export type StreamEvent =
     | { type: 'token'; content: string }
     | { type: 'sources'; sources: unknown[] }
     | { type: 'scope_context'; scope_context: ScopeContext }
-    | { type: 'done'; message_id?: string }
+    | {
+        type: 'done';
+        message_id?: string;
+        warning?: string;
+        faithfulness_warning?: string;
+        citations_stripped?: number;
+    }
     | { type: 'error'; message: string; error?: string; details?: unknown }
     | { type: 'clarification'; data: ClarificationResponse }
     | { type: 'status'; step: string; message: string; details?: Record<string, unknown> };
@@ -119,6 +125,7 @@ export interface ChatResult {
     conversation_id?: string;
     message_id?: string;
     scope_context?: ScopeContext;
+    faithfulness_warning?: string;
 }
 
 /**
@@ -359,7 +366,19 @@ export async function* streamChatResponse(
                     } catch {
                         // Fix 1.6: Check for critical event types in malformed JSON
                         if (jsonStr.includes('"type":"done"') || jsonStr.includes('"type": "done"')) {
-                            yield { type: 'done' as const } satisfies StreamEvent;
+                            const messageIdMatch = jsonStr.match(/"message_id"\s*:\s*"([^"]+)"/);
+                            const warningMatch = jsonStr.match(/"warning"\s*:\s*"([^"]+)"/);
+                            const faithfulnessMatch = jsonStr.match(/"faithfulness_warning"\s*:\s*"([^"]+)"/);
+                            const citationsMatch = jsonStr.match(/"citations_stripped"\s*:\s*(\d+)/);
+                            yield {
+                                type: 'done' as const,
+                                ...(messageIdMatch && { message_id: messageIdMatch[1] }),
+                                ...(warningMatch && { warning: warningMatch[1] }),
+                                ...(faithfulnessMatch && { faithfulness_warning: faithfulnessMatch[1] }),
+                                ...(citationsMatch && {
+                                    citations_stripped: Number.parseInt(citationsMatch[1], 10),
+                                }),
+                            } satisfies StreamEvent;
                         } else if (jsonStr.includes('"type":"error"') || jsonStr.includes('"type": "error"')) {
                             yield { type: 'error' as const, message: 'Malformed server response', error: 'PARSE_ERROR' };
                         } else if (process.env.NODE_ENV !== 'production') {

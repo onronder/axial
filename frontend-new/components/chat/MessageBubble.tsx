@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { User } from "lucide-react";
+import { AlertTriangle, User } from "lucide-react";
 import { Message as MockMessage } from "@/lib/mockData";
 import { Source } from "@/types";
 import { cn } from "@/lib/utils";
@@ -12,8 +12,14 @@ import { FeedbackButtons } from "./FeedbackButtons";
 import { type FeedbackRating, type SourceSnapshot } from "@/hooks/useFeedback";
 
 interface MessageBubbleProps {
-  message: MockMessage & { sources?: SourceMetadata[] | Source[] };
+  message: MockMessage & {
+    sources?: SourceMetadata[] | Source[];
+    warning?: string;
+    faithfulness_warning?: string;
+    citations_stripped?: number;
+  };
   isStreaming?: boolean;
+  faithfulness_warning?: string;
   /** The user's question that prompted this response (for feedback context) */
   previousUserQuery?: string;
   /** Current feedback rating for this message (if any) */
@@ -162,12 +168,14 @@ function renderLine(
 export function MessageBubble({ 
   message, 
   isStreaming,
+  faithfulness_warning,
   previousUserQuery,
   feedbackRating,
   onFeedbackSubmit,
   isFeedbackSubmitting,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const faithfulnessWarningText = faithfulness_warning ?? message.faithfulness_warning;
   const [highlightedCitationIndex, setHighlightedCitationIndex] = useState<number | null>(null);
   const parsedLines = useMemo(
     () => message.content.split("\n").map(parseLine),
@@ -255,6 +263,19 @@ export function MessageBubble({
             )}
           </div>
         </div>
+
+        {!isUser && faithfulnessWarningText && (
+          <div
+            data-testid="faithfulness-warning-banner"
+            className="mt-2 flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning"
+          >
+            <AlertTriangle
+              data-testid="faithfulness-warning-icon"
+              className="mt-0.5 h-3.5 w-3.5 flex-shrink-0"
+            />
+            <span>{faithfulnessWarningText}</span>
+          </div>
+        )}
 
         {/* Source Citations - Inline pills matching marketing design */}
         {!isUser && normalizedSources.length > 0 && (

@@ -38,6 +38,12 @@ export interface Message {
     created_at: string;
     /** Scope context when response is from a specific scope */
     scope_context?: ScopeContext;
+    /** Non-blocking informational warning emitted on stream completion */
+    warning?: string;
+    /** Faithfulness warning from backend judge */
+    faithfulness_warning?: string;
+    /** Count of invalid citation refs stripped from final stored answer */
+    citations_stripped?: number;
     /** Clarification candidates when role is 'clarification' */
     candidates?: ScopeCandidate[];
     /** Original query for clarification messages */

@@ -43,6 +43,8 @@ class TestOutputFilter:
     def test_detects_invalid_citation_references(self, f):
         result = f.filter_response("See [5]", source_count=3)
         assert "[5]" in result.invalid_citations
+        assert result.citations_stripped_count == 1
+        assert "[5]" not in result.filtered_text
         assert result.is_safe is False
 
     @pytest.mark.unit
@@ -86,9 +88,12 @@ class TestOutputFilter:
         assert "user@example.com" not in result.filtered_text
 
     @pytest.mark.unit
-    def test_citation_zero_source_count_skips_validation(self, f):
+    def test_citation_zero_source_count_strips_all_numeric_refs(self, f):
         result = f.filter_response("See [1] and [2]", source_count=0)
-        assert len(result.invalid_citations) == 0
+        assert result.invalid_citations == ["[1]", "[2]"]
+        assert result.citations_stripped_count == 2
+        assert "[1]" not in result.filtered_text
+        assert "[2]" not in result.filtered_text
 
     @pytest.mark.unit
     def test_citation_boundary_valid(self, f):
@@ -101,6 +106,15 @@ class TestOutputFilter:
         """Citation [0] is always invalid (1-indexed)."""
         result = f.filter_response("See [0]", source_count=3)
         assert "[0]" in result.invalid_citations
+
+    @pytest.mark.unit
+    def test_strip_invalid_citation_preserves_valid_citations(self, f):
+        result = f.filter_response("Compare [1] with [9] and [2].", source_count=2)
+        assert result.invalid_citations == ["[9]"]
+        assert result.citations_stripped_count == 1
+        assert "[1]" in result.filtered_text
+        assert "[2]" in result.filtered_text
+        assert "[9]" not in result.filtered_text
 
     @pytest.mark.unit
     def test_redact_preserves_non_pii_text(self, f):

@@ -422,6 +422,25 @@ retrieval_score = Histogram(
     buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
 )
 
+rerank_score = Histogram(
+    "rerank_relevance_score",
+    "Relevance scores returned by the reranker",
+    ["provider"],
+    buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+)
+
+rerank_skipped_total = Counter(
+    "rerank_skipped_total",
+    "Times reranking was skipped or failed open",
+    ["provider", "reason"],  # too_few_docs|no_api_key|import_error|api_error
+)
+
+rag_stream_failures_total = Counter(
+    "rag_stream_failures_total",
+    "Terminal streaming failures in the RAG response path",
+    ["provider", "phase"],  # partial_output|pre_output
+)
+
 semantic_cache_ops = Counter(
     "semantic_cache_operations_total",
     "Semantic cache operations",

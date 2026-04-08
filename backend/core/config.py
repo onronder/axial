@@ -134,6 +134,19 @@ class Settings(BaseSettings):
     SEMANTIC_CACHE_ENABLED: bool = False  # Disabled by default until Redis is verified in production
     SEMANTIC_CACHE_TTL: int = 3600  # 1 hour
 
+    # Faithfulness Guard (Faz 2)
+    FAITHFULNESS_GUARD_ENABLED: bool = True
+    FAITHFULNESS_GUARD_TIMEOUT: float = 10.0
+    FAITHFULNESS_GUARD_THRESHOLD: float = 0.65
+    FAITHFULNESS_GUARD_MAX_DOCS: int = 5
+    FAITHFULNESS_GUARD_MAX_EXCERPT_CHARS: int = 900
+    FAITHFULNESS_GUARD_MAX_ANSWER_CHARS: int = 1800
+
+    # Language Detection (Faz 4)
+    LANGUAGE_DETECTION_ENABLED: bool = True
+    LANGUAGE_DETECTION_MIN_CHARS: int = 30
+    LANGUAGE_DETECTION_MIN_CONFIDENCE: float = 0.60
+
     # =========================================================================
     # Guardrails Pre-Flight Search Configuration
     # =========================================================================

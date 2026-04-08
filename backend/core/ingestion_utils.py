@@ -24,6 +24,12 @@ KNOWN_PROVIDER_ALIASES = set(SCOPE_PREFIX_BY_PROVIDER.keys())
 logger = logging.getLogger(__name__)
 
 
+def _detect_chunk_language(content: str | None) -> str | None:
+    from services.language_detector import language_detector
+
+    return language_detector.detect(content)
+
+
 def normalize_provider(value: str | None) -> str | None:
     """
     Normalize provider names to canonical values used in DB and jobs.
@@ -120,6 +126,7 @@ def prepare_chunks_for_ghost_protocol(
             "document_id": str(document_id),
             "content_encrypted": content_encrypted,
             "content_plaintext": content_plaintext,
+            "language": _detect_chunk_language(content_plaintext),
             "embedding": chunk.get("embedding"),
             "chunk_index": chunk.get("chunk_index", 0),
         }
@@ -229,6 +236,7 @@ def _insert_chunks_direct(
         insert_batch = []
         for chunk in batch:
             content = chunk.get("content") or ""
+            detected_language = _detect_chunk_language(content)
 
             # Encrypt if available
             if HAS_CHUNK_ENCRYPTION:
@@ -237,6 +245,7 @@ def _insert_chunks_direct(
             insert_batch.append({
                 "document_id": str(document_id),
                 "content": content,
+                "language": detected_language,
                 "embedding": chunk.get("embedding"),
                 "chunk_index": chunk.get("chunk_index", 0),
             })

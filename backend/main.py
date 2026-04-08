@@ -86,6 +86,22 @@ from api.v1.search import router as search_router
 from api.v1.uploads import router as uploads_router
 
 
+def warn_optional_reranker_config() -> None:
+    """Warn when optional reranker dependencies are unavailable."""
+    if not settings.COHERE_API_KEY:
+        logger.warning(
+            "⚠️ [Startup] Cohere reranker disabled: COHERE_API_KEY is not configured"
+        )
+        return
+
+    try:
+        import cohere  # noqa: F401
+    except ImportError:
+        logger.warning(
+            "⚠️ [Startup] Cohere reranker disabled: cohere package is not installed"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle management."""
@@ -119,6 +135,8 @@ async def lifespan(app: FastAPI):
             "Reads of encrypted content will fail. "
             "Set CHUNK_ENCRYPTION_KEY or set STRICT_ENCRYPTION_MODE=false for development."
         )
+
+    warn_optional_reranker_config()
 
     # Startup: verify database connection
     try:

@@ -20,6 +20,8 @@ from starlette.requests import Request
 
 import api.v1.chat  # Ensure module is loaded for patching
 from services.guardrails import GuardrailResult
+from services.no_answer import NO_ANSWER_MESSAGE
+from services.rag_analytics import RAGAnalyticsPayload
 
 
 def _make_mock_request(method="GET", path="/api/v1/chat"):
@@ -610,6 +612,102 @@ class TestStreamAndSaveErrors:
 
         assert any("error" in event for event in events)
 
+    @pytest.mark.asyncio
+    async def test_stream_chat_response_records_pre_output_failure_metric(self):
+        prompt = MagicMock()
+        chain = MagicMock()
+        chain.astream.side_effect = Exception("boom")
+        prompt.__or__.return_value = chain
+
+        prompt_builder = MagicMock(return_value=(prompt, {"context": "ctx", "question": "Q", "language": "en"}, "sys"))
+        candidate = api.v1.chat.ModelSelection(provider="openai", model="gpt-4o-mini", reason="primary")
+        analytics_payload = RAGAnalyticsPayload(
+            request_id="req-pre",
+            organization_id="org-1",
+            conversation_id="conv-1",
+            message_id=None,
+            user_id="user-1",
+            query_text="Q",
+        )
+
+        with patch("api.v1.chat.LLMFactory.get_model", return_value=MagicMock()), \
+             patch("api.v1.chat.rag_stream_failures_total") as mock_metric, \
+             patch("api.v1.chat.rag_analytics_service.record_request", new=AsyncMock()) as mock_record_request:
+            async for _event in api.v1.chat.stream_chat_response(
+                prompt_builder,
+                [candidate],
+                "fast",
+                "ctx",
+                "Q",
+                [],
+                "conv-1",
+                "user-1",
+                MagicMock(),
+                "en",
+                None,
+                "org-1",
+                "starter",
+                analytics_payload=analytics_payload,
+            ):
+                pass
+
+        mock_metric.labels.assert_called_once_with(provider="openai", phase="pre_output")
+        mock_metric.labels.return_value.inc.assert_called_once()
+        mock_record_request.assert_awaited_once()
+        assert analytics_payload.completion_status == "pre_stream_failure"
+        assert analytics_payload.partial_response_length == 0
+        assert analytics_payload.message_id is None
+
+    @pytest.mark.asyncio
+    async def test_stream_chat_response_records_partial_output_failure_metric(self):
+        async def flaky_stream(_input_vars):
+            yield SimpleNamespace(content="Hi")
+            raise RuntimeError("broken stream")
+
+        prompt = MagicMock()
+        chain = MagicMock()
+        chain.astream = flaky_stream
+        prompt.__or__.return_value = chain
+
+        prompt_builder = MagicMock(return_value=(prompt, {"context": "ctx", "question": "Q", "language": "en"}, "sys"))
+        candidate = api.v1.chat.ModelSelection(provider="openai", model="gpt-4o-mini", reason="primary")
+        analytics_payload = RAGAnalyticsPayload(
+            request_id="req-partial",
+            organization_id="org-1",
+            conversation_id="conv-1",
+            message_id=None,
+            user_id="user-1",
+            query_text="Q",
+        )
+
+        with patch("api.v1.chat.LLMFactory.get_model", return_value=MagicMock()), \
+             patch("api.v1.chat.rag_stream_failures_total") as mock_metric, \
+             patch("api.v1.chat.rag_analytics_service.record_request", new=AsyncMock()) as mock_record_request:
+            async for _event in api.v1.chat.stream_chat_response(
+                prompt_builder,
+                [candidate],
+                "fast",
+                "ctx",
+                "Q",
+                [],
+                "conv-1",
+                "user-1",
+                MagicMock(),
+                "en",
+                None,
+                "org-1",
+                "starter",
+                analytics_payload=analytics_payload,
+            ):
+                pass
+
+        mock_metric.labels.assert_called_once_with(provider="openai", phase="partial_output")
+        mock_metric.labels.return_value.inc.assert_called_once()
+        mock_record_request.assert_awaited_once()
+        assert analytics_payload.completion_status == "partial_stream_failure"
+        assert analytics_payload.partial_response_length == 2
+        assert analytics_payload.message_id is None
+
     def test_save_messages_handles_errors(self):
         supabase = MagicMock()
         supabase.table.return_value.insert.side_effect = Exception("db error")
@@ -1146,6 +1244,131 @@ async def test_chat_endpoint_streaming_returns_response():
         response = await chat_endpoint(request, payload, bg_tasks, user_id="user-1")
 
     assert response.media_type == "text/event-stream"
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_cache_key_preserves_explicit_all_scope():
+    from api.v1.chat import ChatRequest, chat_endpoint
+
+    request = _make_mock_request(method="POST", path="/api/v1/chat")
+    bg_tasks = MagicMock()
+    supabase = MagicMock()
+
+    guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
+    embedding_model = MagicMock()
+    embedding_model.embed_query.return_value = [0.1, 0.2, 0.3]
+    cache_get = AsyncMock(
+        return_value={
+            "response": "cached answer [9]",
+            "sources": [],
+            "faithfulness_warning": "Needs review",
+        }
+    )
+
+    with patch("api.v1.chat.get_supabase", return_value=supabase), \
+         patch("api.v1.chat.guardrail_service.analyze_query_with_context", new=AsyncMock(return_value=guardrail)), \
+         patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
+         patch("api.v1.chat.condense_question", new=AsyncMock(return_value="Q")), \
+         patch("services.embeddings.get_embeddings_model", return_value=embedding_model), \
+         patch("services.semantic_cache.semantic_cache.get", new=cache_get), \
+         patch.object(api.v1.chat.settings, "SEMANTIC_CACHE_ENABLED", True), \
+         patch("api.v1.chat.LLMFactory.get_model", side_effect=AssertionError("LLM should not be invoked")):
+        payload = ChatRequest(
+            query="Show me everything",
+            history=[],
+            stream=False,
+            model="fast",
+            scope_id="__all__",
+        )
+        result = await chat_endpoint(
+            request,
+            payload,
+            bg_tasks,
+            user_id="user-1",
+            allowed_scopes=None,
+        )
+
+    assert result.answer == "cached answer"
+    assert result.faithfulness_warning == "Needs review"
+    cache_get.assert_awaited_once_with([0.1, 0.2, 0.3], ["__all__"], "org-1", None)
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_returns_deterministic_no_answer_without_llm():
+    from api.v1.chat import ChatRequest, chat_endpoint
+
+    request = _make_mock_request(method="POST", path="/api/v1/chat")
+    bg_tasks = MagicMock()
+    supabase = MagicMock()
+    supabase.rpc.return_value.execute.return_value = MagicMock(data=[])
+
+    guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
+    embedding_model = MagicMock()
+    embedding_model.embed_query.return_value = [0.1, 0.2, 0.3]
+
+    with patch("api.v1.chat.get_supabase", return_value=supabase), \
+         patch("api.v1.chat.guardrail_service.analyze_query_with_context", new=AsyncMock(return_value=guardrail)), \
+         patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
+         patch("api.v1.chat.condense_question", new=AsyncMock(return_value="Q")), \
+         patch("services.embeddings.get_embeddings_model", return_value=embedding_model), \
+         patch("services.compliance_switch.compliance_switch.filter_tombstoned_docs", new=AsyncMock(return_value=[])), \
+         patch("api.v1.chat.LLMFactory.get_model", side_effect=AssertionError("LLM should not be invoked")), \
+         patch("api.v1.chat.reserve_llm_tokens", new=AsyncMock(side_effect=AssertionError("Tokens should not be reserved"))), \
+         patch("api.v1.chat.save_messages", return_value="msg-123") as mock_save_messages:
+        payload = ChatRequest(
+            query="Missing answer?",
+            history=[],
+            conversation_id="11111111-1111-1111-1111-111111111111",
+            stream=False,
+            model="fast",
+        )
+        result = await chat_endpoint(request, payload, bg_tasks, user_id="user-1")
+
+    assert result.answer == NO_ANSWER_MESSAGE
+    assert result.sources == []
+    assert result.message_id == "msg-123"
+    mock_save_messages.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_streaming_returns_deterministic_no_answer_without_llm():
+    from api.v1.chat import ChatRequest, chat_endpoint
+
+    request = _make_mock_request(method="POST", path="/api/v1/chat")
+    bg_tasks = MagicMock()
+    supabase = MagicMock()
+    supabase.rpc.return_value.execute.return_value = MagicMock(data=[])
+
+    guardrail = make_guardrail_result(is_safe=True, intent="RAG_QUERY", complexity="SIMPLE")
+    embedding_model = MagicMock()
+    embedding_model.embed_query.return_value = [0.1, 0.2, 0.3]
+
+    with patch("api.v1.chat.get_supabase", return_value=supabase), \
+         patch("api.v1.chat.guardrail_service.analyze_query_with_context", new=AsyncMock(return_value=guardrail)), \
+         patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
+         patch("api.v1.chat.condense_question", new=AsyncMock(return_value="Q")), \
+         patch("services.embeddings.get_embeddings_model", return_value=embedding_model), \
+         patch("services.compliance_switch.compliance_switch.filter_tombstoned_docs", new=AsyncMock(return_value=[])), \
+         patch("api.v1.chat.stream_chat_response", side_effect=AssertionError("LLM stream should not be invoked")), \
+         patch("api.v1.chat.LLMFactory.get_model", side_effect=AssertionError("LLM should not be invoked")), \
+         patch("api.v1.chat.reserve_llm_tokens", new=AsyncMock(side_effect=AssertionError("Tokens should not be reserved"))), \
+         patch("api.v1.chat.save_messages", return_value="msg-456"):
+        payload = ChatRequest(
+            query="Missing answer?",
+            history=[],
+            conversation_id="22222222-2222-2222-2222-222222222222",
+            stream=True,
+            model="fast",
+        )
+        response = await chat_endpoint(request, payload, bg_tasks, user_id="user-1")
+        body_parts = []
+        async for part in response.body_iterator:
+            body_parts.append(part.decode() if isinstance(part, bytes) else part)
+
+    body = "".join(body_parts)
+    assert response.media_type == "text/event-stream"
+    assert NO_ANSWER_MESSAGE in body
+    assert '"type": "done"' in body
 
 
 def test_save_messages_success():

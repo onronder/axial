@@ -520,6 +520,7 @@ describe('sendChatRequest', () => {
             answer: 'Test answer',
             sources: [],
             conversation_id: 'conv-123',
+            faithfulness_warning: 'Some claims may not be fully supported',
         };
 
         vi.mocked(global.fetch).mockResolvedValueOnce({
@@ -736,6 +737,49 @@ describe('streamChatResponse', () => {
         expect(mockReader.releaseLock).toHaveBeenCalled();
     });
 
+    it('preserves done event fields from SSE stream', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const encoder = new TextEncoder();
+        const sseData = [
+            'data: {"type":"done","message_id":"msg-123","warning":"MESSAGE_SAVE_FAILED","faithfulness_warning":"Needs review","citations_stripped":2}',
+            '',
+        ].join('\n\n');
+
+        const mockReader = {
+            read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: encoder.encode(sseData) })
+                .mockResolvedValueOnce({ done: true, value: undefined }),
+            releaseLock: vi.fn(),
+        };
+
+        vi.mocked(global.fetch).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: {
+                getReader: () => mockReader,
+            },
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        const events = [];
+
+        for await (const event of generator) {
+            events.push(event);
+        }
+
+        expect(events).toContainEqual({
+            type: 'done',
+            message_id: 'msg-123',
+            warning: 'MESSAGE_SAVE_FAILED',
+            faithfulness_warning: 'Needs review',
+            citations_stripped: 2,
+        });
+    });
+
     it('handles [DONE] SSE message', async () => {
         vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
             data: { session: { access_token: 'test-token' } as any },
@@ -808,6 +852,45 @@ describe('streamChatResponse', () => {
         expect(events).toContainEqual({ type: 'done' });
         
         warnSpy.mockRestore();
+    });
+
+    it('extracts done event fields from malformed JSON fallback', async () => {
+        vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+            data: { session: { access_token: 'test-token' } as any },
+            error: null,
+        });
+
+        const encoder = new TextEncoder();
+        const malformedDone = 'data: {"type":"done","message_id":"msg-999","faithfulness_warning":"some warning","citations_stripped":3';
+
+        const mockReader = {
+            read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: encoder.encode(`${malformedDone}\n\n`) })
+                .mockResolvedValueOnce({ done: true, value: undefined }),
+            releaseLock: vi.fn(),
+        };
+
+        vi.mocked(global.fetch).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            body: {
+                getReader: () => mockReader,
+            },
+        });
+
+        const generator = streamChatResponse(mockPayload);
+        const events = [];
+
+        for await (const event of generator) {
+            events.push(event);
+        }
+
+        expect(events).toContainEqual({
+            type: 'done',
+            message_id: 'msg-999',
+            faithfulness_warning: 'some warning',
+            citations_stripped: 3,
+        });
     });
 });
 

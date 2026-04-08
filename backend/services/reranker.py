@@ -15,6 +15,7 @@ from copy import deepcopy
 from typing import Any
 
 from core.config import settings
+from core.metrics import rerank_score, rerank_skipped_total
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +35,14 @@ class Reranker:
         Falls back to original order truncated on any error.
         """
         if not documents or len(documents) <= top_k:
+            self._record_skip("too_few_docs")
             return documents
 
         try:
             if self.provider == "cohere":
                 return await self._rerank_cohere(query, documents, top_k)
         except Exception as e:
+            self._record_skip("api_error")
             logger.warning(
                 "[Reranker] Reranking failed (%s), returning original order: %s",
                 self.provider,
@@ -58,6 +61,7 @@ class Reranker:
         """Rerank using Cohere's rerank API."""
         cohere_api_key = getattr(settings, "COHERE_API_KEY", None)
         if not cohere_api_key:
+            self._record_skip("no_api_key")
             logger.debug("[Reranker] No COHERE_API_KEY configured, skipping rerank")
             return documents[:top_k]
 
@@ -94,11 +98,31 @@ class Reranker:
                 len(reranked),
                 reranked[0]["rerank_score"] if reranked else 0,
             )
+            self._record_scores(reranked)
             return reranked
 
         except ImportError:
+            self._record_skip("import_error")
             logger.warning("[Reranker] cohere package not installed, skipping rerank")
             return documents[:top_k]
+
+    def _record_skip(self, reason: str) -> None:
+        """Metrics must never break fail-open reranking behavior."""
+        try:
+            rerank_skipped_total.labels(provider=self.provider, reason=reason).inc()
+        except Exception:
+            pass
+
+    def _record_scores(self, documents: list[dict[str, Any]]) -> None:
+        """Observe returned rerank scores for successful responses."""
+        try:
+            histogram = rerank_score.labels(provider=self.provider)
+            for doc in documents:
+                score = doc.get("rerank_score")
+                if score is not None:
+                    histogram.observe(float(score))
+        except Exception:
+            pass
 
 
 # Singleton

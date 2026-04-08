@@ -14,6 +14,7 @@ from uuid import uuid4
 import pytest
 
 from core.ingestion_utils import (
+    _insert_chunks_direct,
     insert_chunks_with_ghost_protocol,
     prepare_chunks_for_ghost_protocol,
 )
@@ -121,6 +122,19 @@ class TestPrepareChunksForGhostProtocol:
         _, encrypted = prepare_chunks_for_ghost_protocol(chunks, doc_id)
 
         assert encrypted is True
+
+    def test_includes_detected_language_in_prepared_chunks(self, monkeypatch):
+        """Prepared chunk payload should include detected ISO language code."""
+        import core.security as security
+        monkeypatch.setattr(security, "HAS_CHUNK_ENCRYPTION", False)
+
+        chunks = [{"content": "Merhaba dunya bu metin yeterince uzundur.", "embedding": [0.1] * 1536, "chunk_index": 0}]
+        doc_id = str(uuid4())
+
+        with patch("core.ingestion_utils._detect_chunk_language", return_value="tr"):
+            prepared, _ = prepare_chunks_for_ghost_protocol(chunks, doc_id)
+
+        assert prepared[0]["language"] == "tr"
 
     def test_encryption_disabled_returns_plaintext(self, monkeypatch):
         """With encryption disabled, content_encrypted should equal plaintext."""
@@ -358,3 +372,61 @@ class TestBatchSizeHandling:
         )
 
         assert mock_supabase.rpc.call_count == 1
+
+
+class TestDirectInsertLanguageHandling:
+    """Tests for legacy direct-insert fallback language writes."""
+
+    def test_direct_insert_includes_detected_language(self, monkeypatch):
+        """Fallback insert path should write detected language explicitly."""
+        import core.db_utils as db_utils
+        import core.security as security
+
+        captured_rows = {}
+
+        def fake_insert_rows_with_retry(*args, **kwargs):
+            captured_rows["rows"] = args[2]
+
+        monkeypatch.setattr(security, "HAS_CHUNK_ENCRYPTION", False)
+        monkeypatch.setattr(db_utils, "insert_rows_with_retry", fake_insert_rows_with_retry)
+
+        mock_supabase = MagicMock()
+        chunks = [{"content": "Hallo welt dieser text ist lang genug.", "embedding": [0.1] * 1536, "chunk_index": 0}]
+        doc_id = str(uuid4())
+
+        with patch("core.ingestion_utils._detect_chunk_language", return_value="de"):
+            inserted = _insert_chunks_direct(mock_supabase, doc_id, chunks, 100, "")
+
+        assert inserted == 1
+        assert captured_rows["rows"][0]["language"] == "de"
+
+    def test_direct_insert_detects_language_before_encryption(self, monkeypatch):
+        """Detection should run on plaintext content before encryption mutates it."""
+        import core.db_utils as db_utils
+        import core.security as security
+
+        observed_content = []
+        captured_rows = {}
+
+        def fake_insert_rows_with_retry(*args, **kwargs):
+            captured_rows["rows"] = args[2]
+
+        def fake_detect(content):
+            observed_content.append(content)
+            return "tr"
+
+        monkeypatch.setattr(security, "HAS_CHUNK_ENCRYPTION", True)
+        monkeypatch.setattr(security, "encrypt_text", lambda value: f"ENC:{value}")
+        monkeypatch.setattr(db_utils, "insert_rows_with_retry", fake_insert_rows_with_retry)
+
+        mock_supabase = MagicMock()
+        chunks = [{"content": "Merhaba dunya bu metin yeterince uzundur.", "embedding": [0.1] * 1536, "chunk_index": 0}]
+        doc_id = str(uuid4())
+
+        with patch("core.ingestion_utils._detect_chunk_language", side_effect=fake_detect):
+            inserted = _insert_chunks_direct(mock_supabase, doc_id, chunks, 100, "")
+
+        assert inserted == 1
+        assert observed_content == ["Merhaba dunya bu metin yeterince uzundur."]
+        assert captured_rows["rows"][0]["content"] == "ENC:Merhaba dunya bu metin yeterince uzundur."
+        assert captured_rows["rows"][0]["language"] == "tr"

@@ -76,6 +76,7 @@ vi.mock('@/hooks/use-toast', () => ({
 
 // Mock streamChatResponse as an async generator
 const mockStreamChatResponse = vi.fn();
+let lastRenderedMessages: Array<Record<string, unknown>> = [];
 vi.mock('@/lib/chat-utils', () => ({
     generateSmartTitle: vi.fn((content: string) => content.slice(0, 30)),
     streamChatResponse: (payload: unknown) => mockStreamChatResponse(payload),
@@ -90,6 +91,9 @@ vi.mock('@/components/chat/ChatArea', () => ({
         messages: Array<{ role?: string; original_query?: string }>;
         disabled: boolean;
     }) => (
+        (() => {
+            lastRenderedMessages = messages as Array<Record<string, unknown>>;
+            return (
         <div data-testid="chat-area">
             <div data-testid="message-count">{messages.length}</div>
             <button
@@ -135,6 +139,8 @@ vi.mock('@/components/chat/ChatArea', () => ({
                 Send Second
             </button>
         </div>
+            );
+        })()
     ),
 }));
 
@@ -641,6 +647,7 @@ describe('ChatPage Component - Chat Error Types', () => {
         vi.clearAllMocks();
         mockChatIdFromUrl = 'existing-chat';
         mockGetMessagesById.mockResolvedValue([]);
+        lastRenderedMessages = [];
     });
 
     it('should handle LLM_TIMEOUT error', async () => {
@@ -781,7 +788,12 @@ describe('ChatPage Component - Model Selection Persistence', () => {
         });
 
         // Check localStorage was updated (if available)
-        const stored = localStorage.getItem('axio-chat-model-preference');
+        let stored: string | null = null;
+        try {
+            stored = localStorage.getItem('axio-chat-model-preference');
+        } catch {
+            stored = null;
+        }
         expect(stored === 'smart' || stored === null).toBe(true); // null if localStorage unavailable
     });
 });
@@ -946,6 +958,44 @@ describe('ChatPage Component - Done Event', () => {
 
         await waitFor(() => {
             expect(screen.getByTestId('message-count')).toHaveTextContent('2');
+        });
+    });
+
+    it('should propagate faithfulness warning into finalized assistant message', async () => {
+        mockStreamChatResponse.mockImplementation(() =>
+            (async function* () {
+                yield { type: 'token', content: 'Response' };
+                yield {
+                    type: 'done',
+                    message_id: 'server-msg-456',
+                    faithfulness_warning: 'Some claims may not be supported',
+                    citations_stripped: 2,
+                };
+            })()
+        );
+
+        const user = userEvent.setup();
+        render(<ChatPage />);
+
+        await waitFor(() => {
+            expect(screen.getByTestId('send-message')).not.toBeDisabled();
+        });
+
+        await act(async () => {
+            await user.click(screen.getByTestId('send-message'));
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId('message-count')).toHaveTextContent('2');
+        });
+
+        const assistantMessage = lastRenderedMessages.find(
+            message => message.role === 'assistant'
+        );
+        expect(assistantMessage).toMatchObject({
+            id: 'server-msg-456',
+            faithfulness_warning: 'Some claims may not be supported',
+            citations_stripped: 2,
         });
     });
 });

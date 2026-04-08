@@ -45,12 +45,17 @@ from core.config import settings
 from core.db import get_supabase
 from core.exceptions import QuotaExceededError
 from core.ingestion_utils import normalize_source_type
+from core.metrics import rag_stream_failures_total
 from core.rate_limit import limiter, user_limiter
 from core.resilience import CircuitBreakerOpen, is_retryable_error, openai_breaker
 from core.security import get_current_user
 from services.audit import audit_logger, log_chat_delete
+from services.faithfulness_guard import faithfulness_guard
 from services.guardrails import guardrail_service
 from services.llm_factory import LLMFactory
+from services.no_answer import build_no_answer_payload, should_return_no_answer
+from services.output_filter import output_filter
+from services.rag_analytics import RAGAnalyticsPayload, rag_analytics_service
 from services.router import ComplexityEvaluator, ModelSelection, llm_router
 from services.scope_analysis import (
     ScopeClassification,
@@ -114,6 +119,133 @@ def _categorize_exception(e: Exception) -> str:
     if isinstance(e, (ConnectionError, OSError)):
         return "SERVICE_UNAVAILABLE"
     return "DATABASE_ERROR"
+
+
+def _record_rag_stream_failure(provider: str | None, phase: str) -> None:
+    """Best-effort metric for terminal stream failures."""
+    try:
+        rag_stream_failures_total.labels(
+            provider=provider or "unknown",
+            phase=phase,
+        ).inc()
+    except Exception:
+        pass
+
+
+def _sanitize_response_output(text: str, source_count: int) -> tuple[str, int]:
+    """Apply output filtering and return sanitized text plus stripped citation count."""
+    try:
+        filter_result = output_filter.filter_response(text, source_count=source_count)
+        if filter_result.pii_detected:
+            logger.warning(
+                "🛡️ [Chat] PII detected in LLM output: %s",
+                filter_result.pii_detected,
+            )
+        if filter_result.invalid_citations:
+            logger.warning(
+                "🧹 [Chat] Stripped invalid citations: %s",
+                filter_result.invalid_citations,
+            )
+        return filter_result.filtered_text, filter_result.citations_stripped_count
+    except Exception as e:
+        logger.warning("⚠️ [Chat] Output filter error: %s", e)
+        return text, 0
+
+
+def _completion_status_for_message(message_id: str | None) -> str:
+    """Return terminal analytics status for persisted responses."""
+    return "success" if message_id else "save_failure"
+
+
+def _report_message_save_failure(
+    conversation_id: str | None,
+    organization_id: str | None,
+) -> None:
+    """Best-effort save failure logging shared across stream and non-stream paths."""
+    if not conversation_id:
+        return
+    conversation_label = conversation_id[:8]
+    organization_label = (organization_id or "")[:8]
+    logger.error(
+        "Message save failed: conv=%s org=%s",
+        conversation_label,
+        organization_label,
+    )
+    sentry_sdk.capture_message(
+        f"Message save failed: conv={conversation_label}... org={organization_label}...",
+        level="error",
+    )
+
+
+def _set_analytics_completion(
+    analytics_payload: RAGAnalyticsPayload | None,
+    *,
+    message_id: str | None,
+    completion_status: str,
+    partial_response_length: int | None = None,
+    citations_stripped_count: int = 0,
+) -> None:
+    """Populate terminal analytics fields without affecting chat control flow."""
+    if analytics_payload is None:
+        return
+    analytics_payload.message_id = message_id
+    analytics_payload.completion_status = completion_status
+    analytics_payload.partial_response_length = partial_response_length
+    analytics_payload.citations_stripped_count = citations_stripped_count
+
+
+def _build_rag_analytics_payload(
+    *,
+    request_id: str,
+    organization_id: str,
+    conversation_id: str | None,
+    user_id: str,
+    query_text: str,
+    search_query: str | None,
+    selected_scope_id: str | None,
+    allowed_scope_ids: list[str] | None,
+    guardrail_result,
+    docs: list[dict[str, Any]],
+    high_quality_docs: list[dict[str, Any]],
+    source_count: int,
+    scope_context: "ScopeContext | None",
+    cached: bool = False,
+    no_answer: bool = False,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    llm_prompt_tokens: int | None = None,
+    llm_completion_tokens: int | None = None,
+    llm_total_tokens: int | None = None,
+) -> RAGAnalyticsPayload:
+    return RAGAnalyticsPayload(
+        request_id=request_id,
+        organization_id=organization_id,
+        conversation_id=conversation_id,
+        message_id=None,
+        user_id=user_id,
+        query_text=query_text,
+        search_query=search_query,
+        selected_scope_id=selected_scope_id,
+        allowed_scope_ids=allowed_scope_ids,
+        guardrail_language=getattr(guardrail_result, "language", None),
+        guardrail_intent=getattr(guardrail_result, "intent", None),
+        guardrail_complexity=getattr(guardrail_result, "complexity", None),
+        has_document_context=bool(getattr(guardrail_result, "has_document_context", False)),
+        retrieval_docs=docs,
+        high_quality_docs=high_quality_docs,
+        source_count=source_count,
+        rerank_applied=any(doc.get("rerank_score") is not None for doc in docs),
+        scope_classification=scope_context.classification if scope_context else None,
+        scope_dominance_ratio=scope_context.dominance_ratio if scope_context else None,
+        cached=cached,
+        no_answer=no_answer,
+        completion_status="success",
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_prompt_tokens=llm_prompt_tokens,
+        llm_completion_tokens=llm_completion_tokens,
+        llm_total_tokens=llm_total_tokens,
+    )
 router = APIRouter(dependencies=[Depends(validate_team_access), Depends(require_paid_access)])
 
 # ============================================================
@@ -382,6 +514,7 @@ class ChatResponse(BaseModel):
     conversation_id: str | None = None
     message_id: str | None = None
     scope_context: ScopeContext | None = None  # NEW: Scope info for transparency
+    faithfulness_warning: str | None = None
 
 
 # ============================================================
@@ -1302,13 +1435,15 @@ async def chat_endpoint(
     8. Streaming Support - Optional SSE streaming
     """
     supabase = get_supabase()
-    request_id = str(_uuid.uuid4())[:8]
+    request_uuid = _uuid.uuid4()
+    request_id = str(request_uuid)
+    request_log_id = request_id[:8]
 
     # ========== STEP 1: RESOLVE ORG SCOPE ==========
     try:
         organization_id = await team_service.get_organization_id(user_id)
     except Exception as e:
-        logger.warning("[%s] ⚠️ [Chat] Could not resolve org for %s: %s", request_id, user_id, e)
+        logger.warning("[%s] ⚠️ [Chat] Could not resolve org for %s: %s", request_log_id, user_id, e)
         organization_id = user_id
 
     if not organization_id:
@@ -1489,12 +1624,38 @@ async def chat_endpoint(
             logger.error(f"ERROR: Embedding failed: {e}")
             raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "embed_query")
 
+    # Normalize scope intent once so cache and retrieval use identical semantics.
+    explicit_scope = payload.scope_id
+    force_all_scopes = False
+    if explicit_scope == "__all__":
+        explicit_scope = None
+        force_all_scopes = True
+
+    effective_allowed_scopes = allowed_scopes
+    if effective_allowed_scopes is not None:
+        if explicit_scope and explicit_scope not in effective_allowed_scopes:
+            explicit_scope = None  # Revoked scope — fall through to allowed scopes
+        if force_all_scopes:
+            force_all_scopes = False  # Restricted user cannot search all scopes
+            logger.info("🔒 [Chat] User requested __all__ but has scope restrictions, restricting to allowed scopes")
+
+    if force_all_scopes and effective_allowed_scopes is None:
+        scope_ids_for_cache = ["__all__"]
+    elif explicit_scope:
+        scope_ids_for_cache = [explicit_scope]
+    else:
+        scope_ids_for_cache = []
+
     # ========== STEP 7.5: SEMANTIC CACHE CHECK (H7) ==========
     if getattr(settings, "SEMANTIC_CACHE_ENABLED", False) and not payload.stream:
         try:
             from services.semantic_cache import semantic_cache
-            scope_ids_for_cache = [payload.scope_id] if payload.scope_id else []
-            cached = await semantic_cache.get(query_vector, scope_ids_for_cache)
+            cached = await semantic_cache.get(
+                query_vector,
+                scope_ids_for_cache,
+                organization_id,
+                effective_allowed_scopes,
+            )
             if cached:
                 try:
                     from core.metrics import semantic_cache_ops
@@ -1502,12 +1663,51 @@ async def chat_endpoint(
                 except Exception:
                     pass
                 logger.info("🎯 [Chat] Semantic cache HIT — returning cached response")
-                return ChatResponse(
-                    answer=cached["response"],
-                    sources=cached.get("sources", []),
+                cached_sources = cached.get("sources", [])
+                cached_answer, cached_citations_stripped_count = _sanitize_response_output(
+                    cached["response"],
+                    len(cached_sources),
+                )
+                cached_message_id = save_messages(
+                    supabase,
+                    payload.conversation_id,
+                    payload.query,
+                    cached_answer,
+                    cached_sources,
+                    organization_id=organization_id,
+                )
+                cached_analytics = _build_rag_analytics_payload(
+                    request_id=request_id,
+                    organization_id=organization_id,
                     conversation_id=payload.conversation_id,
-                    message_id=None,
+                    user_id=user_id,
+                    query_text=payload.query,
+                    search_query=search_query,
+                    selected_scope_id=selected_scope_id,
+                    allowed_scope_ids=effective_allowed_scopes,
+                    guardrail_result=guardrail_result,
+                    docs=[],
+                    high_quality_docs=[],
+                    source_count=len(cached_sources),
                     scope_context=None,
+                    cached=True,
+                )
+                _set_analytics_completion(
+                    cached_analytics,
+                    message_id=cached_message_id,
+                    completion_status=_completion_status_for_message(cached_message_id),
+                    citations_stripped_count=cached_citations_stripped_count,
+                )
+                if cached_message_id is None:
+                    _report_message_save_failure(payload.conversation_id, organization_id)
+                await rag_analytics_service.record_request(supabase, cached_analytics)
+                return ChatResponse(
+                    answer=cached_answer,
+                    sources=cached_sources,
+                    conversation_id=payload.conversation_id,
+                    message_id=cached_message_id,
+                    scope_context=None,
+                    faithfulness_warning=cached.get("faithfulness_warning"),
                 )
             else:
                 try:
@@ -1519,23 +1719,8 @@ async def chat_endpoint(
             logger.warning("⚠️ [Chat] Semantic cache check error: %s", e)
 
     # ========== STEP 8: HYBRID SEARCH (Scope-Aware) ==========
-    # If explicit scope_id provided, use scoped search
-    explicit_scope = payload.scope_id
-    force_all_scopes = False
-    if explicit_scope == "__all__":
-        explicit_scope = None
-        force_all_scopes = True
-
-    # Scope-level access control: intersect with allowed scopes (same pattern as search.py)
-    if allowed_scopes is not None:
-        if explicit_scope:
-            if explicit_scope not in allowed_scopes:
-                explicit_scope = None  # Revoked scope — will fall through to allowed scopes
-        if force_all_scopes:
-            force_all_scopes = False  # Restricted user cannot search all scopes
-            logger.info("🔒 [Chat] User requested __all__ but has scope restrictions, restricting to allowed scopes")
-
     _DB_RPC_TIMEOUT = 15  # seconds
+    search_language = "simple"  # Short-term FTS strategy is globally normalized.
 
     try:
         if explicit_scope:
@@ -1548,10 +1733,11 @@ async def chat_endpoint(
                     "match_count": min(30 if is_comparison else 10, MATCH_COUNT_CAP),
                     "filter_org_id": organization_id,
                     "filter_scope_ids": [explicit_scope],
-                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD
+                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD,
+                    "search_language": search_language,
                 }).execute()
             ), timeout=_DB_RPC_TIMEOUT)
-        elif force_all_scopes and allowed_scopes is None:
+        elif force_all_scopes and effective_allowed_scopes is None:
             # Search all sources using scoped RPC (wildcard scope filter)
             response = await asyncio.wait_for(asyncio.to_thread(
                 lambda: supabase.rpc("hybrid_search_scoped", {
@@ -1562,22 +1748,24 @@ async def chat_endpoint(
                     "filter_scope_ids": None,
                     "vector_weight": 0.7,
                     "keyword_weight": 0.3,
-                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD
+                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD,
+                    "search_language": search_language,
                 }).execute()
             ), timeout=_DB_RPC_TIMEOUT)
-        elif allowed_scopes is not None:
+        elif effective_allowed_scopes is not None:
             # Scope-restricted user — always use scoped search with allowed scopes
-            logger.info(f"🔒 [Chat] Scope-restricted search: {len(allowed_scopes)} allowed scopes")
+            logger.info(f"🔒 [Chat] Scope-restricted search: {len(effective_allowed_scopes)} allowed scopes")
             response = await asyncio.wait_for(asyncio.to_thread(
                 lambda: supabase.rpc("hybrid_search_scoped", {
                     "query_text": search_query,
                     "query_embedding": query_vector,
                     "match_count": min(40 if is_comparison else 15, MATCH_COUNT_CAP),
                     "filter_org_id": organization_id,
-                    "filter_scope_ids": allowed_scopes,
+                    "filter_scope_ids": effective_allowed_scopes,
                     "vector_weight": 0.7,
                     "keyword_weight": 0.3,
-                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD
+                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD,
+                    "search_language": search_language,
                 }).execute()
             ), timeout=_DB_RPC_TIMEOUT)
         else:
@@ -1590,7 +1778,8 @@ async def chat_endpoint(
                     "filter_org_id": organization_id,
                     "vector_weight": 0.7,
                     "keyword_weight": 0.3,
-                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD
+                    "similarity_threshold": settings.RAG_RETRIEVAL_THRESHOLD,
+                    "search_language": search_language,
                 }).execute()
             ), timeout=_DB_RPC_TIMEOUT)
 
@@ -1656,7 +1845,7 @@ async def chat_endpoint(
                 logger.warning("⚠️ [Chat] Reranking failed, using original order: %s", e)
 
     except asyncio.TimeoutError:
-        logger.error("[%s] ERROR: Hybrid search RPC timed out after %ss", request_id, _DB_RPC_TIMEOUT)
+        logger.error("[%s] ERROR: Hybrid search RPC timed out after %ss", request_log_id, _DB_RPC_TIMEOUT)
         raise api_error(ApiErrorCode.PROCESSING_ERROR, TimeoutError("hybrid search timed out"), "retrieve_documents")
     except Exception as e:
         logger.error("ERROR: Retrieval failed: %s", e)
@@ -1797,17 +1986,86 @@ async def chat_endpoint(
         if d.get("vector_score", d.get("similarity", 0)) >= settings.RAG_SIMILARITY_THRESHOLD
     ]
 
-    context_text = ""
-    sources_metadata = []
+    if should_return_no_answer(docs, settings.RAG_SIMILARITY_THRESHOLD):
+        logger.info(
+            "📭 [Chat] Deterministic no-answer: docs=%s threshold=%.2f",
+            len(docs),
+            settings.RAG_SIMILARITY_THRESHOLD,
+        )
+        no_answer_payload = build_no_answer_payload()
+        no_answer_analytics = _build_rag_analytics_payload(
+            request_id=request_id,
+            organization_id=organization_id,
+            conversation_id=payload.conversation_id,
+            user_id=user_id,
+            query_text=payload.query,
+            search_query=search_query,
+            selected_scope_id=selected_scope_id,
+            allowed_scope_ids=effective_allowed_scopes,
+            guardrail_result=guardrail_result,
+            docs=docs,
+            high_quality_docs=high_quality_docs,
+            source_count=0,
+            scope_context=scope_context,
+            no_answer=True,
+        )
+        if payload.stream:
+            return StreamingResponse(
+                _stream_no_answer_response(
+                    question=payload.query,
+                    answer=no_answer_payload["answer"],
+                    sources=no_answer_payload["sources"],
+                    conversation_id=payload.conversation_id,
+                    supabase=supabase,
+                    scope_context=scope_context,
+                    organization_id=organization_id,
+                    analytics_payload=no_answer_analytics,
+                ),
+                media_type="text/event-stream",
+            )
 
-    if high_quality_docs:
-        logger.info(f"✅ [Chat] High quality context: {len(high_quality_docs)} docs")
-        context_text, sources_metadata = format_context_with_citations(high_quality_docs)
-    else:
-        scope_name = extract_scope_name(selected_scope_id) if selected_scope_id else "your knowledge base"
-        logger.warning(f"⚠️ [Chat] No docs above {settings.RAG_SIMILARITY_THRESHOLD} threshold")
-        context_text = f"[No relevant documents found in {scope_name} for this query.]"
-        sources_metadata = []
+        message_id = save_messages(
+            supabase,
+            payload.conversation_id,
+            payload.query,
+            no_answer_payload["answer"],
+            no_answer_payload["sources"],
+            organization_id=organization_id,
+        )
+        _set_analytics_completion(
+            no_answer_analytics,
+            message_id=message_id,
+            completion_status=_completion_status_for_message(message_id),
+        )
+        if message_id is None:
+            _report_message_save_failure(payload.conversation_id, organization_id)
+        await rag_analytics_service.record_request(supabase, no_answer_analytics)
+        return ChatResponse(
+            answer=no_answer_payload["answer"],
+            sources=no_answer_payload["sources"],
+            conversation_id=payload.conversation_id,
+            message_id=message_id,
+            scope_context=scope_context,
+            faithfulness_warning=None,
+        )
+
+    logger.info(f"✅ [Chat] High quality context: {len(high_quality_docs)} docs")
+    context_text, sources_metadata = format_context_with_citations(high_quality_docs)
+    analytics_base_payload = _build_rag_analytics_payload(
+        request_id=request_id,
+        organization_id=organization_id,
+        conversation_id=payload.conversation_id,
+        user_id=user_id,
+        query_text=payload.query,
+        search_query=search_query,
+        selected_scope_id=selected_scope_id,
+        allowed_scope_ids=effective_allowed_scopes,
+        guardrail_result=guardrail_result,
+        docs=docs,
+        high_quality_docs=high_quality_docs,
+        source_count=len(sources_metadata),
+        scope_context=scope_context,
+    )
 
     # ========== STEP 11: GET SELECTED LLM & ENFORCE PLAN ==========
     llm_result = LLMFactory.get_model(
@@ -2024,6 +2282,8 @@ async def chat_endpoint(
                 organization_id,
                 user_plan,
                 estimated_total_tokens,  # GAP 1 FIX: Pass for token release
+                high_quality_docs,
+                analytics_base_payload,
             ):
                 yield event
 
@@ -2165,24 +2425,41 @@ async def chat_endpoint(
                 footnote = f"\n\n---\n*Answered based on context from **{scope_display}**.*"
                 answer = answer + footnote
 
-            # C2: Output safety filter — scan FULL response (including footnote) for PII
-            try:
-                from services.output_filter import output_filter
-                filter_result = output_filter.filter_response(
-                    answer, source_count=len(sources_metadata)
-                )
-                if filter_result.pii_detected:
-                    logger.warning(
-                        "🛡️ [Chat] PII detected in LLM output: %s",
-                        filter_result.pii_detected,
-                    )
-                    answer = filter_result.filtered_text
-            except Exception as e:
-                logger.warning("⚠️ [Chat] Output filter error: %s", e)
+            answer, citations_stripped_count = _sanitize_response_output(
+                answer,
+                len(sources_metadata),
+            )
+
+            faithfulness_result = await faithfulness_guard.check(
+                answer=answer,
+                docs=high_quality_docs,
+            )
+            faithfulness_warning = faithfulness_result.warning
 
             # M6: Prefer actual token counts from API when available
             total_tokens = used_prompt_tokens + _estimate_token_count(answer)
             completion_tokens = _estimate_token_count(answer)
+            analytics_payload = _build_rag_analytics_payload(
+                request_id=request_id,
+                organization_id=organization_id,
+                conversation_id=payload.conversation_id,
+                user_id=user_id,
+                query_text=payload.query,
+                search_query=search_query,
+                selected_scope_id=selected_scope_id,
+                allowed_scope_ids=effective_allowed_scopes,
+                guardrail_result=guardrail_result,
+                docs=docs,
+                high_quality_docs=high_quality_docs,
+                source_count=len(sources_metadata),
+                scope_context=scope_context,
+                llm_provider=used_provider,
+                llm_model=used_model,
+                llm_prompt_tokens=used_prompt_tokens,
+                llm_completion_tokens=completion_tokens,
+                llm_total_tokens=total_tokens,
+            )
+            analytics_payload.faithfulness_result = faithfulness_result
 
             # H8: Record token metrics
             try:
@@ -2212,8 +2489,15 @@ async def chat_endpoint(
             if getattr(settings, "SEMANTIC_CACHE_ENABLED", False):
                 try:
                     from services.semantic_cache import semantic_cache
-                    scope_ids_for_cache = [payload.scope_id] if payload.scope_id else []
-                    await semantic_cache.put(query_vector, scope_ids_for_cache, answer, sources_metadata)
+                    await semantic_cache.put(
+                        query_vector,
+                        scope_ids_for_cache,
+                        organization_id,
+                        response=answer,
+                        sources=sources_metadata,
+                        faithfulness_warning=faithfulness_warning,
+                        allowed_scopes=effective_allowed_scopes,
+                    )
                     try:
                         from core.metrics import semantic_cache_ops
                         semantic_cache_ops.labels(operation="put").inc()
@@ -2227,6 +2511,15 @@ async def chat_endpoint(
                 sources_metadata,
                 organization_id=organization_id  # Org-scoped validation
             )
+            _set_analytics_completion(
+                analytics_payload,
+                message_id=message_id,
+                completion_status=_completion_status_for_message(message_id),
+                citations_stripped_count=citations_stripped_count,
+            )
+            if message_id is None:
+                _report_message_save_failure(payload.conversation_id, organization_id)
+            await rag_analytics_service.record_request(supabase, analytics_payload)
 
             return ChatResponse(
                 answer=answer,
@@ -2234,6 +2527,7 @@ async def chat_endpoint(
                 conversation_id=payload.conversation_id,
                 message_id=message_id,
                 scope_context=scope_context,
+                faithfulness_warning=faithfulness_warning,
             )
 
 
@@ -2316,6 +2610,8 @@ async def stream_chat_response(
     organization_id: str = "",
     plan_code: str = "free",
     estimated_total_tokens: int = 0,  # GAP 1 FIX: Add for token release
+    faithfulness_docs: list[dict[str, Any]] | None = None,
+    analytics_payload: RAGAnalyticsPayload | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream chat response using Server-Sent Events (SSE) with failover support.
@@ -2343,7 +2639,11 @@ async def stream_chat_response(
     semaphore = await _get_llm_semaphore()
 
     async with semaphore:
+        last_provider: str | None = None
+        last_model: str | None = None
         for candidate in llm_candidates:
+            last_provider = candidate.provider
+            last_model = candidate.model
             if candidate.provider == "openai" and not llm_router.is_provider_available("openai"):
                 logger.warning("⚡ [Chat] OpenAI circuit open, skipping stream attempt")
                 continue
@@ -2402,14 +2702,12 @@ async def stream_chat_response(
                     full_response += footnote
                     yield _safe_sse_json({'type': 'token', 'content': footnote})
 
-                # Send sources after completion
-                yield _safe_sse_json({'type': 'sources', 'sources': sources})
+                full_response, citations_stripped_count = _sanitize_response_output(
+                    full_response,
+                    len(sources),
+                )
 
-                # Send scope context if available
-                if scope_context:
-                    yield _safe_sse_json({'type': 'scope_context', 'scope_context': scope_context.model_dump()})
-
-                # Save messages (org-scoped validation)
+                # Save messages (org-scoped validation) with sanitized final response
                 message_id = save_messages(
                     supabase, conversation_id, question, full_response,
                     sources,
@@ -2420,13 +2718,27 @@ async def stream_chat_response(
                 _save_warning = None
                 if message_id is None and conversation_id:
                     _save_warning = "MESSAGE_SAVE_FAILED"
-                    logger.error(
-                        "Message save failed: conv=%s org=%s",
-                        conversation_id[:8], organization_id[:8],
+                    _report_message_save_failure(conversation_id, organization_id)
+
+                faithfulness_result = await faithfulness_guard.check(
+                    answer=full_response,
+                    docs=faithfulness_docs or [],
+                )
+
+                if analytics_payload is not None:
+                    analytics_payload.llm_provider = candidate.provider
+                    analytics_payload.llm_model = candidate.model
+                    analytics_payload.llm_prompt_tokens = _estimate_prompt_tokens(system_prompt, input_vars)
+                    analytics_payload.llm_completion_tokens = _estimate_token_count(full_response)
+                    analytics_payload.llm_total_tokens = (
+                        analytics_payload.llm_prompt_tokens + analytics_payload.llm_completion_tokens
                     )
-                    sentry_sdk.capture_message(
-                        f"Message save failed: conv={conversation_id[:8]}... org={organization_id[:8]}...",
-                        level="error",
+                    analytics_payload.faithfulness_result = faithfulness_result
+                    _set_analytics_completion(
+                        analytics_payload,
+                        message_id=message_id,
+                        completion_status=_completion_status_for_message(message_id),
+                        citations_stripped_count=citations_stripped_count,
                     )
 
                 total_tokens = _estimate_prompt_tokens(system_prompt, input_vars) + _estimate_token_count(full_response)
@@ -2455,9 +2767,23 @@ async def stream_chat_response(
                 except Exception as rel_err:
                     logger.error("Failed to release tokens: %s", rel_err)
 
+                if analytics_payload is not None:
+                    await rag_analytics_service.record_request(supabase, analytics_payload)
+
+                # Send sources after completion
+                yield _safe_sse_json({'type': 'sources', 'sources': sources})
+
+                # Send scope context if available
+                if scope_context:
+                    yield _safe_sse_json({'type': 'scope_context', 'scope_context': scope_context.model_dump()})
+
                 done_event = {'type': 'done', 'message_id': message_id}
                 if _save_warning:
                     done_event['warning'] = _save_warning
+                if faithfulness_result.warning:
+                    done_event['faithfulness_warning'] = faithfulness_result.warning
+                if citations_stripped_count > 0:
+                    done_event['citations_stripped'] = citations_stripped_count
                 yield _safe_sse_json(done_event)
                 return
 
@@ -2465,17 +2791,37 @@ async def stream_chat_response(
                 last_exc = e
                 if sent_any:
                     # Issue #4: Enhanced error signaling after partial output
-                    logger.error("Streaming error after partial output: %s", e)
-                    sentry_sdk.capture_exception(e)
-
-                    # Build partial response from chunks collected so far
                     partial_response = "".join(response_chunks)
+                    _record_rag_stream_failure(candidate.provider, "partial_output")
+                    logger.error(
+                        "Streaming error after partial output provider=%s partial_length=%d: %s",
+                        candidate.provider,
+                        len(partial_response),
+                        e,
+                    )
+                    sentry_sdk.capture_exception(e)
 
                     # GAP 1 FIX: Release reserved tokens on error (partial response)
                     try:
                         await release_reserved_tokens(organization_id, estimated_total_tokens)
                     except Exception as rel_err:
                         logger.error("Failed to release tokens: %s", rel_err)
+
+                    if analytics_payload is not None:
+                        analytics_payload.llm_provider = candidate.provider
+                        analytics_payload.llm_model = candidate.model
+                        analytics_payload.llm_prompt_tokens = _estimate_prompt_tokens(system_prompt, input_vars)
+                        analytics_payload.llm_completion_tokens = _estimate_token_count(partial_response)
+                        analytics_payload.llm_total_tokens = (
+                            analytics_payload.llm_prompt_tokens + analytics_payload.llm_completion_tokens
+                        )
+                        _set_analytics_completion(
+                            analytics_payload,
+                            message_id=None,
+                            completion_status="partial_stream_failure",
+                            partial_response_length=len(partial_response),
+                        )
+                        await rag_analytics_service.record_request(supabase, analytics_payload)
 
                     payload = build_error_payload(
                         "LLM_STREAM_INTERRUPTED",
@@ -2493,13 +2839,27 @@ async def stream_chat_response(
                     logger.warning("⚠️ [Chat] Streaming failover from %s/%s: %s", candidate.provider, candidate.model, e)
                     continue
 
-                logger.error("Streaming error: %s", e)
+                _record_rag_stream_failure(candidate.provider, "pre_output")
+                logger.error("Streaming error before output provider=%s: %s", candidate.provider, e)
                 sentry_sdk.capture_exception(e)
                 # GAP 1 FIX: Release reserved tokens on error
                 try:
                     await release_reserved_tokens(organization_id, estimated_total_tokens)
                 except Exception as rel_err:
                     logger.error("Failed to release tokens: %s", rel_err)
+                if analytics_payload is not None:
+                    analytics_payload.llm_provider = candidate.provider
+                    analytics_payload.llm_model = candidate.model
+                    analytics_payload.llm_prompt_tokens = _estimate_prompt_tokens(system_prompt, input_vars)
+                    analytics_payload.llm_completion_tokens = 0
+                    analytics_payload.llm_total_tokens = analytics_payload.llm_prompt_tokens
+                    _set_analytics_completion(
+                        analytics_payload,
+                        message_id=None,
+                        completion_status="pre_stream_failure",
+                        partial_response_length=0,
+                    )
+                    await rag_analytics_service.record_request(supabase, analytics_payload)
                 if _is_timeout_error(e):
                     payload = build_error_payload(
                         "LLM_TIMEOUT",
@@ -2516,19 +2876,101 @@ async def stream_chat_response(
                 return
 
         if last_exc:
-            logger.error("Streaming error: %s", last_exc)
+            _record_rag_stream_failure(last_provider, "pre_output")
+            logger.error("Streaming error before output provider=%s: %s", last_provider or "unknown", last_exc)
             sentry_sdk.capture_exception(last_exc)
             # GAP 1 FIX: Release reserved tokens when all providers fail
             try:
                 await release_reserved_tokens(organization_id, estimated_total_tokens)
             except Exception as rel_err:
                 logger.error("Failed to release tokens: %s", rel_err)
+            if analytics_payload is not None:
+                analytics_payload.llm_provider = last_provider
+                analytics_payload.llm_model = last_model
+                analytics_payload.llm_completion_tokens = 0
+                if analytics_payload.llm_prompt_tokens is not None:
+                    analytics_payload.llm_total_tokens = analytics_payload.llm_prompt_tokens
+                _set_analytics_completion(
+                    analytics_payload,
+                    message_id=None,
+                    completion_status="pre_stream_failure",
+                    partial_response_length=0,
+                )
+                await rag_analytics_service.record_request(supabase, analytics_payload)
             payload = build_error_payload(
                 "LLM_FAILED",
                 "LLM generation failed.",
                 {"reason": str(last_exc)[:500]},
             )
             yield _safe_sse_json({'type': 'error', **payload})
+
+
+async def _stream_no_answer_response(
+    question: str,
+    answer: str,
+    sources: list[dict[str, Any]],
+    conversation_id: str | None,
+    supabase,
+    scope_context: ScopeContext | None = None,
+    organization_id: str = "",
+    analytics_payload: RAGAnalyticsPayload | None = None,
+) -> AsyncGenerator[str, None]:
+    """Emit a deterministic no-answer SSE response without invoking the LLM."""
+    scope_name = scope_context.scope_name if scope_context else None
+
+    searching_message = "Searching knowledge base..."
+    if scope_name:
+        searching_message = f"Searching {scope_name}..."
+    yield _safe_sse_json(
+        {'type': 'status', 'step': 'searching', 'message': searching_message, 'details': {'scopeName': scope_name}}
+    )
+    await asyncio.sleep(0.15)
+
+    yield _safe_sse_json(
+        {'type': 'status', 'step': 'analyzing', 'message': 'Analyzing context...', 'details': {'sourceCount': 0}}
+    )
+    await asyncio.sleep(0.15)
+
+    yield _safe_sse_json(
+        {
+            'type': 'status',
+            'step': 'found',
+            'message': 'No relevant sources found',
+            'details': {'sourceCount': 0, 'scopeName': scope_name},
+        }
+    )
+
+    yield _safe_sse_json({'type': 'token', 'content': answer})
+    yield _safe_sse_json({'type': 'sources', 'sources': sources})
+
+    if scope_context:
+        yield _safe_sse_json({'type': 'scope_context', 'scope_context': scope_context.model_dump()})
+
+    message_id = save_messages(
+        supabase,
+        conversation_id,
+        question,
+        answer,
+        sources,
+        organization_id=organization_id,
+    )
+    if analytics_payload is not None:
+        _set_analytics_completion(
+            analytics_payload,
+            message_id=message_id,
+            completion_status=_completion_status_for_message(message_id),
+        )
+        await rag_analytics_service.record_request(supabase, analytics_payload)
+
+    _save_warning = None
+    if message_id is None and conversation_id:
+        _save_warning = "MESSAGE_SAVE_FAILED"
+        _report_message_save_failure(conversation_id, organization_id)
+
+    done_event = {'type': 'done', 'message_id': message_id}
+    if _save_warning:
+        done_event['warning'] = _save_warning
+    yield _safe_sse_json(done_event)
 
 
 def save_messages(

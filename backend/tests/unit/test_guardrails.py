@@ -67,6 +67,16 @@ async def test_analyze_query_fallback_on_error():
     assert result.intent == "RAG_QUERY"
 
 
+@pytest.mark.asyncio
+async def test_run_json_prompt_reuses_shared_cleanup_logic():
+    service = GuardrailService()
+    service._get_model = lambda: FakeModel("```json\n{\"faithful\": false, \"score\": 0.2}\n```")
+
+    result = await service.run_json_prompt("judge this")
+
+    assert result == {"faithful": False, "score": 0.2}
+
+
 def test_get_model_falls_back_to_openai(monkeypatch):
     service = GuardrailService()
     sentinel = FakeModel("{\"language\":\"en\"}")

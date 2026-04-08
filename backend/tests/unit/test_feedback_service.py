@@ -9,7 +9,7 @@ Tests cover:
 - Source metrics
 """
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -87,6 +87,42 @@ class TestSubmitFeedback:
         assert result["id"] == "fb-existing"
         assert result["rating"] == "negative"
         assert result["is_update"] is True
+
+    @pytest.mark.asyncio
+    async def test_submit_feedback_updates_rag_analytics_best_effort(self):
+        mock_supabase = MagicMock()
+        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = Mock(data=None)
+        mock_supabase.table.return_value.insert.return_value.execute.return_value = Mock(
+            data=[{
+                "id": "fb-123",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }]
+        )
+
+        service = FeedbackService()
+
+        with patch(
+            "services.feedback_service.rag_analytics_service.update_feedback",
+            new=AsyncMock(return_value=True),
+        ) as mock_update:
+            await service.submit_feedback(
+                supabase=mock_supabase,
+                user_id="user-123",
+                organization_id="org-456",
+                message_id="msg-789",
+                conversation_id="conv-101",
+                rating="positive",
+                query_text="What is AI?",
+                answer_preview="AI stands for...",
+                sources_snapshot=[{"doc_id": "doc-1"}],
+            )
+
+        mock_update.assert_awaited_once_with(
+            mock_supabase,
+            message_id="msg-789",
+            rating="positive",
+        )
 
     @pytest.mark.asyncio
     async def test_invalid_rating_raises_error(self):

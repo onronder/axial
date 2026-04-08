@@ -100,6 +100,7 @@ def test_llm_metrics_defined():
         llm_request_duration,
         llm_routing_decisions,
         llm_tokens_total,
+        rag_stream_failures_total,
         retrieval_score,
         semantic_cache_ops,
     )
@@ -109,13 +110,21 @@ def test_llm_metrics_defined():
     assert retrieval_score is not None
     assert semantic_cache_ops is not None
     assert guardrail_classifications is not None
+    assert rag_stream_failures_total is not None
 
 
 def test_llm_metrics_have_correct_labels():
     """H8: Verify metric label names."""
-    from core.metrics import METRICS_ENABLED, llm_request_duration, llm_tokens_total
+    from core.metrics import (
+        METRICS_ENABLED,
+        llm_request_duration,
+        llm_tokens_total,
+        rag_stream_failures_total,
+    )
 
     if METRICS_ENABLED:
         assert "provider" in llm_request_duration._labelnames
         assert "model" in llm_request_duration._labelnames
         assert "type" in llm_tokens_total._labelnames
+        assert "provider" in rag_stream_failures_total._labelnames
+        assert "phase" in rag_stream_failures_total._labelnames

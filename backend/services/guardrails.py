@@ -363,15 +363,8 @@ class GuardrailService:
             )
 
         try:
-            model = self._get_model()
             prompt = GUARDRAIL_PROMPT.replace("{query}", query.replace('"', '\\"'))
-
-            # Invoke the model
-            response = await model.ainvoke(prompt)
-            raw_output = response.content.strip()
-
-            # Parse JSON from response
-            result = self._parse_json_response(raw_output)
+            result = self._parse_json_response(await self.run_json_prompt(prompt, raw=True))
 
             logger.debug(f"🛡️ [Guardrails] Query: '{query[:50]}...' → {result}")
             return result
@@ -470,36 +463,49 @@ class GuardrailService:
 
         return llm_result
 
-    def _parse_json_response(self, raw: str) -> GuardrailResult:
-        """Parse JSON from LLM response, handling edge cases."""
-        data = {}
+    async def run_json_prompt(
+        self,
+        prompt: str,
+        *,
+        raw: bool = False,
+    ) -> dict[str, Any] | str:
+        """Run a JSON-only guardrail prompt via the shared guardrail model."""
+        model = self._get_model()
+        response = await model.ainvoke(prompt)
+        raw_output = (getattr(response, "content", "") or "").strip()
+        if raw:
+            return raw_output
+        return self._extract_json_object(raw_output)
+
+    def _extract_json_object(self, raw: str) -> dict[str, Any]:
+        """Extract a JSON object from an LLM response, tolerating code fences and noise."""
+        data: dict[str, Any] = {}
         try:
-            # Try helper to extract JSON blob first
             json_str = raw
             if "```" in raw:
-                # Extract content between code blocks
                 matches = re.findall(r"```(?:json)?(.*?)```", raw, re.DOTALL)
                 if matches:
                     json_str = matches[0].strip()
 
-            # Additional cleanup for potential noises
             json_str = json_str.strip()
             if not json_str.startswith("{"):
-                # Try finding array or object
                 start = json_str.find("{")
                 end = json_str.rfind("}")
                 if start != -1 and end != -1:
                     json_str = json_str[start:end+1]
 
             data = json.loads(json_str)
-
             if not isinstance(data, dict):
-                 logger.warning(f"⚠️ [Guardrails] JSON is not a dict: {type(data)}")
-                 data = {}
-
+                logger.warning(f"⚠️ [Guardrails] JSON is not a dict: {type(data)}")
+                return {}
+            return data
         except Exception as e:
             logger.warning(f"⚠️ [Guardrails] Failed to parse JSON: {e} | Raw: {raw[:100]}...")
-            data = {}
+            return {}
+
+    def _parse_json_response(self, raw: str) -> GuardrailResult:
+        """Parse JSON from LLM response, handling edge cases."""
+        data = self._extract_json_object(raw)
 
         # Map parsed data to result with safe defaults
         return GuardrailResult(

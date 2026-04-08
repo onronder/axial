@@ -26,6 +26,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from services.rag_analytics import rag_analytics_service
+
 logger = logging.getLogger(__name__)
 
 
@@ -137,6 +139,19 @@ class FeedbackService:
 
         if not result.data:
             raise RuntimeError("Failed to save feedback")
+
+        try:
+            await rag_analytics_service.update_feedback(
+                supabase,
+                message_id=message_id,
+                rating=rating,
+            )
+        except Exception as e:
+            logger.warning(
+                "[Feedback] rag_analytics update failed for message=%s: %s",
+                message_id[:8],
+                e,
+            )
 
         return {
             "id": result.data[0]["id"],

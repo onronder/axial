@@ -22,6 +22,7 @@ from api.v1.error_utils import ApiErrorCode, api_error
 from core.db import get_supabase
 from core.rate_limit import limiter
 from core.security import get_current_user
+from services.compliance_switch import compliance_switch
 from services.scope_analysis import (
     analyze_scope_distribution,
 )
@@ -137,6 +138,7 @@ async def search_documents(
 
     # 2. Execute Hybrid Search (scope-aware)
     organization_id = await team_service.get_organization_id(user_id)
+    search_language = "simple"  # Short-term FTS strategy is globally normalized.
 
     # Apply scope-level access control: intersect requested scopes with allowed scopes
     effective_scope_ids = payload.scope_ids
@@ -162,6 +164,7 @@ async def search_documents(
                 "filter_org_id": organization_id,
                 "filter_scope_ids": effective_scope_ids,
                 "similarity_threshold": payload.threshold,
+                "search_language": search_language,
             }).execute()
         else:
             # Standard hybrid search (now includes scope_id)
@@ -171,6 +174,7 @@ async def search_documents(
                 "match_count": payload.limit,
                 "filter_org_id": organization_id,
                 "similarity_threshold": payload.threshold,
+                "search_language": search_language,
             }).execute()
 
         matches = response.data or []
@@ -178,6 +182,9 @@ async def search_documents(
 
         # GHOST PROTOCOL: Decrypt content before returning
         matches = _decrypt_search_results(matches)
+
+        # Defense-in-depth: filter tombstoned docs in app layer as well.
+        matches = await compliance_switch.filter_tombstoned_docs(matches, organization_id)
 
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "search")
