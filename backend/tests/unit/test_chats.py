@@ -909,6 +909,66 @@ class TestChatEndpointPaths:
                 )
             assert exc.value.status_code == 500
 
+    @pytest.mark.parametrize(
+        ("detected_language", "expected_regconfig"),
+        [("tr", "turkish"), ("ja", "simple")],
+    )
+    async def test_chat_passes_language_aware_search_regconfig(
+        self,
+        detected_language,
+        expected_regconfig,
+    ):
+        from uuid import uuid4
+
+        from fastapi import BackgroundTasks, Request
+
+        request = MagicMock(spec=Request)
+        request.client.host = "127.0.0.1"
+        background_tasks = BackgroundTasks()
+
+        guardrail = make_guardrail_result(
+            is_safe=True,
+            intent="RAG_QUERY",
+            language=detected_language,
+        )
+
+        supabase = MagicMock()
+        captured_rpc = {}
+
+        def fake_rpc(name, params):
+            captured_rpc["name"] = name
+            captured_rpc["params"] = params
+            rpc_result = MagicMock()
+            rpc_result.execute.side_effect = Exception("hybrid fail")
+            return rpc_result
+
+        supabase.rpc.side_effect = fake_rpc
+        supabase.table().select().eq().single().execute.return_value = Mock(data={"plan": "starter"})
+
+        embeddings = MagicMock()
+        embeddings.embed_query.return_value = [0.1]
+
+        with patch("api.v1.chat.get_supabase", return_value=supabase), \
+             patch("api.v1.chat.guardrail_service.analyze_query_with_context", return_value=guardrail), \
+             patch("api.v1.chat.llm_router.select_model", return_value=SimpleNamespace(provider="openai", model="gpt-4o")), \
+             patch("api.v1.chat.condense_question", new_callable=AsyncMock, return_value="ask"), \
+             patch("services.embeddings.get_embeddings_model", return_value=embeddings), \
+             patch("api.v1.chat.settings.RAG_RETRIEVAL_THRESHOLD", 0.1):
+            from api.v1.chat import ChatRequest, chat_endpoint
+
+            with pytest.raises(HTTPException) as exc:
+                await chat_endpoint(
+                    request,
+                    ChatRequest(query="ask", conversation_id=str(uuid4()), model="auto"),
+                    background_tasks,
+                    user_id="user-1",
+                    allowed_scopes=None,
+                )
+
+        assert exc.value.status_code == 500
+        assert captured_rpc["name"] in {"hybrid_search", "hybrid_search_scoped"}
+        assert captured_rpc["params"]["search_language"] == expected_regconfig
+
 
 @pytest.mark.asyncio
 async def test_stream_chat_response_emits_events():

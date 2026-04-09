@@ -13,6 +13,7 @@ import logging
 from typing import Any
 from uuid import uuid4
 
+from core.language_config import get_regconfig
 from core.scopes import (
     CANONICAL_PROVIDER_BY_ALIAS,
     SCOPE_PREFIX_BY_PROVIDER,
@@ -110,6 +111,7 @@ def prepare_chunks_for_ghost_protocol(
 
     for chunk in chunks_payload:
         content = chunk.get("content") or ""
+        detected_language = _detect_chunk_language(content)
 
         if HAS_CHUNK_ENCRYPTION:
             # Encrypt content for storage
@@ -126,7 +128,8 @@ def prepare_chunks_for_ghost_protocol(
             "document_id": str(document_id),
             "content_encrypted": content_encrypted,
             "content_plaintext": content_plaintext,
-            "language": _detect_chunk_language(content_plaintext),
+            "language": detected_language,
+            "language_regconfig": get_regconfig(detected_language),
             "embedding": chunk.get("embedding"),
             "chunk_index": chunk.get("chunk_index", 0),
         }

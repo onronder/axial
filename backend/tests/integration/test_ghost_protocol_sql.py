@@ -68,6 +68,15 @@ def test_document(supabase_client):
         pass
 
 
+def _get_document_org_id(supabase_client, document_id: str) -> str:
+    result = supabase_client.table("documents")\
+        .select("organization_id")\
+        .eq("id", document_id)\
+        .single()\
+        .execute()
+    return result.data["organization_id"]
+
+
 class TestContentSearchColumn:
     """Tests for the content_search TSVECTOR column."""
 
@@ -204,6 +213,48 @@ class TestIngestDocumentChunkRPC:
                 pytest.skip("ingest_document_chunk RPC not yet deployed")
             raise
 
+    def test_rpc_uses_language_regconfig_for_tsvector(self, supabase_client, test_document):
+        """Single-row RPC should build content_search with the provided regconfig."""
+        chunk_id = str(uuid4())
+        fake_embedding = [0.01] * 1536
+        org_id = _get_document_org_id(supabase_client, test_document)
+
+        try:
+            supabase_client.rpc(
+                "ingest_document_chunk",
+                {
+                    "p_id": chunk_id,
+                    "p_document_id": test_document,
+                    "p_content_encrypted": "encrypted_kitaplar",
+                    "p_content_plaintext": "kitapların üretimi burada anlatılıyor",
+                    "p_embedding": fake_embedding,
+                    "p_chunk_index": 8,
+                    "p_language": "tr",
+                    "p_language_regconfig": "turkish",
+                }
+            ).execute()
+
+            result = supabase_client.rpc(
+                "hybrid_search",
+                {
+                    "query_text": "kitap",
+                    "query_embedding": fake_embedding,
+                    "match_count": 10,
+                    "filter_org_id": org_id,
+                    "similarity_threshold": 0.0,
+                    "search_language": "turkish",
+                }
+            ).execute()
+
+            row = next((item for item in (result.data or []) if item["id"] == chunk_id), None)
+            assert row is not None
+            assert row["keyword_score"] > 0
+
+        except Exception as e:
+            if "function ingest_document_chunk" in str(e).lower():
+                pytest.skip("ingest_document_chunk RPC not yet deployed")
+            raise
+
 
 class TestIngestDocumentChunksBatchRPC:
     """Tests for the ingest_document_chunks_batch RPC function."""
@@ -318,6 +369,52 @@ class TestIngestDocumentChunksBatchRPC:
             rows_by_id = {row["id"]: row for row in result.data or []}
             assert rows_by_id[chunk_one_id]["language"] == "tr"
             assert rows_by_id[chunk_two_id]["language"] is None
+
+        except Exception as e:
+            if "function ingest_document_chunks_batch" in str(e).lower():
+                pytest.skip("ingest_document_chunks_batch RPC not yet deployed")
+            raise
+
+    def test_batch_rpc_uses_language_regconfig_for_tsvector(self, supabase_client, test_document):
+        """Batch RPC should build content_search with the provided regconfig."""
+        fake_embedding = [0.01] * 1536
+        chunk_id = str(uuid4())
+        org_id = _get_document_org_id(supabase_client, test_document)
+
+        chunks = [
+            {
+                "id": chunk_id,
+                "document_id": test_document,
+                "content_encrypted": "encrypted_variances",
+                "content_plaintext": "variances in quarterly reporting",
+                "language": "en",
+                "language_regconfig": "english",
+                "embedding": fake_embedding,
+                "chunk_index": 12,
+            }
+        ]
+
+        try:
+            supabase_client.rpc(
+                "ingest_document_chunks_batch",
+                {"p_chunks": chunks}
+            ).execute()
+
+            result = supabase_client.rpc(
+                "hybrid_search",
+                {
+                    "query_text": "variance",
+                    "query_embedding": fake_embedding,
+                    "match_count": 10,
+                    "filter_org_id": org_id,
+                    "similarity_threshold": 0.0,
+                    "search_language": "english",
+                }
+            ).execute()
+
+            row = next((item for item in (result.data or []) if item["id"] == chunk_id), None)
+            assert row is not None
+            assert row["keyword_score"] > 0
 
         except Exception as e:
             if "function ingest_document_chunks_batch" in str(e).lower():

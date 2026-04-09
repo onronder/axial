@@ -20,9 +20,11 @@ from api.v1.dependencies import (
 )
 from api.v1.error_utils import ApiErrorCode, api_error
 from core.db import get_supabase
+from core.language_config import get_regconfig
 from core.rate_limit import limiter
 from core.security import get_current_user
 from services.compliance_switch import compliance_switch
+from services.language_detector import language_detector
 from services.scope_analysis import (
     analyze_scope_distribution,
 )
@@ -138,7 +140,8 @@ async def search_documents(
 
     # 2. Execute Hybrid Search (scope-aware)
     organization_id = await team_service.get_organization_id(user_id)
-    search_language = "simple"  # Short-term FTS strategy is globally normalized.
+    query_lang = language_detector.detect(payload.query)
+    search_language = get_regconfig(query_lang)
 
     # Apply scope-level access control: intersect requested scopes with allowed scopes
     effective_scope_ids = payload.scope_ids

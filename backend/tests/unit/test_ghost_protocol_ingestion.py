@@ -136,6 +136,45 @@ class TestPrepareChunksForGhostProtocol:
 
         assert prepared[0]["language"] == "tr"
 
+    def test_includes_language_regconfig_for_supported_language(self, monkeypatch):
+        """Prepared chunk payload should include mapped regconfig for supported languages."""
+        import core.security as security
+        monkeypatch.setattr(security, "HAS_CHUNK_ENCRYPTION", False)
+
+        chunks = [{"content": "Merhaba dunya bu metin yeterince uzundur.", "embedding": [0.1] * 1536, "chunk_index": 0}]
+        doc_id = str(uuid4())
+
+        with patch("core.ingestion_utils._detect_chunk_language", return_value="tr"):
+            prepared, _ = prepare_chunks_for_ghost_protocol(chunks, doc_id)
+
+        assert prepared[0]["language_regconfig"] == "turkish"
+
+    def test_includes_simple_regconfig_for_unsupported_language(self, monkeypatch):
+        """Unsupported languages should fall back to the simple regconfig."""
+        import core.security as security
+        monkeypatch.setattr(security, "HAS_CHUNK_ENCRYPTION", False)
+
+        chunks = [{"content": "unsupported language sample", "embedding": [0.1] * 1536, "chunk_index": 0}]
+        doc_id = str(uuid4())
+
+        with patch("core.ingestion_utils._detect_chunk_language", return_value="ja"):
+            prepared, _ = prepare_chunks_for_ghost_protocol(chunks, doc_id)
+
+        assert prepared[0]["language_regconfig"] == "simple"
+
+    def test_includes_simple_regconfig_for_null_language(self, monkeypatch):
+        """Missing language detection should also fall back to the simple regconfig."""
+        import core.security as security
+        monkeypatch.setattr(security, "HAS_CHUNK_ENCRYPTION", False)
+
+        chunks = [{"content": "short", "embedding": [0.1] * 1536, "chunk_index": 0}]
+        doc_id = str(uuid4())
+
+        with patch("core.ingestion_utils._detect_chunk_language", return_value=None):
+            prepared, _ = prepare_chunks_for_ghost_protocol(chunks, doc_id)
+
+        assert prepared[0]["language_regconfig"] == "simple"
+
     def test_encryption_disabled_returns_plaintext(self, monkeypatch):
         """With encryption disabled, content_encrypted should equal plaintext."""
         import core.security as security

@@ -45,6 +45,7 @@ from core.config import settings
 from core.db import get_supabase
 from core.exceptions import QuotaExceededError
 from core.ingestion_utils import normalize_source_type
+from core.language_config import get_regconfig
 from core.metrics import rag_stream_failures_total
 from core.rate_limit import limiter, user_limiter
 from core.resilience import CircuitBreakerOpen, is_retryable_error, openai_breaker
@@ -1720,7 +1721,7 @@ async def chat_endpoint(
 
     # ========== STEP 8: HYBRID SEARCH (Scope-Aware) ==========
     _DB_RPC_TIMEOUT = 15  # seconds
-    search_language = "simple"  # Short-term FTS strategy is globally normalized.
+    search_language = get_regconfig(detected_language)
 
     try:
         if explicit_scope:
