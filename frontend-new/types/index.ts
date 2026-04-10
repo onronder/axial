@@ -181,7 +181,7 @@ export type DocumentSourceType =
   | 'sharepoint'
   | 'dropbox'
   | 'local';
-export type DocumentStatus = 'indexed' | 'processing' | 'error';
+export type DocumentStatus = 'indexed' | 'processing' | 'error' | 'failed' | 'pending' | 'completed';
 
 export interface Document {
     id: string;

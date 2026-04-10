@@ -23,7 +23,7 @@ httpx
 black
 isort
 python-dotenv
-fast-langdetect>=0.2.0,<2.0.0
+fast-langdetect==0.2.0
 langchain-openai
 trafilatura
 slowapi

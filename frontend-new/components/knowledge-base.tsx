@@ -30,6 +30,10 @@ interface Document {
     created_at: string
 }
 
+interface DocumentsResponse {
+    documents: Document[]
+}
+
 export function KnowledgeBase() {
     const [searchQuery, setSearchQuery] = useState("")
 
@@ -42,7 +46,10 @@ export function KnowledgeBase() {
         setError(null)
         try {
             const response = await authFetch.get('/documents')
-            setDocuments(response.data)
+            const payload = Array.isArray(response.data)
+                ? { documents: response.data }
+                : (response.data as DocumentsResponse)
+            setDocuments(payload.documents || [])
         } catch (err: unknown) {
             if (process.env.NODE_ENV !== 'production') {
                 console.error(err)

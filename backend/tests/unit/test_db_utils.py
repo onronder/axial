@@ -185,6 +185,42 @@ def test_insert_rows_with_retry_retries_then_succeeds(monkeypatch):
     retry_success.inc.assert_called_once()
 
 
+def test_insert_rows_with_retry_suppresses_intermediate_warning_logs(monkeypatch):
+    import core.db_utils as db_utils
+
+    class DummyError(Exception):
+        status_code = 429
+
+    table = MagicMock()
+    table.insert.return_value = table
+    table.execute.side_effect = [
+        DummyError("rate limit"),
+        DummyError("rate limit again"),
+        SimpleNamespace(data=[{"id": "doc-1"}]),
+    ]
+
+    supabase = MagicMock()
+    supabase.table.return_value = table
+
+    monkeypatch.setattr(db_utils.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(db_utils.random, "uniform", lambda _a, _b: 0.0)
+    warning = MagicMock()
+    debug = MagicMock()
+    monkeypatch.setattr(db_utils.logger, "warning", warning)
+    monkeypatch.setattr(db_utils.logger, "debug", debug)
+
+    db_utils.insert_rows_with_retry(
+        supabase,
+        "documents",
+        [{"id": "doc-1"}],
+        context="retry",
+        max_attempts=3,
+    )
+
+    warning.assert_called_once()
+    debug.assert_called_once()
+
+
 def test_insert_rows_with_retry_non_retryable_raises(monkeypatch):
     import core.db_utils as db_utils
 
@@ -280,6 +316,45 @@ def test_delete_rows_with_retry_retries_then_fails(monkeypatch):
 
     assert retry_total.inc.call_count == 2
     retry_failure.inc.assert_called_once()
+
+
+def test_delete_rows_with_retry_logs_first_and_last_attempts(monkeypatch):
+    import core.db_utils as db_utils
+
+    class DummyError(Exception):
+        status_code = 503
+
+    table = MagicMock()
+    table.delete.return_value = table
+    table.eq.return_value = table
+    table.execute.side_effect = [
+        DummyError("down"),
+        DummyError("still down"),
+        DummyError("terminal"),
+    ]
+
+    supabase = MagicMock()
+    supabase.table.return_value = table
+
+    monkeypatch.setattr(db_utils.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(db_utils.random, "uniform", lambda _a, _b: 0.0)
+    warning = MagicMock()
+    debug = MagicMock()
+    monkeypatch.setattr(db_utils.logger, "warning", warning)
+    monkeypatch.setattr(db_utils.logger, "debug", debug)
+
+    with pytest.raises(DummyError):
+        db_utils.delete_rows_with_retry(
+            supabase,
+            "documents",
+            "id",
+            "doc-1",
+            context="delete",
+            max_attempts=3,
+        )
+
+    assert warning.call_count == 2
+    debug.assert_called_once()
 
 
 def test_delete_rows_with_retry_records_retry_success(monkeypatch):

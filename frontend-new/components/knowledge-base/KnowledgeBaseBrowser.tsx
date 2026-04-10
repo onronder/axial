@@ -21,13 +21,6 @@ import { Button } from "@/components/ui/button";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { SettingsPagination } from "@/components/settings/SettingsPagination";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -57,6 +50,7 @@ import { useDocuments } from "@/hooks/useDocuments";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { StorageMeter } from "@/components/documents/StorageMeter";
+import { FailedDocumentsPanel } from "@/components/documents/FailedDocumentsPanel";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -171,7 +165,9 @@ export function KnowledgeBaseBrowser() {
   // Hooks
   const {
     documents,
+    failedFiles = [],
     totalCount,
+    failedCount = 0,
     isLoading: isRefreshing,
     refresh: handleRefresh,
     deleteDocument,
@@ -441,6 +437,12 @@ export function KnowledgeBaseBrowser() {
             </span>
           </div>
         )}
+
+        <FailedDocumentsPanel
+          failedFiles={failedFiles}
+          failedCount={failedCount}
+          description="Failed ingestions are excluded from the folder tree and shown here as a separate recovery queue."
+        />
       </div>
 
       <div className="glass-card rounded-xl border border-white/10 shadow-glow overflow-hidden">

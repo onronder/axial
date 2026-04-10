@@ -101,6 +101,31 @@ class TestSearchDocuments:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
+    async def test_search_documents_logs_redacted_query_metadata(self):
+        supabase = MagicMock()
+        supabase.rpc.return_value.execute.return_value = Mock(data=[{"id": "doc-1"}])
+        mock_embeddings = MagicMock()
+        mock_embeddings.embed_query.return_value = [0.1, 0.2]
+
+        with patch("api.v1.search.get_supabase", return_value=supabase), \
+             patch("services.embeddings.get_embeddings_model", return_value=mock_embeddings), \
+             patch(
+                 "api.v1.search.compliance_switch.filter_tombstoned_docs",
+                 new=AsyncMock(return_value=[{"id": "doc-1"}]),
+             ), \
+             patch("api.v1.search.logger.info") as mock_logger_info:
+            await search_documents(
+                request=_make_mock_request(),
+                payload=SearchRequest(query="top secret search text", limit=5, threshold=0.2),
+                user_id="user-1",
+            )
+
+        logged_args = mock_logger_info.call_args.args
+        assert "top secret search text" not in str(logged_args)
+        assert "query=" in logged_args[0]
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_search_documents_embedding_failure(self):
         supabase = MagicMock()
         mock_embeddings = MagicMock()

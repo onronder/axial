@@ -82,7 +82,6 @@ jobs:
   security-audit:
     name: Dependency Security Audit
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -97,9 +96,9 @@ jobs:
       - name: Audit Python dependencies
         run: |
           pip install pip-audit
-          pip-audit -r backend/requirements.txt --desc || true
+          pip-audit -r backend/requirements.txt --desc
       - name: Audit Node dependencies
-        run: cd frontend-new && npm audit --audit-level=high || true
+        run: cd frontend-new && npm audit --audit-level=high
 
   frontend:
     name: Frontend Build & Lint

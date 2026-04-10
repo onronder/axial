@@ -416,12 +416,15 @@ class TestChatHelpers:
         prompt = MagicMock()
         prompt.__or__.return_value = MagicMock(__or__=MagicMock(return_value=chain))
 
-        with patch("api.v1.chat.LLMFactory") as mock_factory:
+        with patch("api.v1.chat.LLMFactory") as mock_factory, \
+             patch("api.v1.chat.logger.info") as mock_logger_info:
             mock_factory.get_model.return_value = (MagicMock(), {})
             with patch("api.v1.chat.ChatPromptTemplate.from_template", return_value=prompt):
                 result = await api.v1.chat.condense_question("Hello?", [{"role": "user", "content": "Context"}])
 
         assert result == "Standalone"
+        assert "Hello?" not in str(mock_logger_info.call_args)
+        assert "Standalone" not in str(mock_logger_info.call_args)
 
 
 class TestChatSafety:
@@ -455,6 +458,10 @@ class TestChatSafety:
 
         assert result.answer == "Blocked"
         audit_log.assert_called_once()
+        audit_details = audit_log.call_args.kwargs["details"]
+        assert audit_details["query_len"] == 3
+        assert "query_hash" in audit_details
+        assert "query" not in audit_details
 
 
 class TestConversationErrorPaths:

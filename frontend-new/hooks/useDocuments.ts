@@ -38,6 +38,13 @@ interface BackendDocument {
     metadata?: DocumentMetadata;
 }
 
+interface BackendDocumentsResponse {
+    documents: BackendDocument[];
+    failed_files?: BackendDocument[];
+    total_documents?: number;
+    failed_count?: number;
+}
+
 /**
  * Map backend document response to frontend Document interface.
  */
@@ -70,6 +77,13 @@ interface FetchDocsParams {
     signal?: AbortSignal;
 }
 
+interface FetchDocumentsResult {
+    documents: Document[];
+    failedFiles: Document[];
+    total: number;
+    failedCount: number;
+}
+
 interface BulkDeletePayload {
     documentIds?: string[];
     sourceType?: string;
@@ -78,7 +92,7 @@ interface BulkDeletePayload {
 /**
  * Fetch documents from the API with pagination.
  */
-export async function fetchDocuments({ page, pageSize, search, signal }: FetchDocsParams): Promise<{ documents: Document[], total: number }> {
+export async function fetchDocuments({ page, pageSize, search, signal }: FetchDocsParams): Promise<FetchDocumentsResult> {
     const response = await api.get("/documents", {
         params: {
             limit: pageSize,
@@ -88,18 +102,39 @@ export async function fetchDocuments({ page, pageSize, search, signal }: FetchDo
         signal,
     });
 
-    // Check for X-Total-Count header
-    const totalHeader = response.headers['x-total-count'];
-    const total = totalHeader ? parseInt(totalHeader, 10) : response.data.length;
+    const payload: BackendDocumentsResponse = Array.isArray(response.data)
+        ? {
+            documents: response.data,
+            failed_files: [],
+            total_documents: response.headers['x-total-count']
+                ? parseInt(response.headers['x-total-count'], 10)
+                : response.data.length,
+            failed_count: response.headers['x-failed-count']
+                ? parseInt(response.headers['x-failed-count'], 10)
+                : 0,
+        }
+        : response.data;
 
-    const filtered = response.data.filter((doc: BackendDocument) => {
+    const totalHeader = response.headers['x-total-count'];
+    const failedHeader = response.headers['x-failed-count'];
+    const total = payload.total_documents ?? (totalHeader ? parseInt(totalHeader, 10) : payload.documents.length);
+    const failedCount = payload.failed_count ?? (failedHeader ? parseInt(failedHeader, 10) : payload.failed_files?.length ?? 0);
+
+    const filtered = (payload.documents || []).filter((doc: BackendDocument) => {
+        const normalized = normalizeSourceType(doc.source_type) || doc.source_type || "";
+        return normalized !== "identity" && normalized !== "scope_identity";
+    });
+
+    const failedFiles = (payload.failed_files || []).filter((doc: BackendDocument) => {
         const normalized = normalizeSourceType(doc.source_type) || doc.source_type || "";
         return normalized !== "identity" && normalized !== "scope_identity";
     });
 
     return {
         documents: filtered.map(mapDocument),
-        total
+        total,
+        failedFiles: failedFiles.map(mapDocument),
+        failedCount,
     };
 }
 
@@ -171,7 +206,9 @@ export const useDocuments = (
 
     // Keep stable fallbacks to avoid rerender loops while the query is loading
     const documents = data?.documents ?? EMPTY_DOCS;
+    const failedFiles = data?.failedFiles ?? EMPTY_DOCS;
     const totalCount = data?.total ?? 0;
+    const failedCount = data?.failedCount ?? 0;
 
     // Mutation for deleting documents
     const deleteMutation = useMutation({
@@ -181,12 +218,22 @@ export const useDocuments = (
             await queryClient.cancelQueries({ queryKey: DOCUMENTS_KEY });
 
             // Snapshot current state for rollback
-            const previous = queryClient.getQueriesData<{ documents: Document[]; total: number }>({
+            const previous = queryClient.getQueriesData<{
+                documents: Document[];
+                failedFiles: Document[];
+                total: number;
+                failedCount: number;
+            }>({
                 queryKey: DOCUMENTS_KEY,
             });
 
             // Optimistic update - remove immediately from UI
-            queryClient.setQueriesData<{ documents: Document[]; total: number }>({ queryKey: DOCUMENTS_KEY }, (old) => {
+            queryClient.setQueriesData<{
+                documents: Document[];
+                failedFiles: Document[];
+                total: number;
+                failedCount: number;
+            }>({ queryKey: DOCUMENTS_KEY }, (old) => {
                 if (!old) return old;
                 const filtered = old.documents.filter((doc) => doc.id !== deletedId);
                 if (filtered.length === old.documents.length) return old;
@@ -274,7 +321,9 @@ export const useDocuments = (
 
     return {
         documents,
+        failedFiles,
         totalCount,
+        failedCount,
         isLoading,
         error: error ? (error as Error).message : null,
         refresh: refetch,

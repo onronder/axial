@@ -22,6 +22,7 @@ from api.v1.dependencies import (
 from api.v1.error_utils import ApiErrorCode, api_error
 from core.db import get_supabase
 from core.language_config import get_regconfig
+from core.log_safety import describe_query
 from core.rate_limit import limiter
 from core.security import get_current_user
 from services.compliance_switch import compliance_switch
@@ -198,7 +199,11 @@ async def search_documents(
             )
 
         matches = response.data or []
-        logger.info(f"📚 [Search] Found {len(matches)} results for query: {payload.query[:50]}...")
+        logger.info(
+            "📚 [Search] Found %s results for query=%s",
+            len(matches),
+            describe_query(payload.query),
+        )
 
         # GHOST PROTOCOL: Decrypt content before returning
         matches = _decrypt_search_results(matches)

@@ -120,10 +120,20 @@ class LanguageDetector:
         sample = normalized_text[:_MAX_SAMPLE_CHARS]
 
         try:
-            result = self._run_detection(module, sample)
+            result, variant = self._run_detection(module, sample)
         except Exception as exc:
-            logger.warning("Language detection failed: %s", exc)
+            logger.warning(
+                "Language detection failed: error_type=%s text_len=%s",
+                type(exc).__name__,
+                len(sample),
+            )
             return None
+
+        logger.debug(
+            "Language detection succeeded via %s (fast-langdetect=%s)",
+            variant,
+            getattr(module, "__version__", "unknown"),
+        )
 
         language, confidence = _extract_detection(result)
         if language is None:
@@ -134,34 +144,34 @@ class LanguageDetector:
 
         return language
 
-    def _run_detection(self, module: Any, text: str) -> Any:
+    def _run_detection(self, module: Any, text: str) -> tuple[Any, str]:
         detect_fn = getattr(module, "detect", None)
         if callable(detect_fn):
             call_variants = (
-                ((text,), {"model": "lite", "k": 1}),
-                ((text,), {"model": "lite"}),
-                ((text,), {"low_memory": True}),
-                ((), {"text": text, "model": "lite", "k": 1}),
-                ((), {"text": text, "model": "lite"}),
-                ((), {"text": text, "low_memory": True}),
+                ("detect(text, model='lite', k=1)", (text,), {"model": "lite", "k": 1}),
+                ("detect(text, model='lite')", (text,), {"model": "lite"}),
+                ("detect(text, low_memory=True)", (text,), {"low_memory": True}),
+                ("detect(text=<text>, model='lite', k=1)", (), {"text": text, "model": "lite", "k": 1}),
+                ("detect(text=<text>, model='lite')", (), {"text": text, "model": "lite"}),
+                ("detect(text=<text>, low_memory=True)", (), {"text": text, "low_memory": True}),
             )
-            for args, kwargs in call_variants:
+            for variant_name, args, kwargs in call_variants:
                 try:
-                    return detect_fn(*args, **kwargs)
+                    return detect_fn(*args, **kwargs), variant_name
                 except TypeError:
                     continue
 
         detect_langs_fn = getattr(module, "detect_langs", None)
         if callable(detect_langs_fn):
             call_variants = (
-                ((text,), {"low_memory": True}),
-                ((text,), {}),
-                ((), {"text": text, "low_memory": True}),
-                ((), {"text": text}),
+                ("detect_langs(text, low_memory=True)", (text,), {"low_memory": True}),
+                ("detect_langs(text)", (text,), {}),
+                ("detect_langs(text=<text>, low_memory=True)", (), {"text": text, "low_memory": True}),
+                ("detect_langs(text=<text>)", (), {"text": text}),
             )
-            for args, kwargs in call_variants:
+            for variant_name, args, kwargs in call_variants:
                 try:
-                    return detect_langs_fn(*args, **kwargs)
+                    return detect_langs_fn(*args, **kwargs), variant_name
                 except TypeError:
                     continue
 

@@ -46,6 +46,7 @@ from core.db import get_supabase
 from core.exceptions import QuotaExceededError
 from core.ingestion_utils import normalize_source_type
 from core.language_config import get_regconfig
+from core.log_safety import describe_query, query_log_fields
 from core.metrics import rag_stream_failures_total
 from core.rate_limit import limiter, user_limiter
 from core.resilience import CircuitBreakerOpen, is_retryable_error, openai_breaker
@@ -864,7 +865,11 @@ async def condense_question(query: str, history: list[dict[str, str]]) -> str:
             chain.ainvoke({"history": history_text, "question": query}),
             timeout=10,
         )
-        logger.info(f"🔄 [Chat] Condensed: '{query[:50]}...' → '{standalone[:50]}...'")
+        logger.info(
+            "🔄 [Chat] Condensed query %s → %s",
+            describe_query(query),
+            describe_query(standalone),
+        )
         return standalone.strip()
 
     except asyncio.TimeoutError:
@@ -1512,7 +1517,10 @@ async def chat_endpoint(
             action="safety_violation",
             resource_type="chat",
             resource_id=payload.conversation_id,
-            details={"query": payload.query[:500], "language": detected_language},
+            details={
+                **query_log_fields(payload.query),
+                "language": detected_language,
+            },
             request=request
         )
 

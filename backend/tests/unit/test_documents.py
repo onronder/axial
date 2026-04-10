@@ -108,6 +108,30 @@ class TestDocumentListEndpoint:
     """Tests for GET /api/v1/documents."""
 
     @pytest.mark.unit
+    def test_scope_filter_quotes_postgrest_reserved_characters(self):
+        from api.v1.documents import _build_scope_visibility_filter
+
+        clause = _build_scope_visibility_filter([
+            "gdrive://folder,one",
+            "s3://bucket/path(with-parens)",
+        ])
+
+        assert clause == (
+            'scope_id.in.("gdrive://folder,one","s3://bucket/path(with-parens)"),scope_id.is.null'
+        )
+
+    @pytest.mark.unit
+    def test_scope_filter_drops_control_character_values(self):
+        from api.v1.documents import _build_scope_visibility_filter
+
+        clause = _build_scope_visibility_filter([
+            "gdrive://valid",
+            "s3://bad\nvalue",
+        ])
+
+        assert clause == 'scope_id.in.("gdrive://valid"),scope_id.is.null'
+
+    @pytest.mark.unit
     def test_list_documents_returns_user_documents_only(self, sample_document):
         """Documents endpoint must filter by organization_id."""
         # Verify RLS is properly applied
@@ -136,7 +160,7 @@ class TestDocumentListEndpoint:
             ))
 
         query.eq.assert_any_call("organization_id", "org-1")
-        assert len(result) == 1
+        assert len(result.documents) == 1
 
     @pytest.mark.unit
     def test_list_documents_pagination(self):
@@ -157,7 +181,7 @@ class TestDocumentListEndpoint:
 
         # Mock execution result
         db_res = MagicMock()
-        db_res.data = [{"id": str(i), "title": f"Doc {i}"} for i in range(30)]
+        db_res.data = [{"id": str(i), "title": f"Doc {i}"} for i in range(20, 30)]
         db_res.count = 100
         query.execute.return_value = db_res
 
@@ -179,12 +203,12 @@ class TestDocumentListEndpoint:
             ))
 
             # Verify pagination calls
-            query.range.assert_called_with(0, 20 + 10 - 1)
+            query.range.assert_called_with(20, 20 + 10 - 1)
 
             # Verify headers
             assert mock_response.headers["X-Total-Count"] == "100"
-            assert len(result) == 10
-            assert result[0]["id"] == "20"
+            assert len(result.documents) == 10
+            assert result.documents[0].id == "20"
 
     @pytest.mark.unit
     def test_list_documents_search(self):
@@ -240,7 +264,7 @@ class TestDocumentListEndpoint:
         failed_table.eq.return_value = failed_table
         failed_table.is_.return_value = failed_table
         failed_table.order.return_value = failed_table
-        failed_table.range.return_value = failed_table
+        failed_table.limit.return_value = failed_table
         failed_table.execute.return_value = MagicMock(
             data=[{"id": "fail-1", "filename": "bad.txt", "created_at": "now", "job_id": "job-1"}],
             count=1,
@@ -273,9 +297,13 @@ class TestDocumentListEndpoint:
                 include_failed=True,
             ))
 
-        assert any(doc.get("status") == "failed" for doc in result)
-        assert mock_response.headers["X-Total-Count"] == "2"
-        failed_table.range.assert_called_with(0, 10 - 1)
+        assert not any(doc.status == "failed" for doc in result.documents)
+        assert any(doc.status == "failed" for doc in result.failed_files)
+        assert result.total_documents == 1
+        assert result.failed_count == 1
+        assert mock_response.headers["X-Total-Count"] == "1"
+        assert mock_response.headers["X-Failed-Count"] == "1"
+        failed_table.limit.assert_called_with(10)
 
     @pytest.mark.unit
     def test_list_documents_ordered_by_created_at_desc(self):
@@ -822,7 +850,7 @@ class TestDocumentErrorPaths:
         failed_table.eq.return_value = failed_table
         failed_table.is_.return_value = failed_table
         failed_table.order.return_value = failed_table
-        failed_table.range.return_value = failed_table
+        failed_table.limit.return_value = failed_table
         failed_table.execute.side_effect = Exception("boom")
 
         mock_supabase.table.side_effect = lambda name: {
@@ -844,7 +872,8 @@ class TestDocumentErrorPaths:
                 include_failed=True,
             ))
 
-        assert result
+        assert result.documents
+        assert result.failed_files == []
 
     @pytest.mark.unit
     def test_list_documents_handles_exception(self):

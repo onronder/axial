@@ -358,6 +358,12 @@ encryption_operations = Counter(
     ['operation', 'result']  # encrypt/decrypt, success/failure
 )
 
+encryption_key_usage_total = Counter(
+    'ghost_protocol_encryption_key_usage_total',
+    'Successful content decryptions by key index',
+    ['key_index']
+)
+
 malware_scan_total = Counter(
     'ghost_protocol_malware_scan_total',
     'Malware scan operations',

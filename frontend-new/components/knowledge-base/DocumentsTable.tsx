@@ -58,6 +58,7 @@ import { useDocuments } from "@/hooks/useDocuments";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { StorageMeter } from "@/components/documents/StorageMeter";
+import { FailedDocumentsPanel } from "@/components/documents/FailedDocumentsPanel";
 import { cn } from "@/lib/utils";
 import { normalizeSourceType } from "@/lib/sourceType";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -141,7 +142,9 @@ export function DocumentsTable({ showHeader = true }: DocumentsTableProps) {
 
   const {
     documents,
+    failedFiles = [],
     totalCount,
+    failedCount = 0,
     isLoading: isRefreshing,
     refresh: handleRefresh,
     deleteDocument,
@@ -463,6 +466,12 @@ export function DocumentsTable({ showHeader = true }: DocumentsTableProps) {
           <StorageMeter variant="horizontal" className="w-full" />
         </div>
       )}
+
+      <FailedDocumentsPanel
+        failedFiles={failedFiles}
+        failedCount={failedCount}
+        description="Failed uploads are tracked separately so document pagination stays stable."
+      />
 
       <div className="glass-card rounded-xl border border-white/10 shadow-glow overflow-hidden">
         {/* Toolbar */}

@@ -38,7 +38,7 @@ services:
     # Access via SSH tunnel or internal network only.
     ports: !reset []
     environment:
-      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-changeme}
+      - FLOWER_BASIC_AUTH=${FLOWER_USER:?FLOWER_USER must be set}:${FLOWER_PASSWORD:?FLOWER_PASSWORD must be set}
     deploy:
       resources:
         limits:

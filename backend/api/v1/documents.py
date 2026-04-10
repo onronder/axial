@@ -67,6 +67,17 @@ class DocumentDTO(BaseModel):
     metadata: dict[str, Any]
 
 
+class DocumentListResponse(BaseModel):
+    """Paginated successful documents plus a separate failed-file channel."""
+    documents: list[DocumentDTO]
+    failed_files: list[DocumentDTO] = Field(default_factory=list)
+    total_documents: int
+    failed_count: int = 0
+
+
+FAILED_FILES_PREVIEW_LIMIT = 10
+
+
 def _extract_path_from_document(doc: dict[str, Any]) -> str | None:
     """
     Extract path/location from document metadata based on source type.
@@ -114,6 +125,35 @@ def _extract_path_from_document(doc: dict[str, Any]) -> str | None:
             path = parts[-1]  # Just filename
 
     return path
+
+
+def _quote_postgrest_filter_value(value: str) -> str | None:
+    """
+    Quote a PostgREST filter value for `in.(...)` lists.
+
+    Scope IDs are canonical URI-like TEXT values, not UUIDs. Reserved characters
+    such as commas and parentheses must be wrapped/escaped or the filter parser
+    can misread them.
+    """
+    if any(ch in value for ch in ("\x00", "\n", "\r")):
+        logger.warning("Dropping malformed scope filter value with control chars")
+        return None
+
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _build_scope_visibility_filter(scope_ids: list[str]) -> str:
+    quoted_values = [
+        quoted
+        for scope_id in scope_ids
+        if isinstance(scope_id, str) and scope_id.strip()
+        for quoted in [_quote_postgrest_filter_value(scope_id.strip())]
+        if quoted is not None
+    ]
+    if not quoted_values:
+        return "scope_id.is.null"
+    return f"scope_id.in.({','.join(quoted_values)}),scope_id.is.null"
 
 
 class DocumentStatsDTO(BaseModel):
@@ -245,7 +285,7 @@ async def get_document_stats(
 from fastapi import Response
 
 
-@router.get("/documents", response_model=list[DocumentDTO])
+@router.get("/documents", response_model=DocumentListResponse)
 @limiter.limit("60/minute")
 async def list_documents(
     request: Request,
@@ -259,7 +299,8 @@ async def list_documents(
     include_failed: bool = True  # New param to include failed files
 ):
     supabase = get_supabase()
-    page_window_end = max(offset + limit - 1, 0)
+    page_window_end = max(offset + limit - 1, offset)
+    search_term = q.strip() if q and q.strip() else None
 
     try:
         # Build query for completed documents (org-scoped for team visibility)
@@ -273,29 +314,27 @@ async def list_documents(
         # Include documents with NULL scope_id (org-level docs without a specific scope)
         if allowed_scopes is not None:
             if allowed_scopes:
-                scope_filter = ",".join(allowed_scopes)
-                query = query.or_(f"scope_id.in.({scope_filter}),scope_id.is.null")
+                scope_filter = _build_scope_visibility_filter(allowed_scopes)
+                query = query.or_(scope_filter)
             else:
                 # All scopes revoked — only show unscoped org-level documents
                 query = query.is_("scope_id", "null")
 
         # Apply search filter
-        if q and q.strip():
-            query = query.ilike("title", f"%{q.strip()}%")
+        if search_term:
+            query = query.ilike("title", f"%{search_term}%")
 
-        # Fetch a stable prefix window so completed + failed entries can be merged
-        # and paginated consistently without changing the response shape.
         db_res = query\
             .order("created_at", desc=True)\
-            .range(0, page_window_end)\
+            .range(offset, page_window_end)\
             .execute()
 
         completed_total = db_res.count if db_res.count is not None else len(db_res.data or [])
         failed_total = 0
 
         # Enrich completed documents with status and path
-        docs = []
-        for d in db_res.data:
+        docs: list[dict[str, Any]] = []
+        for d in db_res.data or []:
             d["source_type"] = normalize_provider(d.get("source_type")) or d.get("source_type")
             d['status'] = d.get('status', 'indexed')
             d['indexing_status'] = 'completed'
@@ -312,8 +351,10 @@ async def list_documents(
 
             docs.append(d)
 
+        failed_files_payload: list[dict[str, Any]] = []
+
         # Also fetch failed files from ingestion_file_status (not yet in documents)
-        # Organization-wide: Show failed files from all team members
+        # Organization-wide: show recent failed files in a separate channel.
         if include_failed:
             try:
                 # Query failed files for the organization
@@ -323,12 +364,12 @@ async def list_documents(
                     .eq("status", "failed")\
                     .is_("document_id", "null")
 
-                if q and q.strip():
-                    failed_query = failed_query.ilike("filename", f"%{q.strip()}%")
+                if search_term:
+                    failed_query = failed_query.ilike("filename", f"%{search_term}%")
 
                 failed_res = failed_query\
                     .order("created_at", desc=True)\
-                    .range(0, page_window_end)\
+                    .limit(FAILED_FILES_PREVIEW_LIMIT)\
                     .execute()
 
                 failed_files = failed_res.data or []
@@ -357,7 +398,7 @@ async def list_documents(
                         f.get("remote_id") or  # Some connectors store path as remote_id
                         None
                     )
-                    docs.append({
+                    failed_files_payload.append({
                         "id": f["id"],
                         "title": f["filename"],
                         "source_type": provider,
@@ -375,18 +416,18 @@ async def list_documents(
                     })
             except Exception as failed_err:
                 # Don't fail entire request if failed files query fails
-                import logging
-                logging.warning(f"Failed to fetch failed files: {failed_err}")
+                logger.warning("Failed to fetch failed files: %s", failed_err)
 
-        # Sort combined list by created_at
-        docs.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        docs = docs[offset:offset + limit]
-
-        response.headers["X-Total-Count"] = str(completed_total + failed_total)
+        response.headers["X-Total-Count"] = str(completed_total)
         response.headers["X-Success-Count"] = str(completed_total)
         response.headers["X-Failed-Count"] = str(failed_total)
 
-        return docs
+        return DocumentListResponse(
+            documents=docs,
+            failed_files=failed_files_payload,
+            total_documents=completed_total,
+            failed_count=failed_total,
+        )
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_documents")
 

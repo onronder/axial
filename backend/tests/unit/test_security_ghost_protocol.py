@@ -159,7 +159,9 @@ class TestDecryptText:
         import core.security as security
 
         mock_metric = MagicMock()
+        mock_key_metric = MagicMock()
         monkeypatch.setattr(security, "encryption_operations", mock_metric)
+        monkeypatch.setattr(security, "encryption_key_usage_total", mock_key_metric)
         monkeypatch.setattr(security, "HAS_CHUNK_ENCRYPTION", True)
         monkeypatch.setattr(security, "_chunk_ciphers", [FakeChunkCipher(decrypt_value="test")])
         monkeypatch.setattr(security, "ENVIRONMENT", "development")
@@ -167,6 +169,7 @@ class TestDecryptText:
         security.decrypt_text("gAAAAAdGVzdA==")
 
         mock_metric.labels.assert_called_with(operation="decrypt", result="success")
+        mock_key_metric.labels.assert_called_with(key_index="0")
 
     def test_decrypt_text_returns_plaintext_when_disabled(self, monkeypatch):
         import core.security as security
@@ -201,6 +204,8 @@ class TestDecryptText:
             FakeChunkCipher(decrypt_value="decrypted content")
         ]
 
+        mock_key_metric = MagicMock()
+        monkeypatch.setattr(security, "encryption_key_usage_total", mock_key_metric)
         monkeypatch.setattr(security, "HAS_CHUNK_ENCRYPTION", True)
         monkeypatch.setattr(security, "_chunk_ciphers", ciphers)
         monkeypatch.setattr(security, "ENVIRONMENT", "development")
@@ -208,6 +213,7 @@ class TestDecryptText:
         result = security.decrypt_text("gAAAAAsomething")
 
         assert result == "decrypted content"
+        mock_key_metric.labels.assert_called_with(key_index="1")
 
     def test_decrypt_text_strict_mode_rejects_unencrypted(self, monkeypatch):
         import core.security as security

@@ -118,13 +118,18 @@ security = HTTPBearer()
 # METRICS INTEGRATION
 # =============================================================================
 try:
-    from core.metrics import METRICS_ENABLED, encryption_operations
+    from core.metrics import (
+        METRICS_ENABLED,
+        encryption_key_usage_total,
+        encryption_operations,
+    )
 except ImportError:
     METRICS_ENABLED = False
     class _DummyMetric:
         def labels(self, *args, **kwargs): return self
         def inc(self, *args, **kwargs): pass
     encryption_operations = _DummyMetric()
+    encryption_key_usage_total = _DummyMetric()
 
 
 # =============================================================================
@@ -304,10 +309,11 @@ def decrypt_text(token: str) -> str:
 
     # Try all configured keys for decryption (key rotation support)
     last_error = None
-    for cipher in _chunk_ciphers:
+    for key_index, cipher in enumerate(_chunk_ciphers):
         try:
             decrypted = cipher.decrypt(token.encode("utf-8")).decode("utf-8")
             encryption_operations.labels(operation="decrypt", result="success").inc()
+            encryption_key_usage_total.labels(key_index=str(key_index)).inc()
             return decrypted
         except InvalidToken:
             last_error = InvalidToken

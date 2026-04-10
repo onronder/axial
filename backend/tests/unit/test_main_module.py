@@ -2,9 +2,10 @@ import builtins
 import importlib
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
 
 
 def load_main():
@@ -61,6 +62,15 @@ def test_build_cors_origins_raises_in_prod(monkeypatch):
     with patch("main.configure_cors", side_effect=RuntimeError("boom")):
         with pytest.raises(RuntimeError):
             main.build_cors_origins()
+
+
+def test_api_sets_nosniff_header():
+    main = load_main()
+    with patch("main.check_connection", new=AsyncMock(return_value=True)):
+        with TestClient(main.app) as client:
+            response = client.get("/")
+
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 def test_init_sentry_success_path(monkeypatch):

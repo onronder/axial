@@ -32,6 +32,41 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
+def _log_retry_attempt(
+    *,
+    attempt: int,
+    max_attempts: int,
+    table: str,
+    context: str,
+    retryable: bool,
+    status_code: int | None,
+    error_type: str,
+    error: Exception,
+    error_code: Any,
+    error_details: Any,
+    error_hint: Any,
+    error_repr: str,
+    operation: str,
+) -> None:
+    log_method = logger.warning if attempt == 1 or attempt >= max_attempts else logger.debug
+    log_method(
+        "⚠️ [DB] %s attempt %s/%s failed for %s (%s). retryable=%s status=%s error_type=%s error=%s code=%s details=%s hint=%s repr=%s",
+        operation,
+        attempt,
+        max_attempts,
+        table,
+        context,
+        retryable,
+        status_code,
+        error_type,
+        error,
+        error_code,
+        error_details,
+        error_hint,
+        error_repr,
+    )
+
+
 def _get_status_code(error: Exception) -> int | None:
     status_code = getattr(error, "status_code", None)
     response = getattr(error, "response", None)
@@ -94,20 +129,20 @@ def insert_rows_with_retry(
             error_repr = repr(exc)
             if retry_total and retryable:
                 retry_total.labels("supabase", f"insert:{table}").inc()
-            logger.warning(
-                "⚠️ [DB] Insert attempt %s/%s failed for %s (%s). retryable=%s status=%s error_type=%s error=%s code=%s details=%s hint=%s repr=%s",
-                attempt,
-                max_attempts,
-                table,
-                context,
-                retryable,
-                status_code,
-                error_type,
-                exc,
-                error_code,
-                error_details,
-                error_hint,
-                error_repr,
+            _log_retry_attempt(
+                attempt=attempt,
+                max_attempts=max_attempts,
+                table=table,
+                context=context,
+                retryable=retryable,
+                status_code=status_code,
+                error_type=error_type,
+                error=exc,
+                error_code=error_code,
+                error_details=error_details,
+                error_hint=error_hint,
+                error_repr=error_repr,
+                operation="Insert",
             )
             if attempt >= max_attempts or not retryable:
                 if retry_failure:
@@ -166,20 +201,20 @@ def delete_rows_with_retry(
             error_repr = repr(exc)
             if retry_total and retryable:
                 retry_total.labels("supabase", f"delete:{table}").inc()
-            logger.warning(
-                "⚠️ [DB] Delete attempt %s/%s failed for %s (%s). retryable=%s status=%s error_type=%s error=%s code=%s details=%s hint=%s repr=%s",
-                attempt,
-                max_attempts,
-                table,
-                context,
-                retryable,
-                status_code,
-                error_type,
-                exc,
-                error_code,
-                error_details,
-                error_hint,
-                error_repr,
+            _log_retry_attempt(
+                attempt=attempt,
+                max_attempts=max_attempts,
+                table=table,
+                context=context,
+                retryable=retryable,
+                status_code=status_code,
+                error_type=error_type,
+                error=exc,
+                error_code=error_code,
+                error_details=error_details,
+                error_hint=error_hint,
+                error_repr=error_repr,
+                operation="Delete",
             )
             if attempt >= max_attempts or not retryable:
                 if retry_failure:

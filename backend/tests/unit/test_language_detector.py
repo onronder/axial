@@ -94,6 +94,45 @@ def test_detect_returns_none_when_detector_raises(monkeypatch):
     assert detector.detect("This sample is long enough to exercise the exception path.") is None
 
 
+def test_detect_logs_failure_metadata(monkeypatch, caplog):
+    _set_language_detector_defaults(monkeypatch)
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("detector boom")
+
+    monkeypatch.setattr(
+        language_detector_module,
+        "_load_fast_langdetect_module",
+        lambda: SimpleNamespace(detect=_raise),
+    )
+
+    detector = LanguageDetector()
+
+    with caplog.at_level("WARNING"):
+        assert detector.detect("This sample is long enough to exercise the exception path.") is None
+
+    assert "error_type=RuntimeError" in caplog.text
+    assert "text_len=" in caplog.text
+
+
+def test_detect_logs_successful_variant(monkeypatch, caplog):
+    _set_language_detector_defaults(monkeypatch)
+
+    module = SimpleNamespace(
+        __version__="0.2.0",
+        detect=lambda *args, **kwargs: {"lang": "en", "score": 0.99},
+    )
+    monkeypatch.setattr(language_detector_module, "_load_fast_langdetect_module", lambda: module)
+
+    detector = LanguageDetector()
+
+    with caplog.at_level("DEBUG"):
+        assert detector.detect("This sample is definitely long enough for detection logging.") == "en"
+
+    assert "Language detection succeeded via" in caplog.text
+    assert "fast-langdetect=0.2.0" in caplog.text
+
+
 def test_detect_falls_back_to_detect_langs(monkeypatch):
     _set_language_detector_defaults(monkeypatch)
     monkeypatch.setattr(

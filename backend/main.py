@@ -10,7 +10,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -345,15 +345,22 @@ app.add_middleware(GZipMiddleware, minimum_size=1500)
 # Request body size limit (100MB) to prevent large-payload DoS
 MAX_REQUEST_BODY_BYTES = settings.MAX_FILE_SIZE  # 100MB from config
 
+
+def _apply_api_security_headers(response: Response) -> Response:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    return response
+
 @app.middleware("http")
 async def limit_request_body(request: Request, call_next):
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_REQUEST_BODY_BYTES:
-        return JSONResponse(
+        response = JSONResponse(
             status_code=413,
             content={"detail": "Request body too large"},
         )
-    return await call_next(request)
+        return _apply_api_security_headers(response)
+    response = await call_next(request)
+    return _apply_api_security_headers(response)
 
 # =============================================================================
 # API Routers
