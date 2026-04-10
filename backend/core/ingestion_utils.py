@@ -230,6 +230,13 @@ def _insert_chunks_direct(
     from core.db_utils import insert_rows_with_retry
     from core.security import HAS_CHUNK_ENCRYPTION, encrypt_text
 
+    logger.warning(
+        "⚠️ [DirectInsert] Falling back to legacy chunk insert for doc_id=%s %s. "
+        "content_search remains unpopulated, so keyword search quality may degrade until RPC ingestion is restored.",
+        document_id,
+        context,
+    )
+
     total_inserted = 0
 
     for i in range(0, len(chunks_payload), batch_size):

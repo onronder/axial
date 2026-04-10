@@ -259,6 +259,7 @@ async def list_documents(
     include_failed: bool = True  # New param to include failed files
 ):
     supabase = get_supabase()
+    page_window_end = max(offset + limit - 1, 0)
 
     try:
         # Build query for completed documents (org-scoped for team visibility)
@@ -282,15 +283,15 @@ async def list_documents(
         if q and q.strip():
             query = query.ilike("title", f"%{q.strip()}%")
 
-        # Execute with pagination
+        # Fetch a stable prefix window so completed + failed entries can be merged
+        # and paginated consistently without changing the response shape.
         db_res = query\
             .order("created_at", desc=True)\
-            .range(offset, offset + limit - 1)\
+            .range(0, page_window_end)\
             .execute()
 
-        # Set pagination header
-        if db_res.count is not None:
-             response.headers["X-Total-Count"] = str(db_res.count)
+        completed_total = db_res.count if db_res.count is not None else len(db_res.data or [])
+        failed_total = 0
 
         # Enrich completed documents with status and path
         docs = []
@@ -317,7 +318,7 @@ async def list_documents(
             try:
                 # Query failed files for the organization
                 failed_query = supabase.table("ingestion_file_status")\
-                    .select("*")\
+                    .select("*", count="exact")\
                     .eq("organization_id", organization_id)\
                     .eq("status", "failed")\
                     .is_("document_id", "null")
@@ -327,10 +328,11 @@ async def list_documents(
 
                 failed_res = failed_query\
                     .order("created_at", desc=True)\
-                    .limit(limit)\
+                    .range(0, page_window_end)\
                     .execute()
 
                 failed_files = failed_res.data or []
+                failed_total = failed_res.count if failed_res.count is not None else len(failed_files)
                 provider_map = {}
                 job_ids = {str(f.get("job_id")) for f in failed_files if f.get("job_id")}
                 if job_ids:
@@ -378,6 +380,11 @@ async def list_documents(
 
         # Sort combined list by created_at
         docs.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        docs = docs[offset:offset + limit]
+
+        response.headers["X-Total-Count"] = str(completed_total + failed_total)
+        response.headers["X-Success-Count"] = str(completed_total)
+        response.headers["X-Failed-Count"] = str(failed_total)
 
         return docs
     except Exception as e:

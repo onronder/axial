@@ -7,6 +7,7 @@ GHOST PROTOCOL: Search results have encrypted content that is
 decrypted before being returned to the client.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -31,6 +32,9 @@ from services.scope_analysis import (
 from services.team_service import team_service
 
 logger = logging.getLogger(__name__)
+
+_EMBED_TIMEOUT = 10
+_DB_RPC_TIMEOUT = 15
 
 
 def _decrypt_search_results(results: list[dict]) -> list[dict]:
@@ -134,7 +138,10 @@ async def search_documents(
     embeddings_model = get_embeddings_model()
 
     try:
-        query_vector = embeddings_model.embed_query(payload.query)
+        query_vector = await asyncio.wait_for(
+            asyncio.to_thread(embeddings_model.embed_query, payload.query),
+            timeout=_EMBED_TIMEOUT,
+        )
     except Exception as e:
         raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "search")
 
@@ -160,25 +167,35 @@ async def search_documents(
     try:
         if effective_scope_ids:
             # Use scoped search (explicit filter or access-controlled)
-            response = supabase.rpc("hybrid_search_scoped", {
-                "query_text": payload.query,
-                "query_embedding": query_vector,
-                "match_count": payload.limit,
-                "filter_org_id": organization_id,
-                "filter_scope_ids": effective_scope_ids,
-                "similarity_threshold": payload.threshold,
-                "search_language": search_language,
-            }).execute()
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: supabase.rpc("hybrid_search_scoped", {
+                        "query_text": payload.query,
+                        "query_embedding": query_vector,
+                        "match_count": payload.limit,
+                        "filter_org_id": organization_id,
+                        "filter_scope_ids": effective_scope_ids,
+                        "similarity_threshold": payload.threshold,
+                        "search_language": search_language,
+                    }).execute()
+                ),
+                timeout=_DB_RPC_TIMEOUT,
+            )
         else:
             # Standard hybrid search (now includes scope_id)
-            response = supabase.rpc("hybrid_search", {
-                "query_text": payload.query,
-                "query_embedding": query_vector,
-                "match_count": payload.limit,
-                "filter_org_id": organization_id,
-                "similarity_threshold": payload.threshold,
-                "search_language": search_language,
-            }).execute()
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: supabase.rpc("hybrid_search", {
+                        "query_text": payload.query,
+                        "query_embedding": query_vector,
+                        "match_count": payload.limit,
+                        "filter_org_id": organization_id,
+                        "similarity_threshold": payload.threshold,
+                        "search_language": search_language,
+                    }).execute()
+                ),
+                timeout=_DB_RPC_TIMEOUT,
+            )
 
         matches = response.data or []
         logger.info(f"📚 [Search] Found {len(matches)} results for query: {payload.query[:50]}...")

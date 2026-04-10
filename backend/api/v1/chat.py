@@ -74,6 +74,9 @@ from services.usage import (
 
 logger = logging.getLogger(__name__)
 
+_EMBED_TIMEOUT = 10
+_DB_RPC_TIMEOUT = 15
+
 # Global semaphore to limit concurrent LLM calls (Issue #13)
 _llm_semaphore: asyncio.Semaphore | None = None
 _semaphore_lock = asyncio.Lock()
@@ -1620,7 +1623,10 @@ async def chat_endpoint(
         from services.embeddings import get_embeddings_model
         embeddings_model = get_embeddings_model()
         try:
-            query_vector = embeddings_model.embed_query(search_query)
+            query_vector = await asyncio.wait_for(
+                asyncio.to_thread(embeddings_model.embed_query, search_query),
+                timeout=_EMBED_TIMEOUT,
+            )
         except Exception as e:
             logger.error(f"ERROR: Embedding failed: {e}")
             raise api_error(ApiErrorCode.PROCESSING_ERROR, e, "embed_query")
@@ -1720,7 +1726,6 @@ async def chat_endpoint(
             logger.warning("⚠️ [Chat] Semantic cache check error: %s", e)
 
     # ========== STEP 8: HYBRID SEARCH (Scope-Aware) ==========
-    _DB_RPC_TIMEOUT = 15  # seconds
     search_language = get_regconfig(detected_language)
 
     try:

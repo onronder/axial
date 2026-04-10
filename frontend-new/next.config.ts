@@ -1,6 +1,8 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
+const LOCAL_API_BASE = "http://127.0.0.1:8000";
+
 // Build-time validation of required environment variables
 const requiredEnvVars = [
   'NEXT_PUBLIC_SUPABASE_URL',
@@ -22,6 +24,29 @@ for (const envVar of requiredEnvVars) {
     }
   }
 }
+
+function resolveApiBaseUrl(): string {
+  const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configuredApiUrl) {
+    return configuredApiUrl.replace(/\/$/, "");
+  }
+
+  if (process.env.NODE_ENV === "production" && !process.env.CI) {
+    throw new Error(
+      "Missing required environment variable: NEXT_PUBLIC_API_URL. " +
+      "Set it in your deployment environment."
+    );
+  }
+
+  console.warn(
+    "⚠️  Missing NEXT_PUBLIC_API_URL. " +
+    `Falling back to ${LOCAL_API_BASE} outside production builds.`
+  );
+  return LOCAL_API_BASE;
+}
+
+const resolvedApiUrl = resolveApiBaseUrl();
+const resolvedApiOrigin = resolvedApiUrl.replace(/\/api\/v1\/?$/i, "");
 
 const nextConfig: NextConfig = {
   // Production optimizations
@@ -75,7 +100,6 @@ const nextConfig: NextConfig = {
     // Build CSP directives for production-grade security
     // @see https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://*.supabase.co';
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://axial-production-1503.up.railway.app';
     
     // CSP directives - carefully crafted for security + functionality
     const cspDirectives = [
@@ -102,7 +126,7 @@ const nextConfig: NextConfig = {
       `img-src 'self' data: blob: https://img.youtube.com https://www.google.com https://*.googleusercontent.com https://www.notion.so ${supabaseUrl}`,
       
       // Connect: API endpoints + Supabase + Sentry
-      `connect-src 'self' ${apiUrl} ${supabaseUrl} https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://o4509311565545472.ingest.us.sentry.io`,
+      `connect-src 'self' ${resolvedApiOrigin} ${supabaseUrl} https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://o4509311565545472.ingest.us.sentry.io`,
       
       // Frames: deny all framing (clickjacking protection)
       "frame-ancestors 'none'",
@@ -190,16 +214,10 @@ const nextConfig: NextConfig = {
 
   // API proxying for backend
   async rewrites() {
-    const rawApiBase = process.env.NEXT_PUBLIC_API_URL || "https://axial-production-1503.up.railway.app";
-    const trimmedApiBase = rawApiBase.replace(/\/$/, "");
-    const productionApiBase = trimmedApiBase.replace(/\/api\/v1\/?$/i, "");
-
     return [
       {
         source: '/api/py/:path*',
-        destination: process.env.NODE_ENV === 'development'
-          ? 'http://127.0.0.1:8000/api/v1/:path*'
-          : `${productionApiBase}/api/v1/:path*`,
+        destination: `${resolvedApiOrigin}/api/v1/:path*`,
       },
     ];
   },

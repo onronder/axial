@@ -112,6 +112,8 @@ class TestDocumentListEndpoint:
         """Documents endpoint must filter by organization_id."""
         # Verify RLS is properly applied
         mock_supabase = MagicMock()
+        mock_response = MagicMock(spec=Response)
+        mock_response.headers = {}
         query = mock_supabase.table.return_value
         query.select.return_value = query
         query.eq.return_value = query
@@ -124,12 +126,13 @@ class TestDocumentListEndpoint:
             from api.v1.documents import list_documents
             result = asyncio.run(list_documents(
                 request=MagicMock(spec=Request),
-                response=MagicMock(spec=Response),
+                response=mock_response,
                 user_id="test-user",
                 organization_id="org-1",
                 allowed_scopes=None,
                 limit=10,
-                offset=0
+                offset=0,
+                include_failed=False,
             ))
 
         query.eq.assert_any_call("organization_id", "org-1")
@@ -154,7 +157,7 @@ class TestDocumentListEndpoint:
 
         # Mock execution result
         db_res = MagicMock()
-        db_res.data = [{"id": "1", "title": "Doc 1"}]
+        db_res.data = [{"id": str(i), "title": f"Doc {i}"} for i in range(30)]
         db_res.count = 100
         query.execute.return_value = db_res
 
@@ -171,15 +174,17 @@ class TestDocumentListEndpoint:
                 organization_id="org-1",
                 allowed_scopes=None,
                 limit=10,
-                offset=20
+                offset=20,
+                include_failed=False,
             ))
 
             # Verify pagination calls
-            query.range.assert_called_with(20, 20 + 10 - 1)
+            query.range.assert_called_with(0, 20 + 10 - 1)
 
             # Verify headers
             assert mock_response.headers["X-Total-Count"] == "100"
-            assert len(result) == 1
+            assert len(result) == 10
+            assert result[0]["id"] == "20"
 
     @pytest.mark.unit
     def test_list_documents_search(self):
@@ -187,6 +192,7 @@ class TestDocumentListEndpoint:
         mock_supabase = MagicMock()
         mock_request = MagicMock(spec=Request)
         mock_response = MagicMock(spec=Response)
+        mock_response.headers = {}
 
         # Setup chain
         query = mock_supabase.table.return_value
@@ -209,7 +215,8 @@ class TestDocumentListEndpoint:
                 user_id="test-user",
                 organization_id="org-1",
                 allowed_scopes=None,
-                q="budget report"
+                q="budget report",
+                include_failed=False,
             ))
         query.ilike.assert_called_with("title", "%budget report%")
 
@@ -233,9 +240,10 @@ class TestDocumentListEndpoint:
         failed_table.eq.return_value = failed_table
         failed_table.is_.return_value = failed_table
         failed_table.order.return_value = failed_table
-        failed_table.limit.return_value = failed_table
+        failed_table.range.return_value = failed_table
         failed_table.execute.return_value = MagicMock(
-            data=[{"id": "fail-1", "filename": "bad.txt", "created_at": "now", "job_id": "job-1"}]
+            data=[{"id": "fail-1", "filename": "bad.txt", "created_at": "now", "job_id": "job-1"}],
+            count=1,
         )
 
         jobs_table = MagicMock()
@@ -266,12 +274,15 @@ class TestDocumentListEndpoint:
             ))
 
         assert any(doc.get("status") == "failed" for doc in result)
+        assert mock_response.headers["X-Total-Count"] == "2"
+        failed_table.range.assert_called_with(0, 10 - 1)
 
     @pytest.mark.unit
     def test_list_documents_ordered_by_created_at_desc(self):
         """Most recent documents should appear first."""
         mock_supabase = MagicMock()
         mock_response = MagicMock(spec=Response)
+        mock_response.headers = {}
 
         query = mock_supabase.table.return_value
         query.select.return_value = query
@@ -292,6 +303,7 @@ class TestDocumentListEndpoint:
                 user_id="test-user",
                 organization_id="org-1",
                 allowed_scopes=None,
+                include_failed=False,
             ))
 
             # Verify ordering
@@ -795,6 +807,8 @@ class TestDocumentErrorPaths:
     @pytest.mark.unit
     def test_list_documents_handles_failed_files_error(self, sample_document):
         mock_supabase = MagicMock()
+        mock_response = MagicMock(spec=Response)
+        mock_response.headers = {}
         docs_table = MagicMock()
         docs_table.select.return_value = docs_table
         docs_table.eq.return_value = docs_table
@@ -808,7 +822,7 @@ class TestDocumentErrorPaths:
         failed_table.eq.return_value = failed_table
         failed_table.is_.return_value = failed_table
         failed_table.order.return_value = failed_table
-        failed_table.limit.return_value = failed_table
+        failed_table.range.return_value = failed_table
         failed_table.execute.side_effect = Exception("boom")
 
         mock_supabase.table.side_effect = lambda name: {
@@ -821,7 +835,7 @@ class TestDocumentErrorPaths:
 
             result = asyncio.run(list_documents(
                 request=MagicMock(spec=Request),
-                response=MagicMock(spec=Response),
+                response=mock_response,
                 user_id="test-user",
                 organization_id="org-1",
                 allowed_scopes=None,

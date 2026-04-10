@@ -170,12 +170,25 @@ export const useSearch = (options: UseSearchOptions = {}): UseSearchReturn => {
         try {
             // Use deduplication to prevent duplicate requests
             const dedupKey = `search:${query}:${topK}:${JSON.stringify(filters || {})}`;
+            const scopeIds = Array.isArray(filters?.scope_ids)
+                ? (filters.scope_ids as string[])
+                : undefined;
+            const threshold = typeof filters?.threshold === 'number'
+                ? (filters.threshold as number)
+                : undefined;
+            const includeScopeAnalysis = typeof filters?.include_scope_analysis === 'boolean'
+                ? (filters.include_scope_analysis as boolean)
+                : undefined;
             
             const data = await dedupedRequest(dedupKey, async () => {
                 const response = await api.post('/search', {
                     query,
-                    top_k: topK,
-                    filters,
+                    limit: topK,
+                    ...(scopeIds ? { scope_ids: scopeIds } : {}),
+                    ...(typeof threshold === 'number' ? { threshold } : {}),
+                    ...(typeof includeScopeAnalysis === 'boolean'
+                        ? { include_scope_analysis: includeScopeAnalysis }
+                        : {}),
                 }, {
                     signal: abortController.signal,
                 });

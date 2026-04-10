@@ -8,7 +8,7 @@
 
 import { FileText, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { DocumentList } from '@/components/documents/DocumentList';
+import { DocumentsTable } from '@/components/knowledge-base/DocumentsTable';
 import { useIngestModal } from '@/hooks/useIngestModal';
 
 export default function DocumentsPage() {
@@ -36,7 +36,7 @@ export default function DocumentsPage() {
                 </div>
 
                 {/* Document List */}
-                <DocumentList />
+                <DocumentsTable showHeader={false} />
             </div>
         </div>
     );

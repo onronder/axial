@@ -113,7 +113,11 @@ const TABLE_ROW_ESTIMATE = 64;
 
 // ... imports ...
 
-export function DocumentsTable() {
+interface DocumentsTableProps {
+  showHeader?: boolean;
+}
+
+export function DocumentsTable({ showHeader = true }: DocumentsTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -437,20 +441,28 @@ export function DocumentsTable() {
 
   return (
     <div className="space-y-8">
-      {/* Header Area */}
-      <div className="space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-gradient">Knowledge Base</h1>
-          <p className="text-muted-foreground text-lg">
-            Manage your ingested documents and connected data sources.
-          </p>
-        </div>
+      {showHeader ? (
+        <>
+          {/* Header Area */}
+          <div className="space-y-6">
+            <div className="space-y-1">
+              <h1 className="text-3xl font-bold tracking-tight text-gradient">Knowledge Base</h1>
+              <p className="text-muted-foreground text-lg">
+                Manage your ingested documents and connected data sources.
+              </p>
+            </div>
 
-        {/* Storage Meter Banner */}
+            {/* Storage Meter Banner */}
+            <div className="w-full">
+              <StorageMeter variant="horizontal" className="w-full" />
+            </div>
+          </div>
+        </>
+      ) : (
         <div className="w-full">
           <StorageMeter variant="horizontal" className="w-full" />
         </div>
-      </div>
+      )}
 
       <div className="glass-card rounded-xl border border-white/10 shadow-glow overflow-hidden">
         {/* Toolbar */}
