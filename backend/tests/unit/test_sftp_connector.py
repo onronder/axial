@@ -80,6 +80,12 @@ def test_validate_config_blocks_private_host(monkeypatch):
         connector.validate_config(config)
 
 
+def test_supports_incremental_sync_is_true():
+    connector = SFTPConnector()
+
+    assert connector.supports_incremental_sync is True
+
+
 def test_list_files_recursive(monkeypatch):
     connector = SFTPConnector()
     monkeypatch.setattr(connector, "_ensure_safe_host", lambda host: None)

@@ -14,7 +14,7 @@ CONNECTOR_REGISTRY = {
     "notion": {
         "id": "notion",
         "name": "Notion",
-        "capabilities": ["incremental_sync", "html_content"],
+        "capabilities": ["html_content"],
         "rate_limit_rpm": 60,
     },
     "web": {

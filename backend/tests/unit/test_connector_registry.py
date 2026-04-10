@@ -123,6 +123,16 @@ class TestConnectorManifest:
         assert "binary_content" in capabilities
         assert "glacier_aware" in capabilities
 
+    @pytest.mark.unit
+    def test_notion_manifest_does_not_claim_incremental_sync(self):
+        """Notion should not advertise incremental sync until since-filtering exists."""
+        from connectors.registry import get_connector_manifest
+
+        manifest = get_connector_manifest("notion")
+        capabilities = manifest.get("capabilities", [])
+
+        assert "incremental_sync" not in capabilities
+
 
 class TestSourceTypeEnum:
     """Test SourceType enum includes S3."""

@@ -57,6 +57,10 @@ class SFTPConnector(EnhancedConnector, BaseConnector):
     def connector_type(self) -> SourceType:
         return SourceType.SFTP
 
+    @property
+    def supports_incremental_sync(self) -> bool:
+        return True
+
     def validate_config(self, config: dict) -> bool:
         if not isinstance(config, dict):
             return False
