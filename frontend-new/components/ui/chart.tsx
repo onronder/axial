@@ -9,6 +9,55 @@ type ValueType = number | string | Array<number | string>;
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const;
+const SAFE_COLOR_KEYWORDS = new Set([
+  "transparent",
+  "currentcolor",
+  "inherit",
+  "initial",
+  "unset",
+  "revert",
+  "revert-layer",
+  "white",
+  "black",
+]);
+
+function isSafeChartColor(value: string) {
+  const color = value.trim();
+  if (!color) {
+    return false;
+  }
+
+  if (SAFE_COLOR_KEYWORDS.has(color.toLowerCase())) {
+    return true;
+  }
+
+  return (
+    /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ||
+    /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch)\([^;{}<>]+\)$/i.test(color) ||
+    /^var\(\s*--[\w-]+(?:\s*,\s*[^;{}<>]+)?\)$/i.test(color)
+  );
+}
+
+function buildChartStyleContent(id: string, config: ChartConfig) {
+  return Object.entries(THEMES)
+    .map(
+      ([theme, prefix]) => `
+${prefix} [data-chart=${id}] {
+${Object.entries(config)
+          .filter(([_, itemConfig]) => itemConfig.theme || itemConfig.color)
+          .map(([key, itemConfig]) => {
+            const rawColor =
+              itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
+            const color = rawColor && isSafeChartColor(rawColor) ? rawColor : null;
+            return color ? `  --color-${key}: ${color};` : null;
+          })
+          .filter(Boolean)
+          .join("\n")}
+}
+`,
+    )
+    .join("\n");
+}
 
 export type ChartConfig = {
   [k in string]: {
@@ -63,29 +112,16 @@ const ChartContainer = React.forwardRef<
 ChartContainer.displayName = "Chart";
 
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
-  const colorConfig = Object.entries(config).filter(([_, config]) => config.theme || config.color);
+  const styleContent = buildChartStyleContent(id, config);
 
-  if (!colorConfig.length) {
+  if (!styleContent.trim()) {
     return null;
   }
 
   return (
     <style
       dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-                .map(([key, itemConfig]) => {
-                  const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
-                  return color ? `  --color-${key}: ${color};` : null;
-                })
-                .join("\n")}
-}
-`,
-          )
-          .join("\n"),
+        __html: styleContent,
       }}
     />
   );
@@ -348,4 +384,13 @@ function getPayloadConfigFromPayload(config: ChartConfig, payload: unknown, key:
   return configLabelKey in config ? config[configLabelKey] : config[key as keyof typeof config];
 }
 
-export { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, ChartStyle };
+export {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+  ChartStyle,
+  buildChartStyleContent,
+  isSafeChartColor,
+};

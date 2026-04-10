@@ -13,6 +13,15 @@ from fastapi import HTTPException
 # In a real test environment, you'd use TestClient with the FastAPI app
 
 
+def assert_no_credentials_exposed(payload, *secret_values):
+    """Ensure responses and error payloads never expose raw credentials."""
+    text = str(payload)
+    assert "access_key_id" not in text
+    assert "secret_access_key" not in text
+    for secret_value in secret_values:
+        assert secret_value not in text
+
+
 @pytest.fixture(autouse=True)
 def disable_rate_limiting():
     """Disable rate limiting for all tests in this module."""
@@ -183,6 +192,11 @@ class TestS3EnterpriseGate:
         assert result["status"] == "success"
         assert result["provider"] == "s3"
         assert result["bucket"] == "test-bucket"
+        assert_no_credentials_exposed(
+            result,
+            body.access_key_id,
+            body.secret_access_key,
+        )
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -363,6 +377,11 @@ class TestS3ConnectErrorHandling:
                 )
 
         assert exc_info.value.status_code == 401
+        assert_no_credentials_exposed(
+            exc_info.value.detail,
+            body.access_key_id,
+            body.secret_access_key,
+        )
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -399,6 +418,51 @@ class TestS3ConnectErrorHandling:
                 )
 
         assert exc_info.value.status_code == 503
+        assert_no_credentials_exposed(
+            exc_info.value.detail,
+            body.access_key_id,
+            body.secret_access_key,
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_connect_s3_validation_error_does_not_echo_credentials(self, make_request):
+        """Validation errors must not leak raw credentials in error payloads."""
+        from api.v1.integrations import S3ConnectRequest, connect_s3
+
+        request = make_request()
+        body = S3ConnectRequest(
+            access_key_id="AKIAIOSFODNN7EXAMPLE",
+            secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region="us-east-1",
+            bucket_name="test-bucket",
+            prefix="invalid-prefix",
+        )
+
+        mock_supabase = MagicMock()
+        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = Mock(
+            data={"id": "connector-def-id"}
+        )
+
+        mock_connector = MagicMock()
+        mock_connector._verify_access.side_effect = ValueError("Prefix must end with '/'")
+
+        with patch("api.v1.integrations.get_supabase", return_value=mock_supabase), \
+             patch("api.v1.integrations.S3Connector", return_value=mock_connector):
+            with pytest.raises(HTTPException) as exc_info:
+                await connect_s3(
+                    request=request,
+                    body=body,
+                    user_id="user-123",
+                    plan="enterprise",
+                )
+
+        assert exc_info.value.status_code == 400
+        assert_no_credentials_exposed(
+            exc_info.value.detail,
+            body.access_key_id,
+            body.secret_access_key,
+        )
 
     @pytest.mark.unit
     @pytest.mark.asyncio

@@ -19,6 +19,11 @@ const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
+function buildSidebarStateCookieValue(openState: boolean, protocol: string) {
+  const secure = protocol === "https:" ? "; secure" : "";
+  return `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; samesite=lax${secure}`;
+}
+
 type SidebarContext = {
   state: "expanded" | "collapsed";
   open: boolean;
@@ -65,7 +70,7 @@ const SidebarProvider = React.forwardRef<
       }
 
       // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+      document.cookie = buildSidebarStateCookieValue(openState, window.location.protocol);
     },
     [setOpenProp, open],
   );
@@ -634,5 +639,6 @@ export {
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
+  buildSidebarStateCookieValue,
   useSidebar,
 };
