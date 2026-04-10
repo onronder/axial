@@ -35,6 +35,7 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator, Iterator
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -78,6 +79,13 @@ CHUNK_SIZE = 10 * 1024 * 1024  # 10 MB chunks for large files
 
 # Minimal fields for efficient listing (bandwidth optimization)
 ITEM_FIELDS = "id,name,type,size,sha1,modified_at,parent"
+
+COMMON_MIME_TYPES = {
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".md": "text/markdown",
+}
 
 
 class BoxConnector(EnhancedConnector, BaseConnector):
@@ -981,7 +989,9 @@ class BoxConnector(EnhancedConnector, BaseConnector):
         if not filename:
             return "application/octet-stream"
         guessed, _ = mimetypes.guess_type(filename)
-        return guessed or "application/octet-stream"
+        if guessed:
+            return guessed
+        return COMMON_MIME_TYPES.get(Path(filename).suffix.lower(), "application/octet-stream")
 
 
 # =============================================================================

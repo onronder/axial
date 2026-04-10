@@ -181,7 +181,15 @@ class TestDocumentListEndpoint:
 
         # Mock execution result
         db_res = MagicMock()
-        db_res.data = [{"id": str(i), "title": f"Doc {i}"} for i in range(20, 30)]
+        db_res.data = [
+            {
+                "id": str(i),
+                "title": f"Doc {i}",
+                "source_type": "google_drive",
+                "created_at": f"2026-04-10T10:{i:02d}:00Z",
+            }
+            for i in range(20, 30)
+        ]
         db_res.count = 100
         query.execute.return_value = db_res
 
@@ -257,7 +265,17 @@ class TestDocumentListEndpoint:
         docs_table.neq.return_value = docs_table
         docs_table.order.return_value = docs_table
         docs_table.range.return_value = docs_table
-        docs_table.execute.return_value = MagicMock(data=[{"id": "doc-1", "title": "Doc"}], count=1)
+        docs_table.execute.return_value = MagicMock(
+            data=[
+                {
+                    "id": "doc-1",
+                    "title": "Doc",
+                    "source_type": "google_drive",
+                    "created_at": "2026-04-10T10:00:00Z",
+                }
+            ],
+            count=1,
+        )
 
         failed_table = MagicMock()
         failed_table.select.return_value = failed_table

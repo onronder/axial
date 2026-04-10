@@ -38,6 +38,7 @@ import os
 import time
 from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import boto3
@@ -132,6 +133,13 @@ SKIP_PATTERNS = frozenset({
     ".exe", ".dll", ".so", ".dylib",
     ".pyc", ".pyo", ".class",
 })
+
+COMMON_MIME_TYPES = {
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".md": "text/markdown",
+}
 
 
 class S3Connector(EnhancedConnector, BaseConnector):
@@ -894,6 +902,9 @@ class S3Connector(EnhancedConnector, BaseConnector):
             guessed, _ = mimetypes.guess_type(filename)
             if guessed:
                 return guessed
+            fallback = COMMON_MIME_TYPES.get(Path(filename).suffix.lower())
+            if fallback:
+                return fallback
 
         if content_type and content_type != "application/octet-stream":
             return content_type

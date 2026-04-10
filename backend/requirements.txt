@@ -39,7 +39,7 @@ psycopg[binary]>=3.1.0
 psycopg2-binary>=2.9.9  # Fallback if psycopg3 fails to install
 
 # --- AUTHENTICATION ---
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 python-multipart>=0.0.18  # CVE-2024-53981 DoS fix
 
@@ -77,9 +77,9 @@ openpyxl>=3.1.0,<4.0.0
 pandas>=2.0.0,<3.0.0
 python-pptx>=0.6.21,<1.0.0
 unstructured>=0.16.20  # XXE and resource exposure (5 CVEs)
-pdfminer.six==20231228
+pdfminer.six==20251230
 docx2txt==0.8
-markdown==3.5.2
+markdown==3.8.1
 
 # --- FILE HANDLING ---
 python-magic==0.4.27
@@ -95,6 +95,7 @@ google-auth-httplib2
 
 # --- SECURITY & CRYPTO ---
 cryptography
+pyasn1>=0.6.3
 
 # --- WEB UTILITIES ---
 jinja2
