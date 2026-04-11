@@ -68,6 +68,7 @@ class FakeResponse:
 class FakeAsyncClient:
     def __init__(self, responses):
         self.responses = list(responses)
+        self.calls = []
 
     async def __aenter__(self):
         return self
@@ -75,11 +76,18 @@ class FakeAsyncClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def post(self, url, **kwargs):
+    async def request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
         return self.responses.pop(0)
 
+    async def post(self, url, **kwargs):
+        return await self.request("POST", url, **kwargs)
+
     async def get(self, url, **kwargs):
-        return self.responses.pop(0)
+        return await self.request("GET", url, **kwargs)
+
+    async def delete(self, url, **kwargs):
+        return await self.request("DELETE", url, **kwargs)
 
 
 class TestGoogleDriveConnector:
@@ -813,14 +821,14 @@ class TestDisconnectProviderCleanup:
         supabase = build_supabase({"connector_definitions": build_table(None)})
         with patch("api.v1.integrations.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException):
-                await disconnect_provider("unknown", user_id="user-1", organization_id="org-1")
+                await disconnect_provider(MagicMock(), "unknown", user_id="user-1", organization_id="org-1")
 
     @pytest.mark.asyncio
     async def test_disconnect_provider_missing_definition_raises(self):
         supabase = build_supabase({"connector_definitions": build_table(None)})
         with patch("api.v1.integrations.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+                await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert exc.value.status_code == 404
 
@@ -844,7 +852,7 @@ class TestDisconnectProviderCleanup:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([response])):
-            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+            result = await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
         documents_table.like.assert_called()
@@ -867,7 +875,7 @@ class TestDisconnectProviderCleanup:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([response])):
-            result = await disconnect_provider("notion", user_id="user-1", organization_id="org-1")
+            result = await disconnect_provider(MagicMock(), "notion", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -887,9 +895,114 @@ class TestDisconnectProviderCleanup:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([])):
-            result = await disconnect_provider("notion", user_id="user-1", organization_id="org-1")
+            result = await disconnect_provider(MagicMock(), "notion", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_disconnect_provider_dropbox_revokes_token(self):
+        supabase = build_supabase(
+            {
+                "connector_definitions": build_table({"id": "def-1"}),
+                "user_integrations": build_table({"access_token": "enc-token"}),
+                "documents": build_table([]),
+                "ingestion_jobs": build_table([]),
+                "ingestion_file_status": build_table([]),
+                "sync_state": build_table([]),
+            }
+        )
+        client = FakeAsyncClient([FakeResponse(200, {})])
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations.decrypt_token", return_value="token"), \
+             patch("api.v1.integrations.httpx.AsyncClient", return_value=client):
+            result = await disconnect_provider(MagicMock(), "dropbox", user_id="user-1", organization_id="org-1")
+
+        assert result["status"] == "success"
+        assert client.calls[0][0] == "POST"
+        assert client.calls[0][1] == "https://api.dropboxapi.com/2/auth/token/revoke"
+        assert client.calls[0][2]["headers"]["Authorization"] == "Bearer token"
+
+    @pytest.mark.asyncio
+    async def test_disconnect_provider_github_revokes_token(self):
+        supabase = build_supabase(
+            {
+                "connector_definitions": build_table({"id": "def-1"}),
+                "user_integrations": build_table({"access_token": "enc-token"}),
+                "documents": build_table([]),
+                "ingestion_jobs": build_table([]),
+                "ingestion_file_status": build_table([]),
+                "sync_state": build_table([]),
+            }
+        )
+        client = FakeAsyncClient([FakeResponse(204, {})])
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations.decrypt_token", return_value="token"), \
+             patch("api.v1.integrations.httpx.AsyncClient", return_value=client), \
+             patch("api.v1.integrations.settings.GITHUB_CLIENT_ID", "github-client"), \
+             patch("api.v1.integrations.settings.GITHUB_CLIENT_SECRET", "github-secret"):
+            result = await disconnect_provider(MagicMock(), "github", user_id="user-1", organization_id="org-1")
+
+        assert result["status"] == "success"
+        assert client.calls[0][0] == "DELETE"
+        assert client.calls[0][1] == "https://api.github.com/applications/github-client/token"
+        assert client.calls[0][2]["auth"] == ("github-client", "github-secret")
+        assert client.calls[0][2]["json"] == {"access_token": "token"}
+
+    @pytest.mark.asyncio
+    async def test_disconnect_provider_box_revokes_token(self):
+        supabase = build_supabase(
+            {
+                "connector_definitions": build_table({"id": "def-1"}),
+                "user_integrations": build_table({"access_token": "enc-token"}),
+                "documents": build_table([]),
+                "ingestion_jobs": build_table([]),
+                "ingestion_file_status": build_table([]),
+                "sync_state": build_table([]),
+            }
+        )
+        client = FakeAsyncClient([FakeResponse(200, {})])
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations.decrypt_token", return_value="token"), \
+             patch("api.v1.integrations.httpx.AsyncClient", return_value=client), \
+             patch("api.v1.integrations.settings.BOX_CLIENT_ID", "box-client"), \
+             patch("api.v1.integrations.settings.BOX_CLIENT_SECRET", "box-secret"):
+            result = await disconnect_provider(MagicMock(), "box", user_id="user-1", organization_id="org-1")
+
+        assert result["status"] == "success"
+        assert client.calls[0][0] == "POST"
+        assert client.calls[0][1] == "https://api.box.com/oauth2/revoke"
+        assert client.calls[0][2]["data"] == {
+            "client_id": "box-client",
+            "client_secret": "box-secret",
+            "token": "token",
+        }
+
+    @pytest.mark.asyncio
+    async def test_disconnect_provider_github_missing_credentials_skips_revoke(self):
+        supabase = build_supabase(
+            {
+                "connector_definitions": build_table({"id": "def-1"}),
+                "user_integrations": build_table({"access_token": "enc-token"}),
+                "documents": build_table([]),
+                "ingestion_jobs": build_table([]),
+                "ingestion_file_status": build_table([]),
+                "sync_state": build_table([]),
+            }
+        )
+        client = FakeAsyncClient([])
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations.decrypt_token", return_value="token"), \
+             patch("api.v1.integrations.httpx.AsyncClient", return_value=client), \
+             patch("api.v1.integrations.settings.GITHUB_CLIENT_ID", None), \
+             patch("api.v1.integrations.settings.GITHUB_CLIENT_SECRET", None):
+            result = await disconnect_provider(MagicMock(), "github", user_id="user-1", organization_id="org-1")
+
+        assert result["status"] == "success"
+        assert client.calls == []
 
     @pytest.mark.asyncio
     async def test_disconnect_provider_document_cleanup_error(self):
@@ -910,7 +1023,7 @@ class TestDisconnectProviderCleanup:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
-            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+            result = await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -936,7 +1049,7 @@ class TestDisconnectProviderCleanup:
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+                await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert exc.value.status_code == 500
 
@@ -1212,9 +1325,9 @@ class TestDisconnectProvider:
     @pytest.mark.asyncio
     async def test_disconnect_provider_unknown(self):
         with pytest.raises(HTTPException) as exc:
-            await disconnect_provider("unknown", user_id="user-1", organization_id="org-1")
+            await disconnect_provider(MagicMock(), "unknown", user_id="user-1", organization_id="org-1")
         assert exc.value.status_code == 400
-        assert "Unsupported provider value" in exc.value.detail
+        assert exc.value.detail == "Unknown or unsupported provider."
 
     @pytest.mark.asyncio
     async def test_disconnect_provider_missing_definition_raises(self):
@@ -1222,7 +1335,7 @@ class TestDisconnectProvider:
 
         with patch("api.v1.integrations.get_supabase", return_value=supabase):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+                await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert exc.value.status_code == 404
 
@@ -1242,7 +1355,7 @@ class TestDisconnectProvider:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
-            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+            result = await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -1535,7 +1648,7 @@ class TestIntegrationsAdditional:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=ErrorAsyncClient()):
-            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+            result = await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -1893,7 +2006,7 @@ class TestDisconnectProviderCoverage:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([])):
-            result = await disconnect_provider("notion", user_id="user-1", organization_id="org-1")
+            result = await disconnect_provider(MagicMock(), "notion", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -1916,7 +2029,7 @@ class TestDisconnectProviderCoverage:
         with patch("api.v1.integrations.get_supabase", return_value=supabase), \
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
-            result = await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+            result = await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert result["status"] == "success"
 
@@ -1942,7 +2055,7 @@ class TestDisconnectProviderCoverage:
              patch("api.v1.integrations.decrypt_token", return_value="token"), \
              patch("api.v1.integrations.httpx.AsyncClient", return_value=FakeAsyncClient([FakeResponse(200, {})])):
             with pytest.raises(HTTPException) as exc:
-                await disconnect_provider("google_drive", user_id="user-1", organization_id="org-1")
+                await disconnect_provider(MagicMock(), "google_drive", user_id="user-1", organization_id="org-1")
 
         assert exc.value.status_code == 500
 

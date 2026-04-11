@@ -562,6 +562,55 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         result = self._request(config, url)
         return result["commit"]["sha"]
 
+    @staticmethod
+    def _normalize_since(since: datetime | None) -> datetime | None:
+        if since is None:
+            return None
+        return since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    def _parse_commit_timestamp(timestamp: str | None) -> datetime | None:
+        if not timestamp:
+            return None
+        normalized = timestamp[:-1] + "+00:00" if timestamp.endswith("Z") else timestamp
+        parsed = datetime.fromisoformat(normalized)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    def _list_commits_since(
+        self,
+        config: dict,
+        repo: str,
+        branch: str,
+        since: datetime,
+    ) -> Iterator[dict[str, Any]]:
+        page = 1
+        since_iso = self._normalize_since(since).astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+        while True:
+            params = {
+                "sha": branch,
+                "since": since_iso,
+                "per_page": 100,
+                "page": page,
+            }
+            results = self._request(config, f"{GITHUB_API_BASE}/repos/{repo}/commits", params=params)
+            if not results:
+                break
+
+            for commit in results:
+                yield commit
+
+            if len(results) < 100:
+                break
+
+            page += 1
+            if page > 100:
+                logger.warning("⚠️ [GitHub] Reached 100 pages of commits for %s, stopping incremental traversal", repo)
+                break
+
+    def _get_commit_details(self, config: dict, repo: str, commit_sha: str) -> dict[str, Any]:
+        return self._request(config, f"{GITHUB_API_BASE}/repos/{repo}/commits/{commit_sha}")
+
     def _fetch_tree(self, config: dict, repo: str, sha: str) -> Iterator[dict]:
         """
         Fetch repository tree with truncation handling.
@@ -928,6 +977,7 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         since: datetime | None,
     ) -> Iterator[RemoteFile]:
         """List all files from a single repository (flat listing for ingestion)."""
+        since = self._normalize_since(since)
         if not branch:
             url = f"{GITHUB_API_BASE}/repos/{repo}"
             repo_info = self._request(config, url)
@@ -936,6 +986,10 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         sha = self._get_branch_sha(config, repo, branch)
 
         logger.info(f"📂 [GitHub] Listing all files from {repo} (branch: {branch})")
+
+        if since:
+            yield from self._list_repo_files_incremental(config, repo, branch, sha, since)
+            return
 
         file_count = 0
         filtered_count = 0
@@ -963,6 +1017,90 @@ class GitHubConnector(EnhancedConnector, BaseConnector):
         logger.info(
             f"📊 [GitHub] {repo}: {file_count} total files, "
             f"{filtered_count} filtered, {file_count - filtered_count} to ingest"
+        )
+
+    def _list_repo_files_incremental(
+        self,
+        config: dict,
+        repo: str,
+        branch: str,
+        branch_sha: str,
+        since: datetime,
+    ) -> Iterator[RemoteFile]:
+        logger.info(
+            "📂 [GitHub] Incremental listing for %s (branch: %s, since: %s)",
+            repo,
+            branch,
+            since.isoformat(),
+        )
+
+        latest_change_by_path: dict[str, datetime] = {}
+
+        for commit in self._list_commits_since(config, repo, branch, since):
+            if self._rate_limiter.should_pause():
+                logger.warning(
+                    "⏸️ [GitHub] Pausing incremental sync for %s - %s requests remaining",
+                    repo,
+                    self._rate_limiter.remaining,
+                )
+                break
+
+            commit_sha = commit.get("sha")
+            commit_date = self._parse_commit_timestamp(
+                commit.get("commit", {}).get("committer", {}).get("date")
+                or commit.get("commit", {}).get("author", {}).get("date")
+            )
+            if not commit_sha or not commit_date:
+                continue
+
+            details = self._get_commit_details(config, repo, commit_sha)
+            for changed_file in details.get("files", []):
+                path = changed_file.get("filename")
+                if not path:
+                    continue
+                previous = latest_change_by_path.get(path)
+                if previous is None or commit_date > previous:
+                    latest_change_by_path[path] = commit_date
+
+        if not latest_change_by_path:
+            logger.info("📊 [GitHub] %s: no changed files since %s", repo, since.isoformat())
+            return
+
+        current_tree: dict[str, dict[str, Any]] = {}
+        for entry in self._fetch_tree(config, repo, branch_sha):
+            if entry["type"] == "blob":
+                current_tree[entry["path"]] = entry
+
+        filtered_count = 0
+        emitted_count = 0
+
+        for path in sorted(latest_change_by_path):
+            entry = current_tree.get(path)
+            if not entry:
+                # Deleted files are handled by reconciliation flows, not emitted here.
+                continue
+
+            if not self._filter.should_include(path, entry.get("size")):
+                filtered_count += 1
+                continue
+
+            emitted_count += 1
+            yield RemoteFile(
+                id=f"{repo}:{entry['sha']}:{path}",
+                name=path.rsplit("/", 1)[-1],
+                mime_type=self._guess_mime_type(path),
+                size=entry.get("size"),
+                modified_at=latest_change_by_path[path],
+                parent_id=repo,
+                web_view_url=f"https://github.com/{repo}/blob/{branch}/{path}",
+            )
+
+        logger.info(
+            "📊 [GitHub] %s incremental: %s changed paths, %s filtered, %s emitted",
+            repo,
+            len(latest_change_by_path),
+            filtered_count,
+            emitted_count,
         )
 
     # =========================================================================

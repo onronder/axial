@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -53,11 +54,76 @@ def test_list_files_sync_returns_items():
 
     with patch.object(connector, "_get_credentials", return_value=MagicMock()), \
          patch("connectors.drive.build", return_value=MagicMock()), \
-         patch.object(connector, "_drive_list", return_value={"files": files}):
+         patch.object(connector, "_list_drive_children", return_value=files), \
+         patch.object(connector, "_list_shared_drives", return_value=[]):
         items = connector._list_files_sync("user-1", parent_id=None)
 
     assert len(items) == 2
     assert items[0].mime_type == "application/vnd.google-apps.folder"
+
+
+def test_list_files_sync_applies_since_and_populates_modified_at():
+    connector = DriveConnector()
+    files = [
+        {
+            "id": "file-1",
+            "name": "Doc",
+            "mimeType": "text/plain",
+            "size": "1024",
+            "modifiedTime": "2026-04-11T08:00:00Z",
+        }
+    ]
+    since = "2026-04-10T12:00:00Z"
+
+    with patch.object(connector, "_get_credentials", return_value=MagicMock()), \
+         patch("connectors.drive.build", return_value=MagicMock()), \
+         patch.object(connector, "_list_drive_children", return_value=files) as mock_children:
+        items = connector._list_files_sync("user-1", parent_id=None, since=since)
+
+    called_since = mock_children.call_args.kwargs["since"]
+    assert isinstance(called_since, datetime)
+    assert items[0].modified_at == datetime(2026, 4, 11, 8, 0, tzinfo=timezone.utc)
+
+
+def test_list_files_sync_root_includes_shared_drives():
+    connector = DriveConnector()
+
+    with patch.object(connector, "_get_credentials", return_value=MagicMock()), \
+         patch("connectors.drive.build", return_value=MagicMock()), \
+         patch.object(connector, "_list_drive_children", return_value=[]), \
+         patch.object(connector, "_list_shared_drives", return_value=[{"id": "drv-1", "name": "Team Drive"}]):
+        items = connector._list_files_sync("user-1", parent_id=None)
+
+    assert any(item.id == "shared_drive:drv-1:root" for item in items)
+    assert any(item.name == "Team Drive" for item in items)
+
+
+def test_list_files_sync_shared_drive_items_encode_ids():
+    connector = DriveConnector()
+    files = [
+        {
+            "id": "folder-1",
+            "name": "Folder",
+            "mimeType": "application/vnd.google-apps.folder",
+            "modifiedTime": "2026-04-11T08:00:00Z",
+        },
+        {
+            "id": "file-1",
+            "name": "Doc",
+            "mimeType": "text/plain",
+            "size": "12",
+            "modifiedTime": "2026-04-11T09:00:00Z",
+        },
+    ]
+
+    with patch.object(connector, "_get_credentials", return_value=MagicMock()), \
+         patch("connectors.drive.build", return_value=MagicMock()), \
+         patch.object(connector, "_list_drive_children", return_value=files):
+        items = connector._list_files_sync("user-1", parent_id="shared_drive:drv-1:root")
+
+    assert items[0].id == "shared_drive:drv-1:folder-1"
+    assert items[1].id == "shared_drive:drv-1:file-1"
+    assert all(item.parent_id == "shared_drive:drv-1:root" for item in items)
 
 
 def test_drive_list_calls_execute():
@@ -206,6 +272,28 @@ def test_fetch_documents_sync_yields_source_document():
     assert isinstance(docs[0], SourceDocument)
 
 
+def test_fetch_documents_sync_shared_drive_root_recurses():
+    connector = DriveConnector()
+    service = MagicMock()
+
+    with patch.object(connector, "_get_credentials", return_value=MagicMock()), \
+         patch("connectors.drive.build", return_value=service), \
+         patch.object(connector, "_get_all_files_recursive", return_value=iter([{"id": "file-1", "name": "Doc", "mimeType": "text/plain"}])), \
+         patch.object(connector, "_build_source_document", return_value=SourceDocument(
+             content=b"hello",
+             metadata={"source": "google_drive"},
+             source_type=SourceType.GOOGLE_DRIVE,
+             source_id="file-1",
+             filename="Doc.txt",
+             mime_type="text/plain",
+             size_bytes=5,
+         )) as mock_build:
+        docs = list(connector.fetch_documents_sync(["shared_drive:drv-1:root"], credentials={"user_id": "user-1"}))
+
+    assert len(docs) == 1
+    assert mock_build.call_args.kwargs["parent_id"] == "shared_drive:drv-1:root"
+
+
 def test_connector_type_google_drive():
     connector = DriveConnector()
     assert connector.connector_type == SourceType.GOOGLE_DRIVE
@@ -326,7 +414,7 @@ def test_fetch_documents_sync_integration_not_found():
     table = MagicMock()
     table.select.return_value = table
     table.eq.return_value = table
-    table.single.return_value = table
+    table.maybe_single.return_value = table
     table.execute.return_value = MagicMock(data=None)
     supabase.table.return_value = table
 

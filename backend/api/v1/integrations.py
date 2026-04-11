@@ -1793,6 +1793,47 @@ async def disconnect_provider(
                             )
                             logger.info("🔌 [Disconnect] Google token revoked")
 
+                        elif provider == "dropbox":
+                            await client.post(
+                                "https://api.dropboxapi.com/2/auth/token/revoke",
+                                headers={"Authorization": f"Bearer {token}"},
+                                timeout=5.0,
+                            )
+                            logger.info("🔌 [Disconnect] Dropbox token revoked")
+
+                        elif provider == "github":
+                            if settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET:
+                                await client.request(
+                                    "DELETE",
+                                    f"https://api.github.com/applications/{settings.GITHUB_CLIENT_ID}/token",
+                                    auth=(settings.GITHUB_CLIENT_ID, settings.GITHUB_CLIENT_SECRET),
+                                    headers={
+                                        "Accept": "application/vnd.github+json",
+                                        "X-GitHub-Api-Version": "2022-11-28",
+                                    },
+                                    json={"access_token": token},
+                                    timeout=5.0,
+                                )
+                                logger.info("🔌 [Disconnect] GitHub token revoked")
+                            else:
+                                logger.warning("⚠️ [Disconnect] GitHub client credentials missing; skipping provider revoke")
+
+                        elif provider == "box":
+                            if settings.BOX_CLIENT_ID and settings.BOX_CLIENT_SECRET:
+                                await client.post(
+                                    "https://api.box.com/oauth2/revoke",
+                                    data={
+                                        "client_id": settings.BOX_CLIENT_ID,
+                                        "client_secret": settings.BOX_CLIENT_SECRET,
+                                        "token": token,
+                                    },
+                                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                                    timeout=5.0,
+                                )
+                                logger.info("🔌 [Disconnect] Box token revoked")
+                            else:
+                                logger.warning("⚠️ [Disconnect] Box client credentials missing; skipping provider revoke")
+
                         elif provider == "notion":
                             # Notion doesn't have a standardized revoke endpoint for simple OAuth,
                             # but we attempt standard best practices or just log.

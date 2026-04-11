@@ -1303,6 +1303,55 @@ class TestGitHubConnector:
         # Should stop immediately due to rate limit
         assert files == []
 
+    def test_list_all_repo_files_incremental_uses_commit_history(self):
+        connector = GitHubConnector()
+
+        config = {
+            "access_token": "token",
+            "credentials": {
+                "selected_repositories": [
+                    {"full_name": "user/repo", "branch": "main", "enabled": True}
+                ]
+            }
+        }
+        since = datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc)
+        commits = [
+            {"sha": "c1", "commit": {"committer": {"date": "2026-04-11T09:00:00Z"}}},
+            {"sha": "c2", "commit": {"committer": {"date": "2026-04-11T10:00:00Z"}}},
+        ]
+        commit_details = {
+            "c1": {"files": [{"filename": "src/main.py"}]},
+            "c2": {"files": [{"filename": "README.md"}, {"filename": "deleted.txt"}]},
+        }
+        tree = [
+            {"path": "src/main.py", "type": "blob", "sha": "sha-main", "size": 100},
+            {"path": "README.md", "type": "blob", "sha": "sha-readme", "size": 50},
+        ]
+
+        with patch.object(connector, "_resolve_config", return_value=config), \
+             patch.object(connector, "_get_branch_sha", return_value="branch-sha"), \
+             patch.object(connector, "_list_commits_since", return_value=iter(commits)), \
+             patch.object(connector, "_get_commit_details", side_effect=lambda _config, _repo, sha: commit_details[sha]), \
+             patch.object(connector, "_fetch_tree", return_value=iter(tree)):
+            files = list(connector.list_all_repo_files({}, since=since))
+
+        assert [file.name for file in files] == ["README.md", "main.py"]
+        assert files[0].modified_at == datetime(2026, 4, 11, 10, 0, tzinfo=timezone.utc)
+        assert files[1].modified_at == datetime(2026, 4, 11, 9, 0, tzinfo=timezone.utc)
+
+    def test_list_commits_since_paginates(self):
+        connector = GitHubConnector()
+        since = datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc)
+        first_page = [{"sha": f"c{i}", "commit": {"committer": {"date": "2026-04-11T09:00:00Z"}}} for i in range(100)]
+        second_page = [{"sha": "c101", "commit": {"committer": {"date": "2026-04-11T10:00:00Z"}}}]
+
+        with patch.object(connector, "_request", side_effect=[first_page, second_page]) as mock_request:
+            commits = list(connector._list_commits_since({"access_token": "token"}, "user/repo", "main", since))
+
+        assert len(commits) == 101
+        assert mock_request.call_args_list[0].kwargs["params"]["page"] == 1
+        assert mock_request.call_args_list[1].kwargs["params"]["page"] == 2
+
     # -------------------------------------------------------------------------
     # fetch_file_content Tests
     # -------------------------------------------------------------------------
@@ -1455,7 +1504,7 @@ class TestGitHubConnector:
         from connectors.utils import load_integration
 
         mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = MagicMock(
             data={"id": "int-1", "access_token": "enc-token"}
         )
 
@@ -1469,7 +1518,7 @@ class TestGitHubConnector:
         from connectors.utils import load_integration
 
         mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = MagicMock(
             data=None
         )
 
@@ -1620,4 +1669,3 @@ def test_github_in_connector_registry():
     assert github_config["name"] == "GitHub"
     assert "code_aware" in github_config["capabilities"]
     assert "incremental_sync" in github_config["capabilities"]
-

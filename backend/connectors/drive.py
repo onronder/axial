@@ -8,6 +8,7 @@ File parsing is delegated to the centralized DocumentParser service.
 
 import logging
 from collections.abc import AsyncIterator, Iterator
+from datetime import datetime, timezone
 from typing import Any
 
 from google.oauth2.credentials import Credentials
@@ -34,6 +35,7 @@ from core.scopes import build_scope_uri
 from services.oauth_token_manager import OAuthTokenManager, TokenRefreshError
 
 logger = logging.getLogger(__name__)
+SHARED_DRIVE_PREFIX = "shared_drive"
 
 
 class DriveConnector(EnhancedConnector, BaseConnector):
@@ -50,10 +52,87 @@ class DriveConnector(EnhancedConnector, BaseConnector):
     def connector_type(self) -> SourceType:
         return SourceType.GOOGLE_DRIVE
 
+    @staticmethod
+    def _normalize_since(since: datetime | str | None) -> datetime | None:
+        if since is None:
+            return None
+
+        if isinstance(since, datetime):
+            return since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+
+        if isinstance(since, str):
+            normalized = since.strip()
+            if not normalized:
+                return None
+            if normalized.endswith("Z"):
+                normalized = normalized[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(normalized)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+        raise ValueError(f"Unsupported since value: {since!r}")
+
+    @staticmethod
+    def _format_drive_timestamp(value: datetime) -> str:
+        return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    @staticmethod
+    def _parse_drive_timestamp(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+        parsed = datetime.fromisoformat(normalized)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    def _encode_shared_drive_item_id(drive_id: str, item_id: str = "root") -> str:
+        return f"{SHARED_DRIVE_PREFIX}:{drive_id}:{item_id}"
+
+    @staticmethod
+    def _decode_shared_drive_item_id(item_id: str | None) -> tuple[str, str] | None:
+        if not item_id or not item_id.startswith(f"{SHARED_DRIVE_PREFIX}:"):
+            return None
+        parts = item_id.split(":", 2)
+        if len(parts) != 3:
+            return None
+        _, drive_id, raw_item_id = parts
+        return drive_id, raw_item_id
+
+    def _build_drive_list_kwargs(
+        self,
+        q: str,
+        fields: str,
+        *,
+        page_token: str | None = None,
+        shared_drive_id: str | None = None,
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "q": q,
+            "fields": fields,
+            "orderBy": "folder,name",
+            "pageSize": 1000,
+            "supportsAllDrives": True,
+            "includeItemsFromAllDrives": True,
+        }
+        if page_token:
+            kwargs["pageToken"] = page_token
+        if shared_drive_id:
+            kwargs["corpora"] = "drive"
+            kwargs["driveId"] = shared_drive_id
+        return kwargs
+
+    @staticmethod
+    def _build_drive_get_kwargs(file_id: str, fields: str) -> dict[str, Any]:
+        return {
+            "fileId": file_id,
+            "fields": fields,
+            "supportsAllDrives": True,
+        }
+
     @with_google_retry(max_attempts=3)
     def _drive_get(self, service, **kwargs):
         with google_drive_breaker, connector_fetch_limit("google_drive"):
             try:
+                kwargs.setdefault("supportsAllDrives", True)
                 return service.files().get(**kwargs).execute()
             except Exception as exc:
                 raise ConnectorTransientError(str(exc)) from exc
@@ -62,7 +141,17 @@ class DriveConnector(EnhancedConnector, BaseConnector):
     def _drive_list(self, service, **kwargs):
         with google_drive_breaker, connector_fetch_limit("google_drive"):
             try:
+                kwargs.setdefault("supportsAllDrives", True)
+                kwargs.setdefault("includeItemsFromAllDrives", True)
                 return service.files().list(**kwargs).execute()
+            except Exception as exc:
+                raise ConnectorTransientError(str(exc)) from exc
+
+    @with_google_retry(max_attempts=3)
+    def _drive_list_shared_drives(self, service, **kwargs):
+        with google_drive_breaker, connector_fetch_limit("google_drive"):
+            try:
+                return service.drives().list(**kwargs).execute()
             except Exception as exc:
                 raise ConnectorTransientError(str(exc)) from exc
 
@@ -136,39 +225,95 @@ class DriveConnector(EnhancedConnector, BaseConnector):
                 logger.warning(f"⚠️ [Drive] Download failed for {name}: {e}")
                 raise ConnectorTransientError(str(e)) from e
 
-    def _get_all_files_recursive(self, service, parent_id: str) -> Iterator[dict]:
+    def _list_shared_drives(self, service) -> list[dict[str, Any]]:
+        drives: list[dict[str, Any]] = []
+        page_token: str | None = None
+
+        while True:
+            results = self._drive_list_shared_drives(
+                service,
+                pageSize=100,
+                fields="nextPageToken, drives(id, name)",
+                pageToken=page_token,
+            )
+            drives.extend(results.get("drives", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
+
+        drives.sort(key=lambda drive: (drive.get("name") or "").lower())
+        return drives
+
+    def _list_drive_children(
+        self,
+        service,
+        parent_id: str,
+        *,
+        since: datetime | str | None = None,
+        shared_drive_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        since_dt = self._normalize_since(since)
+        fields = "nextPageToken, files(id, name, mimeType, iconLink, thumbnailLink, size, webViewLink, modifiedTime)"
+
+        def build_query(parent_ref: str) -> str:
+            query = f"'{parent_ref}' in parents and trashed=false"
+            if since_dt:
+                query += f" and modifiedTime > '{self._format_drive_timestamp(since_dt)}'"
+            return query
+
+        queries = [build_query(parent_id)]
+        if shared_drive_id and parent_id == "root":
+            queries.append(build_query(shared_drive_id))
+
+        for idx, query in enumerate(queries):
+            collected: list[dict[str, Any]] = []
+            page_token: str | None = None
+            while True:
+                results = self._drive_list(
+                    service,
+                    **self._build_drive_list_kwargs(
+                        query,
+                        fields,
+                        page_token=page_token,
+                        shared_drive_id=shared_drive_id,
+                    ),
+                )
+                collected.extend(results.get("files", []))
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+
+            if collected or idx == len(queries) - 1:
+                return collected
+
+        return []
+
+    def _get_all_files_recursive(
+        self,
+        service,
+        parent_id: str,
+        *,
+        shared_drive_id: str | None = None,
+    ) -> Iterator[dict]:
         """
         Recursively fetch all files in a folder (Generator).
         Yields file metadata objects.
         """
-        query = f"'{parent_id}' in parents and trashed=false"
+        try:
+            files = self._list_drive_children(
+                service,
+                parent_id,
+                shared_drive_id=shared_drive_id,
+            )
+        except Exception as e:
+            logger.error(f"❌ [Drive] Error listing folder {parent_id}: {e}")
+            return
 
-        # Paginator for large folders
-        page_token = None
-        while True:
-            try:
-                results = self._drive_list(
-                    service,
-                    q=query,
-                    fields="nextPageToken, files(id, name, mimeType, webViewLink, size)",
-                    pageSize=1000,
-                    pageToken=page_token,
-                )
-
-                files = results.get('files', [])
-                for f in files:
-                    if f['mimeType'] == 'application/vnd.google-apps.folder':
-                        # Recurse
-                        yield from self._get_all_files_recursive(service, f['id'])
-                    else:
-                        yield f
-
-                page_token = results.get('nextPageToken')
-                if not page_token:
-                    break
-            except Exception as e:
-                logger.error(f"❌ [Drive] Error listing folder {parent_id}: {e}")
-                break
+        for f in files:
+            if f['mimeType'] == 'application/vnd.google-apps.folder':
+                yield from self._get_all_files_recursive(service, f['id'], shared_drive_id=shared_drive_id)
+            else:
+                yield f
 
     # =========================================================================
     # EXPORT FORMAT: Map Google Native types to text formats for ingestion
@@ -276,42 +421,68 @@ class DriveConnector(EnhancedConnector, BaseConnector):
 
         return self._get_credentials_by_integration(res.data[0])
 
-    async def list_files(self, config: dict[str, Any], since: str | None = None) -> list[RemoteFile]:
+    async def list_files(self, config: dict[str, Any], since: datetime | str | None = None) -> list[RemoteFile]:
         """Async wrapper for listing items using config."""
         user_id = config.get("user_id")
         parent_id = config.get("parent_id")
-        return await run_in_threadpool(self._list_files_sync, user_id, parent_id)
+        return await run_in_threadpool(self._list_files_sync, user_id, parent_id, since)
 
-    def _list_files_sync(self, user_id: str, parent_id: str | None = None) -> list[RemoteFile]:
+    def _list_files_sync(
+        self,
+        user_id: str,
+        parent_id: str | None = None,
+        since: datetime | str | None = None,
+    ) -> list[RemoteFile]:
         """Synchronous implementation of list_files."""
         creds = self._get_credentials(user_id)
         service = build('drive', 'v3', credentials=creds)
+        since_dt = self._normalize_since(since)
+        decoded_parent = self._decode_shared_drive_item_id(parent_id)
+        shared_drive_id: str | None = None
 
-        query_parent = parent_id if parent_id else 'root'
+        if decoded_parent:
+            shared_drive_id, raw_parent_id = decoded_parent
+            query_parent = "root" if raw_parent_id == "root" else raw_parent_id
+        else:
+            query_parent = parent_id if parent_id else 'root'
 
-        results = self._drive_list(
+        files = self._list_drive_children(
             service,
-            q=f"'{query_parent}' in parents and trashed=false",
-            fields="files(id, name, mimeType, iconLink, thumbnailLink, size)",
-            orderBy="folder,name",
-            pageSize=1000,
+            query_parent,
+            since=since_dt,
+            shared_drive_id=shared_drive_id,
         )
-
-        files = results.get('files', [])
         items: list[RemoteFile] = []
         for f in files:
             is_folder = f['mimeType'] == 'application/vnd.google-apps.folder'
+            item_id = f["id"]
+            if shared_drive_id:
+                item_id = self._encode_shared_drive_item_id(shared_drive_id, f["id"])
             items.append(
                 RemoteFile(
-                    id=f["id"],
+                    id=item_id,
                     name=f["name"],
                     mime_type=f["mimeType"],
                     size=int(f.get("size") or 0) if not is_folder else None,
-                    modified_at=None,
-                    parent_id=query_parent,
+                    modified_at=self._parse_drive_timestamp(f.get("modifiedTime")),
+                    parent_id=parent_id or "root",
                     web_view_url=f.get("webViewLink"),
                 )
             )
+
+        if parent_id is None and since_dt is None:
+            for drive in self._list_shared_drives(service):
+                items.append(
+                    RemoteFile(
+                        id=self._encode_shared_drive_item_id(drive["id"], "root"),
+                        name=drive["name"],
+                        mime_type="application/vnd.google-apps.folder",
+                        size=None,
+                        modified_at=None,
+                        parent_id="root",
+                        web_view_url=None,
+                    )
+                )
         return items
 
 
@@ -366,17 +537,39 @@ class DriveConnector(EnhancedConnector, BaseConnector):
 
         for item_id in item_ids:
             try:
+                shared_drive_context = self._decode_shared_drive_item_id(item_id)
+                shared_drive_id: str | None = None
+                raw_item_id = item_id
+                if shared_drive_context:
+                    shared_drive_id, raw_item_id = shared_drive_context
+
+                if shared_drive_id and raw_item_id == "root":
+                    scope_id = build_scope_uri("google_drive", {"folder_id": shared_drive_id})
+                    folder_files = list(self._get_all_files_recursive(service, "root", shared_drive_id=shared_drive_id))
+                    logger.info(
+                        "📁 [DriveConnector] Found %s file(s) in shared drive %s",
+                        len(folder_files),
+                        shared_drive_id,
+                    )
+                    for f in folder_files:
+                        doc = self._build_source_document(service, f, parent_id=item_id, scope_id=scope_id)
+                        if doc:
+                            yield doc
+                    continue
+
                 file_meta = self._drive_get(
                     service,
-                    fileId=item_id,
-                    fields="id, name, mimeType, webViewLink, size",
+                    **self._build_drive_get_kwargs(
+                        raw_item_id,
+                        "id, name, mimeType, webViewLink, size, modifiedTime",
+                    ),
                 )
 
                 # Generate scope_id using canonical URI builder
-                scope_id = build_scope_uri("google_drive", {"folder_id": item_id})
+                scope_id = build_scope_uri("google_drive", {"folder_id": shared_drive_id or raw_item_id})
 
                 if file_meta["mimeType"] == "application/vnd.google-apps.folder":
-                    folder_files = list(self._get_all_files_recursive(service, item_id))
+                    folder_files = list(self._get_all_files_recursive(service, raw_item_id, shared_drive_id=shared_drive_id))
                     logger.info(
                         "📁 [DriveConnector] Found %s file(s) in folder %s",
                         len(folder_files),
@@ -464,11 +657,15 @@ class DriveConnector(EnhancedConnector, BaseConnector):
 
         service = build("drive", "v3", credentials=creds)
 
+        shared_drive_context = self._decode_shared_drive_item_id(file_id)
+        raw_file_id = shared_drive_context[1] if shared_drive_context else file_id
+        if raw_file_id == "root":
+            raise ConnectorTransientError("Cannot download shared drive root as a file")
+
         # Get file metadata first
         file_meta = self._drive_get(
             service,
-            fileId=file_id,
-            fields="id, name, mimeType",
+            **self._build_drive_get_kwargs(raw_file_id, "id, name, mimeType"),
         )
 
         content_bytes, _, _ = self._download_file_content(service, file_meta)
