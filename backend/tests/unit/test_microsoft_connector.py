@@ -3,9 +3,14 @@ from unittest.mock import patch
 import pytest
 import requests
 
-from connectors.base import ConnectorAuthError, ConnectorRateLimitError, RemoteFile
+from connectors.base import (
+    ConnectorAuthError,
+    ConnectorRateLimitError,
+    ConnectorTransientError,
+    RemoteFile,
+)
 from connectors.enhanced import ItemNotFoundError
-from connectors.microsoft import MicrosoftGraphConnector
+from connectors.microsoft import GRAPH_API_DOMAINS, MicrosoftGraphConnector
 
 
 class FakeResponse:
@@ -89,10 +94,14 @@ def test_list_files_children_returns_items():
 def test_download_content_follows_redirect():
     connector = MicrosoftGraphConnector("onedrive")
     config = {"access_token": "token", "drive_id": "drive-1", "target_type": "onedrive"}
-    redirect = FakeResponse(status_code=302, headers={"Location": "https://download"})
+    redirect = FakeResponse(
+        status_code=302,
+        headers={"Location": "https://tenant.sharepoint.com/download"},
+    )
     ok = FakeResponse(status_code=200, content_chunks=[b"hello"])
 
-    with patch.object(connector, "_request_with_retry", side_effect=[redirect, ok]) as request_mock:
+    with patch("connectors.microsoft.validate_redirect_url", side_effect=lambda url, _domains: url), \
+        patch.object(connector, "_request_with_retry", side_effect=[redirect, ok]) as request_mock:
         data = connector._download_content(config, "item-1")
 
     assert data == b"hello"
@@ -100,6 +109,151 @@ def test_download_content_follows_redirect():
     second_headers = request_mock.call_args_list[1].kwargs["headers"]
     assert "Authorization" in first_headers
     assert second_headers == {}
+
+
+def test_download_content_rejects_disallowed_redirect():
+    connector = MicrosoftGraphConnector("onedrive")
+    config = {"access_token": "token", "drive_id": "drive-1", "target_type": "onedrive"}
+    redirect = FakeResponse(
+        status_code=302,
+        headers={"Location": "https://169.254.169.254/latest/meta-data"},
+    )
+
+    with patch(
+        "connectors.microsoft.validate_redirect_url",
+        side_effect=ConnectorTransientError("blocked"),
+    ), patch.object(connector, "_request_with_retry", return_value=redirect) as request_mock:
+        with pytest.raises(ConnectorTransientError, match="blocked"):
+            connector._download_content(config, "item-1")
+
+    assert request_mock.call_count == 1
+
+
+def test_download_content_limits_redirect_chain():
+    connector = MicrosoftGraphConnector("onedrive")
+    config = {"access_token": "token", "drive_id": "drive-1", "target_type": "onedrive"}
+    redirects = [
+        FakeResponse(status_code=302, headers={"Location": f"https://tenant.sharepoint.com/download/{idx}"})
+        for idx in range(6)
+    ]
+
+    with patch("connectors.microsoft.validate_redirect_url", side_effect=lambda url, _domains: url), \
+        patch.object(connector, "_request_with_retry", side_effect=redirects):
+        with pytest.raises(ConnectorTransientError, match="Too many redirects"):
+            connector._download_content(config, "item-1")
+
+
+def test_delta_listing_uses_opaque_token_as_query_param():
+    connector = MicrosoftGraphConnector("onedrive")
+    config = {"access_token": "token"}
+
+    with patch.object(connector, "_get_json", return_value={"value": []}) as get_json_mock:
+        items, delta_link = connector._delta_listing(config, "drive-1", "opaque-token")
+
+    assert items == []
+    assert delta_link is None
+    get_json_mock.assert_called_once_with(
+        config,
+        "https://graph.microsoft.com/v1.0/drives/drive-1/root/delta",
+        params={"token": "opaque-token"},
+    )
+
+
+def test_delta_listing_rejects_unexpected_absolute_token_scheme():
+    connector = MicrosoftGraphConnector("onedrive")
+    config = {"access_token": "token"}
+
+    with pytest.raises(ConnectorTransientError, match="Invalid Microsoft Graph delta URL"):
+        connector._delta_listing(config, "drive-1", "ftp://graph.microsoft.com/v1.0/drives/drive-1/root/delta")
+
+
+def test_delta_listing_validates_absolute_token_and_pagination_links():
+    connector = MicrosoftGraphConnector("onedrive")
+    config = {"access_token": "token"}
+    responses = [
+        {
+            "value": [{"id": "item-1"}],
+            "@odata.nextLink": "https://graph.microsoft.com/v1.0/drives/drive-1/root/delta?$skiptoken=abc",
+            "@odata.deltaLink": "https://graph.microsoft.com/v1.0/drives/drive-1/root/delta?$deltatoken=xyz",
+        },
+        {"value": []},
+    ]
+
+    def validate(url: str) -> str:
+        return f"validated:{url}"
+
+    with patch.object(connector, "_validate_graph_url", side_effect=validate) as validate_mock, \
+        patch.object(connector, "_get_json", side_effect=responses) as get_json_mock:
+        items, delta_link = connector._delta_listing(
+            config,
+            "drive-1",
+            "https://graph.microsoft.com/v1.0/drives/drive-1/root/delta?$token=start",
+        )
+
+    assert items == [{"id": "item-1"}]
+    assert delta_link == "validated:https://graph.microsoft.com/v1.0/drives/drive-1/root/delta?$deltatoken=xyz"
+    assert get_json_mock.call_args_list[0].args == (
+        config,
+        "validated:https://graph.microsoft.com/v1.0/drives/drive-1/root/delta?$token=start",
+    )
+    assert get_json_mock.call_args_list[0].kwargs == {"params": None}
+    assert get_json_mock.call_args_list[1].args == (
+        config,
+        "validated:https://graph.microsoft.com/v1.0/drives/drive-1/root/delta?$skiptoken=abc",
+    )
+    assert validate_mock.call_count == 3
+
+
+def test_paged_items_validates_next_link():
+    connector = MicrosoftGraphConnector("onedrive")
+    config = {"access_token": "token"}
+    responses = [
+        {
+            "value": [{"id": "item-1"}],
+            "@odata.nextLink": "https://graph.microsoft.com/v1.0/drives/drive-1/root/children?$skiptoken=abc",
+        },
+        {"value": [{"id": "item-2"}]},
+    ]
+
+    with patch.object(connector, "_validate_graph_url", side_effect=lambda url: f"validated:{url}") as validate_mock, \
+        patch.object(connector, "_get_json", side_effect=responses) as get_json_mock:
+        items = list(connector._paged_items(config, "https://graph.microsoft.com/v1.0/drives/drive-1/root/children"))
+
+    assert items == [{"id": "item-1"}, {"id": "item-2"}]
+    assert get_json_mock.call_args_list[1].args == (
+        config,
+        "validated:https://graph.microsoft.com/v1.0/drives/drive-1/root/children?$skiptoken=abc",
+    )
+    validate_mock.assert_called_once_with(
+        "https://graph.microsoft.com/v1.0/drives/drive-1/root/children?$skiptoken=abc"
+    )
+
+
+def test_get_json_rejects_non_graph_absolute_url():
+    connector = MicrosoftGraphConnector("onedrive")
+
+    with patch("connectors.microsoft.validate_redirect_url", side_effect=ConnectorTransientError("blocked")), \
+        patch.object(connector, "_request_with_retry") as request_mock:
+        with pytest.raises(ConnectorTransientError, match="blocked"):
+            connector._get_json(_base_config(), "https://evil.example.com/metadata")
+
+    request_mock.assert_not_called()
+
+
+def test_get_json_validates_graph_absolute_url():
+    connector = MicrosoftGraphConnector("onedrive")
+    ok = FakeResponse(status_code=200, json_data={"id": "drive-1"})
+
+    with patch("connectors.microsoft.validate_redirect_url", return_value="https://graph.microsoft.com/v1.0/me/drive") as validate_mock, \
+        patch.object(connector, "_request_with_retry", return_value=ok) as request_mock:
+        payload = connector._get_json(_base_config(), "https://graph.microsoft.com/v1.0/me/drive")
+
+    assert payload == {"id": "drive-1"}
+    validate_mock.assert_called_once_with(
+        "https://graph.microsoft.com/v1.0/me/drive",
+        GRAPH_API_DOMAINS,
+    )
+    request_mock.assert_called_once()
 
 
 def test_request_with_retry_handles_429_then_success():

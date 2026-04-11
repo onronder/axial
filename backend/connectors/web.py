@@ -35,6 +35,12 @@ from connectors.base import (
 )
 from connectors.enhanced import EnhancedConnector, SourceDocument, SourceType
 from connectors.limits import connector_fetch_limit
+from connectors.url_safety import (
+    is_public_ip as shared_is_public_ip,
+)
+from connectors.url_safety import (
+    is_safe_host as shared_is_safe_host,
+)
 from core.scopes import build_scope_uri
 from core.url_utils import (
     YOUTUBE_URL_PATTERNS,
@@ -1081,25 +1087,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
     @lru_cache(maxsize=512)
     def _is_safe_host(self, hostname: str) -> bool:
-        try:
-            ip = ipaddress.ip_address(hostname)
-            return self._is_public_ip(ip)
-        except ValueError:
-            # Hostname: resolve and validate all IPs
-            try:
-                infos = socket.getaddrinfo(hostname, None)
-            except socket.gaierror:
-                return False
-
-            for info in infos:
-                addr = info[4][0]
-                try:
-                    ip = ipaddress.ip_address(addr)
-                except ValueError:
-                    return False
-                if not self._is_public_ip(ip):
-                    return False
-            return True
+        return shared_is_safe_host(hostname, resolver=socket.getaddrinfo)
 
     def normalize_url(self, url: str) -> str | None:
         """Normalize URL for deduplication and safe comparisons."""
@@ -1156,14 +1144,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
         return self._is_allowed_domain(hostname, base_domain, allow_subdomains)
 
     def _is_public_ip(self, ip) -> bool:
-        return not (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        )
+        return shared_is_public_ip(ip)
 
     def _enforce_public_endpoint(self, url: str) -> None:
         """

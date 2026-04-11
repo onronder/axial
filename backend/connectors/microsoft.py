@@ -13,6 +13,7 @@ import time
 from collections.abc import AsyncIterator, Iterator
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 from starlette.concurrency import run_in_threadpool
@@ -31,6 +32,11 @@ from connectors.enhanced import (
     SourceType,
 )
 from connectors.limits import connector_fetch_limit
+from connectors.url_safety import (
+    GRAPH_API_DOMAINS,
+    MICROSOFT_DOWNLOAD_REDIRECT_DOMAINS,
+    validate_redirect_url,
+)
 from connectors.utils import load_integration
 from core.scopes import build_scope_uri
 from core.sync import SyncManager
@@ -41,6 +47,7 @@ logger = logging.getLogger(__name__)
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_RETRIES = 3
+MAX_DOWNLOAD_REDIRECTS = 5
 
 
 class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
@@ -277,12 +284,17 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             yield item
 
     def _delta_listing(self, config: dict, drive_id: str, delta_token: str | None) -> tuple[list[dict], str | None]:
-        if delta_token and delta_token.startswith("http"):
-            url = delta_token
-            params = None
-        else:
-            url = f"{GRAPH_BASE_URL}/drives/{drive_id}/root/delta"
-            params = {"token": delta_token} if delta_token else None
+        url = f"{GRAPH_BASE_URL}/drives/{drive_id}/root/delta"
+        params = None
+
+        if delta_token:
+            parsed = urlparse(delta_token)
+            if parsed.scheme or parsed.netloc:
+                if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                    raise ConnectorTransientError("Invalid Microsoft Graph delta URL")
+                url = self._validate_graph_url(delta_token)
+            else:
+                params = {"token": delta_token}
 
         items: list[dict] = []
         delta_link: str | None = None
@@ -290,9 +302,11 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         while url:
             data = self._get_json(config, url, params=params)
             items.extend(data.get("value", []))
-            delta_link = data.get("@odata.deltaLink") or delta_link
+            raw_delta_link = data.get("@odata.deltaLink")
+            if raw_delta_link:
+                delta_link = self._validate_graph_url(raw_delta_link)
             next_link = data.get("@odata.nextLink")
-            url = next_link
+            url = self._validate_graph_url(next_link) if next_link else None
             params = None
 
         # Filter out deleted entries
@@ -379,12 +393,27 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
         with connector_fetch_limit(config.get("target_type", self.target_type)):
             response = self._request_with_retry("GET", url, headers=headers, stream=True, allow_redirects=False)
 
-        if response.status_code in {301, 302, 303, 307, 308}:
+        redirects_followed = 0
+        while response.status_code in {301, 302, 303, 307, 308}:
+            if redirects_followed >= MAX_DOWNLOAD_REDIRECTS:
+                response.close()
+                raise ConnectorTransientError("Too many redirects while downloading Microsoft content")
+
             location = response.headers.get("Location")
             if not location:
+                response.close()
                 raise ConnectorTransientError("Missing redirect location for download")
+
+            safe_location = validate_redirect_url(location, MICROSOFT_DOWNLOAD_REDIRECT_DOMAINS)
             response.close()
-            response = self._request_with_retry("GET", location, headers={}, stream=True)
+            response = self._request_with_retry(
+                "GET",
+                safe_location,
+                headers={},
+                stream=True,
+                allow_redirects=False,
+            )
+            redirects_followed += 1
 
         if response.status_code == 404:
             raise ItemNotFoundError(f"Graph item not found: {item_id}")
@@ -406,9 +435,16 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             data = self._get_json(config, url)
             for item in data.get("value", []):
                 yield item
-            url = data.get("@odata.nextLink")
+            next_link = data.get("@odata.nextLink")
+            url = self._validate_graph_url(next_link) if next_link else None
 
     def _get_json(self, config: dict, url: str, params: dict | None = None) -> dict:
+        parsed = urlparse(url)
+        if parsed.scheme or parsed.netloc:
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ConnectorTransientError("Invalid Microsoft Graph URL")
+            url = self._validate_graph_url(url)
+
         headers = self._auth_headers(config)
         with connector_fetch_limit(config.get("target_type", self.target_type)):
             response = self._request_with_retry("GET", url, headers=headers, params=params)
@@ -430,6 +466,9 @@ class MicrosoftGraphConnector(EnhancedConnector, BaseConnector):
             "Authorization": f"Bearer {config.get('access_token')}",
             "Accept": "application/json",
         }
+
+    def _validate_graph_url(self, url: str) -> str:
+        return validate_redirect_url(url, GRAPH_API_DOMAINS)
 
     def _request_with_retry(
         self,
