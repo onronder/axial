@@ -531,7 +531,7 @@ Faz 4 tamamlandiktan sonra kalan operasyon zinciri:
 1. `rag_analytics_*` partitionlarinin remote DB'de dogrulanmasi (migration #4 `ensure_rag_analytics_partitions(6)` ile precreate ediyor; pg_cron yoksa ileride manual partition maintenance gerekecek).
 2. Mevcut test source'larinin silinip yeniden ingest edilmesi (backfill yerine).
 3. D1-D8 smoke senaryolarinin staging uzerinde dogrulanmasi.
-4. Bu zincir tamamlandiktan sonra Faz 5 per-language retrieval / routing calismasina gecilecek.
+4. Bu zincir tamamlandiktan sonra Faz 5 per-language retrieval / routing calismasi uygulanacak.
 
 ### 10.6 Faz 4 Uygulama ve Dogrulama Durumu (8 Nisan 2026)
 
@@ -576,7 +576,41 @@ Sonuc:
 - Remote Supabase migration apply edildi: `20260408113000_write_chunk_language_on_ingest.sql`
 - Sonraki dry-run: `Remote database is up to date.`
 
-Kalan dogrulama boslugu:
+### 10.7 Faz 5 Uygulama ve Smoke Durumu (9 Nisan 2026)
 
-- Gercek DB integration testleri (`backend/tests/integration/test_ghost_protocol_sql.py`) bu shell'de `SUPABASE_URL` / service-role env'leri olmadigi icin kosulmadi
-- Operasyonel olarak hala source silme / yeniden ingest ve staging smoke zinciri tamamlanmali
+Faz 5 kapsaminda per-language FTS wiring'i tamamlandi:
+
+- `backend/core/language_config.py` eklendi ve ISO 639-1 -> PostgreSQL `regconfig` mapping'i tek modulde toplandi
+- `backend/core/ingestion_utils.py` icinde Ghost Protocol RPC path'i `language_regconfig` yollayacak sekilde guncellendi
+- `backend/api/v1/chat.py` icinde `guardrail_result.language` -> `get_regconfig()` -> `search_language` akisi aktif edildi
+- `backend/api/v1/search.py` icinde `language_detector.detect()` -> `get_regconfig()` -> `search_language` akisi aktif edildi
+- `supabase/migrations/20260408190000_per_language_fts_regconfig.sql` eklendi; ingest RPC'leri per-language `to_tsvector(...::regconfig, ...)` uretecek sekilde guncellendi, query tarafindaki zorunlu `'simple'` override'i kaldirildi
+- Faz 5 unit/integration test yuzeyi eklendi: `backend/tests/unit/test_language_config.py`, `backend/tests/unit/test_ghost_protocol_ingestion.py`, `backend/tests/unit/test_search_api.py`, `backend/tests/unit/test_chats.py`, `backend/tests/integration/test_ghost_protocol_sql.py`
+
+Dogrulama kanitlari:
+
+- Python syntax derlemesi temiz gecti
+- Python 3.11 container icinde hedefli Faz 5 lint: `ruff check` temiz
+- Python 3.11 container icinde hedefli Faz 5 unit yuzeyi: `41 passed in 4.13s`
+- `supabase db push --include-all` ile `20260408190000_per_language_fts_regconfig.sql` remote projeye uygulandi
+- Sonraki `supabase db push --include-all --dry-run` sonucu: `Remote database is up to date.`
+
+Operasyonel smoke kanitlari (tum baglantilar silinip yeniden ingest sonrasi):
+
+- `TR-AXIAL-20260408.pdf` (`8a57311d-e4e0-432f-8146-fd2caa4b0537`): `6` chunk, `5 tr`, `1 null`, `null_search_chunks = 0`
+- `EN-AXIAL-20260408.pdf` (`9b120585-0cb6-4472-ba70-d77b66b50eb8`): `8` chunk, `7 en`, `1 null`, `null_search_chunks = 0`
+- SQL smoke:
+  - `plainto_tsquery('turkish', 'uretici')` TR dokumanda eslesti
+  - `plainto_tsquery('english', 'variance')` EN dokumanda eslesti
+- Uygulama smoke:
+  - TR search/chat dogru dokumana gitti
+  - EN search/chat dogru dokumana gitti
+- Analytics smoke:
+  - 9 Nisan 2026 cagrilari icin yeni `rag_analytics` satirlari `completion_status = success` ile olustu
+  - `faithfulness_warning` gerektiğinde doldu, digerlerinde `null` kaldi
+
+Son durum:
+
+- Faz 5 per-language FTS hatti smoke seviyesinde dogrulandi
+- ingest -> FTS build -> search -> chat -> analytics zinciri birlikte saglikli
+- Gercek service-role env ile ayrik DB integration test kosusu bu shell'de yapilmadi; ancak remote migration apply + SQL smoke + uygulama smoke ile release-blocking risk kalmadi

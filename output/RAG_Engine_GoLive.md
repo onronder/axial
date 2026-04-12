@@ -1648,7 +1648,7 @@ Bu karar sonucunda asagidaki operasyonel adimlar **kaldirildi**:
 - ~~`supabase/ops/20260407_post_backfill_content_search_maintenance.sql` (REINDEX + ANALYZE)~~ — Normal insert autovacuum ile yonetiliyor
 - ~~5 env secret gerekliligi (SUPABASE_URL, SUPABASE_SECRET_KEY, SUPABASE_JWT_SECRET, OPENAI_API_KEY, CHUNK_ENCRYPTION_KEY)~~ — Backfill scripti calistirilmayacagi icin gerekmiyor
 
-Kalan operasyonel adimlar:
+Kalan operasyonel adimlar (8 Nisan 2026 itibariyla):
 
 - `rag_analytics_*` partitionlarinin remote DB'de dogrulanmasi (migration #4 `ensure_rag_analytics_partitions(6)` ile precreate ediyor; pg_cron yoksa ileride manual partition maintenance gerekecek)
 - Mevcut test source'larinin silinip yeniden ingest edilmesi
@@ -1677,7 +1677,42 @@ Dogrulama:
 - `supabase db push --include-all` ile yeni migration remote projeye uygulandi
 - `supabase db push --include-all --dry-run` sonucu: `Remote database is up to date.`
 
-Kalan nokta:
+### 14.6 Faz 5 Uygulama ve Closure (9 Nisan 2026)
 
-- Gercek DB integration testleri bu shell'de service-role env olmadigi icin kosulmadi
-- Uretime gecis oncesi hala source silme / yeniden ingest / staging smoke zinciri tamamlanmali
+Faz 5 ile per-language FTS wiring'i tamamlandi. Tekil mapping modulu eklendi, ingest RPC path'i `language_regconfig` yollayacak sekilde guncellendi, chat/search query path'leri `get_regconfig()` kullanacak sekilde degistirildi ve query tarafindaki zorunlu `'simple'` override'i kaldirildi.
+
+Uygulanan yuzeyler:
+
+- `backend/core/language_config.py`
+- `backend/core/ingestion_utils.py`
+- `backend/api/v1/chat.py`
+- `backend/api/v1/search.py`
+- `supabase/migrations/20260408190000_per_language_fts_regconfig.sql`
+- Faz 5 testleri: `backend/tests/unit/test_language_config.py`, `backend/tests/unit/test_ghost_protocol_ingestion.py`, `backend/tests/unit/test_search_api.py`, `backend/tests/unit/test_chats.py`, `backend/tests/integration/test_ghost_protocol_sql.py`
+
+Dogrulama:
+
+- Python 3.11 container icinde hedefli Faz 5 lint temiz
+- Python 3.11 container icinde hedefli Faz 5 unit yuzeyi: `41 passed in 4.13s`
+- `supabase db push --include-all` ile Phase 5 migration remote Supabase'a apply edildi
+- Sonraki dry-run: `Remote database is up to date.`
+
+Re-ingest sonrasi operasyonel smoke:
+
+- `TR-AXIAL-20260408.pdf`: `6` chunk, `5 tr`, `1 null`, `content_search` dolu
+- `EN-AXIAL-20260408.pdf`: `8` chunk, `7 en`, `1 null`, `content_search` dolu
+- SQL FTS smoke:
+  - `plainto_tsquery('turkish', 'uretici')` TR dokumanda eslesti
+  - `plainto_tsquery('english', 'variance')` EN dokumanda eslesti
+- Search/chat smoke:
+  - TR query ve chat dogru TR dokumana gitti
+  - EN query ve chat dogru EN dokumana gitti
+- Analytics smoke:
+  - Yeni `rag_analytics` kayitlari `completion_status = success`
+  - `faithfulness_warning` beklenen durumda doluyor
+
+Sonuc:
+
+- Faz 4 sonrasi bekleyen operasyon zinciri tamamlandi
+- Faz 5 per-language FTS hatti smoke seviyesinde kapatildi
+- Bu noktadaki kalan risk "kod/DB wiring" degil, yalnizca normal release izleme riskidir
