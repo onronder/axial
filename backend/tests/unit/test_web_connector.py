@@ -20,8 +20,34 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from connectors.base import ConnectorTransientError
 from connectors.enhanced import SourceDocument, SourceType
 from connectors.web import WebConnector
+
+
+class FakeResponse:
+    def __init__(
+        self,
+        *,
+        status_code: int = 200,
+        text: str = "",
+        content: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        url: str = "https://example.com/resource",
+    ) -> None:
+        self.status_code = status_code
+        self.text = text
+        self.content = content if content is not None else text.encode("utf-8")
+        self.headers = headers or {}
+        self.url = url
+        self.closed = False
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise Exception(f"HTTP {self.status_code}")
+
+    def close(self):
+        self.closed = True
 
 
 class TestIsYouTubeUrl:
@@ -212,37 +238,31 @@ class TestParseSitemap:
         assert hasattr(connector, 'parse_sitemap')
         assert callable(connector.parse_sitemap)
 
-    def test_parses_sitemap_with_usp(self, monkeypatch):
+    def test_parses_sitemap_xml(self, monkeypatch):
         connector = WebConnector()
-
-        class FakePage:
-            def __init__(self, url):
-                self.url = url
-
-        class FakeTree:
-            def all_pages(self):
-                return [FakePage("https://example.com/a"), FakePage("https://example.com/b")]
-
-        tree_module = SimpleNamespace(sitemap_tree_for_homepage=lambda *_args, **_kwargs: FakeTree())
-        monkeypatch.setitem(sys.modules, "usp", SimpleNamespace(tree=tree_module))
-        monkeypatch.setitem(sys.modules, "usp.tree", tree_module)
-
-        # Mock preflight check
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.headers = {"Content-Type": "application/xml"}
-        mock_response.text = '<?xml version="1.0"?>'
-        monkeypatch.setattr(connector.session, "get", lambda *args, **kwargs: mock_response)
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://example.com/a</loc></url>
+            <url><loc>https://example.com/b</loc></url>
+        </urlset>
+        """
+        monkeypatch.setattr(
+            connector,
+            "_safe_get",
+            lambda *_args, **_kwargs: FakeResponse(
+                headers={"Content-Type": "application/xml"},
+                text=xml,
+                url="https://example.com/sitemap.xml",
+            ),
+        )
 
         urls = connector.parse_sitemap("https://example.com/sitemap.xml")
 
         assert "https://example.com/a" in urls
         assert "https://example.com/b" in urls
 
-    @patch('connectors.web.requests.get')
-    def test_handles_sitemap_index(self, mock_get):
+    def test_handles_sitemap_index(self):
         """Should handle sitemap index files."""
-        # First call returns sitemap index, second returns actual sitemap
         index_content = b"""<?xml version="1.0" encoding="UTF-8"?>
         <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
             <sitemap><loc>https://example.com/sitemap1.xml</loc></sitemap>
@@ -254,44 +274,47 @@ class TestParseSitemap:
         </urlset>
         """
 
-        mock_response_index = Mock()
-        mock_response_index.status_code = 200
-        mock_response_index.content = index_content
-
-        mock_response_sitemap = Mock()
-        mock_response_sitemap.status_code = 200
-        mock_response_sitemap.content = sitemap_content
-
-        mock_get.side_effect = [mock_response_index, mock_response_sitemap]
-
         connector = WebConnector()
+        connector._safe_get = MagicMock(
+            side_effect=[
+                FakeResponse(
+                    headers={"Content-Type": "application/xml"},
+                    content=index_content,
+                    text=index_content.decode("utf-8"),
+                    url="https://example.com/sitemap_index.xml",
+                ),
+                FakeResponse(
+                    headers={"Content-Type": "application/xml"},
+                    content=sitemap_content,
+                    text=sitemap_content.decode("utf-8"),
+                    url="https://example.com/sitemap1.xml",
+                ),
+            ]
+        )
         urls = connector.parse_sitemap("https://example.com/sitemap_index.xml")
 
-        # Should have parsed URLs
-        assert isinstance(urls, list)
+        assert urls == ["https://example.com/page1"]
 
-    @patch('connectors.web.requests.get')
-    def test_handles_empty_sitemap(self, mock_get):
+    def test_handles_empty_sitemap(self):
         """Should handle empty sitemap gracefully."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.content = b"""<?xml version="1.0" encoding="UTF-8"?>
+        mock_response = FakeResponse(
+            headers={"Content-Type": "application/xml"},
+            text="""<?xml version="1.0" encoding="UTF-8"?>
         <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
         </urlset>
-        """
-        mock_get.return_value = mock_response
+        """,
+        )
 
         connector = WebConnector()
+        connector._safe_get = MagicMock(return_value=mock_response)
         urls = connector.parse_sitemap("https://example.com/sitemap.xml")
 
         assert urls == []
 
-    @patch('connectors.web.requests.get')
-    def test_handles_network_error(self, mock_get):
+    def test_handles_network_error(self):
         """Should handle network errors gracefully."""
-        mock_get.side_effect = Exception("Network error")
-
         connector = WebConnector()
+        connector._safe_get = MagicMock(side_effect=Exception("Network error"))
         urls = connector.parse_sitemap("https://example.com/sitemap.xml")
 
         assert urls == []
@@ -300,18 +323,15 @@ class TestParseSitemap:
 class TestCheckRobotsTxt:
     """Test robots.txt compliance."""
 
-    @patch('connectors.web.requests.get')
-    def test_allows_when_permitted(self, mock_get):
+    def test_allows_when_permitted(self):
         """Should return True when robots.txt allows crawling."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.text = """
+        mock_response = FakeResponse(status_code=200, text="""
         User-agent: *
         Allow: /
-        """
-        mock_get.return_value = mock_response
+        """)
 
         connector = WebConnector()
+        connector.session.get = MagicMock(return_value=mock_response)
         result = connector.check_robots_txt("https://example.com/page")
 
         assert result is True
@@ -508,14 +528,13 @@ class TestWebNormalization:
 
 
 class TestRobotsParser:
-    @patch("connectors.web.requests.get")
-    def test_get_robots_parser_allows_on_error(self, mock_get):
+    def test_get_robots_parser_allows_on_error(self):
         mock_response = Mock()
         mock_response.status_code = 500
         mock_response.text = ""
-        mock_get.return_value = mock_response
 
         connector = WebConnector()
+        connector.session.get = MagicMock(return_value=mock_response)
         parser = connector._get_robots_parser("https://example.com/robots.txt")
         assert parser.can_fetch("*", "https://example.com")
 
@@ -527,24 +546,21 @@ class TestRobotsParser:
         assert hasattr(connector, 'check_robots_txt')
         assert callable(connector.check_robots_txt)
 
-    @patch('connectors.web.requests.get')
-    def test_allows_when_robots_not_found(self, mock_get):
+    def test_allows_when_robots_not_found(self):
         """Should allow crawling when robots.txt is not found (fail-open)."""
         mock_response = Mock()
         mock_response.status_code = 404
-        mock_get.return_value = mock_response
 
         connector = WebConnector()
+        connector.session.get = MagicMock(return_value=mock_response)
         result = connector.check_robots_txt("https://example.com/page")
 
         assert result is True
 
-    @patch('connectors.web.requests.get')
-    def test_allows_on_network_error(self, mock_get):
+    def test_allows_on_network_error(self):
         """Should allow crawling on network error (fail-open)."""
-        mock_get.side_effect = Exception("Network error")
-
         connector = WebConnector()
+        connector.session.get = MagicMock(side_effect=Exception("Network error"))
         result = connector.check_robots_txt("https://example.com/page")
 
         assert result is True
@@ -575,13 +591,77 @@ class TestFetchYouTubeTranscript:
         assert result == "" or result is None
 
 
+class TestSafeGet:
+    def test_safe_get_resolves_relative_redirect(self):
+        connector = WebConnector()
+        redirect = FakeResponse(
+            status_code=302,
+            headers={"Location": "/final"},
+            url="https://example.com/start",
+        )
+        final = FakeResponse(status_code=200, text="ok", url="https://example.com/final")
+
+        with patch.object(connector, "_is_safe_url", return_value=True), patch.object(
+            connector.session,
+            "get",
+            side_effect=[redirect, final],
+        ) as mock_get:
+            response = connector._safe_get("https://example.com/start")
+
+        assert response is final
+        assert mock_get.call_args_list[1].args[0] == "https://example.com/final"
+
+    def test_safe_get_redirect_missing_location_raises(self):
+        connector = WebConnector()
+        redirect = FakeResponse(status_code=302, headers={}, url="https://example.com/start")
+
+        with patch.object(connector, "_is_safe_url", return_value=True), patch.object(
+            connector.session,
+            "get",
+            return_value=redirect,
+        ):
+            with pytest.raises(ConnectorTransientError, match="missing Location"):
+                connector._safe_get("https://example.com/start")
+
+        assert redirect.closed is True
+
+    def test_safe_get_checks_url_policy_on_initial(self):
+        connector = WebConnector()
+        with patch.object(connector, "_is_safe_url", return_value=False):
+            with pytest.raises(ConnectorTransientError, match="policy check"):
+                connector._safe_get("ftp://example.com/file")
+
+    def test_safe_get_checks_url_policy_on_redirect_target(self):
+        connector = WebConnector()
+        redirect = FakeResponse(
+            status_code=302,
+            headers={"Location": "ftp://evil.example.com/file"},
+            url="https://example.com/start",
+        )
+
+        with patch.object(connector, "_is_safe_url", side_effect=[True, False]), patch.object(
+            connector.session,
+            "get",
+            return_value=redirect,
+        ):
+            with pytest.raises(ConnectorTransientError, match="redirect target failed policy check"):
+                connector._safe_get("https://example.com/start")
+
+    @patch("connectors.web.trafilatura.fetch_url")
+    def test_fetch_html_uses_safe_session_not_trafilatura(self, mock_fetch_url):
+        connector = WebConnector()
+        connector._safe_get = MagicMock(return_value=FakeResponse(text="<html>Body</html>"))
+
+        assert connector.fetch_html("https://example.com") == "<html>Body</html>"
+        mock_fetch_url.assert_not_called()
+
+
 class TestIngest:
     """Test the main ingest method."""
 
     @patch('connectors.web.trafilatura')
     def test_ingest_web_page(self, mock_trafilatura):
         """Should ingest a regular web page."""
-        mock_trafilatura.fetch_url.return_value = "<html><body>Content</body></html>"
         mock_trafilatura.extract.return_value = "Extracted content from the page"
         mock_trafilatura.extract_metadata.return_value = Mock(
             title="Test Page",
@@ -590,6 +670,7 @@ class TestIngest:
         )
 
         connector = WebConnector()
+        connector.fetch_html = MagicMock(return_value="<html><body>Content</body></html>")
         docs = list(connector.fetch_documents_sync(
             ["https://example.com/page"],
             respect_robots=False,
@@ -622,43 +703,21 @@ class TestIngest:
 
 
 class TestWebConnectorExtraPaths:
-    def test_parse_sitemap_import_error_fallback(self, monkeypatch):
+    def test_parse_sitemap_rejects_html_response(self, monkeypatch):
         connector = WebConnector()
-        real_import = builtins.__import__
+        connector._safe_get = MagicMock(
+            return_value=FakeResponse(
+                status_code=200,
+                headers={"Content-Type": "text/html"},
+                text="<!doctype html><html></html>",
+                url="https://example.com/sitemap.xml",
+            )
+        )
+        assert connector.parse_sitemap("https://example.com/sitemap.xml") == []
 
-        def fake_import(name, *args, **kwargs):
-            if name == "usp.tree":
-                raise ImportError("missing")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
-
-        # Mock preflight check
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.headers = {"Content-Type": "application/xml"}
-        mock_response.text = '<?xml version="1.0"?>'
-        monkeypatch.setattr(connector.session, "get", lambda *args, **kwargs: mock_response)
-
-        with patch.object(connector, "_parse_sitemap_basic", return_value=["https://example.com/a"]) as fallback:
-            result = connector.parse_sitemap("https://example.com/sitemap.xml")
-
-        fallback.assert_called_once()
-        assert result == ["https://example.com/a"]
-
-    def test_parse_sitemap_exception_returns_empty(self, monkeypatch):
+    def test_parse_sitemap_exception_returns_empty(self):
         connector = WebConnector()
-        usp = ModuleType("usp")
-        tree = ModuleType("usp.tree")
-
-        def boom(_url):
-            raise RuntimeError("boom")
-
-        tree.sitemap_tree_for_homepage = boom
-        usp.tree = tree
-        monkeypatch.setitem(sys.modules, "usp", usp)
-        monkeypatch.setitem(sys.modules, "usp.tree", tree)
-
+        connector._safe_get = MagicMock(side_effect=RuntimeError("boom"))
         assert connector.parse_sitemap("https://example.com/sitemap.xml") == []
 
     def test_parse_sitemap_basic_sitemap_index(self):
@@ -667,9 +726,13 @@ class TestWebConnectorExtraPaths:
         class Response:
             def __init__(self, content):
                 self.content = content.encode("utf-8")
+                self.closed = False
 
             def raise_for_status(self):
                 return None
+
+            def close(self):
+                self.closed = True
 
         index_xml = """
         <sitemapindex>
@@ -682,13 +745,13 @@ class TestWebConnectorExtraPaths:
         </urlset>
         """
 
-        connector.session.get = MagicMock(side_effect=[Response(index_xml), Response(sub_xml)])
+        connector._safe_get = MagicMock(side_effect=[Response(index_xml), Response(sub_xml)])
         urls = connector._parse_sitemap_basic("https://example.com/sitemap.xml")
         assert "https://example.com/page" in urls
 
     def test_parse_sitemap_basic_error_returns_empty(self):
         connector = WebConnector()
-        connector.session.get = MagicMock(side_effect=Exception("boom"))
+        connector._safe_get = MagicMock(side_effect=Exception("boom"))
         assert connector._parse_sitemap_basic("https://example.com/sitemap.xml") == []
 
     def test_extract_links_skips_nofollow_and_non_http(self):
@@ -956,9 +1019,9 @@ class TestWebConnectorExtraPaths:
     @patch("connectors.web.trafilatura")
     def test_ingest_empty_text(self, mock_trafilatura):
         connector = WebConnector()
-        mock_trafilatura.fetch_url.return_value = "<html></html>"
         mock_trafilatura.extract.return_value = "   "
         mock_trafilatura.extract_metadata.return_value = None
+        connector.fetch_html = MagicMock(return_value="<html></html>")
         docs = list(connector.fetch_documents_sync(["https://example.com"], respect_robots=False))
         assert docs == []
 
@@ -971,23 +1034,21 @@ class TestWebConnectorExtraPaths:
     @patch("connectors.web.trafilatura")
     def test_ingest_handles_trafilatura_error(self, mock_trafilatura):
         connector = WebConnector()
-        mock_trafilatura.fetch_url.return_value = "<html></html>"
         mock_trafilatura.extract.side_effect = Exception("boom")
+        connector.fetch_html = MagicMock(return_value="<html></html>")
         docs = list(connector.fetch_documents_sync(["https://example.com"], respect_robots=False))
         assert docs == []
 
-    @patch("connectors.web.trafilatura")
-    def test_fetch_html_returns_none(self, mock_trafilatura):
+    def test_fetch_html_returns_none(self):
         connector = WebConnector()
-        mock_trafilatura.fetch_url.return_value = None
+        connector._safe_get = MagicMock(return_value=FakeResponse(text=""))
         assert connector.fetch_html("https://example.com") is None
 
-    @patch("connectors.web.trafilatura")
-    def test_fetch_html_handles_exception(self, mock_trafilatura):
+    def test_fetch_html_handles_exception(self):
         """fetch_html raises ConnectorTransientError on exception."""
         from connectors.base import ConnectorTransientError
         connector = WebConnector()
-        mock_trafilatura.fetch_url.side_effect = Exception("boom")
+        connector._safe_get = MagicMock(side_effect=Exception("boom"))
         with pytest.raises(ConnectorTransientError):
             connector.fetch_html("https://example.com")
 
@@ -1040,11 +1101,11 @@ class TestWebConnectorExtraPaths:
                 self.status_code = status_code
                 self.text = ""
 
-        with patch("connectors.web.requests.get", return_value=Response(404)):
+        with patch.object(connector.session, "get", return_value=Response(404)):
             parser = connector._get_robots_parser("https://example.com/robots.txt")
             assert parser.can_fetch("*", "https://example.com")
             assert parser.crawl_delay("*") is None
 
-        with patch("connectors.web.requests.get", side_effect=Exception("boom")):
+        with patch.object(connector.session, "get", side_effect=Exception("boom")):
             parser = connector._get_robots_parser("https://example.com/robots.txt")
             assert parser.can_fetch("*", "https://example.com")

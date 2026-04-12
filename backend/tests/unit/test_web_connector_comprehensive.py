@@ -458,11 +458,11 @@ class TestSitemapPreflightChecks:
         connector = WebConnector()
 
         mock_response = Mock()
-        mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "text/html"}
         mock_response.text = "<!DOCTYPE html><html><head></head><body></body></html>"
+        mock_response.content = mock_response.text.encode("utf-8")
 
-        with patch.object(connector.session, "get", return_value=mock_response):
+        with patch.object(connector, "_safe_get", return_value=mock_response):
             urls = connector.parse_sitemap("https://example.com/sitemap.xml")
 
         # Should return empty list due to HTML content
@@ -474,12 +474,7 @@ class TestSitemapPreflightChecks:
 
         connector = WebConnector()
 
-        mock_response = Mock()
-        mock_response.status_code = 404
-        mock_response.headers = {}
-        mock_response.text = ""
-
-        with patch.object(connector.session, "get", return_value=mock_response):
+        with patch.object(connector, "_safe_get", side_effect=Exception("HTTP 404")):
             urls = connector.parse_sitemap("https://example.com/sitemap.xml")
 
         assert urls == []

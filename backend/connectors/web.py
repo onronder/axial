@@ -12,6 +12,7 @@ Supports:
 The connector provides discovery capabilities; looping logic is in the Celery worker.
 """
 
+import gzip
 import ipaddress
 import logging
 import os
@@ -41,6 +42,7 @@ from connectors.url_safety import (
 from connectors.url_safety import (
     is_safe_host as shared_is_safe_host,
 )
+from connectors.url_safety import safe_session
 from core.scopes import build_scope_uri
 from core.url_utils import (
     YOUTUBE_URL_PATTERNS,
@@ -227,8 +229,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
     }
 
     def __init__(self) -> None:
-        self.session = requests.Session()
-        self.session.headers.update(self.DEFAULT_HEADERS)
+        self.session = safe_session(self.DEFAULT_HEADERS)
 
     def close(self) -> None:
         """Close the underlying HTTP session to release connections."""
@@ -274,7 +275,6 @@ class WebConnector(EnhancedConnector, BaseConnector):
         url = file_id
         if not self._is_safe_url(url):
             raise ConnectorAuthError("Unsafe URL blocked")
-        self._enforce_public_endpoint(url)
         html = self.fetch_html(url)
         if html is None:
             raise ConnectorTransientError("Failed to fetch content")
@@ -299,57 +299,61 @@ class WebConnector(EnhancedConnector, BaseConnector):
         Returns:
             List of page URLs found in the sitemap
         """
-        # Prefetch to ensure this looks like XML and not an HTML login page
-        self._enforce_public_endpoint(sitemap_url)
         try:
             with connector_fetch_limit("web"):
-                head = self.session.get(sitemap_url, timeout=(10, 30), allow_redirects=True)
-            content_type = head.headers.get("Content-Type", "").lower()
-            body_lower = (head.text or "").strip().lower()
-            if head.status_code >= 400:
-                logger.warning(f"⚠️ [Web] Sitemap preflight failed ({head.status_code}): {sitemap_url}")
-                return []
-            if "xml" not in content_type:
-                logger.warning(f"⚠️ [Web] Sitemap preflight not xml ({content_type}): {sitemap_url}")
+                response = self._safe_get(sitemap_url)
+            try:
+                content = response.content
+                content_type = response.headers.get("Content-Type", "").lower()
+                body_lower = (response.text or "").strip().lower()
+            finally:
+                response.close()
+
+            is_gzip = content.startswith(b"\x1f\x8b")
+            if "xml" not in content_type and not is_gzip:
+                logger.warning(f"⚠️ [Web] Sitemap not xml ({content_type}): {sitemap_url}")
                 return []
             if body_lower.startswith("<!doctype html") or body_lower.startswith("<html"):
                 logger.warning(f"⚠️ [Web] Sitemap response is HTML (likely login/forbidden): {sitemap_url}")
                 return []
         except Exception as e:
-            logger.warning(f"⚠️ [Web] Sitemap preflight error for {sitemap_url}: {e}")
-            # Fall through to best-effort parsing
-        try:
-            from usp.tree import sitemap_tree_for_homepage
-            tree = sitemap_tree_for_homepage(sitemap_url)
-
-            urls = []
-            for page in tree.all_pages():
-                if page.url:
-                    urls.append(page.url)
-
-            logger.info(f"📍 [Web] Parsed sitemap: {len(urls)} URLs from {sitemap_url}")
-            return urls
-
-        except ImportError:
-            logger.warning("⚠️ [Web] ultimate-sitemap-parser not installed, falling back to basic parsing")
-            return self._parse_sitemap_basic(sitemap_url)
-        except Exception as e:
             logger.error(f"❌ [Web] Sitemap parsing failed for {sitemap_url}: {e}")
             return []
 
+        try:
+            urls = self._parse_sitemap_xml(content)
+            logger.info(f"📍 [Web] Parsed sitemap: {len(urls)} URLs from {sitemap_url}")
+            return urls
+        except Exception as e:
+            logger.error(f"❌ [Web] Sitemap XML parsing failed for {sitemap_url}: {e}")
+            return []
+
     def _parse_sitemap_basic(self, sitemap_url: str) -> list[str]:
-        """Basic sitemap parser fallback using BeautifulSoup."""
+        """Backward-compatible sitemap parser wrapper using the safe network path."""
+        try:
+            with connector_fetch_limit("web"):
+                response = self._safe_get(sitemap_url)
+            try:
+                return self._parse_sitemap_xml(response.content)
+            finally:
+                response.close()
+        except Exception as e:
+            logger.error(f"❌ [Web] Basic sitemap parsing failed: {e}")
+            return []
+
+    def _parse_sitemap_xml(self, xml_content: bytes, _depth: int = 0) -> list[str]:
+        """Parse sitemap XML bytes, including sitemap indexes, with bounded recursion."""
         try:
             from bs4 import BeautifulSoup
 
-            with connector_fetch_limit("web"):
-                response = self.session.get(
-                    sitemap_url,
-                    timeout=(10, 30)
-                )
-            response.raise_for_status()
+            if _depth > 3:
+                logger.warning("⚠️ [Web] Sitemap recursion depth exceeded")
+                return []
 
-            soup = BeautifulSoup(response.content, "lxml-xml")
+            if xml_content.startswith(b"\x1f\x8b"):
+                xml_content = gzip.decompress(xml_content)
+
+            soup = BeautifulSoup(xml_content, "lxml-xml")
 
             # Check for sitemap index
             sitemaps = soup.find_all("sitemap")
@@ -357,16 +361,34 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 urls = []
                 for sitemap in sitemaps:
                     loc = sitemap.find("loc")
-                    if loc:
+                    if loc and loc.text.strip():
                         # Recursively parse nested sitemap
-                        urls.extend(self._parse_sitemap_basic(loc.text.strip()))
+                        nested_url = loc.text.strip()
+                        try:
+                            with connector_fetch_limit("web"):
+                                nested_response = self._safe_get(nested_url)
+                            try:
+                                urls.extend(
+                                    self._parse_sitemap_xml(
+                                        nested_response.content,
+                                        _depth=_depth + 1,
+                                    )
+                                )
+                            finally:
+                                nested_response.close()
+                        except Exception as nested_exc:
+                            logger.warning(
+                                "⚠️ [Web] Nested sitemap fetch failed: %s: %s",
+                                nested_url,
+                                nested_exc,
+                            )
                 return urls
 
             # Regular sitemap - extract URLs
             urls = []
             for url_tag in soup.find_all("url"):
                 loc = url_tag.find("loc")
-                if loc:
+                if loc and loc.text.strip():
                     urls.append(loc.text.strip())
 
             return urls
@@ -1050,10 +1072,13 @@ class WebConnector(EnhancedConnector, BaseConnector):
         Used by the worker for recursive crawling.
         """
         try:
-            self._enforce_public_endpoint(url)
             with connector_fetch_limit("web"):
-                html = trafilatura.fetch_url(url)
-            if html is not None:
+                response = self._safe_get(url)
+            try:
+                html = response.text
+            finally:
+                response.close()
+            if html:
                 if max_bytes and len(html.encode("utf-8")) > max_bytes:
                     raise ConnectorTransientError("Content too large")
                 return html
@@ -1146,6 +1171,46 @@ class WebConnector(EnhancedConnector, BaseConnector):
     def _is_public_ip(self, ip) -> bool:
         return shared_is_public_ip(ip)
 
+    def _safe_get(self, url: str, **kwargs) -> requests.Response:
+        """GET with URL policy validation and manual redirect handling."""
+        kwargs.setdefault("timeout", (10, 30))
+        kwargs.setdefault("headers", self.DEFAULT_HEADERS)
+        kwargs["allow_redirects"] = False
+
+        if not self._is_safe_url(url):
+            raise ConnectorTransientError(f"SSRF: URL failed policy check: {url}")
+
+        current_url = url
+        response = self.session.get(current_url, **kwargs)
+        redirect_count = 0
+
+        while response.status_code in {301, 302, 303, 307, 308}:
+            redirect_count += 1
+            if redirect_count > 5:
+                response.close()
+                raise ConnectorTransientError(f"Too many redirects (>5) from {url}")
+
+            location = response.headers.get("Location")
+            if not location:
+                response.close()
+                raise ConnectorTransientError(
+                    f"Redirect {response.status_code} missing Location header"
+                )
+
+            next_url = urljoin(response.url or current_url, location)
+            response.close()
+
+            if not self._is_safe_url(next_url):
+                raise ConnectorTransientError(
+                    f"SSRF: redirect target failed policy check: {next_url}"
+                )
+
+            current_url = next_url
+            response = self.session.get(current_url, **kwargs)
+
+        response.raise_for_status()
+        return response
+
     def _enforce_public_endpoint(self, url: str) -> None:
         """
         Explicit SSRF guard: resolve hostname via getaddrinfo (all records)
@@ -1180,7 +1245,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
         rp = RobotFileParser()
         try:
             with connector_fetch_limit("web"):
-                response = requests.get(robots_url, timeout=(10, 30), headers=self.DEFAULT_HEADERS)
+                response = self.session.get(robots_url, timeout=(10, 30), headers=self.DEFAULT_HEADERS)
                 if response.status_code >= 400:
                     return _AllowAll()
                 rp.parse(response.text.splitlines())
