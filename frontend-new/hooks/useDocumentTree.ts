@@ -176,7 +176,7 @@ export function useDocumentTree(
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
-    const { data, isLoading, isFetching, refetch } = useQuery({
+    const { data, isLoading, isFetching, isPlaceholderData, refetch } = useQuery({
         queryKey: documentTreeQueryKey(path, page, pageSize, search),
         queryFn: ({ signal }) =>
             fetchDocumentTree({ path, page, pageSize, search, signal }),
@@ -256,6 +256,7 @@ export function useDocumentTree(
         failedCount: data?.failed_count ?? 0,
         isLoading,
         isFetching,
+        isPlaceholderData,
         refresh: refetch,
         deleteDocument: deleteMutation.mutateAsync,
         bulkDeleteDocuments: bulkDeleteMutation.mutateAsync,

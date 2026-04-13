@@ -135,9 +135,10 @@ export function GlobalProgress() {
 
         // Auto-dismiss after delay
         setTimeout(() => {
-            setJobs((prev) =>
-                prev.filter((j) => j.id !== job.id || expandedJobIdRef.current === job.id)
-            );
+            if (expandedJobIdRef.current === job.id) {
+                return;
+            }
+            setJobs((prev) => prev.filter((j) => j.id !== job.id));
             unregisterJob(job.id);
         }, COMPLETION_DISPLAY_TIME);
     }, [toast, unregisterJob]);
@@ -152,7 +153,13 @@ export function GlobalProgress() {
             variant: "destructive",
         });
 
-        setTimeout(() => unregisterJob(job.id), COMPLETION_DISPLAY_TIME);
+        setTimeout(() => {
+            if (expandedJobIdRef.current === job.id) {
+                return;
+            }
+            setJobs((prev) => prev.filter((j) => j.id !== job.id));
+            unregisterJob(job.id);
+        }, COMPLETION_DISPLAY_TIME);
     }, [toast, unregisterJob]);
 
     const showCancelledToast = useCallback((job: IngestionJob) => {
@@ -167,9 +174,10 @@ export function GlobalProgress() {
         });
 
         setTimeout(() => {
-            setJobs((prev) =>
-                prev.filter((j) => j.id !== job.id || expandedJobIdRef.current === job.id)
-            );
+            if (expandedJobIdRef.current === job.id) {
+                return;
+            }
+            setJobs((prev) => prev.filter((j) => j.id !== job.id));
             unregisterJob(job.id);
         }, COMPLETION_DISPLAY_TIME);
     }, [toast, unregisterJob]);
@@ -311,9 +319,13 @@ export function GlobalProgress() {
     }, [expandJob]);
 
     const handleCloseDetails = useCallback(() => {
+        if (activeJob && ["completed", "failed", "cancelled"].includes(activeJob.status)) {
+            setJobs((prev) => prev.filter((job) => job.id !== activeJob.id));
+            unregisterJob(activeJob.id);
+        }
         expandJob(null);
         setActiveJob(null);
-    }, [expandJob]);
+    }, [activeJob, expandJob, unregisterJob]);
 
     if (visibleJobs.length === 0 && !expandedJobId) return null;
 
@@ -330,6 +342,8 @@ export function GlobalProgress() {
                             ? Math.round((activeJob.processed_files / activeJob.total_files) * 100)
                             : 0)
                     }
+                    jobStatus={activeJob?.status}
+                    jobErrorMessage={activeJob?.error_message || activeJob?.message || activeJob?.status_message}
                     onClose={handleCloseDetails}
                     onComplete={handleIngestionComplete}
                 />

@@ -167,6 +167,7 @@ export function KnowledgeBaseBrowser() {
     failedCount = 0,
     isLoading,
     isFetching: isRefreshing,
+    isPlaceholderData,
     refresh: handleRefresh,
     deleteDocument,
     bulkDeleteDocuments,
@@ -178,12 +179,12 @@ export function KnowledgeBaseBrowser() {
   const { refresh: refreshUsage } = useUsage();
 
   useEffect(() => {
-    if (resolvedPath !== currentPath) {
+    if (!isPlaceholderData && resolvedPath !== currentPath) {
       setCurrentPath(resolvedPath);
       setSelectedIds(new Set());
       setFocusedIndex(-1);
     }
-  }, [currentPath, resolvedPath]);
+  }, [currentPath, isPlaceholderData, resolvedPath]);
 
   // Pagination
   const totalPages = useMemo(

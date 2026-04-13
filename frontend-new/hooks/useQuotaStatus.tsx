@@ -46,17 +46,21 @@ import { safeLocalStorage } from "@/lib/storage";
 // Constants
 // =============================================================================
 
-/**
- * Keywords that indicate a quota/limit error in job messages.
- */
-const QUOTA_ERROR_KEYWORDS = [
-    "quota",
-    "limit",
-    "exceeded",
-    "file limit",
+const QUOTA_ERROR_PATTERNS = [
+    "storage quota exceeded",
     "storage limit",
-    "upgrade",
-    "plan",
+    "file limit",
+    "daily job quota exceeded",
+    "active job limit reached",
+    "quota exceeded",
+] as const;
+
+const NON_PROVIDER_LIMIT_PATTERNS = [
+    "scope limit",
+    "scope quota",
+    "scope identities",
+    "subscription required",
+    "subscribe to ingest",
 ] as const;
 
 /**
@@ -111,7 +115,12 @@ const QuotaStatusContext = createContext<QuotaStatus | null>(null);
 function isQuotaError(message: string | undefined | null): boolean {
     if (!message) return false;
     const lowerMessage = message.toLowerCase();
-    return QUOTA_ERROR_KEYWORDS.some(keyword => lowerMessage.includes(keyword));
+
+    if (NON_PROVIDER_LIMIT_PATTERNS.some((pattern) => lowerMessage.includes(pattern))) {
+        return false;
+    }
+
+    return QUOTA_ERROR_PATTERNS.some((pattern) => lowerMessage.includes(pattern));
 }
 
 /**

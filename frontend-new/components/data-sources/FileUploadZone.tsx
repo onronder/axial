@@ -23,6 +23,7 @@ import {
   getDropRejectionMessage,
 } from "@/lib/file-validation";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
+import { formatSourceTypeLabel } from "@/lib/sourceType";
 import { Spinner } from "@/components/ui/spinner";
 
 interface FileUploadZoneProps {
@@ -327,10 +328,11 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
       {isOverLimit && hasQuotaIssue && (
         <Alert variant="default" className="border-amber-500/50 bg-amber-500/10">
           <AlertCircle className="h-4 w-4 text-amber-500" />
-          <AlertTitle className="text-amber-600 dark:text-amber-400">File Limit Reached</AlertTitle>
+          <AlertTitle className="text-amber-600 dark:text-amber-400">Plan Limit Reached</AlertTitle>
           <AlertDescription className="text-amber-600/80 dark:text-amber-400/80">
-            Your file limit was reached during sync from {Array.from(quotaExceededProviders).join(", ")}. 
-            Upgrade your plan to continue uploading.
+            A plan limit was reached during sync from{" "}
+            {Array.from(quotaExceededProviders).map((provider) => formatSourceTypeLabel(provider)).join(", ")}.
+            Upgrade your plan to continue ingesting and uploading.
           </AlertDescription>
         </Alert>
       )}

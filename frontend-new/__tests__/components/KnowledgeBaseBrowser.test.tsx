@@ -15,6 +15,7 @@
  * - Loading states
  */
 
+import * as React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -336,6 +337,89 @@ describe('KnowledgeBaseBrowser Component', () => {
             fireEvent.doubleClick(sourceFolder.closest('tr')!);
 
             // Should now show Projects folder
+            await waitFor(() => {
+                expect(screen.getByText('Projects')).toBeInTheDocument();
+            });
+        });
+
+        it('should keep the requested folder path while placeholder tree data is loading', async () => {
+            const documents = [
+                createDocument({ sourceType: 'file_upload', path: '/Projects/doc.pdf' }),
+            ];
+
+            setupDefaultMocks(documents);
+            mockUseDocumentTree.mockImplementation((
+                currentPath: string = '/',
+                page: number = 1,
+                pageSize: number = 25,
+                search: string = '',
+            ) => {
+                const [resolvedPath, setResolvedPath] = React.useState(currentPath);
+                const isPlaceholderData = currentPath !== '/' && resolvedPath !== currentPath;
+
+                React.useEffect(() => {
+                    if (currentPath === '/') {
+                        setResolvedPath('/');
+                        return;
+                    }
+
+                    const timer = setTimeout(() => {
+                        setResolvedPath(currentPath);
+                    }, 10);
+
+                    return () => clearTimeout(timer);
+                }, [currentPath]);
+
+                const root = buildFolderTree(documents);
+                const effectivePath = isPlaceholderData ? '/' : resolvedPath;
+                const folder = findFolderByPath(root, effectivePath) || root;
+                const visibleItems: TreeNode[] = search
+                    ? searchTree(folder, search)
+                    : folder.children;
+                const start = (page - 1) * pageSize;
+                const pageItems = visibleItems.slice(start, start + pageSize).map((item) => {
+                    if (item.type === 'folder') {
+                        return {
+                            id: item.id,
+                            name: item.name,
+                            path: item.path,
+                            type: 'folder' as const,
+                            sourceType: item.sourceType,
+                            documentCount: item.documentCount,
+                        };
+                    }
+
+                    return {
+                        id: item.id,
+                        name: item.name,
+                        path: item.path,
+                        type: 'file' as const,
+                        document: item.document,
+                    };
+                });
+
+                return {
+                    currentPath: effectivePath,
+                    breadcrumbs: getBreadcrumbs(root, effectivePath),
+                    items: pageItems,
+                    totalItems: visibleItems.length,
+                    totalDocuments: documents.length,
+                    failedFiles: [],
+                    failedCount: 0,
+                    isLoading: false,
+                    isFetching: isPlaceholderData,
+                    isPlaceholderData,
+                    refresh: mockRefresh,
+                    deleteDocument: mockDeleteDocument,
+                    bulkDeleteDocuments: mockBulkDeleteDocuments,
+                    isBulkDeleting: false,
+                };
+            });
+
+            renderWithProviders(<KnowledgeBaseBrowser />);
+
+            fireEvent.doubleClick(screen.getByText('📁 Uploaded Files').closest('tr')!);
+
             await waitFor(() => {
                 expect(screen.getByText('Projects')).toBeInTheDocument();
             });

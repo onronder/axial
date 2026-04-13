@@ -207,9 +207,9 @@ export function DataSourceCard({
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-[220px] text-center">
-                  <p className="text-xs font-medium">File limit exceeded</p>
+                  <p className="text-xs font-medium">Plan limit reached</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Upgrade your plan to ingest more files from this source.
+                    Upgrade your plan to continue ingesting from this source.
                   </p>
                 </TooltipContent>
               </Tooltip>

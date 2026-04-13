@@ -434,6 +434,39 @@ describe('useQuotaStatus', () => {
             expect(result.current.isProviderQuotaExceeded('google_drive')).toBe(false);
         });
 
+        it('should ignore scope limit errors', async () => {
+            let capturedCallback: ((payload: unknown) => void) | null = null;
+
+            const channelInstance = {
+                on: vi.fn((event, config, callback) => {
+                    capturedCallback = callback;
+                    return {
+                        subscribe: vi.fn().mockReturnValue(channelInstance),
+                    };
+                }),
+                unsubscribe: vi.fn(),
+            };
+            mockChannel.mockReturnValue(channelInstance);
+
+            const { result } = renderHook(() => useQuotaStatus(), {
+                wrapper: createWrapper(),
+            });
+
+            act(() => {
+                if (capturedCallback) {
+                    capturedCallback({
+                        new: {
+                            status: 'failed',
+                            provider: 'google_drive',
+                            error_message: 'Scope limit reached for your plan.',
+                        },
+                    });
+                }
+            });
+
+            expect(result.current.isProviderQuotaExceeded('google_drive')).toBe(false);
+        });
+
         it('should not mark quota exceeded when no error message', async () => {
             let capturedCallback: ((payload: unknown) => void) | null = null;
             

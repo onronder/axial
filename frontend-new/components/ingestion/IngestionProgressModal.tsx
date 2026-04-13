@@ -37,6 +37,8 @@ interface IngestionProgressModalProps {
     files: FileStatus[];
     totalFiles: number;
     overallProgress: number;
+    jobStatus?: "pending" | "processing" | "completed" | "failed" | "cancelled";
+    jobErrorMessage?: string;
     onClose: () => void;
     /** Called once when all files reach a terminal state (completed/failed/skipped) */
     onComplete?: () => void;
@@ -47,6 +49,8 @@ export function IngestionProgressModal({
     files,
     totalFiles,
     overallProgress,
+    jobStatus,
+    jobErrorMessage,
     onClose,
     onComplete,
 }: IngestionProgressModalProps) {
@@ -91,6 +95,10 @@ export function IngestionProgressModal({
     const handleClose = useCallback(() => {
         onClose();
     }, [onClose]);
+
+    const isJobFailed = jobStatus === "failed";
+    const isJobCancelled = jobStatus === "cancelled";
+    const isTerminalJob = allComplete || isJobFailed || isJobCancelled;
 
     /**
      * Memoized expand toggle
@@ -195,13 +203,21 @@ export function IngestionProgressModal({
                         <div className="relative">
                             {allComplete ? (
                                 <CheckCircle2 className="h-5 w-5 text-green-500" />
+                            ) : isJobFailed ? (
+                                <XCircle className="h-5 w-5 text-red-500" />
+                            ) : isJobCancelled ? (
+                                <AlertTriangle className="h-5 w-5 text-amber-500" />
                             ) : (
                                 <Spinner className="h-5 w-5 animate-spin text-primary" />
                             )}
                         </div>
                         <div className="flex-1">
                             <h3 className="text-sm font-semibold tracking-tight">
-                                {allComplete
+                                {isJobFailed
+                                    ? "Processing Failed"
+                                    : isJobCancelled
+                                        ? "Processing Cancelled"
+                                    : allComplete
                                     ? "Processing Complete"
                                     : `Processing ${processingFiles} ${processingFiles === 1 ? "file" : "files"}...`}
                             </h3>
@@ -237,7 +253,7 @@ export function IngestionProgressModal({
                                 <ChevronUp className="h-4 w-4" />
                             )}
                         </Button>
-                        {allComplete && (
+                        {isTerminalJob && (
                             <Button
                                 variant="ghost"
                                 size="icon"
@@ -267,9 +283,51 @@ export function IngestionProgressModal({
                 {/* Expandable File List */}
                 {isExpanded && (
                     <div className="max-h-96 overflow-y-auto">
+                        {isJobFailed && (
+                            <div className="border-b border-red-500/20 bg-red-500/10 px-4 py-3">
+                                <div className="flex items-start gap-2">
+                                    <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-medium text-red-500">The ingestion job failed.</p>
+                                        {jobErrorMessage ? (
+                                            <p className="text-xs text-red-500/80">{jobErrorMessage}</p>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {isJobCancelled && (
+                            <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                                <div className="flex items-start gap-2">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-medium text-amber-500">The ingestion job was cancelled.</p>
+                                        {jobErrorMessage ? (
+                                            <p className="text-xs text-amber-500/80">{jobErrorMessage}</p>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {files.length === 0 ? (
                             <div className="p-8 text-center text-sm text-muted-foreground">
-                                {preparingTimedOut ? (
+                                {isJobFailed ? (
+                                    <>
+                                        <XCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+                                        <p className="font-medium text-foreground">Processing failed</p>
+                                        <p className="mt-1 text-xs">
+                                            {jobErrorMessage || "The job failed before per-file progress became available."}
+                                        </p>
+                                    </>
+                                ) : isJobCancelled ? (
+                                    <>
+                                        <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-amber-500" />
+                                        <p className="font-medium text-foreground">Processing cancelled</p>
+                                        <p className="mt-1 text-xs">
+                                            {jobErrorMessage || "The job was cancelled before per-file progress became available."}
+                                        </p>
+                                    </>
+                                ) : preparingTimedOut ? (
                                     <>
                                         <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-amber-500" />
                                         <p className="font-medium text-foreground">Something went wrong</p>
