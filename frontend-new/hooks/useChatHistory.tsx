@@ -1,6 +1,14 @@
 'use client';
 
-import { createContext, useContext, useCallback, ReactNode, useEffect, useRef } from 'react';
+import {
+    createContext,
+    useContext,
+    useCallback,
+    useMemo,
+    ReactNode,
+    useEffect,
+    useRef,
+} from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
@@ -259,20 +267,34 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
         await renameMutation.mutateAsync({ id, title });
     }, [renameMutation, denyChatAccess, hasChatAccess]);
 
-    const value: ChatHistoryContextType = {
-        conversations: hasChatAccess ? conversations : [],
-        isLoading,
-        createNewChat,
-        deleteChat,
-        renameChat,
-        getMessagesById,
-        refresh: () => {
-            if (!hasChatAccess) {
-                return;
-            }
-            refetch();
-        },
-    };
+    const refresh = useCallback(() => {
+        if (!hasChatAccess) {
+            return;
+        }
+        refetch();
+    }, [hasChatAccess, refetch]);
+
+    const value = useMemo<ChatHistoryContextType>(
+        () => ({
+            conversations: hasChatAccess ? conversations : [],
+            isLoading,
+            createNewChat,
+            deleteChat,
+            renameChat,
+            getMessagesById,
+            refresh,
+        }),
+        [
+            conversations,
+            createNewChat,
+            deleteChat,
+            getMessagesById,
+            hasChatAccess,
+            isLoading,
+            refresh,
+            renameChat,
+        ]
+    );
 
     return (
         <ChatHistoryContext.Provider value={value}>

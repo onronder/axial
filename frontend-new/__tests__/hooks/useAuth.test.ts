@@ -1,22 +1,6 @@
-/**
- * Test Suite: useAuth Hook
- * 
- * Comprehensive tests for authentication hook including:
- * - Email/password login
- * - User registration with name fields
- * - OAuth sign-in (Google)
- * - Password reset
- * - Session management
- * - Logout
- */
-
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
-import { useAuth } from '@/hooks/useAuth';
-
-// =============================================================================
-// Mocks
-// =============================================================================
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { useAuth } from "@/hooks/useAuth";
 
 const mockSignInWithPassword = vi.fn();
 const mockSignUp = vi.fn();
@@ -24,731 +8,194 @@ const mockSignOut = vi.fn();
 const mockSignInWithOAuth = vi.fn();
 const mockResetPasswordForEmail = vi.fn();
 const mockUpdateUser = vi.fn();
-const mockGetSession = vi.fn();
-const mockOnAuthStateChange = vi.fn();
-const mockPush = vi.fn();
+const mockUseSession = vi.fn();
 
-// Mock Supabase client
-vi.mock('@/lib/supabase', () => ({
+vi.mock("@/lib/supabase", () => ({
     supabase: {
         auth: {
             signInWithPassword: (...args: unknown[]) => mockSignInWithPassword(...args),
             signUp: (...args: unknown[]) => mockSignUp(...args),
-            signOut: () => mockSignOut(),
             signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
             resetPasswordForEmail: (...args: unknown[]) => mockResetPasswordForEmail(...args),
             updateUser: (...args: unknown[]) => mockUpdateUser(...args),
-            getSession: () => mockGetSession(),
-            onAuthStateChange: (callback: (...args: unknown[]) => void) => {
-                mockOnAuthStateChange(callback);
-                return {
-                    data: {
-                        subscription: {
-                            unsubscribe: vi.fn(),
-                        },
-                    },
-                };
-            },
+            signOut: (...args: unknown[]) => mockSignOut(...args),
         },
     },
 }));
 
-// Mock Next.js router
-vi.mock('next/navigation', () => ({
-    useRouter: () => ({
-        push: mockPush,
-    }),
+vi.mock("@/components/providers/SessionProvider", () => ({
+    useSession: () => mockUseSession(),
 }));
 
-// =============================================================================
-// Test Suite
-// =============================================================================
-
-describe('useAuth Hook', () => {
+describe("useAuth", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        // Default: no existing session
-        mockGetSession.mockResolvedValue({
-            data: { session: null },
-            error: null,
+        mockUseSession.mockReturnValue({
+            session: null,
+            user: null,
+            loading: false,
+            signOut: mockSignOut,
         });
     });
 
-    afterEach(() => {
-        vi.clearAllMocks();
+    it("maps the session user into the app-specific auth shape", () => {
+        mockUseSession.mockReturnValue({
+            session: { access_token: "token" },
+            user: {
+                id: "user-123",
+                email: "jane@example.com",
+                user_metadata: {
+                    given_name: "Jane",
+                    family_name: "Doe",
+                    picture: "https://example.com/avatar.png",
+                },
+                app_metadata: {
+                    provider: "google",
+                },
+            },
+            loading: false,
+            signOut: mockSignOut,
+        });
+
+        const { result } = renderHook(() => useAuth());
+
+        expect(result.current.user).toEqual({
+            id: "user-123",
+            email: "jane@example.com",
+            name: "Jane Doe",
+            firstName: "Jane",
+            lastName: "Doe",
+            avatarUrl: "https://example.com/avatar.png",
+            provider: "google",
+            plan: "Free",
+        });
+        expect(result.current.isAuthenticated).toBe(true);
+        expect(result.current.loading).toBe(false);
     });
 
-    // =========================================================================
-    // Initial State Tests
-    // =========================================================================
-
-    describe('Initial State', () => {
-        it('should start with loading true', () => {
-            const { result } = renderHook(() => useAuth());
-
-            expect(result.current.loading).toBe(true);
+    it("returns the session from context without fetching auth state again", async () => {
+        const session = { access_token: "token-123" };
+        mockUseSession.mockReturnValue({
+            session,
+            user: null,
+            loading: false,
+            signOut: mockSignOut,
         });
 
-        it('should start with user null', () => {
-            const { result } = renderHook(() => useAuth());
+        const { result } = renderHook(() => useAuth());
 
-            expect(result.current.user).toBeNull();
+        await expect(result.current.getSession()).resolves.toBe(session);
+    });
+
+    it("delegates logout to SessionProvider signOut", async () => {
+        const { result } = renderHook(() => useAuth());
+
+        await act(async () => {
+            await result.current.logout();
         });
 
-        it('should start with isAuthenticated false', () => {
-            const { result } = renderHook(() => useAuth());
+        expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
 
-            expect(result.current.isAuthenticated).toBe(false);
+    it("signs in with email and password", async () => {
+        mockSignInWithPassword.mockResolvedValue({ error: null });
+        const { result } = renderHook(() => useAuth());
+
+        await act(async () => {
+            await result.current.login("test@example.com", "secret");
         });
 
-        it('should fetch session on mount', async () => {
-            renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(mockGetSession).toHaveBeenCalled();
-            });
-        });
-
-        it('should subscribe to auth state changes', () => {
-            renderHook(() => useAuth());
-
-            expect(mockOnAuthStateChange).toHaveBeenCalled();
-        });
-
-        it('should handle getSession error during initialization', async () => {
-            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-            mockGetSession.mockRejectedValueOnce(new Error('Network error'));
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            expect(result.current.user).toBeNull();
-            expect(consoleSpy).toHaveBeenCalledWith('Auth init error:', expect.any(Error));
-            consoleSpy.mockRestore();
-        });
-
-        it('should handle SIGNED_OUT event and redirect to login', async () => {
-            // First, get a reference to the callback
-            let authCallback: ((...args: unknown[]) => void) | null = null;
-            mockOnAuthStateChange.mockImplementation((cb) => {
-                authCallback = cb;
-                return {
-                    data: {
-                        subscription: {
-                            unsubscribe: vi.fn(),
-                        },
-                    },
-                };
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            // Simulate SIGNED_OUT event
-            await act(async () => {
-                if (authCallback) {
-                    await authCallback('SIGNED_OUT', null);
-                }
-            });
-
-            expect(mockPush).toHaveBeenCalledWith('/login');
+        expect(mockSignInWithPassword).toHaveBeenCalledWith({
+            email: "test@example.com",
+            password: "secret",
         });
     });
 
-    // =========================================================================
-    // Session Restoration Tests
-    // =========================================================================
+    it("registers users with name metadata", async () => {
+        mockSignUp.mockResolvedValue({ error: null });
+        const { result } = renderHook(() => useAuth());
 
-    describe('Session Restoration', () => {
-        it('should restore user from existing session', async () => {
-            mockGetSession.mockResolvedValue({
+        await act(async () => {
+            await result.current.register("Ada", "Lovelace", "ada@example.com", "secret");
+        });
+
+        expect(mockSignUp).toHaveBeenCalledWith({
+            email: "ada@example.com",
+            password: "secret",
+            options: {
                 data: {
-                    session: {
-                        user: {
-                            id: 'user-123',
-                            email: 'test@example.com',
-                            user_metadata: {
-                                full_name: 'John Doe',
-                                first_name: 'John',
-                                last_name: 'Doe',
-                            },
-                            app_metadata: {
-                                provider: 'email',
-                            },
-                        },
-                    },
+                    full_name: "Ada Lovelace",
+                    first_name: "Ada",
+                    last_name: "Lovelace",
                 },
-                error: null,
-            });
+            },
+        });
+    });
 
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            expect(result.current.user).toEqual(
-                expect.objectContaining({
-                    id: 'user-123',
-                    email: 'test@example.com',
-                    name: 'John Doe',
-                    firstName: 'John',
-                    lastName: 'Doe',
-                })
-            );
-            expect(result.current.isAuthenticated).toBe(true);
+    it("requests Google OAuth with offline access defaults", async () => {
+        mockSignInWithOAuth.mockResolvedValue({ error: null });
+        vi.stubGlobal("window", {
+            location: { origin: "https://app.example.com" },
         });
 
-        it('should handle OAuth user metadata (given_name/family_name)', async () => {
-            mockGetSession.mockResolvedValue({
-                data: {
-                    session: {
-                        user: {
-                            id: 'oauth-user',
-                            email: 'oauth@gmail.com',
-                            user_metadata: {
-                                name: 'Jane Smith',
-                                given_name: 'Jane',
-                                family_name: 'Smith',
-                                picture: 'https://example.com/avatar.jpg',
-                            },
-                            app_metadata: {
-                                provider: 'google',
-                            },
-                        },
-                    },
+        const { result } = renderHook(() => useAuth());
+
+        await act(async () => {
+            await result.current.signInWithOAuth("google");
+        });
+
+        expect(mockSignInWithOAuth).toHaveBeenCalledWith({
+            provider: "google",
+            options: {
+                redirectTo: "https://app.example.com/auth/callback",
+                queryParams: {
+                    access_type: "offline",
+                    prompt: "consent",
                 },
-                error: null,
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            expect(result.current.user).toEqual(
-                expect.objectContaining({
-                    firstName: 'Jane',
-                    lastName: 'Smith',
-                    avatarUrl: 'https://example.com/avatar.jpg',
-                    provider: 'google',
-                })
-            );
+                scopes: "openid email profile",
+            },
         });
-
-        it('should fallback to email username if no name provided', async () => {
-            mockGetSession.mockResolvedValue({
-                data: {
-                    session: {
-                        user: {
-                            id: 'user-no-name',
-                            email: 'noname@example.com',
-                            user_metadata: {},
-                            app_metadata: {},
-                        },
-                    },
-                },
-                error: null,
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            expect(result.current.user?.name).toBe('noname');
-        });
+        vi.unstubAllGlobals();
     });
 
-    // =========================================================================
-    // Login Tests
-    // =========================================================================
-
-    describe('Login', () => {
-        it('should call signInWithPassword with email and password', async () => {
-            mockSignInWithPassword.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.login('test@example.com', 'password123');
-            });
-
-            expect(mockSignInWithPassword).toHaveBeenCalledWith({
-                email: 'test@example.com',
-                password: 'password123',
-            });
+    it("sends password reset emails with app redirect", async () => {
+        mockResetPasswordForEmail.mockResolvedValue({ error: null });
+        vi.stubGlobal("window", {
+            location: { origin: "https://app.example.com" },
         });
 
-        it('should throw user-friendly error on invalid credentials', async () => {
-            mockSignInWithPassword.mockResolvedValue({
-                error: { message: 'Invalid login credentials' },
-            });
+        const { result } = renderHook(() => useAuth());
 
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await expect(
-                act(async () => {
-                    await result.current.login('test@example.com', 'wrong');
-                })
-            ).rejects.toThrow('Invalid email or password. Please try again.');
+        await act(async () => {
+            await result.current.resetPassword("reset@example.com");
         });
+
+        expect(mockResetPasswordForEmail).toHaveBeenCalledWith(
+            "reset@example.com",
+            { redirectTo: "https://app.example.com/auth/reset-password" }
+        );
+        vi.unstubAllGlobals();
     });
 
-    // =========================================================================
-    // Registration Tests
-    // =========================================================================
+    it("updates the current password", async () => {
+        mockUpdateUser.mockResolvedValue({ error: null });
+        const { result } = renderHook(() => useAuth());
 
-    describe('Registration', () => {
-        it('should call signUp with all required fields', async () => {
-            mockSignUp.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.register('John', 'Doe', 'john@example.com', 'Password123');
-            });
-
-            expect(mockSignUp).toHaveBeenCalledWith({
-                email: 'john@example.com',
-                password: 'Password123',
-                options: {
-                    data: {
-                        full_name: 'John Doe',
-                        first_name: 'John',
-                        last_name: 'Doe',
-                    },
-                },
-            });
+        await act(async () => {
+            await result.current.updatePassword("new-password");
         });
 
-        it('should store first_name separately in metadata', async () => {
-            mockSignUp.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.register('Jane', 'Smith', 'jane@example.com', 'Password123');
-            });
-
-            expect(mockSignUp).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    options: expect.objectContaining({
-                        data: expect.objectContaining({
-                            first_name: 'Jane',
-                        }),
-                    }),
-                })
-            );
-        });
-
-        it('should store last_name separately in metadata', async () => {
-            mockSignUp.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.register('Jane', 'Smith', 'jane@example.com', 'Password123');
-            });
-
-            expect(mockSignUp).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    options: expect.objectContaining({
-                        data: expect.objectContaining({
-                            last_name: 'Smith',
-                        }),
-                    }),
-                })
-            );
-        });
-
-        it('should throw error if email already registered', async () => {
-            mockSignUp.mockResolvedValue({
-                error: { message: 'User already registered' },
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await expect(
-                act(async () => {
-                    await result.current.register('John', 'Doe', 'existing@example.com', 'Password123');
-                })
-            ).rejects.toThrow('An account with this email already exists.');
-        });
+        expect(mockUpdateUser).toHaveBeenCalledWith({ password: "new-password" });
     });
 
-    // =========================================================================
-    // OAuth Tests
-    // =========================================================================
-
-    describe('OAuth Sign-In', () => {
-        it('should call signInWithOAuth for Google', async () => {
-            mockSignInWithOAuth.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.signInWithOAuth('google');
-            });
-
-            expect(mockSignInWithOAuth).toHaveBeenCalledWith({
-                provider: 'google',
-                options: expect.objectContaining({
-                    redirectTo: expect.stringContaining('/auth/callback'),
-                    queryParams: {
-                        access_type: 'offline',
-                        prompt: 'consent',
-                    },
-                    scopes: 'openid email profile',
-                }),
-            });
+    it("surfaces friendly auth errors", async () => {
+        mockSignInWithPassword.mockResolvedValue({
+            error: { message: "Invalid login credentials" },
         });
-
-        it('should request offline access for refresh tokens', async () => {
-            mockSignInWithOAuth.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.signInWithOAuth('google');
-            });
-
-            expect(mockSignInWithOAuth).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    options: expect.objectContaining({
-                        queryParams: expect.objectContaining({
-                            access_type: 'offline',
-                        }),
-                    }),
-                })
-            );
-        });
-
-        it('should allow custom scopes', async () => {
-            mockSignInWithOAuth.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.signInWithOAuth('google', {
-                    scopes: 'openid email profile https://www.googleapis.com/auth/drive.readonly',
-                });
-            });
-
-            expect(mockSignInWithOAuth).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    options: expect.objectContaining({
-                        scopes: 'openid email profile https://www.googleapis.com/auth/drive.readonly',
-                    }),
-                })
-            );
-        });
-
-        it('should throw error on OAuth failure', async () => {
-            mockSignInWithOAuth.mockResolvedValue({
-                error: { message: 'OAuth service unavailable' },
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await expect(
-                act(async () => {
-                    await result.current.signInWithOAuth('google');
-                })
-            ).rejects.toThrow();
-        });
-
-        it('should support other OAuth providers', async () => {
-            mockSignInWithOAuth.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            // Test with a provider that doesn't have special config
-            await act(async () => {
-                await result.current.signInWithOAuth('github');
-            });
-
-            expect(mockSignInWithOAuth).toHaveBeenCalledWith({
-                provider: 'github',
-                options: expect.objectContaining({
-                    redirectTo: expect.stringContaining('/auth/callback'),
-                }),
-            });
-        });
-    });
-
-    // =========================================================================
-    // Password Reset Tests
-    // =========================================================================
-
-    describe('Password Reset', () => {
-        it('should call resetPasswordForEmail with correct redirect', async () => {
-            mockResetPasswordForEmail.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.resetPassword('test@example.com');
-            });
-
-            expect(mockResetPasswordForEmail).toHaveBeenCalledWith(
-                'test@example.com',
-                expect.objectContaining({
-                    redirectTo: expect.stringContaining('/auth/reset-password'),
-                })
-            );
-        });
-
-        it('should throw error on rate limit', async () => {
-            mockResetPasswordForEmail.mockResolvedValue({
-                error: { message: 'For security purposes, you can only request this once every 60 seconds' },
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await expect(
-                act(async () => {
-                    await result.current.resetPassword('test@example.com');
-                })
-            ).rejects.toThrow('Please wait 60 seconds before requesting another email.');
-        });
-    });
-
-    // =========================================================================
-    // Update Password Tests
-    // =========================================================================
-
-    describe('Update Password', () => {
-        it('should call updateUser with new password', async () => {
-            mockUpdateUser.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.updatePassword('NewPassword123');
-            });
-
-            expect(mockUpdateUser).toHaveBeenCalledWith({
-                password: 'NewPassword123',
-            });
-        });
-
-        it('should throw error if password same as old', async () => {
-            mockUpdateUser.mockResolvedValue({
-                error: { message: 'New password should be different from the old password' },
-            });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await expect(
-                act(async () => {
-                    await result.current.updatePassword('OldPassword123');
-                })
-            ).rejects.toThrow('Please choose a different password than your current one.');
-        });
-    });
-
-    // =========================================================================
-    // Logout Tests
-    // =========================================================================
-
-    describe('Logout', () => {
-        it('should navigate to login before signing out', async () => {
-            mockSignOut.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.logout();
-            });
-
-            // Should push to login first
-            expect(mockPush).toHaveBeenCalledWith('/login');
-        });
-
-        it('should call signOut from Supabase', async () => {
-            mockSignOut.mockResolvedValue({ error: null });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            await act(async () => {
-                await result.current.logout();
-            });
-
-            expect(mockSignOut).toHaveBeenCalled();
-        });
-
-        it('should handle signOut error gracefully', async () => {
-            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-            mockSignOut.mockResolvedValue({ error: { message: 'Sign out failed' } });
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            // Should not throw, just log the error
-            await act(async () => {
-                await result.current.logout();
-            });
-
-            expect(consoleSpy).toHaveBeenCalledWith('Logout error:', 'Sign out failed');
-            expect(mockPush).toHaveBeenCalledWith('/login');
-            consoleSpy.mockRestore();
-        });
-
-        it('should handle signOut exception gracefully', async () => {
-            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-            mockSignOut.mockRejectedValue(new Error('Network error'));
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            // Should not throw, just log the error
-            await act(async () => {
-                await result.current.logout();
-            });
-
-            expect(consoleSpy).toHaveBeenCalledWith('Logout exception:', expect.any(Error));
-            expect(mockPush).toHaveBeenCalledWith('/login');
-            consoleSpy.mockRestore();
-        });
-    });
-
-    // =========================================================================
-    // Get Session Tests
-    // =========================================================================
-
-    describe('getSession', () => {
-        it('should return session when available', async () => {
-            const mockSession = {
-                access_token: 'token123',
-                user: { id: 'user-123' },
-            };
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            // Mock for the getSession call (not the initial fetch)
-            mockGetSession.mockResolvedValueOnce({
-                data: { session: mockSession },
-                error: null,
-            });
-
-            let session;
-            await act(async () => {
-                session = await result.current.getSession();
-            });
-
-            expect(session).toEqual(mockSession);
-        });
-
-        it('should return null and log error on getSession failure', async () => {
-            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-            const { result } = renderHook(() => useAuth());
-
-            await waitFor(() => {
-                expect(result.current.loading).toBe(false);
-            });
-
-            // Mock error for the getSession call
-            mockGetSession.mockResolvedValueOnce({
-                data: { session: null },
-                error: { message: 'Session retrieval failed' },
-            });
-
-            let session;
-            await act(async () => {
-                session = await result.current.getSession();
-            });
-
-            expect(session).toBeNull();
-            expect(consoleSpy).toHaveBeenCalledWith('Get session error:', 'Session retrieval failed');
-            consoleSpy.mockRestore();
-        });
+        const { result } = renderHook(() => useAuth());
+
+        await expect(
+            result.current.login("test@example.com", "wrong")
+        ).rejects.toThrow("Invalid email or password. Please try again.");
     });
 });

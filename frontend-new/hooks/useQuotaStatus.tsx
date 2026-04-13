@@ -27,7 +27,16 @@
  * ```
  */
 
-import { useEffect, useState, useCallback, createContext, useContext, ReactNode, useRef } from "react";
+import {
+    useEffect,
+    useState,
+    useCallback,
+    createContext,
+    useContext,
+    ReactNode,
+    useRef,
+    useMemo,
+} from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { normalizeSourceType } from "@/lib/sourceType";
@@ -283,13 +292,21 @@ export function QuotaStatusProvider({ children }: QuotaStatusProviderProps) {
     // Render
     // ==========================================================================
 
-    const value: QuotaStatus = {
-        quotaExceededProviders,
-        hasQuotaIssue: quotaExceededProviders.size > 0,
-        isProviderQuotaExceeded,
-        clearQuotaStatus,
-        markQuotaExceeded,
-    };
+    const value = useMemo<QuotaStatus>(
+        () => ({
+            quotaExceededProviders,
+            hasQuotaIssue: quotaExceededProviders.size > 0,
+            isProviderQuotaExceeded,
+            clearQuotaStatus,
+            markQuotaExceeded,
+        }),
+        [
+            clearQuotaStatus,
+            isProviderQuotaExceeded,
+            markQuotaExceeded,
+            quotaExceededProviders,
+        ]
+    );
 
     return (
         <QuotaStatusContext.Provider value={value}>

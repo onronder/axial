@@ -21,6 +21,13 @@ import userEvent from '@testing-library/user-event';
 import { KnowledgeBaseBrowser } from '@/components/knowledge-base/KnowledgeBaseBrowser';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Document } from '@/types';
+import {
+    buildFolderTree,
+    findFolderByPath,
+    getBreadcrumbs,
+    searchTree,
+    type TreeNode,
+} from '@/lib/folderTree';
 
 // =============================================================================
 // MOCKS
@@ -35,14 +42,18 @@ vi.mock('@radix-ui/react-dropdown-menu', async () => {
     };
 });
 
-// Mock useDocuments hook
+// Mock useDocumentTree hook
 const mockDeleteDocument = vi.fn();
 const mockBulkDeleteDocuments = vi.fn();
 const mockRefresh = vi.fn();
-const mockUseDocuments = vi.fn();
+const mockUseDocumentTree = vi.fn();
+let mockDocuments: Document[] = [];
+let mockFailedFiles: Document[] = [];
+let mockTreeLoading = false;
+let mockTreeFetching = false;
 
-vi.mock('@/hooks/useDocuments', () => ({
-    useDocuments: () => mockUseDocuments(),
+vi.mock('@/hooks/useDocumentTree', () => ({
+    useDocumentTree: (...args: unknown[]) => mockUseDocumentTree(...args),
 }));
 
 // Mock useProfile hook
@@ -111,14 +122,59 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 function setupDefaultMocks(documents: Document[] = []) {
-    mockUseDocuments.mockReturnValue({
-        documents,
-        totalCount: documents.length,
-        isLoading: false,
-        refresh: mockRefresh,
-        deleteDocument: mockDeleteDocument,
-        bulkDeleteDocuments: mockBulkDeleteDocuments,
-        isBulkDeleting: false,
+    mockDocuments = documents;
+    mockFailedFiles = [];
+    mockTreeLoading = false;
+    mockTreeFetching = false;
+
+    mockUseDocumentTree.mockImplementation((
+        currentPath: string = '/',
+        page: number = 1,
+        pageSize: number = 25,
+        search: string = '',
+    ) => {
+        const root = buildFolderTree(mockDocuments);
+        const folder = findFolderByPath(root, currentPath) || root;
+        const visibleItems: TreeNode[] = search
+            ? searchTree(folder, search)
+            : folder.children;
+        const start = (page - 1) * pageSize;
+        const pageItems = visibleItems.slice(start, start + pageSize).map((item) => {
+            if (item.type === 'folder') {
+                return {
+                    id: item.id,
+                    name: item.name,
+                    path: item.path,
+                    type: 'folder' as const,
+                    sourceType: item.sourceType,
+                    documentCount: item.documentCount,
+                };
+            }
+
+            return {
+                id: item.id,
+                name: item.name,
+                path: item.path,
+                type: 'file' as const,
+                document: item.document,
+            };
+        });
+
+        return {
+            currentPath: folder.path,
+            breadcrumbs: getBreadcrumbs(root, folder.path),
+            items: pageItems,
+            totalItems: visibleItems.length,
+            totalDocuments: mockDocuments.length,
+            failedFiles: mockFailedFiles,
+            failedCount: mockFailedFiles.length,
+            isLoading: mockTreeLoading,
+            isFetching: mockTreeFetching,
+            refresh: mockRefresh,
+            deleteDocument: mockDeleteDocument,
+            bulkDeleteDocuments: mockBulkDeleteDocuments,
+            isBulkDeleting: false,
+        };
     });
 
     mockUseProfile.mockReturnValue({
@@ -917,15 +973,9 @@ describe('KnowledgeBaseBrowser Component', () => {
 
         it('should not allow bulk delete for viewer role even with selections', async () => {
             // Setup with documents but viewer role
-            mockUseDocuments.mockReturnValue({
-                documents: [createDocument({ id: 'doc-1', sourceType: 'file_upload', name: 'test.pdf', path: 'test.pdf' })],
-                totalCount: 1,
-                isLoading: false,
-                refresh: mockRefresh,
-                deleteDocument: mockDeleteDocument,
-                bulkDeleteDocuments: mockBulkDeleteDocuments,
-                isBulkDeleting: false,
-            });
+            setupDefaultMocks([
+                createDocument({ id: 'doc-1', sourceType: 'file_upload', name: 'test.pdf', path: 'test.pdf' }),
+            ]);
             mockUseProfile.mockReturnValue({
                 profile: { role: 'viewer' },
                 isLoading: false,
@@ -1053,9 +1103,10 @@ describe('KnowledgeBaseBrowser Component', () => {
             const confirmButton = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete All' });
             await userEvent.click(confirmButton);
 
-            // Should call bulkDeleteDocuments with all document IDs in folder
+            // Should call bulkDeleteDocuments with the folder path payload
             expect(mockBulkDeleteDocuments).toHaveBeenCalledWith({
-                documentIds: expect.arrayContaining(['doc-1', 'doc-2'])
+                sourceType: 'file_upload',
+                folderPath: '/file_upload/MyFolder',
             });
         });
 
@@ -1227,15 +1278,9 @@ describe('KnowledgeBaseBrowser Component', () => {
         });
 
         it('should disable refresh button while loading', () => {
-            mockUseDocuments.mockReturnValue({
-                documents: [],
-                totalCount: 0,
-                isLoading: true,
-                refresh: mockRefresh,
-                deleteDocument: mockDeleteDocument,
-                bulkDeleteDocuments: mockBulkDeleteDocuments,
-                isBulkDeleting: false,
-            });
+            setupDefaultMocks([]);
+            mockTreeLoading = true;
+            mockTreeFetching = true;
             mockUseProfile.mockReturnValue({
                 profile: { role: 'admin' },
                 isLoading: false,
@@ -1330,15 +1375,7 @@ describe('KnowledgeBaseBrowser Component', () => {
             const fewerDocs = Array.from({ length: 5 }, (_, i) =>
                 createDocument({ id: `doc-new-${i}`, sourceType: 'file_upload', name: `newdoc${i}.pdf`, path: `newdoc${i}.pdf` })
             );
-            mockUseDocuments.mockReturnValue({
-                documents: fewerDocs,
-                totalCount: fewerDocs.length,
-                isLoading: false,
-                refresh: mockRefresh,
-                deleteDocument: mockDeleteDocument,
-                bulkDeleteDocuments: mockBulkDeleteDocuments,
-                isBulkDeleting: false,
-            });
+            setupDefaultMocks(fewerDocs);
 
             // Force re-render with new data
             rerender(

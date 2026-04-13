@@ -67,6 +67,7 @@ def _build_profile_supabase(
     team_table = MagicMock()
     team_table.select.return_value = team_table
     team_table.eq.return_value = team_table
+    team_table.neq.return_value = team_table
     team_table.limit.return_value = team_table
     team_table.execute.return_value = MagicMock(data=team_rows or [])
 
@@ -255,7 +256,7 @@ class TestProfileGet:
     async def test_get_profile_sets_team_flags(self):
         supabase, _, _ = _build_profile_supabase(
             profile_rows=[{"user_id": "user-1"}],
-            team_rows=[{"id": "team-1", "role": "admin"}],
+            team_rows=[{"team_id": "team-1", "role": "admin"}],
         )
 
         with patch("api.v1.settings.get_supabase", return_value=supabase):
@@ -263,6 +264,8 @@ class TestProfileGet:
 
         assert profile["has_team"] is True
         assert profile["role"] == "admin"
+        assert profile["team_id"] == "team-1"
+        assert profile["organization_id"] == "team-1"
 
     @pytest.mark.asyncio
     async def test_get_profile_handles_exception(self):
@@ -284,6 +287,8 @@ class TestProfileGet:
             last_name="User",
             plan="free",
             theme="system",
+            organization_id="org-123",
+            team_id="team-123",
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
@@ -291,6 +296,8 @@ class TestProfileGet:
         assert profile.first_name == "Test"
         assert profile.last_name == "User"
         assert profile.plan == "free"
+        assert profile.organization_id == "org-123"
+        assert profile.team_id == "team-123"
 
 
 class TestProfileUpdate:
@@ -328,6 +335,8 @@ class TestProfileUpdate:
 
         assert profile["first_name"] == "A"
         assert profile["last_name"] == "B"
+        assert profile["organization_id"] == "user-1"
+        assert profile["team_id"] is None
 
     @pytest.mark.asyncio
     async def test_update_profile_empty_response_raises(self):

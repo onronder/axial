@@ -48,7 +48,7 @@ interface BackendDocumentsResponse {
 /**
  * Map backend document response to frontend Document interface.
  */
-function mapDocument(d: BackendDocument): Document {
+export function mapDocument(d: BackendDocument): Document {
     const normalizedSource = normalizeSourceType(d.source_type) || "file_upload";
     const meta: DocumentMetadata = d.metadata || {};
     const resolvedSize = d.size ?? d.file_size_bytes ?? meta?.file_size ?? meta?.size ?? 0;
@@ -87,6 +87,7 @@ interface FetchDocumentsResult {
 interface BulkDeletePayload {
     documentIds?: string[];
     sourceType?: string;
+    folderPath?: string;
 }
 
 /**
@@ -141,18 +142,19 @@ export async function fetchDocuments({ page, pageSize, search, signal }: FetchDo
 /**
  * Delete a document by ID.
  */
-async function deleteDocumentApi(id: string): Promise<void> {
+export async function deleteDocumentApi(id: string): Promise<void> {
     await api.delete(`/documents/${id}`);
 }
 
 /**
  * Bulk delete documents by ids or source type.
  */
-async function bulkDeleteDocumentsApi(payload: BulkDeletePayload): Promise<void> {
+export async function bulkDeleteDocumentsApi(payload: BulkDeletePayload): Promise<void> {
     await api.delete("/documents", {
         data: {
             document_ids: payload.documentIds,
-            source_type: payload.sourceType
+            source_type: payload.sourceType,
+            folder_path: payload.folderPath,
         }
     });
 }

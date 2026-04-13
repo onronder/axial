@@ -14,7 +14,6 @@ import {
   ExternalLink,
   Home,
   ArrowLeft,
-  Info,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -46,24 +45,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useDocuments } from "@/hooks/useDocuments";
+import { useDocumentTree, type FolderTreeItem, type DocumentTreeItem } from "@/hooks/useDocumentTree";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { StorageMeter } from "@/components/documents/StorageMeter";
 import { FailedDocumentsPanel } from "@/components/documents/FailedDocumentsPanel";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  buildFolderTree,
-  findFolderByPath,
-  getBreadcrumbs,
-  searchTree,
-  getDocumentIdsInFolder,
-  isFolderNode,
-  isDocumentNode,
-  type FolderNode,
-  type BreadcrumbItem,
-} from "@/lib/folderTree";
 
 // =============================================================================
 // CONSTANTS
@@ -103,7 +91,14 @@ const statusStyles: Record<string, { label: string; className: string; dotClass:
 };
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-const TREE_FETCH_LIMIT = 500;
+
+function isFolderNode(item: DocumentTreeItem): item is FolderTreeItem {
+  return item.type === "folder";
+}
+
+function isDocumentNode(item: DocumentTreeItem): item is Extract<DocumentTreeItem, { type: "file" }> {
+  return item.type === "file";
+}
 
 // =============================================================================
 // HELPER COMPONENTS
@@ -145,7 +140,7 @@ export function KnowledgeBaseBrowser() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleteFolderId, setDeleteFolderId] = useState<string | null>(null);
+  const [deleteFolder, setDeleteFolder] = useState<FolderTreeItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
@@ -164,51 +159,33 @@ export function KnowledgeBaseBrowser() {
 
   // Hooks
   const {
-    documents,
+    currentPath: resolvedPath,
+    breadcrumbs,
+    items: displayItems,
+    totalItems,
     failedFiles = [],
-    totalCount,
     failedCount = 0,
-    isLoading: isRefreshing,
+    isLoading,
+    isFetching: isRefreshing,
     refresh: handleRefresh,
     deleteDocument,
     bulkDeleteDocuments,
     isBulkDeleting
-  } = useDocuments(1, TREE_FETCH_LIMIT, debouncedSearch);
-  const isTreeTruncated = totalCount > TREE_FETCH_LIMIT;
+  } = useDocumentTree(currentPath, currentPage, pageSize, debouncedSearch);
 
   const { profile } = useProfile();
   const isViewer = profile?.role === 'viewer';
   const { refresh: refreshUsage } = useUsage();
 
-  // Build folder tree from documents
-  const folderTree = useMemo(() => buildFolderTree(documents), [documents]);
-
-  // Get current folder and breadcrumbs
-  const currentFolder = useMemo(
-    () => findFolderByPath(folderTree, currentPath),
-    [folderTree, currentPath]
-  );
-
-  const breadcrumbs = useMemo(
-    () => getBreadcrumbs(folderTree, currentPath),
-    [folderTree, currentPath]
-  );
-
-  // Get items to display (search or current folder contents)
-  // Note: currentFolder is always valid since we start at root ("/") and
-  // only navigate to valid folders via navigateToFolder. The non-null
-  // assertion is safe because buildFolderTree always creates a root node.
-  const displayItems = useMemo(() => {
-    const folder = currentFolder!;
-    if (debouncedSearch) {
-      // Search within current folder's subtree
-      return searchTree(folder, debouncedSearch);
+  useEffect(() => {
+    if (resolvedPath !== currentPath) {
+      setCurrentPath(resolvedPath);
+      setSelectedIds(new Set());
+      setFocusedIndex(-1);
     }
-    return folder.children;
-  }, [currentFolder, debouncedSearch]);
+  }, [currentPath, resolvedPath]);
 
   // Pagination
-  const totalItems = displayItems.length;
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalItems / pageSize)),
     [totalItems, pageSize]
@@ -221,15 +198,9 @@ export function KnowledgeBaseBrowser() {
     }
   }, [currentPage, totalPages]);
 
-  // Paginated items
-  const paginatedItems = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return displayItems.slice(start, start + pageSize);
-  }, [displayItems, currentPage, pageSize]);
-
   // Selection helpers
-  const allVisibleSelected = paginatedItems.length > 0 && 
-    paginatedItems.filter(isDocumentNode).every(item => selectedIds.has(item.id));
+  const allVisibleSelected = displayItems.length > 0 &&
+    displayItems.filter(isDocumentNode).every(item => selectedIds.has(item.id));
 
   // Reset selection when navigating
   useEffect(() => {
@@ -241,7 +212,7 @@ export function KnowledgeBaseBrowser() {
   // NAVIGATION HANDLERS
   // =============================================================================
 
-  const navigateToFolder = useCallback((folder: FolderNode) => {
+  const navigateToFolder = useCallback((folder: FolderTreeItem) => {
     setCurrentPath(folder.path);
     setSearchQuery("");
     setCurrentPage(1);
@@ -263,7 +234,7 @@ export function KnowledgeBaseBrowser() {
     setCurrentPage(1);
   }, []);
 
-  const navigateToBreadcrumb = useCallback((crumb: BreadcrumbItem) => {
+  const navigateToBreadcrumb = useCallback((crumb: { path: string }) => {
     setCurrentPath(crumb.path);
     setSearchQuery("");
     setCurrentPage(1);
@@ -287,27 +258,21 @@ export function KnowledgeBaseBrowser() {
   };
 
   const handleDeleteFolder = async () => {
-    if (deleteFolderId && currentFolder) {
-      const folder = currentFolder.children.find(
-        c => isFolderNode(c) && c.id === deleteFolderId
-      ) as FolderNode | undefined;
-      
-      if (folder) {
-        const docIds = getDocumentIdsInFolder(folder);
-        if (docIds.length > 0) {
-          await bulkDeleteDocuments({ documentIds: docIds });
-          refreshUsage(true);
-        }
-      }
-      setDeleteFolderId(null);
+    if (deleteFolder) {
+      await bulkDeleteDocuments({
+        sourceType: deleteFolder.sourceType,
+        folderPath: deleteFolder.path,
+      });
+      refreshUsage(true);
+      setDeleteFolder(null);
     }
   };
 
   const toggleSelectAll = (checked: boolean) => {
     if (checked) {
-      const documentIds = paginatedItems
+      const documentIds = displayItems
         .filter(isDocumentNode)
-        .map(item => item.id);
+        .map(item => item.document.id);
       setSelectedIds(new Set(documentIds));
     } else {
       setSelectedIds(new Set());
@@ -348,12 +313,12 @@ export function KnowledgeBaseBrowser() {
   // =============================================================================
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (paginatedItems.length === 0) return;
+    if (displayItems.length === 0) return;
 
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        setFocusedIndex(prev => Math.min(prev + 1, paginatedItems.length - 1));
+        setFocusedIndex(prev => Math.min(prev + 1, displayItems.length - 1));
         break;
       case "ArrowUp":
         e.preventDefault();
@@ -361,8 +326,8 @@ export function KnowledgeBaseBrowser() {
         break;
       case "Enter":
         e.preventDefault();
-        if (focusedIndex >= 0 && focusedIndex < paginatedItems.length) {
-          const item = paginatedItems[focusedIndex];
+        if (focusedIndex >= 0 && focusedIndex < displayItems.length) {
+          const item = displayItems[focusedIndex];
           if (isFolderNode(item)) {
             navigateToFolder(item);
           }
@@ -376,10 +341,10 @@ export function KnowledgeBaseBrowser() {
         break;
       case " ":
         e.preventDefault();
-        if (focusedIndex >= 0 && focusedIndex < paginatedItems.length) {
-          const item = paginatedItems[focusedIndex];
+        if (focusedIndex >= 0 && focusedIndex < displayItems.length) {
+          const item = displayItems[focusedIndex];
           if (isDocumentNode(item)) {
-            toggleSelectOne(item.id, !selectedIds.has(item.id));
+            toggleSelectOne(item.document.id, !selectedIds.has(item.document.id));
           }
         }
         break;
@@ -388,7 +353,7 @@ export function KnowledgeBaseBrowser() {
         setFocusedIndex(-1);
         break;
     }
-  }, [paginatedItems, focusedIndex, searchQuery, breadcrumbs, selectedIds, navigateToFolder, navigateUp]);
+  }, [displayItems, focusedIndex, searchQuery, breadcrumbs.length, selectedIds, navigateToFolder, navigateUp]);
 
   // =============================================================================
   // FORMATTERS
@@ -427,16 +392,6 @@ export function KnowledgeBaseBrowser() {
         <div className="w-full">
           <StorageMeter variant="horizontal" className="w-full" />
         </div>
-
-        {/* Truncation Banner */}
-        {isTreeTruncated && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-200 text-sm">
-            <Info className="h-4 w-4 shrink-0" />
-            <span>
-              Showing {TREE_FETCH_LIMIT} of {totalCount} documents. Use search to find specific files.
-            </span>
-          </div>
-        )}
 
         <FailedDocumentsPanel
           failedFiles={failedFiles}
@@ -594,7 +549,13 @@ export function KnowledgeBaseBrowser() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedItems.length === 0 ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-40 text-center text-muted-foreground">
+                    Loading knowledge base...
+                  </TableCell>
+                </TableRow>
+              ) : displayItems.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center space-y-3">
@@ -619,7 +580,7 @@ export function KnowledgeBaseBrowser() {
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedItems.map((item, index) => {
+                displayItems.map((item, index) => {
                   const isFolder = isFolderNode(item);
                   const isFocused = focusedIndex === index;
 
@@ -681,7 +642,7 @@ export function KnowledgeBaseBrowser() {
                               {!isViewer ? (
                                 <DropdownMenuItem
                                   className="text-destructive focus:text-destructive"
-                                  onClick={() => setDeleteFolderId(item.id)}
+                                  onClick={() => setDeleteFolder(item)}
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" /> Delete all contents ({item.documentCount})
                                 </DropdownMenuItem>
@@ -833,7 +794,7 @@ export function KnowledgeBaseBrowser() {
       </AlertDialog>
 
       {/* Delete Folder Dialog */}
-      <AlertDialog open={!!deleteFolderId} onOpenChange={(open) => !open && setDeleteFolderId(null)}>
+      <AlertDialog open={!!deleteFolder} onOpenChange={(open) => !open && setDeleteFolder(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete All Folder Contents</AlertDialogTitle>

@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from hashlib import sha1
 from typing import Any
 
 from fastapi import (
@@ -75,7 +76,54 @@ class DocumentListResponse(BaseModel):
     failed_count: int = 0
 
 
+class DocumentTreeBreadcrumbDTO(BaseModel):
+    id: str
+    name: str
+    path: str
+
+
+class DocumentTreeItemDTO(BaseModel):
+    id: str
+    name: str
+    path: str
+    type: str
+    source_type: str | None = None
+    document_count: int | None = None
+    source_url: str | None = None
+    created_at: str | None = None
+    indexing_status: str | None = None
+    size: int | None = 0
+    metadata: dict[str, Any] | None = None
+
+
+class DocumentTreeResponse(BaseModel):
+    current_path: str
+    breadcrumbs: list[DocumentTreeBreadcrumbDTO]
+    items: list[DocumentTreeItemDTO]
+    total_items: int
+    total_documents: int
+    page: int
+    page_size: int
+    failed_files: list[DocumentDTO] = Field(default_factory=list)
+    failed_count: int = 0
+
+
 FAILED_FILES_PREVIEW_LIMIT = 10
+SOURCE_FOLDER_LABELS = {
+    "file_upload": "📁 Uploaded Files",
+    "google_drive": "🔷 Google Drive",
+    "notion": "📝 Notion",
+    "web": "🌐 Web Pages",
+    "onedrive": "☁️ OneDrive",
+    "sharepoint": "📊 SharePoint",
+    "dropbox": "📦 Dropbox",
+    "github": "🐙 GitHub",
+    "slack": "💬 Slack",
+    "s3": "🪣 Amazon S3",
+    "youtube": "▶️ YouTube",
+    "sftp": "🔐 SFTP",
+    "box": "📥 Box",
+}
 
 
 def _extract_path_from_document(doc: dict[str, Any]) -> str | None:
@@ -125,6 +173,399 @@ def _extract_path_from_document(doc: dict[str, Any]) -> str | None:
             path = parts[-1]  # Just filename
 
     return path
+
+
+def _format_source_folder_name(source_type: str) -> str:
+    return SOURCE_FOLDER_LABELS.get(
+        source_type,
+        source_type.replace("_", " ").title(),
+    )
+
+
+def _hydrate_document_row(doc: dict[str, Any]) -> dict[str, Any]:
+    hydrated = dict(doc)
+    hydrated["source_type"] = normalize_provider(hydrated.get("source_type")) or hydrated.get("source_type")
+    hydrated["status"] = hydrated.get("status", "indexed")
+    hydrated["indexing_status"] = "completed"
+    hydrated["metadata"] = hydrated.get("metadata") or {}
+    hydrated["path"] = _extract_path_from_document(hydrated)
+
+    meta = hydrated["metadata"]
+    file_size = hydrated.get("file_size_bytes")
+    if file_size is None:
+        file_size = (
+            meta.get("file_size")
+            or meta.get("size")
+            or meta.get("file_size_bytes")
+            or 0
+        )
+    hydrated["file_size_bytes"] = file_size or 0
+    hydrated["size"] = file_size or 0
+    return hydrated
+
+
+def _build_failed_file_payload(
+    failed_file: dict[str, Any],
+    provider_map: dict[str, str],
+) -> dict[str, Any]:
+    provider = provider_map.get(str(failed_file.get("job_id"))) or "file_upload"
+    file_size = failed_file.get("file_size_bytes", 0)
+    failed_meta = failed_file.get("metadata") or {}
+    failed_path = (
+        failed_meta.get("path")
+        or failed_meta.get("path_display")
+        or failed_meta.get("file_path")
+        or failed_meta.get("key")
+        or failed_file.get("remote_id")
+        or None
+    )
+    return {
+        "id": failed_file["id"],
+        "title": failed_file["filename"],
+        "source_type": provider,
+        "source_url": None,
+        "path": failed_path,
+        "created_at": failed_file["created_at"],
+        "status": "failed",
+        "indexing_status": "failed",
+        "file_size_bytes": file_size,
+        "size": file_size,
+        "metadata": {
+            "error": failed_file.get("error_message", "Unknown error"),
+            "job_id": str(failed_file.get("job_id", "")),
+        },
+    }
+
+
+def _fetch_failed_files_preview(
+    supabase,
+    organization_id: str,
+    search_term: str | None,
+) -> tuple[list[dict[str, Any]], int]:
+    failed_query = (
+        supabase.table("ingestion_file_status")
+        .select("*", count="exact")
+        .eq("organization_id", organization_id)
+        .eq("status", "failed")
+        .is_("document_id", "null")
+    )
+
+    if search_term:
+        failed_query = failed_query.ilike("filename", f"%{search_term}%")
+
+    failed_res = (
+        failed_query
+        .order("created_at", desc=True)
+        .limit(FAILED_FILES_PREVIEW_LIMIT)
+        .execute()
+    )
+
+    failed_files = failed_res.data or []
+    failed_total = failed_res.count if failed_res.count is not None else len(failed_files)
+    provider_map: dict[str, str] = {}
+    job_ids = {str(f.get("job_id")) for f in failed_files if f.get("job_id")}
+    if job_ids:
+        jobs_res = (
+            supabase.table("ingestion_jobs")
+            .select("id, provider")
+            .in_("id", list(job_ids))
+            .execute()
+        )
+        for job in jobs_res.data or []:
+            provider_map[str(job["id"])] = normalize_provider(job.get("provider")) or job.get("provider")
+
+    payload = [
+        _build_failed_file_payload(failed_file, provider_map)
+        for failed_file in failed_files
+    ]
+    return payload, failed_total
+
+
+def _hash_tree_path(path: str) -> str:
+    return sha1(path.encode("utf-8")).hexdigest()[:12]
+
+
+def _tree_path_segments(path: str) -> list[str]:
+    return [segment for segment in path.split("/") if segment]
+
+
+def _sort_tree_children(folder: dict[str, Any]) -> None:
+    folder["children"].sort(
+        key=lambda child: (
+            0 if child["type"] == "folder" else 1,
+            child["name"].lower(),
+        )
+    )
+
+
+def _update_tree_counts(folder: dict[str, Any]) -> int:
+    count = 0
+    for child in folder["children"]:
+        if child["type"] == "folder":
+            count += _update_tree_counts(child)
+        else:
+            count += 1
+
+    folder["document_count"] = count
+    _sort_tree_children(folder)
+    return count
+
+
+def _build_tree_subtree(parent: dict[str, Any], documents: list[dict[str, Any]]) -> None:
+    folders: dict[str, dict[str, Any]] = {}
+
+    for doc in documents:
+        doc_path = doc.get("path") or doc.get("title") or "Untitled"
+        segments = _tree_path_segments(doc_path)
+
+        if len(segments) <= 1:
+            parent["children"].append(
+                {
+                    "id": doc["id"],
+                    "name": doc.get("title") or "Untitled",
+                    "path": doc_path,
+                    "type": "file",
+                    "source_type": doc.get("source_type"),
+                    "source_url": doc.get("source_url"),
+                    "created_at": doc.get("created_at"),
+                    "indexing_status": doc.get("indexing_status"),
+                    "size": doc.get("size", 0),
+                    "metadata": doc.get("metadata") or {},
+                    "document": doc,
+                }
+            )
+            continue
+
+        current_path = parent["path"]
+        current_folder = parent
+
+        for segment in segments[:-1]:
+            current_path = f"{current_path}/{segment}"
+            if current_path not in folders:
+                folder = {
+                    "id": f"folder-{_hash_tree_path(current_path)}",
+                    "name": segment,
+                    "path": current_path,
+                    "type": "folder",
+                    "children": [],
+                    "document_count": 0,
+                    "source_type": parent.get("source_type"),
+                }
+                folders[current_path] = folder
+                current_folder["children"].append(folder)
+
+            current_folder = folders[current_path]
+
+        current_folder["children"].append(
+            {
+                "id": doc["id"],
+                "name": segments[-1],
+                "path": doc_path,
+                "type": "file",
+                "source_type": doc.get("source_type"),
+                "source_url": doc.get("source_url"),
+                "created_at": doc.get("created_at"),
+                "indexing_status": doc.get("indexing_status"),
+                "size": doc.get("size", 0),
+                "metadata": doc.get("metadata") or {},
+                "document": doc,
+            }
+        )
+
+    _update_tree_counts(parent)
+
+
+def _build_document_tree(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    root = {
+        "id": "root",
+        "name": "All Documents",
+        "path": "/",
+        "type": "folder",
+        "children": [],
+        "document_count": len(documents),
+    }
+
+    by_source: dict[str, list[dict[str, Any]]] = {}
+    for doc in documents:
+        source = doc.get("source_type") or "file_upload"
+        by_source.setdefault(source, []).append(doc)
+
+    for source, source_docs in by_source.items():
+        source_folder = {
+            "id": f"source-{source}",
+            "name": _format_source_folder_name(source),
+            "path": f"/{source}",
+            "type": "folder",
+            "children": [],
+            "document_count": len(source_docs),
+            "source_type": source,
+        }
+        _build_tree_subtree(source_folder, source_docs)
+        _sort_tree_children(source_folder)
+        root["children"].append(source_folder)
+
+    root["children"].sort(key=lambda child: child["name"].lower())
+    return root
+
+
+def _find_tree_folder(root: dict[str, Any], path: str) -> dict[str, Any]:
+    if path in {"/", root["path"]}:
+        return root
+
+    segments = _tree_path_segments(path)
+    current = root
+    for segment in segments:
+        child = next(
+            (
+                candidate
+                for candidate in current["children"]
+                if candidate["type"] == "folder"
+                and (candidate["name"] == segment or candidate["path"].endswith(f"/{segment}"))
+            ),
+            None,
+        )
+        if not child:
+            return root
+        current = child
+
+    return current
+
+
+def _build_tree_breadcrumbs(root: dict[str, Any], path: str) -> list[dict[str, str]]:
+    breadcrumbs = [{"id": root["id"], "name": root["name"], "path": root["path"]}]
+    if path in {"/", root["path"]}:
+        return breadcrumbs
+
+    segments = _tree_path_segments(path)
+    current = root
+    current_path = ""
+    for segment in segments:
+        current_path = f"{current_path}/{segment}"
+        child = next(
+            (
+                candidate
+                for candidate in current["children"]
+                if candidate["type"] == "folder"
+                and candidate["path"] == current_path
+            ),
+            None,
+        )
+        if not child:
+            child = next(
+                (
+                    candidate
+                    for candidate in current["children"]
+                    if candidate["type"] == "folder" and candidate["name"] == segment
+                ),
+                None,
+            )
+        if not child:
+            break
+
+        breadcrumbs.append(
+            {"id": child["id"], "name": child["name"], "path": child["path"]}
+        )
+        current = child
+        current_path = child["path"]
+
+    return breadcrumbs
+
+
+def _search_tree(folder: dict[str, Any], query: str) -> list[dict[str, Any]]:
+    normalized = query.lower().strip()
+    if not normalized:
+        return folder["children"]
+
+    results: list[dict[str, Any]] = []
+
+    def search_node(node: dict[str, Any]) -> None:
+        name_matches = normalized in node["name"].lower()
+        if node["type"] == "folder":
+            if name_matches:
+                results.append(node)
+            for child in node["children"]:
+                search_node(child)
+            return
+
+        document = node.get("document") or {}
+        if (
+            name_matches
+            or normalized in str(document.get("path") or "").lower()
+            or normalized in str(document.get("source_type") or "").lower()
+        ):
+            results.append(node)
+
+    for child in folder["children"]:
+        search_node(child)
+
+    return results
+
+
+def _serialize_tree_item(node: dict[str, Any]) -> dict[str, Any]:
+    if node["type"] == "folder":
+        return {
+            "id": node["id"],
+            "name": node["name"],
+            "path": node["path"],
+            "type": "folder",
+            "source_type": node.get("source_type"),
+            "document_count": node.get("document_count", 0),
+            "metadata": None,
+        }
+
+    document = node.get("document") or {}
+    return {
+        "id": node["id"],
+        "name": node["name"],
+        "path": node["path"],
+        "type": "file",
+        "source_type": node.get("source_type"),
+        "source_url": node.get("source_url"),
+        "created_at": node.get("created_at"),
+        "indexing_status": node.get("indexing_status"),
+        "size": node.get("size", 0),
+        "metadata": document.get("metadata") or {},
+    }
+
+
+def _paginate_tree_items(
+    items: list[dict[str, Any]],
+    page: int,
+    page_size: int,
+) -> tuple[list[dict[str, Any]], int]:
+    if not items:
+        return [], 1
+
+    total_pages = max(1, (len(items) + page_size - 1) // page_size)
+    safe_page = min(max(page, 1), total_pages)
+    start = (safe_page - 1) * page_size
+    return items[start:start + page_size], safe_page
+
+
+def _coerce_query_int(value: Any, fallback: int) -> int:
+    if isinstance(value, int):
+        return value
+
+    default = getattr(value, "default", fallback)
+    if isinstance(default, int):
+        return default
+
+    try:
+        return int(default)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _relative_folder_prefix(folder_path: str, source_type: str) -> str:
+    normalized_path = (folder_path or "").strip()
+    source_root = f"/{source_type}"
+    if not normalized_path or normalized_path == source_root:
+        return ""
+
+    if normalized_path.startswith(f"{source_root}/"):
+        return normalized_path[len(source_root) + 1 :].strip("/")
+
+    return normalized_path.strip("/")
 
 
 def _quote_postgrest_filter_value(value: str) -> str | None:
@@ -184,6 +625,7 @@ class BulkDeleteRequest(BaseModel):
     """Payload for bulk document deletion."""
     document_ids: list[str] | None = None
     source_type: str | None = None
+    folder_path: str | None = None
     # Ghost Protocol: ScopeGuard approval credentials
     approval_id: str | None = None
     mandate_signature: str | None = None
@@ -335,21 +777,7 @@ async def list_documents(
         # Enrich completed documents with status and path
         docs: list[dict[str, Any]] = []
         for d in db_res.data or []:
-            d["source_type"] = normalize_provider(d.get("source_type")) or d.get("source_type")
-            d['status'] = d.get('status', 'indexed')
-            d['indexing_status'] = 'completed'
-            d["metadata"] = d.get("metadata") or {}
-            # Extract path from metadata
-            d["path"] = _extract_path_from_document(d)
-            # Fallback for size if not top-level
-            meta = d["metadata"]
-            file_size = d.get("file_size_bytes")
-            if file_size is None:
-                file_size = meta.get('file_size') or meta.get('size') or meta.get('file_size_bytes') or 0
-            d["file_size_bytes"] = file_size or 0
-            d["size"] = file_size or 0
-
-            docs.append(d)
+            docs.append(_hydrate_document_row(d))
 
         failed_files_payload: list[dict[str, Any]] = []
 
@@ -357,63 +785,11 @@ async def list_documents(
         # Organization-wide: show recent failed files in a separate channel.
         if include_failed:
             try:
-                # Query failed files for the organization
-                failed_query = supabase.table("ingestion_file_status")\
-                    .select("*", count="exact")\
-                    .eq("organization_id", organization_id)\
-                    .eq("status", "failed")\
-                    .is_("document_id", "null")
-
-                if search_term:
-                    failed_query = failed_query.ilike("filename", f"%{search_term}%")
-
-                failed_res = failed_query\
-                    .order("created_at", desc=True)\
-                    .limit(FAILED_FILES_PREVIEW_LIMIT)\
-                    .execute()
-
-                failed_files = failed_res.data or []
-                failed_total = failed_res.count if failed_res.count is not None else len(failed_files)
-                provider_map = {}
-                job_ids = {str(f.get("job_id")) for f in failed_files if f.get("job_id")}
-                if job_ids:
-                    jobs_res = supabase.table("ingestion_jobs")\
-                        .select("id, provider")\
-                        .in_("id", list(job_ids))\
-                        .execute()
-                    for job in jobs_res.data or []:
-                        provider_map[str(job["id"])] = normalize_provider(job.get("provider")) or job.get("provider")
-
-                # Convert failed files to DocumentDTO format
-                for f in failed_files:
-                    provider = provider_map.get(str(f.get("job_id"))) or "file_upload"
-                    file_size = f.get("file_size_bytes", 0)
-                    # Extract path from failed file metadata if available
-                    failed_meta = f.get("metadata") or {}
-                    failed_path = (
-                        failed_meta.get("path") or
-                        failed_meta.get("path_display") or
-                        failed_meta.get("file_path") or
-                        failed_meta.get("key") or
-                        f.get("remote_id") or  # Some connectors store path as remote_id
-                        None
-                    )
-                    failed_files_payload.append({
-                        "id": f["id"],
-                        "title": f["filename"],
-                        "source_type": provider,
-                        "source_url": None,
-                        "path": failed_path,
-                        "created_at": f["created_at"],
-                        "status": "failed",
-                        "indexing_status": "failed",
-                        "file_size_bytes": file_size,
-                        "size": file_size,
-                        "metadata": {
-                            "error": f.get("error_message", "Unknown error"),
-                            "job_id": str(f.get("job_id", ""))
-                        }
-                    })
+                failed_files_payload, failed_total = _fetch_failed_files_preview(
+                    supabase,
+                    organization_id,
+                    search_term,
+                )
             except Exception as failed_err:
                 # Don't fail entire request if failed files query fails
                 logger.warning("Failed to fetch failed files: %s", failed_err)
@@ -430,6 +806,93 @@ async def list_documents(
         )
     except Exception as e:
         raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_documents")
+
+
+@router.get("/documents/tree", response_model=DocumentTreeResponse)
+@limiter.limit("60/minute")
+async def get_document_tree(
+    request: Request,
+    user_id: str = Depends(validate_team_access),
+    organization_id: str = Depends(get_user_organization_id),
+    allowed_scopes: list[str] | None = Depends(get_user_allowed_scopes),
+    path: str = "/",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    q: str | None = None,
+    include_failed: bool = True,
+):
+    """
+    Server-backed document tree for Knowledge Base navigation.
+
+    Returns the current folder view only, with pagination and optional subtree search,
+    so the browser no longer needs to fetch an arbitrary first-N document list and
+    build the entire hierarchy client-side.
+    """
+    supabase = get_supabase()
+    search_term = q.strip() if q and q.strip() else None
+    requested_path = path.strip() or "/"
+    safe_page = max(1, _coerce_query_int(page, 1))
+    safe_page_size = min(max(1, _coerce_query_int(page_size, 25)), 100)
+
+    try:
+        query = (
+            supabase.table("documents")
+            .select(
+                "id, title, source_type, source_url, created_at, file_size_bytes, metadata, status",
+                count="exact",
+            )
+            .eq("organization_id", organization_id)
+            .neq("source_type", "identity")
+            .neq("source_type", "scope_identity")
+        )
+
+        if allowed_scopes is not None:
+            if allowed_scopes:
+                query = query.or_(_build_scope_visibility_filter(allowed_scopes))
+            else:
+                query = query.is_("scope_id", "null")
+
+        db_res = query.execute()
+        documents = [_hydrate_document_row(row) for row in (db_res.data or [])]
+        tree_root = _build_document_tree(documents)
+        current_folder = _find_tree_folder(tree_root, requested_path)
+        breadcrumbs = _build_tree_breadcrumbs(tree_root, current_folder["path"])
+        visible_items = (
+            _search_tree(current_folder, search_term)
+            if search_term
+            else current_folder["children"]
+        )
+        paginated_items, safe_page = _paginate_tree_items(
+            visible_items,
+            safe_page,
+            safe_page_size,
+        )
+
+        failed_files_payload: list[dict[str, Any]] = []
+        failed_total = 0
+        if include_failed:
+            try:
+                failed_files_payload, failed_total = _fetch_failed_files_preview(
+                    supabase,
+                    organization_id,
+                    search_term,
+                )
+            except Exception as failed_err:
+                logger.warning("Failed to fetch failed files for tree view: %s", failed_err)
+
+        return DocumentTreeResponse(
+            current_path=current_folder["path"],
+            breadcrumbs=breadcrumbs,
+            items=[_serialize_tree_item(item) for item in paginated_items],
+            total_items=len(visible_items),
+            total_documents=len(documents),
+            page=safe_page,
+            page_size=safe_page_size,
+            failed_files=failed_files_payload,
+            failed_count=failed_total,
+        )
+    except Exception as e:
+        raise api_error(ApiErrorCode.DATABASE_ERROR, e, "fetch_document_tree")
 
 @router.delete("/documents")
 @limiter.limit("30/minute")
@@ -455,8 +918,17 @@ async def bulk_delete_documents(
 
     supabase = get_supabase()
 
-    if not payload.document_ids and not payload.source_type:
-        raise HTTPException(status_code=400, detail="Provide document_ids or source_type to delete.")
+    if not payload.document_ids and not payload.source_type and not payload.folder_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide document_ids, source_type, or folder_path to delete.",
+        )
+
+    if payload.folder_path and not payload.source_type:
+        raise HTTPException(
+            status_code=400,
+            detail="folder_path deletion requires source_type.",
+        )
 
     doc_ids: list[str] = []
 
@@ -468,26 +940,42 @@ async def bulk_delete_documents(
         normalized_source = canonicalize_provider_name(payload.source_type) or payload.source_type
         try:
             source_docs = supabase.table("documents")\
-                .select("id")\
+                .select("id, title, metadata, source_type")\
                 .eq("organization_id", organization_id)\
                 .eq("source_type", normalized_source)\
                 .execute()
-            doc_ids.extend([row["id"] for row in (source_docs.data or []) if row.get("id")])
+            source_rows = source_docs.data or []
+
+            if payload.folder_path:
+                relative_prefix = _relative_folder_prefix(payload.folder_path, normalized_source)
+                for row in source_rows:
+                    hydrated = _hydrate_document_row(row)
+                    doc_path = (hydrated.get("path") or "").strip("/")
+                    if (
+                        not relative_prefix
+                        or doc_path == relative_prefix
+                        or doc_path.startswith(f"{relative_prefix}/")
+                    ):
+                        if row.get("id"):
+                            doc_ids.append(row["id"])
+            else:
+                doc_ids.extend([row["id"] for row in source_rows if row.get("id")])
         except Exception as e:
             raise api_error(ApiErrorCode.DATABASE_ERROR, e, "resolve_documents_by_source")
 
-        scope_prefixes = get_scope_prefixes(normalized_source)
-        for scope_prefix in scope_prefixes:
-            try:
-                identity_docs = supabase.table("documents")\
-                    .select("id")\
-                    .eq("organization_id", organization_id)\
-                    .eq("source_type", "identity")\
-                    .like("scope_id", f"{scope_prefix}%")\
-                    .execute()
-                doc_ids.extend([row["id"] for row in (identity_docs.data or []) if row.get("id")])
-            except Exception as e:
-                logger.warning("Failed to resolve identity documents for %s: %s", normalized_source, e)
+        if not payload.folder_path:
+            scope_prefixes = get_scope_prefixes(normalized_source)
+            for scope_prefix in scope_prefixes:
+                try:
+                    identity_docs = supabase.table("documents")\
+                        .select("id")\
+                        .eq("organization_id", organization_id)\
+                        .eq("source_type", "identity")\
+                        .like("scope_id", f"{scope_prefix}%")\
+                        .execute()
+                    doc_ids.extend([row["id"] for row in (identity_docs.data or []) if row.get("id")])
+                except Exception as e:
+                    logger.warning("Failed to resolve identity documents for %s: %s", normalized_source, e)
 
     # Deduplicate and validate
     doc_ids = list({d for d in doc_ids if d})
@@ -538,6 +1026,7 @@ async def bulk_delete_documents(
                         "document_ids": doc_ids,
                         "document_count": len(doc_ids),
                         "source_type": payload.source_type,
+                        "folder_path": payload.folder_path,
                         "user_id": user_id,
                     },
                     ttl_minutes=30,
@@ -553,6 +1042,7 @@ async def bulk_delete_documents(
                     details={
                         "document_count": len(doc_ids),
                         "source_type": payload.source_type,
+                        "folder_path": payload.folder_path,
                         "approval_id": approval_result["approval_id"],
                     },
                     request=request
@@ -585,7 +1075,7 @@ async def bulk_delete_documents(
         except Exception as e:
             failed.append({"id": doc_id, "error": str(e)})
 
-    if payload.source_type:
+    if payload.source_type and not payload.folder_path:
         normalized_source = canonicalize_provider_name(payload.source_type) or payload.source_type
         for scope_prefix in get_scope_prefixes(normalized_source):
             try:
@@ -612,6 +1102,7 @@ async def bulk_delete_documents(
                     "deleted_count": len(deleted),
                     "failed_count": len(failed),
                     "source_type": payload.source_type,
+                    "folder_path": payload.folder_path,
                     "ghost_protocol": True,
                 },
                 request=request

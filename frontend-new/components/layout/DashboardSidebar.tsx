@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,7 +27,7 @@ import {
  * Main sidebar component for desktop view.
  * Contains: Logo, New Chat button, Chat history, Settings link, User menu.
  */
-export function DashboardSidebar() {
+function DashboardSidebarComponent() {
     const pathname = usePathname();
     const router = useRouter();
     const { user, logout } = useAuth();
@@ -43,7 +44,7 @@ export function DashboardSidebar() {
 
     const handleLogout = async () => {
         await logout();
-        // Navigation is handled in useAuth.logout()
+        // Navigation is handled by SessionProvider's SIGNED_OUT event.
     };
 
     const toggleTheme = () => {
@@ -174,3 +175,5 @@ export function DashboardSidebar() {
         </div>
     );
 }
+
+export const DashboardSidebar = memo(DashboardSidebarComponent);

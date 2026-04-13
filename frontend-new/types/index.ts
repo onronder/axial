@@ -224,6 +224,8 @@ export interface UserProfile {
     last_name: string | null;
     plan: Plan;
     theme: Theme;
+    organization_id: string;
+    team_id: string | null;
     created_at: string;
     updated_at: string;
 }

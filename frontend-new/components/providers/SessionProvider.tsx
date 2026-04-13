@@ -1,9 +1,17 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import { clearAuthCache } from "@/lib/api";
+import { usePathname, useRouter } from "next/navigation";
 
 interface SessionContextType {
     session: Session | null;
@@ -21,19 +29,40 @@ const SessionContext = createContext<SessionContextType>({
 
 export const useSession = () => useContext(SessionContext);
 
+function isAuthRoute(pathname: string | null): boolean {
+    if (!pathname) {
+        return false;
+    }
+
+    return (
+        pathname === "/login" ||
+        pathname === "/register" ||
+        pathname.startsWith("/forgot-password") ||
+        pathname.startsWith("/auth/")
+    );
+}
+
 export function SessionProvider({ children }: { children: React.ReactNode }) {
     const [session, setSession] = useState<Session | null>(null);
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
+    const pathname = usePathname();
 
     useEffect(() => {
+        let mounted = true;
+
         // 1. Get initial session
         const initSession = async () => {
             try {
                 const {
                     data: { session },
                 } = await supabase.auth.getSession();
+
+                if (!mounted) {
+                    return;
+                }
+
                 setSession(session);
                 setUser(session?.user ?? null);
             } catch (error) {
@@ -41,7 +70,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                     console.error("Failed to get session:", error);
                 }
             } finally {
-                setLoading(false);
+                if (mounted) {
+                    setLoading(false);
+                }
             }
         };
 
@@ -51,31 +82,43 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (!mounted) {
+                return;
+            }
+
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
 
-            if (event === "SIGNED_OUT") {
-                router.push("/login");
+            if (event === "SIGNED_OUT" && !isAuthRoute(pathname)) {
+                router.replace("/login");
             }
         });
 
         return () => {
+            mounted = false;
             subscription.unsubscribe();
         };
-    }, [router]);
+    }, [pathname, router]);
 
-    const signOut = async () => {
-        await supabase.auth.signOut();
-        router.push("/login");
-    };
+    const signOut = useCallback(async () => {
+        clearAuthCache();
 
-    const value = {
-        session,
-        user,
-        loading,
-        signOut,
-    };
+        const { error } = await supabase.auth.signOut();
+        if (error && process.env.NODE_ENV !== "production") {
+            console.error("Failed to sign out:", error.message);
+        }
+    }, []);
+
+    const value = useMemo(
+        () => ({
+            session,
+            user,
+            loading,
+            signOut,
+        }),
+        [loading, session, signOut, user]
+    );
 
     return (
         <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

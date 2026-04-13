@@ -1,6 +1,13 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode, useCallback } from "react";
+import {
+    createContext,
+    useContext,
+    useState,
+    ReactNode,
+    useCallback,
+    useMemo,
+} from "react";
 
 type IngestModalTab = 'file' | 'url';
 
@@ -26,8 +33,13 @@ export function IngestModalProvider({ children }: { children: ReactNode }) {
         setIsOpen(false);
     }, []);
 
+    const value = useMemo(
+        () => ({ isOpen, activeTab, openModal, closeModal }),
+        [activeTab, closeModal, isOpen, openModal]
+    );
+
     return (
-        <IngestModalContext.Provider value={{ isOpen, activeTab, openModal, closeModal }}>
+        <IngestModalContext.Provider value={value}>
             {children}
         </IngestModalContext.Provider>
     );

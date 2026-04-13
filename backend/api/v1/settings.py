@@ -29,6 +29,8 @@ class ProfileResponse(BaseModel):
     last_name: str | None = None
     plan: str = "free"
     theme: str = "system"
+    organization_id: str
+    team_id: str | None = None
     has_team: bool = False
     role: str | None = None
     created_at: str
@@ -50,6 +52,32 @@ class NotificationSettingResponse(BaseModel):
 class NotificationSettingUpdate(BaseModel):
     setting_key: str
     enabled: bool
+
+
+def _resolve_team_identity(supabase, user_id: str) -> tuple[str, str | None, str | None]:
+    team_check = (
+        supabase.table("team_members")
+        .select("team_id, role")
+        .eq("member_user_id", user_id)
+        .neq("status", "removed")
+        .limit(1)
+        .execute()
+    )
+
+    if team_check.data:
+        membership = team_check.data[0]
+        team_id = membership.get("team_id")
+        return (team_id or user_id, team_id, membership.get("role"))
+
+    return (user_id, None, None)
+
+
+def _serialize_profile_response(profile_data: dict, organization_id: str, team_id: str | None, role: str | None) -> dict:
+    profile_data["organization_id"] = organization_id
+    profile_data["team_id"] = team_id
+    profile_data["has_team"] = team_id is not None
+    profile_data["role"] = role
+    return profile_data
 
 # ============================================================
 # PROFILE ENDPOINTS
@@ -132,22 +160,8 @@ async def get_profile(request: Request, user_id: str = Depends(get_current_user)
         if not profile_data:
              raise HTTPException(status_code=500, detail="Failed to retrieve profile")
 
-        # TASK 3: Check if user is in any team
-        # We assume if they are in a team, they completed onboarding or were invited.
-        team_check = supabase.table("team_members")\
-            .select("id, role")\
-            .eq("member_user_id", user_id)\
-            .limit(1)\
-            .execute()
-
-        if len(team_check.data) > 0:
-            profile_data["has_team"] = True
-            profile_data["role"] = team_check.data[0].get("role")
-        else:
-            profile_data["has_team"] = False
-            profile_data["role"] = None
-
-        return profile_data
+        organization_id, team_id, role = _resolve_team_identity(supabase, user_id)
+        return _serialize_profile_response(profile_data, organization_id, team_id, role)
 
     except HTTPException:
         raise
@@ -187,7 +201,8 @@ async def update_profile(
             .execute()
 
         if response.data:
-            return response.data[0]
+            organization_id, team_id, role = _resolve_team_identity(supabase, user_id)
+            return _serialize_profile_response(response.data[0], organization_id, team_id, role)
 
         raise HTTPException(status_code=500, detail="Failed to update profile")
 

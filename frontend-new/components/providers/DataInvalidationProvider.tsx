@@ -21,13 +21,13 @@
  * ```
  */
 
-import { createContext, useContext, useEffect, useState, useMemo } from "react";
+import { createContext, useContext, useMemo } from "react";
 import {
     useDataInvalidation,
     type DataInvalidationReturn,
 } from "@/hooks/useDataInvalidation";
 import { useSession } from "@/components/providers/SessionProvider";
-import { supabase } from "@/lib/supabase";
+import { useProfile } from "@/hooks/useProfile";
 
 // =============================================================================
 // Context
@@ -65,46 +65,8 @@ export function DataInvalidationProvider({
     children,
 }: DataInvalidationProviderProps) {
     const { user } = useSession();
-    const [organizationId, setOrganizationId] = useState<string | null>(null);
-
-    // Fetch user's organization ID
-    useEffect(() => {
-        if (!user?.id) {
-            setOrganizationId(null);
-            return;
-        }
-
-        const fetchOrganizationId = async () => {
-            try {
-                // Get user's team membership to find organization
-                const { data, error } = await supabase
-                    .from("team_members")
-                    .select("team_id")
-                    .eq("member_user_id", user.id)
-                    .single();
-
-                if (error) {
-                    // User might not be in a team yet, use user ID as fallback
-                    if (process.env.NODE_ENV === "development") {
-                        console.log(
-                            "[DataInvalidationProvider] No team found, using user ID"
-                        );
-                    }
-                    setOrganizationId(user.id);
-                    return;
-                }
-
-                setOrganizationId(data?.team_id || user.id);
-            } catch (e) {
-                if (process.env.NODE_ENV !== 'production') {
-                    console.warn("[DataInvalidationProvider] Failed to fetch org:", e);
-                }
-                setOrganizationId(user.id);
-            }
-        };
-
-        fetchOrganizationId();
-    }, [user?.id]);
+    const { profile } = useProfile();
+    const organizationId = profile?.organization_id ?? user?.id ?? null;
 
     // Use the data invalidation hook with the organization ID
     const {

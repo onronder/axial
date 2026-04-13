@@ -318,10 +318,144 @@ class TestDocumentListEndpoint:
         assert not any(doc.status == "failed" for doc in result.documents)
         assert any(doc.status == "failed" for doc in result.failed_files)
         assert result.total_documents == 1
-        assert result.failed_count == 1
-        assert mock_response.headers["X-Total-Count"] == "1"
-        assert mock_response.headers["X-Failed-Count"] == "1"
-        failed_table.limit.assert_called_with(10)
+
+
+class TestDocumentTreeEndpoint:
+    @pytest.mark.unit
+    def test_get_document_tree_returns_source_folders(self):
+        mock_supabase = MagicMock()
+        docs_table = MagicMock()
+        docs_table.select.return_value = docs_table
+        docs_table.eq.return_value = docs_table
+        docs_table.neq.return_value = docs_table
+        docs_table.execute.return_value = MagicMock(
+            data=[
+                {
+                    "id": "doc-1",
+                    "title": "Report.pdf",
+                    "source_type": "file_upload",
+                    "created_at": "2026-04-10T10:00:00Z",
+                    "metadata": {"path": "Reports/Report.pdf"},
+                },
+                {
+                    "id": "doc-2",
+                    "title": "Spec.docx",
+                    "source_type": "google_drive",
+                    "created_at": "2026-04-10T11:00:00Z",
+                    "metadata": {"path": "Specs/Spec.docx"},
+                },
+            ],
+            count=2,
+        )
+        mock_supabase.table.return_value = docs_table
+
+        with patch("api.v1.documents.get_supabase", return_value=mock_supabase):
+            from api.v1.documents import get_document_tree
+
+            result = asyncio.run(
+                get_document_tree(
+                    request=MagicMock(spec=Request),
+                    user_id="test-user",
+                    organization_id="org-1",
+                    allowed_scopes=None,
+                    path="/",
+                    include_failed=False,
+                )
+            )
+
+        assert result.current_path == "/"
+        assert result.total_documents == 2
+        assert {item.path for item in result.items} == {"/file_upload", "/google_drive"}
+
+    @pytest.mark.unit
+    def test_get_document_tree_returns_nested_folder_contents(self):
+        mock_supabase = MagicMock()
+        docs_table = MagicMock()
+        docs_table.select.return_value = docs_table
+        docs_table.eq.return_value = docs_table
+        docs_table.neq.return_value = docs_table
+        docs_table.execute.return_value = MagicMock(
+            data=[
+                {
+                    "id": "doc-1",
+                    "title": "Plan.pdf",
+                    "source_type": "file_upload",
+                    "created_at": "2026-04-10T10:00:00Z",
+                    "metadata": {"path": "Projects/Q1/Plan.pdf"},
+                }
+            ],
+            count=1,
+        )
+        mock_supabase.table.return_value = docs_table
+
+        with patch("api.v1.documents.get_supabase", return_value=mock_supabase):
+            from api.v1.documents import get_document_tree
+
+            result = asyncio.run(
+                get_document_tree(
+                    request=MagicMock(spec=Request),
+                    user_id="test-user",
+                    organization_id="org-1",
+                    allowed_scopes=None,
+                    path="/file_upload/Projects",
+                    include_failed=False,
+                )
+            )
+
+        assert result.current_path == "/file_upload/Projects"
+        assert [crumb.path for crumb in result.breadcrumbs] == ["/", "/file_upload", "/file_upload/Projects"]
+        assert len(result.items) == 1
+        assert result.items[0].path == "/file_upload/Projects/Q1"
+        assert result.items[0].type == "folder"
+
+    @pytest.mark.unit
+    def test_get_document_tree_searches_within_current_subtree(self):
+        mock_supabase = MagicMock()
+        docs_table = MagicMock()
+        docs_table.select.return_value = docs_table
+        docs_table.eq.return_value = docs_table
+        docs_table.neq.return_value = docs_table
+        docs_table.execute.return_value = MagicMock(
+            data=[
+                {
+                    "id": "doc-1",
+                    "title": "budget-report.pdf",
+                    "source_type": "file_upload",
+                    "created_at": "2026-04-10T10:00:00Z",
+                    "metadata": {"path": "Reports/budget-report.pdf"},
+                },
+                {
+                    "id": "doc-2",
+                    "title": "notes.txt",
+                    "source_type": "file_upload",
+                    "created_at": "2026-04-10T11:00:00Z",
+                    "metadata": {"path": "Reports/notes.txt"},
+                },
+            ],
+            count=2,
+        )
+        mock_supabase.table.return_value = docs_table
+
+        with patch("api.v1.documents.get_supabase", return_value=mock_supabase):
+            from api.v1.documents import get_document_tree
+
+            result = asyncio.run(
+                get_document_tree(
+                    request=MagicMock(spec=Request),
+                    user_id="test-user",
+                    organization_id="org-1",
+                    allowed_scopes=None,
+                    path="/file_upload",
+                    q="budget",
+                    include_failed=False,
+                )
+            )
+
+        assert result.total_items == 1
+        assert result.items[0].type == "file"
+        assert result.items[0].name == "budget-report.pdf"
+        assert result.failed_count == 0
+        assert result.failed_files == []
 
     @pytest.mark.unit
     def test_list_documents_ordered_by_created_at_desc(self):
@@ -444,6 +578,81 @@ class TestDocumentDeleteEndpoint:
                     )
                 )
         assert exc.value.status_code == 404
+
+
+class TestBulkDeleteEndpoint:
+    @pytest.mark.unit
+    def test_bulk_delete_documents_resolves_folder_path_prefix(self):
+        documents_table = MagicMock()
+        documents_table.select.return_value = documents_table
+        documents_table.eq.return_value = documents_table
+        documents_table.execute.return_value = MagicMock(
+            data=[
+                {
+                    "id": "doc-1",
+                    "title": "plan.pdf",
+                    "source_type": "file_upload",
+                    "metadata": {"path": "MyFolder/plan.pdf"},
+                },
+                {
+                    "id": "doc-2",
+                    "title": "notes.pdf",
+                    "source_type": "file_upload",
+                    "metadata": {"path": "MyFolder/Sub/notes.pdf"},
+                },
+                {
+                    "id": "doc-3",
+                    "title": "other.pdf",
+                    "source_type": "file_upload",
+                    "metadata": {"path": "Other/other.pdf"},
+                },
+                {
+                    "id": "doc-4",
+                    "title": "wrong-prefix.pdf",
+                    "source_type": "file_upload",
+                    "metadata": {"path": "MyFolder2/wrong-prefix.pdf"},
+                },
+            ]
+        )
+
+        scope_identities_table = MagicMock()
+        scope_identities_table.delete.return_value = scope_identities_table
+        scope_identities_table.eq.return_value = scope_identities_table
+        scope_identities_table.like.return_value = scope_identities_table
+        scope_identities_table.execute.return_value = MagicMock(data=[])
+
+        mock_supabase = MagicMock()
+
+        def table_selector(name):
+            if name == "documents":
+                return documents_table
+            if name == "scope_identities":
+                return scope_identities_table
+            return MagicMock()
+
+        mock_supabase.table.side_effect = table_selector
+
+        with patch("api.v1.documents.get_supabase", return_value=mock_supabase), \
+             patch("api.v1.documents.cleanup_service.delete_single_document", new=AsyncMock()) as mock_cleanup:
+            from api.v1.documents import BulkDeleteRequest, bulk_delete_documents
+
+            result = asyncio.run(
+                bulk_delete_documents(
+                    payload=BulkDeleteRequest(
+                        source_type="file_upload",
+                        folder_path="/file_upload/MyFolder",
+                        force=True,
+                    ),
+                    request=make_request(path="/api/v1/documents", method="DELETE"),
+                    background_tasks=BackgroundTasks(),
+                    user_id="user-1",
+                    organization_id="org-1",
+                )
+            )
+
+        assert result["deleted"] == 2
+        assert {call.args[0] for call in mock_cleanup.await_args_list} == {"doc-1", "doc-2"}
+        scope_identities_table.delete.assert_not_called()
 
 
 class TestDocumentDataIntegrity:

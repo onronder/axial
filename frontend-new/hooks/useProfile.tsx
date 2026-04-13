@@ -12,6 +12,8 @@ export interface UserProfile {
     last_name: string | null;
     plan: 'free' | 'starter' | 'pro' | 'enterprise';
     theme: 'light' | 'dark' | 'system';
+    organization_id: string;
+    team_id: string | null;
     has_team?: boolean;
     role?: 'admin' | 'editor' | 'viewer';
     created_at: string;

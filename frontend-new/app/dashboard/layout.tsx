@@ -45,7 +45,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             // Middleware should have already redirected, but this is a fallback
             // Preserve current path for post-login redirect
             const currentPath = window.location.pathname + window.location.search;
-            router.push(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
+            router.replace(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
         }
     }, [isAuthenticated, loading, router]);
 

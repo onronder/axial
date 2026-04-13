@@ -48,6 +48,8 @@ const mockProfile: UserProfile = {
     last_name: 'Doe',
     plan: 'pro',
     theme: 'dark',
+    organization_id: 'org-1',
+    team_id: 'team-1',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
 };
@@ -228,4 +230,3 @@ describe('useProfile outside provider', () => {
         await result.current.refresh();
     });
 });
-

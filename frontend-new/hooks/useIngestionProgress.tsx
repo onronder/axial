@@ -13,7 +13,14 @@
  * 3. GlobalProgress component handles all UI rendering
  */
 
-import { createContext, useContext, useState, useCallback, ReactNode, useRef } from "react";
+import {
+    createContext,
+    useContext,
+    useState,
+    useCallback,
+    useMemo,
+    ReactNode,
+} from "react";
 
 // =============================================================================
 // Types
@@ -67,9 +74,6 @@ export function IngestionProgressProvider({ children }: IngestionProgressProvide
     // This prevents infinite refresh loops when components remount
     const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
     
-    // Use ref to track if a job was just registered (to auto-expand)
-    const justRegisteredRef = useRef<string | null>(null);
-
     /**
      * Register a new job to be tracked.
      * Called by ingestion components when they start a new job.
@@ -87,9 +91,6 @@ export function IngestionProgressProvider({ children }: IngestionProgressProvide
             next.add(jobId);
             return next;
         });
-        
-        // Track that we just registered this job
-        justRegisteredRef.current = jobId;
     }, []);
 
     /**
@@ -159,16 +160,28 @@ export function IngestionProgressProvider({ children }: IngestionProgressProvide
         return activeJobIds.has(jobId);
     }, [activeJobIds]);
 
-    const value: IngestionProgressContextValue = {
-        activeJobIds,
-        expandedJobId,
-        registerJob,
-        unregisterJob,
-        expandJob,
-        isJobRegistered,
-        markJobCompleted,
-        hasJobCompleted,
-    };
+    const value = useMemo<IngestionProgressContextValue>(
+        () => ({
+            activeJobIds,
+            expandedJobId,
+            registerJob,
+            unregisterJob,
+            expandJob,
+            isJobRegistered,
+            markJobCompleted,
+            hasJobCompleted,
+        }),
+        [
+            activeJobIds,
+            expandedJobId,
+            expandJob,
+            hasJobCompleted,
+            isJobRegistered,
+            markJobCompleted,
+            registerJob,
+            unregisterJob,
+        ]
+    );
 
     return (
         <IngestionProgressContext.Provider value={value}>

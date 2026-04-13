@@ -181,17 +181,10 @@ export function GlobalProgress() {
         if (process.env.NODE_ENV !== 'production') {
             console.log("📊 [GlobalProgress] Ingestion complete - refreshing data...");
         }
-        // Immediate refresh
+
         refresh(true);
         queryClient.invalidateQueries({ queryKey: ["documents"] });
         queryClient.invalidateQueries({ queryKey: ["documentCount"] });
-
-        // Delayed second refresh to catch backend write delays
-        setTimeout(() => {
-            refresh(true);
-            queryClient.invalidateQueries({ queryKey: ["documents"] });
-            queryClient.invalidateQueries({ queryKey: ["documentCount"] });
-        }, 2000);
     }, [refresh, queryClient]);
 
     // Setup realtime subscription

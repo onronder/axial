@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { authFetch } from "@/lib/api";
+import { useSession } from "@/components/providers/SessionProvider";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { RealtimeChannel, RealtimePostgresInsertPayload } from "@supabase/supabase-js";
@@ -83,6 +84,7 @@ type NotificationPayload = {
 
 export function useNotifications() {
     const { toast } = useToast();
+    const { user } = useSession();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [total, setTotal] = useState(0);
@@ -167,20 +169,14 @@ export function useNotifications() {
     // Setup Supabase Realtime subscription
     const setupRealtimeSubscription = useCallback(async () => {
         try {
+            if (!user?.id) {
+                return;
+            }
+
             // Use shared singleton client to avoid "Multiple GoTrueClient" warning
             const supabase = createClient();
             supabaseRef.current = supabase;
-
-            // Get current user ID from profile API
-            const response = await authFetch.get("/settings/profile");
-            const userId = response.data?.user_id;
-
-            if (!userId) {
-                if (process.env.NODE_ENV !== 'production') {
-                    console.warn("⚠️ Could not get user ID for realtime subscription");
-                }
-                return;
-            }
+            const userId = user.id;
 
             userIdRef.current = userId;
 
@@ -214,7 +210,7 @@ export function useNotifications() {
                 console.error("❌ [Realtime] Failed to setup subscription:", err);
             }
         }
-    }, [handleRealtimeInsert]);
+    }, [handleRealtimeInsert, user?.id]);
 
     // Cleanup subscription
     const cleanupSubscription = useCallback(() => {
@@ -373,12 +369,17 @@ export function useNotifications() {
 
     // Setup realtime on mount
     useEffect(() => {
-        setupRealtimeSubscription();
+        if (!user?.id) {
+            cleanupSubscription();
+            return;
+        }
+
+        void setupRealtimeSubscription();
 
         return () => {
             cleanupSubscription();
         };
-    }, [setupRealtimeSubscription, cleanupSubscription]);
+    }, [cleanupSubscription, setupRealtimeSubscription, user?.id]);
 
     // Fallback polling (when realtime is disconnected)
     useEffect(() => {
