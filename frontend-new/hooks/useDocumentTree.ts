@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AxiosError } from "axios";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import type { Document } from "@/types";
@@ -146,6 +147,26 @@ async function fetchDocumentTree(params: {
     return response.data;
 }
 
+function shouldRetryDocumentTreeQuery(
+    failureCount: number,
+    error: unknown
+): boolean {
+    if (failureCount >= 1) {
+        return false;
+    }
+
+    if (error instanceof AxiosError) {
+        const status = error.response?.status;
+
+        // Deterministic client/database failures should not hammer the API.
+        if (status && status < 500) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 export function useDocumentTree(
     path: string,
     page: number,
@@ -162,6 +183,7 @@ export function useDocumentTree(
         staleTime: 60 * 1000,
         gcTime: 5 * 60 * 1000,
         placeholderData: (previousData) => previousData,
+        retry: shouldRetryDocumentTreeQuery,
     });
 
     const deleteMutation = useMutation({

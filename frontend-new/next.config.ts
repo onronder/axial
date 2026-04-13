@@ -127,6 +127,9 @@ const nextConfig: NextConfig = {
       
       // Connect: API endpoints + Supabase + Sentry
       `connect-src 'self' ${resolvedApiOrigin} ${supabaseUrl} https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://o4509311565545472.ingest.us.sentry.io`,
+
+      // Frames: allow Vercel live feedback iframe when present
+      "frame-src 'self' https://vercel.live",
       
       // Frames: deny all framing (clickjacking protection)
       "frame-ancestors 'none'",

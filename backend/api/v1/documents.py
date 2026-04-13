@@ -109,6 +109,9 @@ class DocumentTreeResponse(BaseModel):
 
 
 FAILED_FILES_PREVIEW_LIMIT = 10
+DOCUMENT_TREE_SELECT_FIELDS = (
+    "id, title, source_type, source_url, created_at, file_size_bytes, metadata"
+)
 SOURCE_FOLDER_LABELS = {
     "file_upload": "📁 Uploaded Files",
     "google_drive": "🔷 Google Drive",
@@ -126,6 +129,13 @@ SOURCE_FOLDER_LABELS = {
 }
 
 
+def _as_nonempty_string(value: Any) -> str | None:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return None
+
+
 def _extract_path_from_document(doc: dict[str, Any]) -> str | None:
     """
     Extract path/location from document metadata based on source type.
@@ -141,24 +151,30 @@ def _extract_path_from_document(doc: dict[str, Any]) -> str | None:
     - File Upload: storage_path
     - Web/YouTube: source_url (already displayed separately)
     """
-    meta = doc.get("metadata") or {}
-    source_type = (doc.get("source_type") or "").lower()
+    meta = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    source_type = str(doc.get("source_type") or "").lower()
 
     # Try common path fields in order of preference
-    path = (
-        meta.get("path") or
-        meta.get("path_display") or
-        meta.get("path_lower") or
-        meta.get("file_path") or
-        meta.get("parent_path") or
-        meta.get("key") or  # S3
-        meta.get("storage_path") or  # File upload
-        None
+    path = next(
+        (
+            candidate
+            for candidate in (
+                _as_nonempty_string(meta.get("path")),
+                _as_nonempty_string(meta.get("path_display")),
+                _as_nonempty_string(meta.get("path_lower")),
+                _as_nonempty_string(meta.get("file_path")),
+                _as_nonempty_string(meta.get("parent_path")),
+                _as_nonempty_string(meta.get("key")),  # S3
+                _as_nonempty_string(meta.get("storage_path")),  # File upload
+            )
+            if candidate
+        ),
+        None,
     )
 
     # For Box, construct path from folder_name
     if not path and source_type == "box":
-        folder_name = meta.get("folder_name")
+        folder_name = _as_nonempty_string(meta.get("folder_name"))
         if folder_name:
             path = f"/{folder_name}"
 
@@ -176,9 +192,10 @@ def _extract_path_from_document(doc: dict[str, Any]) -> str | None:
 
 
 def _format_source_folder_name(source_type: str) -> str:
+    normalized_source_type = _as_nonempty_string(source_type) or "unknown"
     return SOURCE_FOLDER_LABELS.get(
-        source_type,
-        source_type.replace("_", " ").title(),
+        normalized_source_type,
+        normalized_source_type.replace("_", " ").title(),
     )
 
 
@@ -285,7 +302,9 @@ def _hash_tree_path(path: str) -> str:
     return sha1(path.encode("utf-8")).hexdigest()[:12]
 
 
-def _tree_path_segments(path: str) -> list[str]:
+def _tree_path_segments(path: Any) -> list[str]:
+    if not isinstance(path, str):
+        return []
     return [segment for segment in path.split("/") if segment]
 
 
@@ -293,7 +312,7 @@ def _sort_tree_children(folder: dict[str, Any]) -> None:
     folder["children"].sort(
         key=lambda child: (
             0 if child["type"] == "folder" else 1,
-            child["name"].lower(),
+            (_as_nonempty_string(child.get("name")) or "").lower(),
         )
     )
 
@@ -315,14 +334,14 @@ def _build_tree_subtree(parent: dict[str, Any], documents: list[dict[str, Any]])
     folders: dict[str, dict[str, Any]] = {}
 
     for doc in documents:
-        doc_path = doc.get("path") or doc.get("title") or "Untitled"
+        doc_path = _as_nonempty_string(doc.get("path")) or _as_nonempty_string(doc.get("title")) or "Untitled"
         segments = _tree_path_segments(doc_path)
 
         if len(segments) <= 1:
             parent["children"].append(
                 {
                     "id": doc["id"],
-                    "name": doc.get("title") or "Untitled",
+                    "name": _as_nonempty_string(doc.get("title")) or "Untitled",
                     "path": doc_path,
                     "type": "file",
                     "source_type": doc.get("source_type"),
@@ -359,7 +378,7 @@ def _build_tree_subtree(parent: dict[str, Any], documents: list[dict[str, Any]])
         current_folder["children"].append(
             {
                 "id": doc["id"],
-                "name": segments[-1],
+                "name": _as_nonempty_string(segments[-1]) or "Untitled",
                 "path": doc_path,
                 "type": "file",
                 "source_type": doc.get("source_type"),
@@ -387,7 +406,7 @@ def _build_document_tree(documents: list[dict[str, Any]]) -> dict[str, Any]:
 
     by_source: dict[str, list[dict[str, Any]]] = {}
     for doc in documents:
-        source = doc.get("source_type") or "file_upload"
+        source = _as_nonempty_string(doc.get("source_type")) or "file_upload"
         by_source.setdefault(source, []).append(doc)
 
     for source, source_docs in by_source.items():
@@ -404,7 +423,7 @@ def _build_document_tree(documents: list[dict[str, Any]]) -> dict[str, Any]:
         _sort_tree_children(source_folder)
         root["children"].append(source_folder)
 
-    root["children"].sort(key=lambda child: child["name"].lower())
+    root["children"].sort(key=lambda child: (_as_nonempty_string(child.get("name")) or "").lower())
     return root
 
 
@@ -479,7 +498,7 @@ def _search_tree(folder: dict[str, Any], query: str) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
     def search_node(node: dict[str, Any]) -> None:
-        name_matches = normalized in node["name"].lower()
+        name_matches = normalized in (_as_nonempty_string(node.get("name")) or "").lower()
         if node["type"] == "folder":
             if name_matches:
                 results.append(node)
@@ -837,10 +856,7 @@ async def get_document_tree(
     try:
         query = (
             supabase.table("documents")
-            .select(
-                "id, title, source_type, source_url, created_at, file_size_bytes, metadata, status",
-                count="exact",
-            )
+            .select(DOCUMENT_TREE_SELECT_FIELDS, count="exact")
             .eq("organization_id", organization_id)
             .neq("source_type", "identity")
             .neq("source_type", "scope_identity")

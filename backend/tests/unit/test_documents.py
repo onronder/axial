@@ -458,6 +458,45 @@ class TestDocumentTreeEndpoint:
         assert result.failed_files == []
 
     @pytest.mark.unit
+    def test_get_document_tree_tolerates_non_string_metadata_path(self):
+        mock_supabase = MagicMock()
+        docs_table = MagicMock()
+        docs_table.select.return_value = docs_table
+        docs_table.eq.return_value = docs_table
+        docs_table.neq.return_value = docs_table
+        docs_table.execute.return_value = MagicMock(
+            data=[
+                {
+                    "id": "doc-1",
+                    "title": "Fallback.pdf",
+                    "source_type": "file_upload",
+                    "created_at": "2026-04-10T10:00:00Z",
+                    "metadata": {"path": {"unexpected": "object"}},
+                }
+            ],
+            count=1,
+        )
+        mock_supabase.table.return_value = docs_table
+
+        with patch("api.v1.documents.get_supabase", return_value=mock_supabase):
+            from api.v1.documents import get_document_tree
+
+            result = asyncio.run(
+                get_document_tree(
+                    request=MagicMock(spec=Request),
+                    user_id="test-user",
+                    organization_id="org-1",
+                    allowed_scopes=None,
+                    path="/file_upload",
+                    include_failed=False,
+                )
+            )
+
+        assert result.current_path == "/file_upload"
+        assert len(result.items) == 1
+        assert result.items[0].name == "Fallback.pdf"
+
+    @pytest.mark.unit
     def test_list_documents_ordered_by_created_at_desc(self):
         """Most recent documents should appear first."""
         mock_supabase = MagicMock()
