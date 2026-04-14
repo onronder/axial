@@ -3605,6 +3605,45 @@ def process_page_task(
         ))
 
         if not docs:
+            youtube_error = (
+                connector.get_last_youtube_error()
+                if _is_youtube_url(url) and hasattr(connector, "get_last_youtube_error")
+                else None
+            )
+            if youtube_error:
+                user_message = youtube_error.get("user_message") or "Failed to retrieve YouTube transcript."
+                error_code = youtube_error.get("code") or "youtube_transcript_failed"
+                logger.warning(
+                    "⚠️ [Page:%s] YouTube transcript unavailable for %s: %s",
+                    task_id,
+                    url,
+                    youtube_error.get("debug_message") or error_code,
+                )
+                if crawl_id:
+                    supabase.rpc("increment_crawl_counter", {
+                        "p_crawl_id": crawl_id,
+                        "p_field": "pages_failed"
+                    }).execute()
+                    update_crawl_status(
+                        supabase,
+                        crawl_id,
+                        status="processing",
+                        error_message=user_message,
+                        job_id=job_ref,
+                        message=user_message,
+                    )
+                _record_crawl_outcome_and_maybe_finalize(
+                    supabase,
+                    user_id,
+                    crawl_id,
+                    url,
+                    "failed",
+                    job_id=job_ref,
+                )
+                mark_file_status("failed", progress=0, message=user_message, error=user_message)
+                record_ingest_outcome("failed")
+                return {"status": "failed", "url": url, "error": error_code}
+
             logger.warning(f"⚠️ [Page:{task_id}] No content from: {url}")
             if crawl_id:
                 supabase.rpc("increment_crawl_counter", {
@@ -3917,6 +3956,7 @@ def finalize_crawl_task(
     )
 
     final_status = "completed" if success_count > 0 or skipped_count > 0 else "failed"
+    detailed_error_message = str(config.get("error_message") or "").strip() or None
     if final_status == "failed":
         status_msg = f"All {failed_count} pages failed"
     else:
@@ -3926,12 +3966,14 @@ def finalize_crawl_task(
         if failed_count:
             status_parts.append(f"{failed_count} failed")
         status_msg = ", ".join(status_parts)
+    surfaced_error_message = detailed_error_message if final_status == "failed" else None
     update_crawl_status(
         supabase,
         crawl_id,
         status=final_status,
         pages_ingested=success_count,
         pages_failed=failed_count,
+        error_message=surfaced_error_message,
         job_id=crawl_id,
         message=status_msg
     )
@@ -3944,6 +3986,7 @@ def finalize_crawl_task(
             processed_files=processed_total,
             failed_files=failed_count,
             progress=100,
+            error_message=surfaced_error_message,
             message=status_msg,
         )
     except Exception as e:
@@ -3966,7 +4009,7 @@ def finalize_crawl_task(
             notification_message = "Successfully indexed YouTube video"
         else:
             notification_title = "YouTube Indexing Failed"
-            notification_message = "Failed to index YouTube video"
+            notification_message = surfaced_error_message or "Failed to index YouTube video"
     else:
         # Standard web crawl notifications
         if final_status == "completed":
@@ -3974,7 +4017,7 @@ def finalize_crawl_task(
             notification_message = f"Ingested {success_count} pages from {root_url}"
         else:
             notification_title = "Web Crawl Failed"
-            notification_message = f"Failed to crawl {root_url}"
+            notification_message = surfaced_error_message or f"Failed to crawl {root_url}"
 
     create_notification(
         supabase, user_id,

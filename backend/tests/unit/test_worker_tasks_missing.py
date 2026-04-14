@@ -702,6 +702,100 @@ def test_process_page_task_rate_limit_and_delay(monkeypatch):
     record_outcome.assert_called()
 
 
+def test_process_page_task_youtube_transcript_failure_surfaces_reason(monkeypatch):
+    supabase = MagicMock()
+    supabase.rpc.return_value.execute.return_value = MagicMock()
+    connector = MagicMock()
+    connector.is_safe_url.return_value = True
+    connector.get_crawl_delay.return_value = 0
+    connector.fetch_documents_sync.return_value = []
+    connector._is_youtube_url.return_value = True
+    connector.get_last_youtube_error.return_value = {
+        "code": "youtube_ip_blocked",
+        "user_message": "YouTube blocked the transcript request from the current connection.",
+        "debug_message": "ip_blocked:direct_fallback",
+    }
+
+    monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
+    monkeypatch.setattr(tasks, "check_rate_limit", lambda *_args, **_kwargs: True)
+
+    with patch("connectors.web.WebConnector", return_value=connector), \
+         patch("worker.tasks._record_crawl_outcome_and_maybe_finalize") as record_outcome, \
+         patch("worker.tasks.update_crawl_status") as update_crawl_status, \
+         patch("worker.tasks.update_file_status") as update_file_status:
+        result = tasks.process_page_task.run(
+            "user-1",
+            "https://www.youtube.com/watch?v=8m8VnvoZFhs",
+            crawl_id="crawl-1",
+            job_id="crawl-1",
+            file_status_id="file-1",
+        )
+
+    assert result["status"] == "failed"
+    assert result["error"] == "youtube_ip_blocked"
+    record_outcome.assert_called_once()
+    update_crawl_status.assert_called_once()
+    update_file_status.assert_called()
+    update_payload = update_file_status.call_args.kwargs
+    assert update_payload["message"] == "YouTube blocked the transcript request from the current connection."
+    assert update_payload["error"] == "YouTube blocked the transcript request from the current connection."
+
+
+def test_finalize_crawl_task_preserves_detailed_error_message(monkeypatch):
+    task = DummyTask("task-finalize-youtube")
+    supabase = MagicMock()
+    config_table = _make_table(
+        {
+            "status": "processing",
+            "root_url": "https://www.youtube.com/watch?v=8m8VnvoZFhs",
+            "total_pages_found": 1,
+            "pages_ingested": 0,
+            "pages_failed": 1,
+            "error_message": "YouTube blocked the transcript request from the current connection.",
+        }
+    )
+    supabase.table.return_value = config_table
+
+    monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
+
+    with patch("worker.tasks.get_crawl_counters", return_value={"success": 0, "failed": 1, "skipped": 0, "total": 1}), \
+         patch("worker.tasks.update_crawl_status") as update_crawl_status, \
+         patch("worker.tasks.update_job_status") as update_job_status, \
+         patch("worker.tasks.clear_crawl_counters") as clear_counters, \
+         patch("worker.tasks.create_notification") as create_notification:
+        tasks.finalize_crawl_task.run.__func__(task, "user-1", "crawl-1")
+
+    update_crawl_status.assert_called_once_with(
+        supabase,
+        "crawl-1",
+        status="failed",
+        pages_ingested=0,
+        pages_failed=1,
+        error_message="YouTube blocked the transcript request from the current connection.",
+        job_id="crawl-1",
+        message="All 1 pages failed",
+    )
+    update_job_status.assert_called_once_with(
+        supabase,
+        "crawl-1",
+        status="failed",
+        processed_files=1,
+        failed_files=1,
+        progress=100,
+        error_message="YouTube blocked the transcript request from the current connection.",
+        message="All 1 pages failed",
+    )
+    clear_counters.assert_called_once_with("crawl-1")
+    create_notification.assert_called_once_with(
+        supabase,
+        "user-1",
+        "YouTube Indexing Failed",
+        "YouTube blocked the transcript request from the current connection.",
+        "error",
+        {"crawl_id": "crawl-1", "pages_ingested": 0, "pages_failed": 1, "is_youtube": True},
+    )
+
+
 def test_process_page_task_no_chunks(monkeypatch):
     supabase = MagicMock()
     supabase.rpc.return_value.execute.return_value = MagicMock()

@@ -62,6 +62,18 @@ logger = logging.getLogger(__name__)
 
 BRIGHTDATA_API_URL = "https://api.brightdata.com/request"
 
+YOUTUBE_ERROR_PRIORITY: dict[str, int] = {
+    "youtube_invalid_video_id": 100,
+    "youtube_video_unavailable": 95,
+    "youtube_login_required": 95,
+    "youtube_no_captions": 90,
+    "youtube_ip_blocked": 80,
+    "youtube_captions_fetch_failed": 75,
+    "youtube_caption_parse_failed": 75,
+    "youtube_unlocker_failed": 70,
+    "youtube_transcript_fetch_failed": 60,
+}
+
 
 def _get_brightdata_config() -> dict[str, Any]:
     """
@@ -230,6 +242,7 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
     def __init__(self) -> None:
         self.session = safe_session(self.DEFAULT_HEADERS)
+        self._last_youtube_error: dict[str, str] | None = None
 
     def close(self) -> None:
         """Close the underlying HTTP session to release connections."""
@@ -510,6 +523,31 @@ class WebConnector(EnhancedConnector, BaseConnector):
     # Backward-compatible alias
     extract_youtube_video_id = _extract_youtube_video_id
 
+    def _clear_youtube_error(self) -> None:
+        self._last_youtube_error = None
+
+    def _set_youtube_error(
+        self,
+        code: str,
+        user_message: str,
+        debug_message: str | None = None,
+    ) -> None:
+        current_code = self._last_youtube_error.get("code") if self._last_youtube_error else None
+        current_priority = YOUTUBE_ERROR_PRIORITY.get(current_code or "", 0)
+        new_priority = YOUTUBE_ERROR_PRIORITY.get(code, 0)
+        if self._last_youtube_error and new_priority < current_priority:
+            return
+        self._last_youtube_error = {
+            "code": code,
+            "user_message": user_message,
+            "debug_message": debug_message or user_message,
+        }
+
+    def get_last_youtube_error(self) -> dict[str, str] | None:
+        if not self._last_youtube_error:
+            return None
+        return dict(self._last_youtube_error)
+
     def fetch_youtube_transcript(self, video_url: str) -> str | None:
         """
         Fetch transcript from a YouTube video using Bright Data Unlocker API.
@@ -525,9 +563,15 @@ class WebConnector(EnhancedConnector, BaseConnector):
         Returns:
             Full transcript text or None if not available
         """
+        self._clear_youtube_error()
         video_id = self._extract_youtube_video_id(video_url)
         if not video_id:
             logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
+            self._set_youtube_error(
+                "youtube_invalid_video_id",
+                "Could not read the YouTube video ID from the submitted URL.",
+                f"invalid_video_id:{video_url}",
+            )
             return None
 
         # Load Bright Data configuration
@@ -542,6 +586,12 @@ class WebConnector(EnhancedConnector, BaseConnector):
             result = self._fetch_transcript_via_unlocker(video_id, video_url, bd_config)
             if result is not None:
                 return result
+            if not self._last_youtube_error:
+                self._set_youtube_error(
+                    "youtube_unlocker_failed",
+                    "The transcript proxy could not fetch the YouTube page.",
+                    f"unlocker_failed:{video_id}",
+                )
             logger.warning(f"⚠️ [YouTube] Bright Data Unlocker failed for {video_id}")
         else:
             logger.info("ℹ️ [YouTube] Bright Data API key not configured, using direct connection")
@@ -561,7 +611,17 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 return result
 
         # All attempts failed
-        logger.error(f"❌ [YouTube] All transcript fetch attempts failed for {video_url}")
+        if not self._last_youtube_error:
+            self._set_youtube_error(
+                "youtube_transcript_fetch_failed",
+                "Transcript retrieval failed for this YouTube video.",
+                f"all_attempts_failed:{video_url}",
+            )
+        logger.error(
+            "❌ [YouTube] All transcript fetch attempts failed for %s (%s)",
+            video_url,
+            self._last_youtube_error.get("debug_message") if self._last_youtube_error else "no_detail",
+        )
         return None
 
     def _fetch_transcript_via_unlocker(
@@ -597,6 +657,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 page_html = _fetch_via_brightdata_unlocker(canonical_url, config)
 
                 if not page_html:
+                    self._set_youtube_error(
+                        "youtube_unlocker_failed",
+                        "The transcript proxy could not fetch the YouTube page.",
+                        f"unlocker_empty_response:{video_id}:attempt={attempt + 1}",
+                    )
                     if attempt < retry_count - 1:
                         delay = retry_delay * (2 ** attempt)
                         logger.warning(
@@ -619,6 +684,12 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
                 # Page fetched but no captions found
                 logger.warning(f"⚠️ [YouTube/Unlocker] No captions found in page for: {video_id}")
+                if not self._last_youtube_error:
+                    self._set_youtube_error(
+                        "youtube_no_captions",
+                        "This YouTube video does not expose captions or a transcript.",
+                        f"unlocker_no_captions:{video_id}",
+                    )
                 return None
 
             except Exception as e:
@@ -631,6 +702,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
                     time.sleep(delay)
                 else:
                     logger.error(f"❌ [YouTube/Unlocker] Failed after {retry_count} attempts: {e}")
+                    self._set_youtube_error(
+                        "youtube_unlocker_failed",
+                        "The transcript proxy could not fetch the YouTube page.",
+                        f"unlocker_exception:{video_id}:{e}",
+                    )
 
         return None
 
@@ -674,10 +750,20 @@ class WebConnector(EnhancedConnector, BaseConnector):
             if status == "ERROR":
                 reason = playability.get("reason", "Unknown error")
                 logger.warning(f"⚠️ [YouTube] Video unavailable: {video_id} - {reason}")
+                self._set_youtube_error(
+                    "youtube_video_unavailable",
+                    "This YouTube video is unavailable, private, or region-restricted.",
+                    f"video_unavailable:{video_id}:{reason}",
+                )
                 return None
 
             if status == "LOGIN_REQUIRED":
                 logger.warning(f"⚠️ [YouTube] Video requires login: {video_id}")
+                self._set_youtube_error(
+                    "youtube_login_required",
+                    "This YouTube video requires sign-in before captions can be accessed.",
+                    f"login_required:{video_id}",
+                )
                 return None
 
             # Get captions info
@@ -686,6 +772,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
             if not caption_tracks:
                 logger.warning(f"⚠️ [YouTube] No caption tracks available for: {video_id}")
+                self._set_youtube_error(
+                    "youtube_no_captions",
+                    "This YouTube video does not expose captions or a transcript.",
+                    f"no_caption_tracks:{video_id}",
+                )
                 return None
 
             # Prefer English, then any available language
@@ -709,6 +800,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
             captions_url = selected_track.get("baseUrl")
             if not captions_url:
                 logger.warning(f"⚠️ [YouTube] No captions URL for: {video_id}")
+                self._set_youtube_error(
+                    "youtube_captions_fetch_failed",
+                    "The YouTube caption track was found but could not be downloaded.",
+                    f"missing_captions_url:{video_id}",
+                )
                 return None
 
             # Fetch captions XML via Bright Data
@@ -717,6 +813,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
             if not captions_xml:
                 logger.warning(f"⚠️ [YouTube] Failed to fetch captions XML for: {video_id}")
+                self._set_youtube_error(
+                    "youtube_captions_fetch_failed",
+                    "The YouTube caption track was found but could not be downloaded.",
+                    f"captions_xml_fetch_failed:{video_id}",
+                )
                 return None
 
             # Parse captions XML
@@ -724,9 +825,19 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
         except json.JSONDecodeError as e:
             logger.warning(f"⚠️ [YouTube] Failed to parse player response JSON: {e}")
+            self._set_youtube_error(
+                "youtube_unlocker_failed",
+                "The transcript proxy returned an unreadable YouTube page.",
+                f"player_response_json_decode:{video_id}:{e}",
+            )
             return None
         except Exception as e:
             logger.error(f"❌ [YouTube] Error extracting captions from HTML: {e}")
+            self._set_youtube_error(
+                "youtube_unlocker_failed",
+                "The transcript proxy returned an unreadable YouTube page.",
+                f"extract_captions_html:{video_id}:{e}",
+            )
             return None
 
     def _parse_captions_xml(self, xml_content: str, video_id: str) -> str | None:
@@ -761,6 +872,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
             if not text_elements:
                 logger.warning(f"⚠️ [YouTube] No text elements in captions XML for: {video_id}")
+                self._set_youtube_error(
+                    "youtube_caption_parse_failed",
+                    "The YouTube caption track was downloaded but could not be parsed.",
+                    f"captions_xml_no_text:{video_id}",
+                )
                 return None
 
             text_parts = []
@@ -778,6 +894,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
 
         except Exception as e:
             logger.error(f"❌ [YouTube] Error parsing captions XML for {video_id}: {e}")
+            self._set_youtube_error(
+                "youtube_caption_parse_failed",
+                "The YouTube caption track was downloaded but could not be parsed.",
+                f"captions_xml_parse_error:{video_id}:{e}",
+            )
             return None
 
     def _fetch_transcript_with_retry(
@@ -815,6 +936,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
             )
         except ImportError:
             logger.error("❌ [YouTube] youtube-transcript-api not installed")
+            self._set_youtube_error(
+                "youtube_transcript_fetch_failed",
+                "Transcript retrieval is not available in the current worker environment.",
+                "youtube_transcript_api_import_error",
+            )
             return None
 
         # IP block error signatures
@@ -856,11 +982,21 @@ class WebConnector(EnhancedConnector, BaseConnector):
             except (TranscriptsDisabled, NoTranscriptFound) as e:
                 # These are permanent failures - no point retrying
                 logger.warning(f"⚠️ [YouTube] Transcript not available for {video_id}: {e}")
+                self._set_youtube_error(
+                    "youtube_no_captions",
+                    "This YouTube video does not expose captions or a transcript.",
+                    f"transcript_unavailable:{video_id}:{e}",
+                )
                 return None
 
             except VideoUnavailable as e:
                 # Video is private, deleted, or region-locked
                 logger.warning(f"⚠️ [YouTube] Video unavailable {video_id}: {e}")
+                self._set_youtube_error(
+                    "youtube_video_unavailable",
+                    "This YouTube video is unavailable, private, or region-restricted.",
+                    f"video_unavailable_direct:{video_id}:{e}",
+                )
                 return None
 
             except Exception as e:
@@ -872,6 +1008,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
                 if is_ip_blocked:
                     logger.warning(
                         f"⚠️ [YouTube] IP blocked ({attempt_name}, attempt {attempt + 1}/{retry_count}): {video_id}"
+                    )
+                    self._set_youtube_error(
+                        "youtube_ip_blocked",
+                        "YouTube blocked the transcript request from the current connection.",
+                        f"ip_blocked:{attempt_name}:{video_id}:{e}",
                     )
                     # Don't retry IP blocks - they need different approach
                     return None
@@ -888,6 +1029,11 @@ class WebConnector(EnhancedConnector, BaseConnector):
                     logger.error(
                         f"❌ [YouTube] Transcript fetch failed for {video_url} "
                         f"({attempt_name}, {retry_count} attempts): {e}"
+                    )
+                    self._set_youtube_error(
+                        "youtube_transcript_fetch_failed",
+                        "Transcript retrieval failed for this YouTube video.",
+                        f"transcript_fetch_failed:{attempt_name}:{video_id}:{e}",
                     )
 
         return None

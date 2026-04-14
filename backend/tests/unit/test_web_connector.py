@@ -874,6 +874,7 @@ class TestWebConnectorExtraPaths:
         connector = WebConnector()
         with patch.object(connector, "extract_youtube_video_id", return_value=None):
             assert connector.fetch_youtube_transcript("https://youtu.be/invalid") is None
+        assert connector.get_last_youtube_error()["code"] == "youtube_invalid_video_id"
 
     def test_fetch_youtube_transcript_fallback(self, monkeypatch):
         """Test YouTube transcript fallback when preferred transcripts are unavailable."""
@@ -974,6 +975,7 @@ class TestWebConnectorExtraPaths:
 
         with patch.object(connector, "extract_youtube_video_id", return_value="abc123"):
             assert connector.fetch_youtube_transcript("https://youtu.be/abc123") is None
+        assert connector.get_last_youtube_error()["code"] == "youtube_transcript_fetch_failed"
 
     def test_fetch_youtube_transcript_no_transcript_available(self, monkeypatch):
         yt_module = ModuleType("youtube_transcript_api")
@@ -997,6 +999,7 @@ class TestWebConnectorExtraPaths:
         connector = WebConnector()
         with patch.object(connector, "extract_youtube_video_id", return_value="abc123"):
             assert connector.fetch_youtube_transcript("https://youtu.be/abc123") is None
+        assert connector.get_last_youtube_error()["code"] == "youtube_no_captions"
 
     def test_get_youtube_metadata(self):
         connector = WebConnector()
