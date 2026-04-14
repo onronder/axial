@@ -651,7 +651,26 @@ def _record_crawl_outcome_and_maybe_finalize(
     if not counters:
         if job_counters_missing:
             job_counters_missing.labels("crawl").inc()
-        return
+        try:
+            config_res = supabase.table("web_crawl_configs").select(
+                "total_pages_found,pages_ingested,pages_failed"
+            ).eq(
+                "id", crawl_id
+            ).single().execute()
+            config = config_res.data or {}
+            counters = {
+                "total": config.get("total_pages_found") or 0,
+                "processed": (config.get("pages_ingested") or 0) + (config.get("pages_failed") or 0),
+                "success": config.get("pages_ingested") or 0,
+                "failed": config.get("pages_failed") or 0,
+                "skipped": 0,
+            }
+            logger.warning(
+                "[Crawl] Redis counters unavailable for %s; using DB counters for finalize checks",
+                crawl_id,
+            )
+        except Exception:
+            return
 
     total = counters.get("total", 0)
     processed = counters.get("processed", 0)

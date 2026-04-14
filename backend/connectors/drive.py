@@ -128,6 +128,11 @@ class DriveConnector(EnhancedConnector, BaseConnector):
             "supportsAllDrives": True,
         }
 
+    @staticmethod
+    def _build_service(creds: Credentials):
+        # Disable discovery cache to avoid noisy oauth2client compatibility logs.
+        return build("drive", "v3", credentials=creds, cache_discovery=False)
+
     @with_google_retry(max_attempts=3)
     def _drive_get(self, service, **kwargs):
         with google_drive_breaker, connector_fetch_limit("google_drive"):
@@ -435,7 +440,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
     ) -> list[RemoteFile]:
         """Synchronous implementation of list_files."""
         creds = self._get_credentials(user_id)
-        service = build('drive', 'v3', credentials=creds)
+        service = self._build_service(creds)
         since_dt = self._normalize_since(since)
         decoded_parent = self._decode_shared_drive_item_id(parent_id)
         shared_drive_id: str | None = None
@@ -533,7 +538,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
         else:
             raise AuthenticationError("No credentials or user_id provided for Drive fetch")
 
-        service = build("drive", "v3", credentials=creds)
+        service = self._build_service(creds)
 
         for item_id in item_ids:
             try:
@@ -655,7 +660,7 @@ class DriveConnector(EnhancedConnector, BaseConnector):
         else:
             raise ConnectorAuthError("No user_id or integration_id in config")
 
-        service = build("drive", "v3", credentials=creds)
+        service = self._build_service(creds)
 
         shared_drive_context = self._decode_shared_drive_item_id(file_id)
         raw_file_id = shared_drive_context[1] if shared_drive_context else file_id

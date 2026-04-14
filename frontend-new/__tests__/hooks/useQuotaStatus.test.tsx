@@ -400,6 +400,46 @@ describe('useQuotaStatus', () => {
             });
         });
 
+        it('should clear stale quota status after provider is accepted again', async () => {
+            let capturedCallback: ((payload: unknown) => void) | null = null;
+
+            const channelInstance = {
+                on: vi.fn((event, config, callback) => {
+                    capturedCallback = callback;
+                    return {
+                        subscribe: vi.fn().mockReturnValue(channelInstance),
+                    };
+                }),
+                unsubscribe: vi.fn(),
+            };
+            mockChannel.mockReturnValue(channelInstance);
+
+            const { result } = renderHook(() => useQuotaStatus(), {
+                wrapper: createWrapper(),
+            });
+
+            act(() => {
+                result.current.markQuotaExceeded('google_drive');
+            });
+
+            expect(result.current.isProviderQuotaExceeded('google_drive')).toBe(true);
+
+            act(() => {
+                if (capturedCallback) {
+                    capturedCallback({
+                        new: {
+                            status: 'pending',
+                            provider: 'google_drive',
+                        },
+                    });
+                }
+            });
+
+            await waitFor(() => {
+                expect(result.current.isProviderQuotaExceeded('google_drive')).toBe(false);
+            });
+        });
+
         it('should not mark quota exceeded for non-quota errors', async () => {
             let capturedCallback: ((payload: unknown) => void) | null = null;
             

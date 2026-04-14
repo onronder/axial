@@ -154,6 +154,25 @@ describe('URLCrawlerInput Component', () => {
         expect(mockRegisterJob).toHaveBeenCalledWith('crawl-123');
       });
     });
+
+    it('should ignore youtube jobs returned by active crawl endpoint', async () => {
+      mockApiGet.mockResolvedValueOnce({
+        data: {
+          id: 'crawl-yt',
+          root_url: 'https://www.youtube.com/watch?v=8m8VnvoZFhs',
+          status: 'processing',
+        },
+      });
+
+      render(<URLCrawlerInput source={mockSource} />);
+
+      await waitFor(() => {
+        expect(mockApiGet).toHaveBeenCalledWith('/integrations/web/crawl/active');
+      });
+
+      expect(screen.queryByText('Crawling in progress')).not.toBeInTheDocument();
+      expect(mockRegisterJob).not.toHaveBeenCalled();
+    });
   });
 
   describe('URL Validation', () => {

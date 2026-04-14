@@ -143,10 +143,40 @@ def test_record_crawl_outcome_early_returns(monkeypatch):
     tasks._record_crawl_outcome_and_maybe_finalize(supabase, "user-1", None, "url", "success")
 
     with patch("worker.tasks.record_crawl_outcome", return_value=None), \
-         patch("worker.tasks.job_counters_missing") as missing:
+         patch("worker.tasks.job_counters_missing") as missing, \
+         patch("worker.tasks.finalize_crawl_task.apply_async") as finalize:
         missing.labels.return_value = missing
+        table = _make_table([])
+        table.execute.side_effect = Exception("boom")
+        supabase.table.return_value = table
         tasks._record_crawl_outcome_and_maybe_finalize(supabase, "user-1", "crawl-1", "url", "success")
         missing.inc.assert_called_once()
+        finalize.assert_not_called()
+
+
+def test_record_crawl_outcome_uses_db_fallback_when_redis_missing(monkeypatch):
+    supabase = MagicMock()
+    table = _make_table({"total_pages_found": 1, "pages_ingested": 0, "pages_failed": 1})
+    supabase.table.return_value = table
+
+    with patch("worker.tasks.record_crawl_outcome", return_value=None), \
+         patch("worker.tasks.job_counters_missing") as missing, \
+         patch("worker.tasks.mark_crawl_finalizing", return_value=True), \
+         patch("worker.tasks.finalize_crawl_task.apply_async") as finalize, \
+         patch("worker.tasks.update_job_status") as update_job_status:
+        missing.labels.return_value = missing
+        tasks._record_crawl_outcome_and_maybe_finalize(
+            supabase,
+            "user-1",
+            "crawl-1",
+            "https://www.youtube.com/watch?v=8m8VnvoZFhs",
+            "failed",
+            job_id="crawl-1",
+        )
+
+    missing.inc.assert_called_once()
+    finalize.assert_called_once_with(kwargs={"user_id": "user-1", "crawl_id": "crawl-1"})
+    update_job_status.assert_called_once()
 
 
 def test_record_crawl_outcome_handles_total_lookup_failure(monkeypatch):

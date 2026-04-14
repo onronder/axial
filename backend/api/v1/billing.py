@@ -283,7 +283,7 @@ async def list_plans(request: Request):
         return _plans_cache
 
     try:
-        response = await polar_request("GET", "/products", params={"is_archived": "false"})
+        response = await polar_request("GET", "/products/", params={"is_archived": "false"})
 
         if response.status_code != 200:
             logger.warning(f"[Billing] Polar API returned {response.status_code}, serving {'stale cache' if _plans_cache is not None else 'empty list'}")

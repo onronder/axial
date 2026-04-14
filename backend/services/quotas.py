@@ -3,7 +3,8 @@ Quota Admission Control (High-Perception: generous concurrency, TPM capped)
 
 Provides per-tenant admission checks for ingestion:
 - Concurrency guard (active jobs per org)
-- Storage/daily job guards using org_usage
+- Storage guard using live document totals
+- Daily job guard using org_usage counters
 
 TPM throttling is enforced in the embedding layer; this module focuses on
 deciding whether a new job should be accepted.
@@ -33,7 +34,36 @@ def _resolve_plan_limits(plan_code: str | None) -> dict[str, Any]:
     return limits
 
 
+def _to_mb(file_size_bytes: int | None) -> float:
+    if not file_size_bytes or file_size_bytes <= 0:
+        return 0.0
+    return file_size_bytes / (1024 * 1024)
+
+
+def _fetch_live_storage_mb(supabase, org_id: str, fallback_mb: float = 0.0) -> float:
+    """
+    Calculate storage from documents so quota admission matches the real source
+    of truth used by the usage dashboard and document cleanup flows.
+    """
+    try:
+        res = (
+            supabase.table("documents")
+            .select("file_size_bytes")
+            .eq("organization_id", org_id)
+            .neq("source_type", "identity")
+            .neq("source_type", "scope_identity")
+            .execute()
+        )
+        total_bytes = sum(int(row.get("file_size_bytes") or 0) for row in res.data or [])
+        return _to_mb(total_bytes)
+    except Exception as exc:
+        logger.warning("⚠️ [Quotas] Failed to calculate live storage for %s: %s", org_id, exc)
+        return fallback_mb
+
+
 def _fetch_org_usage(supabase, org_id: str) -> dict[str, Any]:
+    cached_storage_mb = 0.0
+    job_count_cycle = 0
     try:
         res = (
             supabase.table("org_usage")
@@ -43,13 +73,14 @@ def _fetch_org_usage(supabase, org_id: str) -> dict[str, Any]:
             .execute()
         )
         row = (res.data or [{}])[0]
-        return {
-            "storage_used_mb": float(row.get("storage_used_mb") or 0),
-            "job_count_cycle": int(row.get("job_count_cycle") or 0),
-        }
+        cached_storage_mb = float(row.get("storage_used_mb") or 0)
+        job_count_cycle = int(row.get("job_count_cycle") or 0)
     except Exception as exc:
         logger.warning("⚠️ [Quotas] Failed to fetch org_usage for %s: %s", org_id, exc)
-        return {"storage_used_mb": 0.0, "job_count_cycle": 0}
+    return {
+        "storage_used_mb": _fetch_live_storage_mb(supabase, org_id, fallback_mb=cached_storage_mb),
+        "job_count_cycle": job_count_cycle,
+    }
 
 
 def _get_org_user_ids(supabase, org_id: str) -> list[str]:
@@ -93,12 +124,6 @@ def _count_active_jobs(supabase, user_ids: list[str]) -> int:
     except Exception as exc:
         logger.warning("⚠️ [Quotas] Failed to count active jobs: %s", exc)
         return 0
-
-
-def _to_mb(file_size_bytes: int | None) -> float:
-    if not file_size_bytes or file_size_bytes <= 0:
-        return 0.0
-    return file_size_bytes / (1024 * 1024)
 
 
 def check_admission(
@@ -202,7 +227,7 @@ def increment_usage(
     storage_bytes: int | None = None,
     job_count_increment: int = 1,
 ) -> None:
-    """Increment org usage counters after admission is granted."""
+    """Increment job counters and refresh the storage snapshot after admission."""
     supabase = get_supabase()
     storage_mb_inc = _to_mb(storage_bytes)
     job_inc = max(1, job_count_increment)

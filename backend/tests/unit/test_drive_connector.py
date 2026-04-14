@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -53,13 +53,14 @@ def test_list_files_sync_returns_items():
     ]
 
     with patch.object(connector, "_get_credentials", return_value=MagicMock()), \
-         patch("connectors.drive.build", return_value=MagicMock()), \
+         patch("connectors.drive.build", return_value=MagicMock()) as mock_build, \
          patch.object(connector, "_list_drive_children", return_value=files), \
          patch.object(connector, "_list_shared_drives", return_value=[]):
         items = connector._list_files_sync("user-1", parent_id=None)
 
     assert len(items) == 2
     assert items[0].mime_type == "application/vnd.google-apps.folder"
+    mock_build.assert_called_once_with("drive", "v3", credentials=ANY, cache_discovery=False)
 
 
 def test_list_files_sync_applies_since_and_populates_modified_at():

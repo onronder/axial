@@ -22,6 +22,7 @@ from api.v1.integrations import (
     exchange_microsoft_token,
     exchange_notion_token,
     get_available_connectors,
+    get_active_web_crawl,
     get_provider_status,
     get_sync_history,
     get_user_integrations,
@@ -168,6 +169,35 @@ class TestGoogleDriveConnector:
         task.delay.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_ingest_counts_one_job_per_request(self):
+        supabase = build_supabase(
+            {
+                "connector_definitions": build_table({"id": "def-1"}),
+                "user_integrations": build_table(
+                    {"id": "int-1", "access_token": "token", "refresh_token": "refresh", "credentials": {}}
+                ),
+                "ingestion_jobs": build_table([{"id": "job-1"}]),
+            }
+        )
+        task = MagicMock()
+        task.delay.return_value = SimpleNamespace(id="task-1")
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission") as mock_check_admission, \
+             patch("api.v1.integrations.increment_usage") as mock_increment_usage, \
+             patch("worker.tasks.unified_ingest_task", task):
+            response = await ingest_provider_items(
+                "google_drive",
+                IngestRequest(item_ids=["folder-1", "file-2", "file-3"]),
+                user_id="user-1",
+            )
+
+        assert response["status"] == "accepted"
+        assert mock_check_admission.call_args.kwargs["job_count_increment"] == 1
+        assert mock_increment_usage.call_args.kwargs["job_count_increment"] == 1
+
+    @pytest.mark.asyncio
     async def test_recursive_ingestion_respects_depth_limit(self):
         scope = {
             "type": "http",
@@ -191,6 +221,64 @@ class TestGoogleDriveConnector:
                     )
 
         assert response["status"] == "queued"
+
+    @pytest.mark.asyncio
+    async def test_get_active_web_crawl_ignores_youtube_jobs(self):
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [],
+            "client": ("127.0.0.1", 1234),
+        }
+        request = Request(scope)
+        supabase = build_supabase(
+            {
+                "web_crawl_configs": build_table(
+                    [
+                        {
+                            "id": "yt-1",
+                            "root_url": "https://www.youtube.com/watch?v=8m8VnvoZFhs",
+                            "crawl_type": "single",
+                            "status": "processing",
+                            "max_depth": 1,
+                            "max_pages": 1,
+                            "allow_subdomains": False,
+                            "total_pages_found": 1,
+                            "pages_ingested": 0,
+                            "pages_failed": 0,
+                            "error_message": None,
+                            "created_at": "2026-04-14T06:46:19Z",
+                            "updated_at": "2026-04-14T06:46:29Z",
+                            "completed_at": None,
+                        },
+                        {
+                            "id": "web-1",
+                            "root_url": "https://example.com",
+                            "crawl_type": "recursive",
+                            "status": "processing",
+                            "max_depth": 2,
+                            "max_pages": 50,
+                            "allow_subdomains": False,
+                            "total_pages_found": 3,
+                            "pages_ingested": 1,
+                            "pages_failed": 0,
+                            "error_message": None,
+                            "created_at": "2026-04-14T06:40:00Z",
+                            "updated_at": "2026-04-14T06:40:30Z",
+                            "completed_at": None,
+                        },
+                    ]
+                )
+            }
+        )
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase):
+            response = await get_active_web_crawl(request=request, user_id="user-1")
+
+        assert response is not None
+        assert response.id == "web-1"
+        assert response.root_url == "https://example.com"
 
 
 class TestConnectorDiscovery:
@@ -1930,6 +2018,31 @@ class TestIntegrationsAdditional:
         call_kwargs = task.delay.call_args[1]
         assert len(call_kwargs["item_ids"]) == 3
         assert call_kwargs["is_sync"] is True
+
+    @pytest.mark.asyncio
+    async def test_run_background_sync_counts_one_job_per_request(self):
+        scope_table = build_table([
+            {"id": "gdrive://file-1"},
+            {"id": "gdrive://file-2"},
+            {"id": "gdrive://file-3"},
+        ])
+        supabase = build_supabase({
+            "ingestion_jobs": build_table([]),
+            "scope_identities": scope_table,
+        })
+        task = MagicMock()
+        task.delay.return_value = SimpleNamespace(id="task-1")
+
+        with patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission") as mock_check_admission, \
+             patch("api.v1.integrations.increment_usage") as mock_increment_usage, \
+             patch("api.v1.integrations.log_connector_sync"), \
+             patch("worker.tasks.unified_ingest_task", task):
+            await run_background_sync("job-1", "google_drive", "user-1", "int-1")
+
+        assert mock_check_admission.call_args.kwargs["job_count_increment"] == 1
+        assert mock_increment_usage.call_args.kwargs["job_count_increment"] == 1
 
     @pytest.mark.asyncio
     async def test_run_background_sync_unknown_provider_fails(self):

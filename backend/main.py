@@ -8,6 +8,7 @@ for Supabase + Railway + Vercel deployment.
 # Suppress third-party deprecation warnings (MUST be first import)
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
@@ -23,11 +24,28 @@ from core.db import check_connection, get_supabase
 from core.rate_limit import limiter
 from core.shutdown import register_cleanup_handlers
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+
+def configure_logging() -> None:
+    """
+    Route application logs to stdout so Railway does not classify normal INFO
+    lines as stderr noise, and suppress very chatty dependency logs in prod.
+    """
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, stream=sys.stdout)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.StreamHandler) and getattr(handler, "stream", None) is sys.stderr:
+            handler.setStream(sys.stdout)
+
+    if settings.ENVIRONMENT == "production":
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
+configure_logging()
 logger = logging.getLogger(__name__)
 
 # =============================================================================

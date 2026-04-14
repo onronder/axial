@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { isValidYoutubeUrl } from "@/lib/youtube-utils";
 
 interface URLCrawlerInputProps {
   source: DataSource;
@@ -67,6 +68,11 @@ export function URLCrawlerInput({ source, disabled = false, disabledReason }: UR
       const data = response.data;
       
       if (data && data.id) {
+        if (isValidYoutubeUrl(data.root_url)) {
+          setActiveCrawl(null);
+          return;
+        }
+
         setActiveCrawl({
           crawlId: data.id,
           jobId: data.id, // crawl_id is also the job_id for web crawls

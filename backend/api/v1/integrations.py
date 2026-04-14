@@ -44,6 +44,7 @@ from core.ingestion_utils import require_canonical_provider
 from core.rate_limit import limiter
 from core.scopes import extract_item_ids_from_scope, get_scope_prefixes
 from core.security import decrypt_token, encrypt_token, get_current_user
+from core.url_utils import is_youtube_url
 from services.audit import audit_logger, log_connector_sync
 from services.quotas import check_admission, increment_usage
 from services.team_service import team_service
@@ -563,7 +564,7 @@ async def exchange_notion_token(
                     org_id=org_id,
                     plan_code=plan_code,
                     file_size_bytes=None,
-                    job_count_increment=max(1, len(items)),
+                    job_count_increment=1,
                 )
             except QuotaExceededError as exc:
                 logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
@@ -609,7 +610,7 @@ async def exchange_notion_token(
                     details={"provider": "notion", "item_count": len(items), "task_id": task.id},
                 )
                 try:
-                    increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(items)))
+                    increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=1)
                 except Exception as exc:
                     logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
         else:
@@ -2189,19 +2190,30 @@ async def get_active_web_crawl(
     supabase = get_supabase()
 
     try:
-        # Query for active crawls
+        # Query a small window of active records, then exclude YouTube-backed
+        # jobs so the Web Scraper card does not restore YouTube activity.
         result = supabase.table("web_crawl_configs")\
             .select("*")\
             .eq("user_id", user_id)\
             .in_("status", ["pending", "discovering", "processing"])\
             .order("created_at", desc=True)\
-            .limit(1)\
+            .limit(10)\
             .execute()
 
         if not result.data:
             return None
 
-        config = result.data[0]
+        config = next(
+            (
+                row
+                for row in result.data
+                if not is_youtube_url(str(row.get("root_url") or ""))
+            ),
+            None,
+        )
+        if not config:
+            return None
+
         return WebCrawlConfigResponse(
             id=str(config["id"]),
             root_url=config["root_url"],
@@ -2423,7 +2435,7 @@ async def ingest_provider_items(
                 org_id=org_id,
                 plan_code=plan_code,
                 file_size_bytes=None,
-                job_count_increment=max(1, len(body.item_ids)),
+                job_count_increment=1,
             )
         except QuotaExceededError as exc:
             logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
@@ -2569,7 +2581,7 @@ async def ingest_provider_items(
                 detail="Background worker is temporarily unavailable. Please try again in a few minutes."
             )
         try:
-            increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(body.item_ids)))
+            increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=1)
         except Exception as exc:
             logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
 
@@ -2706,7 +2718,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
                 org_id=org_id,
                 plan_code=plan_code,
                 file_size_bytes=None,
-                job_count_increment=max(1, len(item_ids)),
+                job_count_increment=1,
             )
         except QuotaExceededError as exc:
             logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
@@ -2742,7 +2754,7 @@ async def run_background_sync(job_id: str, provider: str, user_id: str, integrat
             details={"job_id": job_id, "task_id": task.id, "item_count": len(item_ids)},
         )
         try:
-            increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=max(1, len(item_ids)))
+            increment_usage(org_id=org_id, storage_bytes=None, job_count_increment=1)
         except Exception as exc:
             logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
 

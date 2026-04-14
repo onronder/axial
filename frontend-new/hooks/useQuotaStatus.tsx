@@ -226,28 +226,41 @@ export function QuotaStatusProvider({ children }: QuotaStatusProviderProps) {
                         error_message?: string;
                         message?: string;
                     };
+                    const normalizedProvider = normalizeSourceType(newJob.provider) || newJob.provider;
+                    const errorMsg = newJob.error_message || newJob.message;
 
                     // Check for failed jobs with quota-related errors
                     if (newJob.status === "failed") {
-                        const errorMsg = newJob.error_message || newJob.message;
                         if (isQuotaError(errorMsg)) {
-                            const normalizedProvider = normalizeSourceType(newJob.provider) || newJob.provider;
                             if (process.env.NODE_ENV === 'development') {
                                 console.log(`📊 [QuotaStatus] Detected quota exceeded for: ${normalizedProvider}`);
                             }
                             setQuotaExceededProviders(prev => new Set([...prev, normalizedProvider]));
                         }
+                        return;
                     }
 
                     // Also check completed jobs that mention limit in their message
                     if (newJob.status === "completed" && newJob.message) {
                         if (isQuotaError(newJob.message)) {
-                            const normalizedProvider = normalizeSourceType(newJob.provider) || newJob.provider;
                             if (process.env.NODE_ENV === 'development') {
                                 console.log(`📊 [QuotaStatus] Detected quota warning for: ${normalizedProvider}`);
                             }
                             setQuotaExceededProviders(prev => new Set([...prev, normalizedProvider]));
+                            return;
                         }
+                    }
+
+                    // Clear stale quota markers once the provider is accepted again.
+                    if (["pending", "processing", "completed"].includes(newJob.status) && !isQuotaError(errorMsg)) {
+                        setQuotaExceededProviders(prev => {
+                            if (!prev.has(normalizedProvider)) {
+                                return prev;
+                            }
+                            const next = new Set(prev);
+                            next.delete(normalizedProvider);
+                            return next;
+                        });
                     }
                 }
             )
