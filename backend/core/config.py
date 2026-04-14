@@ -240,6 +240,7 @@ class Settings(BaseSettings):
     CONNECTOR_CONCURRENCY_GOOGLE_DRIVE: int = 2
     CONNECTOR_CONCURRENCY_NOTION: int = 1
     CONNECTOR_CONCURRENCY_WEB: int = 2
+    CONNECTOR_CONCURRENCY_YOUTUBE: int = 1
     CONNECTOR_CONCURRENCY_ONEDRIVE: int = 2
     CONNECTOR_CONCURRENCY_SHAREPOINT: int = 2
     CONNECTOR_CONCURRENCY_DROPBOX: int = 2
@@ -274,7 +275,11 @@ class Settings(BaseSettings):
     YOUTUBE_PROXY_TIMEOUT: int = 30
     YOUTUBE_PROXY_RETRY_COUNT: int = 3
     YOUTUBE_PROXY_RETRY_DELAY: float = 1.0
-    YOUTUBE_DIRECT_FALLBACK: bool = True  # Try direct connection if Unlocker API fails
+    # None = safe default (disabled outside local/dev/test)
+    YOUTUBE_DIRECT_FALLBACK: bool | None = None
+    YOUTUBE_INGEST_ENABLED: bool = True
+    # Allowed values: "best_effort", "provider_required", "disabled"
+    YOUTUBE_INGEST_MODE: str = "best_effort"
 
 
     # =========================================================================

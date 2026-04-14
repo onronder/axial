@@ -2,13 +2,14 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { Youtube, ArrowRight, AlertCircle } from "lucide-react";
+import { Youtube, ArrowRight, AlertCircle, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { DataSource } from "@/lib/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { useIngestionProgress } from "@/hooks/useIngestionProgress";
-import { api } from "@/lib/api";
+import { api, ingestYoutubeManualTranscript } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { 
 
@@ -19,6 +20,7 @@ import {
 } from "@/lib/youtube-utils";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
 import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // =============================================================================
 // Types
@@ -53,7 +55,11 @@ export function YoutubeInput({
   // Form state
   const [url, setUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isManualLoading, setIsManualLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [showManualFallback, setShowManualFallback] = useState(false);
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualTranscript, setManualTranscript] = useState("");
 
   // Use centralized ingestion progress context - GlobalProgress renders the UI
   const { registerJob } = useIngestionProgress();
@@ -170,6 +176,80 @@ export function YoutubeInput({
     }
   }, [url, disabled, disabledReason, registerJob, toast]);
 
+  const handleManualIngest = useCallback(async () => {
+    if (disabled) {
+      toast({
+        title: ROLE_TOAST_TITLES.ACTION_LOCKED,
+        description: disabledReason || ROLE_MESSAGES.NEED_EDITOR_INGEST_VIDEOS,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!url.trim()) {
+      setValidationError(YOUTUBE_ERROR_MESSAGES.EMPTY_URL);
+      return;
+    }
+
+    if (!isValidYoutubeUrl(url)) {
+      setValidationError(YOUTUBE_ERROR_MESSAGES.INVALID_URL_DETAILED);
+      toast({
+        title: "Invalid YouTube URL",
+        description: "Add a valid YouTube video URL before pasting the transcript.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!manualTranscript.trim()) {
+      toast({
+        title: "Transcript Required",
+        description: "Paste the transcript text to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsManualLoading(true);
+    setValidationError(null);
+
+    try {
+      const response = await ingestYoutubeManualTranscript(
+        normalizeYoutubeUrl(url),
+        manualTranscript.trim(),
+        manualTitle.trim() || undefined,
+      );
+
+      if (response?.job_id) {
+        registerJob(response.job_id);
+      }
+
+      toast({
+        title: "Manual Transcript Queued",
+        description: "Processing the transcript you provided.",
+        className: "bg-green-50 border-green-200 text-green-900",
+      });
+
+      setManualTitle("");
+      setManualTranscript("");
+      setShowManualFallback(false);
+      setUrl("");
+    } catch (error: unknown) {
+      const apiError = error as ApiError;
+      const errorMessage = apiError.response?.data?.detail
+        || apiError.message
+        || "Could not process the transcript. Please try again.";
+
+      toast({
+        title: "Manual Transcript Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsManualLoading(false);
+    }
+  }, [disabled, disabledReason, manualTitle, manualTranscript, registerJob, toast, url]);
+
   /**
    * Handle Enter key press
    */
@@ -193,6 +273,15 @@ export function YoutubeInput({
             <p className="mt-1 text-sm text-muted-foreground">{source.description}</p>
           </div>
         </div>
+
+        <Alert className="border-amber-500/30 bg-amber-500/5">
+          <AlertCircle className="h-4 w-4 text-amber-500" />
+          <AlertTitle className="text-sm text-foreground">Best Effort</AlertTitle>
+          <AlertDescription className="text-xs text-muted-foreground">
+            Automatic transcript fetch runs from our servers and can fail on caption-less, private, or blocked YouTube videos.
+            If that happens, paste the transcript below or upload `.srt` / `.vtt` from Local Files.
+          </AlertDescription>
+        </Alert>
 
         {/* Input & Action */}
         <div className="space-y-2">
@@ -221,7 +310,7 @@ export function YoutubeInput({
             </div>
             <Button
               onClick={handleIngest}
-              disabled={!url.trim() || isLoading || disabled || isValidUrl === false}
+              disabled={!url.trim() || isLoading || isManualLoading || disabled || isValidUrl === false}
               variant="gradient"
               size="icon"
               aria-label="Ingest YouTube video"
@@ -250,10 +339,65 @@ export function YoutubeInput({
           )}
         </div>
 
+        <div className="space-y-3 rounded-lg border border-border/60 bg-background/40 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Manual Transcript Fallback</p>
+              <p className="text-xs text-muted-foreground">
+                Use this when auto-fetch fails or you already have the transcript text.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowManualFallback((value) => !value)}
+            >
+              {showManualFallback ? "Hide" : "Paste Transcript"}
+            </Button>
+          </div>
+
+          {showManualFallback && (
+            <div className="space-y-3">
+              <Input
+                placeholder="Optional title override"
+                value={manualTitle}
+                onChange={(e) => setManualTitle(e.target.value)}
+                disabled={isManualLoading || disabled}
+              />
+              <Textarea
+                placeholder="Paste the YouTube transcript here..."
+                value={manualTranscript}
+                onChange={(e) => setManualTranscript(e.target.value)}
+                disabled={isManualLoading || disabled}
+                rows={8}
+              />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Subtitle files also work through Local Files upload.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleManualIngest}
+                  disabled={!url.trim() || !manualTranscript.trim() || isManualLoading || isLoading || disabled || isValidUrl === false}
+                >
+                  {isManualLoading ? (
+                    <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileText className="mr-2 h-4 w-4" />
+                  )}
+                  Queue Transcript
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Help text */}
         <p className="text-xs text-muted-foreground">
           Paste a YouTube video URL to transcribe and chat with the video content.
-          Supports standard, short, and embed URLs.
+          Supports standard, short, and embed URLs. Automatic fetching is best effort.
         </p>
       </div>
 

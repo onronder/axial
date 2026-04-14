@@ -108,6 +108,8 @@ class FileUploadConnector(EnhancedConnector):
         mime_types = {
             "pdf": "application/pdf",
             "txt": "text/plain",
+            "srt": "text/plain",
+            "vtt": "text/plain",
             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "doc": "application/msword",
             "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

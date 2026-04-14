@@ -70,6 +70,38 @@ def _get_ingest_batch_size() -> int:
     return max(1, getattr(settings, "INGEST_DISPATCH_BATCH_SIZE", 50))
 
 
+_YOUTUBE_INGEST_MODES = {"best_effort", "provider_required", "disabled"}
+
+
+def _get_youtube_ingest_mode() -> str:
+    mode = (getattr(settings, "YOUTUBE_INGEST_MODE", "best_effort") or "best_effort").strip().lower()
+    return mode if mode in _YOUTUBE_INGEST_MODES else "best_effort"
+
+
+def _assert_youtube_auto_ingest_available(url: str) -> None:
+    if not is_youtube_url(url):
+        return
+
+    if not getattr(settings, "YOUTUBE_INGEST_ENABLED", True):
+        raise HTTPException(
+            status_code=503,
+            detail="Automatic YouTube transcript fetch is currently disabled. Paste the transcript manually or upload subtitle files instead.",
+        )  # ALLOWED: literal
+
+    mode = _get_youtube_ingest_mode()
+    if mode == "disabled":
+        raise HTTPException(
+            status_code=503,
+            detail="Automatic YouTube transcript fetch is currently disabled. Paste the transcript manually or upload subtitle files instead.",
+        )  # ALLOWED: literal
+
+    if mode == "provider_required" and not settings.BRIGHTDATA_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Automatic YouTube transcript fetch is temporarily unavailable. Paste the transcript manually or upload subtitle files instead.",
+        )  # ALLOWED: literal
+
+
 # =============================================================================
 # Pydantic Request/Response Models
 # =============================================================================
@@ -113,6 +145,13 @@ class WebCrawlRequest(BaseModel):
     respect_robots: bool = Field(default=True)
     max_pages: int = Field(default=500, ge=1, le=10000)
     allow_subdomains: bool = Field(default=False)
+
+
+class YouTubeManualTranscriptRequest(BaseModel):
+    """Manual transcript fallback for YouTube videos."""
+    video_url: str = Field(..., min_length=1, max_length=2048)
+    transcript_text: str = Field(..., min_length=20, max_length=500000)
+    title: str | None = Field(default=None, max_length=255)
 
 
 class SFTPConnectRequest(BaseModel):
@@ -2305,6 +2344,7 @@ async def crawl_web(
             raise HTTPException(status_code=400, detail="Invalid URL for crawling.")  # ALLOWED: literal
         if not connector._is_safe_url(normalized_url):
             raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")  # ALLOWED: literal
+        _assert_youtube_auto_ingest_available(normalized_url)
 
         crawl_type = body.crawl_type.lower()
         if crawl_type not in {"single", "recursive", "sitemap"}:
@@ -2344,6 +2384,156 @@ async def crawl_web(
     except Exception as e:
         logger.error(f"❌ [Crawl] Failed to queue web crawl (unexpected): {e}")
         raise HTTPException(status_code=500, detail="Failed to queue web crawl.")  # ALLOWED: literal
+
+
+@router.post("/integrations/youtube/manual", status_code=202)
+@limiter.limit("10/minute")
+async def ingest_manual_youtube_transcript(
+    request: Request,
+    body: YouTubeManualTranscriptRequest,
+    user_id: str = Depends(require_editor),
+):
+    """Queue a manual YouTube transcript ingestion when automatic fetch fails."""
+    feature_check = await check_feature_access(UUID(user_id), "web_crawl")
+    if not feature_check["allowed"]:
+        raise HTTPException(status_code=403, detail="YouTube ingestion is not available on your current plan.")  # ALLOWED: literal
+
+    connector = WebConnector()
+    normalized_url = connector.normalize_url(body.video_url)
+    if not normalized_url or not is_youtube_url(normalized_url):
+        raise HTTPException(status_code=400, detail="Please provide a valid YouTube video URL.")  # ALLOWED: literal
+    if not connector._is_safe_url(normalized_url):
+        raise HTTPException(status_code=400, detail="URL is not allowed for ingestion.")  # ALLOWED: literal
+
+    transcript_text = body.transcript_text.strip()
+    if not transcript_text:
+        raise HTTPException(status_code=400, detail="Transcript text cannot be empty.")  # ALLOWED: literal
+
+    transcript_bytes = transcript_text.encode("utf-8")
+    org_id, plan_code = await _resolve_org_and_plan(user_id)
+
+    try:
+        check_admission(
+            org_id=org_id,
+            plan_code=plan_code,
+            file_size_bytes=len(transcript_bytes),
+            job_count_increment=1,
+        )
+    except QuotaExceededError as exc:
+        logger.warning("🚫 Admission denied for Org %s: %s", org_id, exc)
+        raise_http_error(
+            status.HTTP_403_FORBIDDEN,
+            "PLAN_LIMIT_EXCEEDED",
+            str(exc),
+            exc.details if isinstance(exc, QuotaExceededError) else None,
+        )
+
+    video_id = connector._extract_youtube_video_id(normalized_url) or "youtube"
+    title = (body.title or f"YouTube Video {video_id}").strip()[:255] or f"YouTube Video {video_id}"
+
+    supabase = get_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+    job_data = {
+        "user_id": user_id,
+        "organization_id": org_id,
+        "provider": "youtube",
+        "total_files": 1,
+        "processed_files": 0,
+        "failed_files": 0,
+        "status": "pending",
+        "progress": 0,
+        "message": f"Queued manual transcript for {title}",
+        "status_message": f"Queued manual transcript for {title}",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    job_res = supabase.table("ingestion_jobs").insert(job_data).execute()
+    if not job_res.data:
+        raise HTTPException(status_code=500, detail="Failed to create ingestion job.")  # ALLOWED: literal
+
+    job_id = str(job_res.data[0]["id"])
+    file_status_res = supabase.table("ingestion_file_status").insert(
+        {
+            "job_id": job_id,
+            "user_id": user_id,
+            "organization_id": org_id,
+            "filename": title,
+            "file_size_bytes": len(transcript_bytes),
+            "status": "pending",
+            "progress": 0,
+            "status_message": "Queued manual transcript for processing",
+        }
+    ).execute()
+    file_status_id = None
+    if file_status_res.data:
+        file_status_id = str(file_status_res.data[0]["id"])
+
+    from worker.tasks import process_manual_youtube_transcript_task
+
+    try:
+        task = process_manual_youtube_transcript_task.delay(
+            user_id=user_id,
+            job_id=job_id,
+            organization_id=org_id,
+            video_url=normalized_url,
+            transcript_text=transcript_text,
+            title=title,
+            file_status_id=file_status_id,
+            plan_code=plan_code,
+        )
+    except Exception as exc:
+        logger.error("❌ [YouTubeManual] Failed to queue task for %s: %s", normalized_url, exc)
+        supabase.table("ingestion_jobs").update(
+            {
+                "status": "failed",
+                "error_message": "Failed to queue transcript ingestion. Please try again.",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", job_id).execute()
+        if file_status_id:
+            supabase.table("ingestion_file_status").update(
+                {
+                    "status": "failed",
+                    "error_message": "Failed to queue transcript ingestion. Please try again.",
+                    "status_message": "Failed to queue transcript ingestion",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).eq("id", file_status_id).execute()
+        raise HTTPException(
+            status_code=503,
+            detail="Background worker is temporarily unavailable. Please try again in a few minutes.",
+        )  # ALLOWED: literal
+
+    try:
+        supabase.table("ingestion_jobs").update({"celery_task_id": task.id}).eq("id", job_id).execute()
+    except Exception as exc:
+        logger.debug("⚠️ [YouTubeManual] Failed to store celery task id for %s: %s", job_id, exc)
+
+    try:
+        increment_usage(org_id=org_id, storage_bytes=len(transcript_bytes), job_count_increment=1)
+    except Exception as exc:
+        logger.warning("⚠️ [Quotas] Failed to increment usage for %s: %s", org_id, exc)
+
+    audit_logger.log_sync(
+        user_id=user_id,
+        action="ingest.queued",
+        resource_type="ingestion_job",
+        resource_id=job_id,
+        details={
+            "provider": "youtube",
+            "mode": "manual_transcript",
+            "video_url": normalized_url,
+            "title": title,
+            "task_id": task.id,
+        },
+    )
+
+    return {
+        "status": "accepted",
+        "job_id": job_id,
+        "task_id": task.id,
+    }
 
 
 @router.delete("/integrations/web/crawl/{config_id}")
@@ -2463,6 +2653,7 @@ async def ingest_provider_items(
                 raise HTTPException(status_code=400, detail="Invalid URL for crawling.")  # ALLOWED: literal
             if not connector._is_safe_url(normalized_url):
                 raise HTTPException(status_code=400, detail="URL is not allowed for crawling.")  # ALLOWED: literal
+            _assert_youtube_auto_ingest_available(normalized_url)
 
             result = queue_web_crawl(
                 user_id=user_id,

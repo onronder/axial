@@ -9,6 +9,7 @@ import {
     validateFiles,
     formatFileSize,
     getFileExtension,
+    getUploadMimeType,
     getDropRejectionMessage,
     type FileValidationError,
 } from '@/lib/file-validation';
@@ -75,6 +76,11 @@ describe('File Validation Constants', () => {
 
         it('should include markdown files', () => {
             expect(ACCEPTED_FILE_TYPES['text/markdown']).toEqual(['.md', '.markdown']);
+        });
+
+        it('should include subtitle files', () => {
+            expect(ACCEPTED_FILE_TYPES['text/plain']).toContain('.srt');
+            expect(ACCEPTED_FILE_TYPES['text/vtt']).toContain('.vtt');
         });
 
         it('should include image files', () => {
@@ -255,6 +261,17 @@ describe('formatFileSize', () => {
     it('should handle decimal values', () => {
         expect(formatFileSize(1536)).toBe('1.5 KB'); // 1.5 KB
         expect(formatFileSize(2560 * 1024)).toBe('2.5 MB'); // 2.5 MB
+    });
+});
+
+describe('getUploadMimeType', () => {
+    it('should normalize subtitle uploads to text/plain', () => {
+        expect(getUploadMimeType({ name: 'captions.srt', type: '' } as File)).toBe('text/plain');
+        expect(getUploadMimeType({ name: 'captions.vtt', type: 'text/vtt' } as File)).toBe('text/plain');
+    });
+
+    it('should preserve explicit MIME types for normal files', () => {
+        expect(getUploadMimeType({ name: 'doc.pdf', type: 'application/pdf' } as File)).toBe('application/pdf');
     });
 });
 

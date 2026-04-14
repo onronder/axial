@@ -49,6 +49,7 @@ from core.job_counters import (
 )
 from core.log_utils import safe_extension, safe_file_context, safe_file_ref
 from core.quotas import get_plan_limits
+from core.scopes import build_scope_uri
 from core.url_utils import is_youtube_url as _is_youtube_url
 from services.audit import audit_logger
 from services.email import email_service
@@ -3890,6 +3891,164 @@ def process_page_task(
                 logger.debug(f"[Page] Failed to send failure notification email: {e}")
 
         raise
+
+
+@celery_app.task(
+    bind=True,
+    ignore_result=True,
+    queue="queues.parsing",
+    soft_time_limit=180,
+    time_limit=210,
+)
+def process_manual_youtube_transcript_task(
+    self,
+    user_id: str,
+    job_id: str,
+    organization_id: str,
+    video_url: str,
+    transcript_text: str,
+    title: str | None = None,
+    file_status_id: str | None = None,
+    plan_code: str | None = None,
+):
+    """Process a manually supplied YouTube transcript through the normal document pipeline."""
+    task_id = self.request.id
+    supabase = get_supabase()
+    store_celery_task_id(supabase, job_id, task_id)
+
+    from connectors.web import WebConnector
+
+    connector = WebConnector()
+    normalized_url = connector.normalize_url(video_url) or video_url
+    video_id = connector.extract_youtube_video_id(normalized_url) or "youtube"
+    safe_title = (title or f"YouTube Video {video_id}").strip()[:255] or f"YouTube Video {video_id}"
+    transcript_text = (transcript_text or "").strip()
+    scope_id = build_scope_uri("web", {"url": normalized_url})
+
+    if not file_status_id:
+        file_status_id = create_file_status(
+            supabase,
+            job_id=job_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            filename=safe_title,
+            file_size=len(transcript_text.encode("utf-8")),
+        )
+
+    if not transcript_text:
+        update_job_status(
+            supabase,
+            job_id,
+            status="failed",
+            processed_files=1,
+            failed_files=1,
+            progress=100,
+            error_message="Transcript text was empty.",
+            message="Transcript text was empty.",
+            total_files=1,
+        )
+        update_file_status(
+            supabase,
+            file_status_id,
+            job_id=job_id,
+            status="failed",
+            progress=100,
+            message="Transcript text was empty.",
+            error="Transcript text was empty.",
+        )
+        return {"status": "failed", "error": "empty_transcript"}
+
+    update_job_status(
+        supabase,
+        job_id,
+        status="processing",
+        processed_files=0,
+        failed_files=0,
+        progress=10,
+        message="Processing provided YouTube transcript...",
+        total_files=1,
+    )
+
+    resolved_plan_code = plan_code
+    if resolved_plan_code not in {"free", "starter", "pro", "enterprise"}:
+        try:
+            resolved_plan_code = asyncio.run(team_service.get_effective_plan(user_id))
+        except Exception:
+            resolved_plan_code = "free"
+    max_scopes = int(get_plan_limits(resolved_plan_code).max_scopes or 0)
+
+    metadata = {
+        "organization_id": organization_id,
+        "source": "youtube",
+        "title": safe_title,
+        "source_url": normalized_url,
+        "url": normalized_url,
+        "video_id": video_id,
+        "scope_id": scope_id,
+        "manual_transcript": True,
+        "mime_type": "text/plain",
+        "max_scopes": max_scopes,
+    }
+
+    result = process_document_pipeline(
+        supabase=supabase,
+        content=transcript_text,
+        filename=safe_title,
+        user_id=user_id,
+        job_id=job_id,
+        file_status_id=file_status_id,
+        source_type="youtube",
+        metadata=metadata,
+        source_url=normalized_url,
+        source_id=normalized_url,
+    )
+
+    if result.success:
+        update_job_status(
+            supabase,
+            job_id,
+            status="completed",
+            processed_files=1,
+            failed_files=0,
+            progress=100,
+            message="YouTube transcript indexed.",
+            total_files=1,
+        )
+        create_notification(
+            supabase,
+            user_id,
+            "YouTube Transcript Indexed",
+            f"Indexed manual transcript for {safe_title}",
+            "success",
+            {"job_id": job_id, "provider": "youtube", "manual_transcript": True},
+        )
+        return {
+            "status": "completed",
+            "job_id": job_id,
+            "document_id": result.document_id,
+        }
+
+    error_message = result.error or "Failed to process provided transcript."
+    update_job_status(
+        supabase,
+        job_id,
+        status="failed",
+        processed_files=1,
+        failed_files=1,
+        progress=100,
+        error_message=error_message,
+        message=error_message,
+        total_files=1,
+    )
+    create_notification(
+        supabase,
+        user_id,
+        "YouTube Transcript Failed",
+        error_message,
+        "error",
+        {"job_id": job_id, "provider": "youtube", "manual_transcript": True},
+    )
+    return {"status": "failed", "error": error_message}
 
 
 @celery_app.task(bind=True, ignore_result=True, soft_time_limit=120, time_limit=150)

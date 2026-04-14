@@ -340,6 +340,12 @@ export interface IngestReferenceResponse {
     job_id?: string;  // Optional: returned when file is queued for processing
 }
 
+export interface YouTubeManualTranscriptResponse {
+    status: string;
+    job_id: string;
+    task_id?: string;
+}
+
 // =============================================================================
 // DUPLICATE FILE DETECTION API
 // =============================================================================
@@ -420,17 +426,35 @@ export const ingestFileReference = async (
 };
 
 /**
+ * Queue a manually supplied YouTube transcript.
+ * POST /api/v1/integrations/youtube/manual
+ */
+export const ingestYoutubeManualTranscript = async (
+    videoUrl: string,
+    transcriptText: string,
+    title?: string
+): Promise<YouTubeManualTranscriptResponse> => {
+    const response = await api.post<YouTubeManualTranscriptResponse>('/integrations/youtube/manual', {
+        video_url: videoUrl,
+        transcript_text: transcriptText,
+        title,
+    });
+    return response.data;
+};
+
+/**
  * Upload file directly to storage using presigned URL
  * (Uses native fetch, not axios, for binary upload)
  */
 export const uploadToStorage = async (
     uploadUrl: string,
-    file: File
+    file: File,
+    contentType?: string
 ): Promise<boolean> => {
     const response = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
-            'Content-Type': file.type || 'application/octet-stream',
+            'Content-Type': contentType || file.type || 'application/octet-stream',
         },
         body: file,
     });

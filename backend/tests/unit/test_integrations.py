@@ -14,6 +14,7 @@ from api.v1.integrations import (
     ExchangeRequest,
     IngestRequest,
     MicrosoftExchangeRequest,
+    YouTubeManualTranscriptRequest,
     WebCrawlRequest,
     _require_provider,
     crawl_web,
@@ -26,6 +27,7 @@ from api.v1.integrations import (
     get_provider_status,
     get_sync_history,
     get_user_integrations,
+    ingest_manual_youtube_transcript,
     ingest_provider_items,
     list_provider_items,
     run_background_sync,
@@ -1369,6 +1371,34 @@ class TestCrawlWebErrors:
                     user_id="user-1",
                 )
 
+    @pytest.mark.asyncio
+    async def test_crawl_web_blocks_youtube_when_auto_ingest_disabled(self, monkeypatch):
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+            "client": ("127.0.0.1", 1234),
+        }
+        request = Request(scope)
+
+        connector = MagicMock()
+        connector.normalize_url.return_value = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        connector._is_safe_url.return_value = True
+
+        monkeypatch.setattr("api.v1.integrations.settings.YOUTUBE_INGEST_ENABLED", False)
+
+        with patch("api.v1.integrations.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.integrations.WebConnector", return_value=connector):
+            with pytest.raises(HTTPException) as exc:
+                await crawl_web(
+                    request=request,
+                    body=WebCrawlRequest(url="https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+                    user_id="user-1",
+                )
+
+        assert exc.value.status_code == 503
+
 
 class TestIngestProviderItemsErrors:
     @pytest.mark.asyncio
@@ -1407,6 +1437,32 @@ class TestIngestProviderItemsErrors:
                     IngestRequest(item_ids=["file-1"]),
                     user_id="user-1",
                 )
+
+    @pytest.mark.asyncio
+    async def test_ingest_provider_web_blocks_youtube_when_provider_required_without_key(self, monkeypatch):
+        connector = MagicMock()
+        connector.normalize_url.return_value = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        connector._is_safe_url.return_value = True
+
+        monkeypatch.setattr("api.v1.integrations.settings.YOUTUBE_INGEST_ENABLED", True)
+        monkeypatch.setattr("api.v1.integrations.settings.YOUTUBE_INGEST_MODE", "provider_required")
+        monkeypatch.setattr("api.v1.integrations.settings.BRIGHTDATA_API_KEY", None)
+
+        request = Request({"type": "http", "method": "POST", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)})
+
+        with patch("api.v1.integrations.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission"), \
+             patch("api.v1.integrations.WebConnector", return_value=connector):
+            with pytest.raises(HTTPException) as exc:
+                await ingest_provider_items(
+                    request,
+                    "web",
+                    IngestRequest(item_ids=["https://www.youtube.com/watch?v=dQw4w9WgXcQ"]),
+                    user_id="user-1",
+                )
+
+        assert exc.value.status_code == 503
 
 
 class TestDisconnectProvider:
@@ -1894,6 +1950,47 @@ class TestIntegrationsAdditional:
 
         assert result["status"] == "queued"
         assert result["crawl_id"] == "crawl-1"
+
+    @pytest.mark.asyncio
+    async def test_ingest_manual_youtube_transcript_queues_job(self):
+        scope = {"type": "http", "method": "POST", "path": "/", "headers": [], "client": ("127.0.0.1", 1234)}
+        request = Request(scope)
+
+        connector = MagicMock()
+        connector.normalize_url.return_value = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        connector._is_safe_url.return_value = True
+        connector._extract_youtube_video_id.return_value = "dQw4w9WgXcQ"
+
+        supabase = build_supabase(
+            {
+                "ingestion_jobs": build_table([{"id": "job-yt-1"}]),
+                "ingestion_file_status": build_table([{"id": "file-yt-1"}]),
+            }
+        )
+
+        task = MagicMock()
+        task.delay.return_value = SimpleNamespace(id="task-yt-1")
+
+        with patch("api.v1.integrations.check_feature_access", new=AsyncMock(return_value={"allowed": True})), \
+             patch("api.v1.integrations._resolve_org_and_plan", new=AsyncMock(return_value=("org-1", "starter"))), \
+             patch("api.v1.integrations.check_admission"), \
+             patch("api.v1.integrations.get_supabase", return_value=supabase), \
+             patch("api.v1.integrations.WebConnector", return_value=connector), \
+             patch("api.v1.integrations.increment_usage"), \
+             patch("worker.tasks.process_manual_youtube_transcript_task", task):
+            result = await ingest_manual_youtube_transcript(
+                request=request,
+                body=YouTubeManualTranscriptRequest(
+                    video_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    transcript_text="Hello world transcript",
+                    title="Custom title",
+                ),
+                user_id="00000000-0000-0000-0000-000000000001",
+            )
+
+        assert result["status"] == "accepted"
+        assert result["job_id"] == "job-yt-1"
+        task.delay.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_ingest_provider_integration_fetch_error(self):

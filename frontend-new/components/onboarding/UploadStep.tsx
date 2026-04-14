@@ -17,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useIngestionProgress } from '@/hooks/useIngestionProgress';
 import { getUploadUrl, uploadToStorage, ingestFileReference } from '@/lib/api';
 import { calculateSHA256 } from '@/lib/hash';
-import { ACCEPTED_FILE_TYPES, MAX_FILE_SIZE, MIN_FILE_SIZE } from '@/lib/file-validation';
+import { ACCEPTED_FILE_TYPES, MAX_FILE_SIZE, MIN_FILE_SIZE, getUploadMimeType } from '@/lib/file-validation';
 import { Spinner } from '@/components/ui/spinner';
 
 export function UploadStep() {
@@ -41,9 +41,10 @@ export function UploadStep() {
 
             // Step 2: Get presigned upload URL
             setUploadStage('Preparing upload...');
+            const uploadMimeType = getUploadMimeType(file);
             const urlResponse = await getUploadUrl(
                 file.name,
-                file.type || 'application/octet-stream',
+                uploadMimeType,
                 file.size,
                 hash,
                 false
@@ -51,7 +52,7 @@ export function UploadStep() {
 
             // Step 3: Upload directly to storage
             setUploadStage('Uploading...');
-            const success = await uploadToStorage(urlResponse.upload_url, file);
+            const success = await uploadToStorage(urlResponse.upload_url, file, uploadMimeType);
             if (!success) throw new Error('Upload failed');
 
             // Step 4: Trigger ingestion

@@ -820,6 +820,52 @@ def test_process_page_task_no_chunks(monkeypatch):
     record_outcome.assert_called()
 
 
+def test_process_manual_youtube_transcript_task_success(monkeypatch):
+    task = DummyTask("task-manual-youtube")
+    supabase = MagicMock()
+    supabase.table.return_value = _make_table([])
+
+    connector = MagicMock()
+    connector.normalize_url.return_value = "https://www.youtube.com/watch?v=8m8VnvoZFhs"
+    connector.extract_youtube_video_id.return_value = "8m8VnvoZFhs"
+
+    monkeypatch.setattr(tasks, "get_supabase", lambda: supabase)
+    monkeypatch.setattr(tasks, "store_celery_task_id", lambda *_args, **_kwargs: None)
+
+    with patch("connectors.web.WebConnector", return_value=connector), \
+         patch("worker.tasks.process_document_pipeline", return_value=tasks.ProcessResult(success=True, document_id="doc-1", chunks_count=2)) as process_pipeline, \
+         patch("worker.tasks.update_job_status") as update_job_status, \
+         patch("worker.tasks.create_notification") as create_notification:
+        result = tasks.process_manual_youtube_transcript_task.run.__func__(
+            task,
+            user_id="user-1",
+            job_id="job-1",
+            organization_id="org-1",
+            video_url="https://www.youtube.com/watch?v=8m8VnvoZFhs",
+            transcript_text="Hello from a pasted transcript",
+            title="Manual title",
+            file_status_id="file-1",
+            plan_code="starter",
+        )
+
+    assert result["status"] == "completed"
+    process_kwargs = process_pipeline.call_args.kwargs
+    assert process_kwargs["source_type"] == "youtube"
+    assert process_kwargs["metadata"]["manual_transcript"] is True
+    assert process_kwargs["metadata"]["scope_id"] == "web://youtube.com"
+    update_job_status.assert_any_call(
+        supabase,
+        "job-1",
+        status="completed",
+        processed_files=1,
+        failed_files=0,
+        progress=100,
+        message="YouTube transcript indexed.",
+        total_files=1,
+    )
+    create_notification.assert_called_once()
+
+
 def test_process_page_task_no_embeddings(monkeypatch):
     supabase = MagicMock()
     supabase.rpc.return_value.execute.return_value = MagicMock()

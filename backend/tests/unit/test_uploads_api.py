@@ -113,6 +113,26 @@ class TestPresignedUploadFlow:
         assert response.storage_path.startswith(f"uploads/{TEST_USER_ID}/")
 
     @pytest.mark.asyncio
+    async def test_generate_upload_url_accepts_subtitle_mime_types(self):
+        request = make_request()
+        body = uploads_module.UploadUrlRequest(
+            filename="captions.vtt",
+            file_type="text/vtt",
+            file_size=10,
+        )
+
+        supabase = MagicMock()
+        supabase.storage.from_.return_value.create_signed_upload_url.return_value = {
+            "signed_url": "https://signed.example.com",
+        }
+
+        with patch("api.v1.uploads.get_supabase", return_value=supabase), \
+             patch("api.v1.uploads.check_can_upload", new=AsyncMock(return_value={"allowed": True})):
+            response = await uploads_module.generate_upload_url(request, body, user_id=TEST_USER_ID)
+
+        assert response.upload_url == "https://signed.example.com"
+
+    @pytest.mark.asyncio
     async def test_generate_upload_url_missing_signed_url(self):
         request = make_request()
         body = uploads_module.UploadUrlRequest(

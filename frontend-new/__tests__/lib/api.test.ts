@@ -95,4 +95,22 @@ describe('API Function Contracts', () => {
     expect(params2.contentHash).toHaveLength(64);
     expect(params2.forceOverwrite).toBe(true);
   });
+
+  it('ingestYoutubeManualTranscript should accept videoUrl, transcriptText, and optional title', () => {
+    const contract = (
+      videoUrl: string,
+      transcriptText: string,
+      title?: string
+    ) => ({ videoUrl, transcriptText, title });
+
+    const params = contract(
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      'Transcript body',
+      'Custom title'
+    );
+
+    expect(params.videoUrl).toContain('youtube.com/watch');
+    expect(params.transcriptText).toBe('Transcript body');
+    expect(params.title).toBe('Custom title');
+  });
 });

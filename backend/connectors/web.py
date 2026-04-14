@@ -75,6 +75,24 @@ YOUTUBE_ERROR_PRIORITY: dict[str, int] = {
 }
 
 
+def _resolve_youtube_direct_fallback(
+    configured_value: bool | None,
+    environment: str | None = None,
+) -> bool:
+    """
+    Resolve the direct fallback policy for YouTube transcript fetches.
+
+    Safe default:
+    - disabled in production-like environments
+    - enabled only in local/dev/test unless explicitly overridden
+    """
+    if configured_value is not None:
+        return configured_value
+
+    normalized_environment = (environment or os.getenv("ENVIRONMENT") or "development").strip().lower()
+    return normalized_environment in {"development", "dev", "local", "test", "testing"}
+
+
 def _get_brightdata_config() -> dict[str, Any]:
     """
     Load Bright Data Unlocker API configuration from settings.
@@ -89,9 +107,13 @@ def _get_brightdata_config() -> dict[str, Any]:
             "timeout": settings.BRIGHTDATA_TIMEOUT,
             "retry_count": settings.BRIGHTDATA_RETRY_COUNT,
             "retry_delay": settings.BRIGHTDATA_RETRY_DELAY,
-            "direct_fallback": settings.YOUTUBE_DIRECT_FALLBACK,
+            "direct_fallback": _resolve_youtube_direct_fallback(
+                settings.YOUTUBE_DIRECT_FALLBACK,
+                getattr(settings, "ENVIRONMENT", None),
+            ),
         }
     except Exception:
+        configured_fallback = os.getenv("YOUTUBE_DIRECT_FALLBACK")
         # Fallback to environment variables if settings not available
         return {
             "api_key": os.getenv("BRIGHTDATA_API_KEY"),
@@ -99,7 +121,10 @@ def _get_brightdata_config() -> dict[str, Any]:
             "timeout": int(os.getenv("BRIGHTDATA_TIMEOUT", "60")),
             "retry_count": int(os.getenv("BRIGHTDATA_RETRY_COUNT", "3")),
             "retry_delay": float(os.getenv("BRIGHTDATA_RETRY_DELAY", "2.0")),
-            "direct_fallback": os.getenv("YOUTUBE_DIRECT_FALLBACK", "true").lower() == "true",
+            "direct_fallback": _resolve_youtube_direct_fallback(
+                configured_fallback.lower() == "true" if configured_fallback is not None else None,
+                os.getenv("ENVIRONMENT"),
+            ),
         }
 
 
@@ -178,16 +203,23 @@ def _get_youtube_proxy_config() -> dict[str, Any]:
             "timeout": settings.YOUTUBE_PROXY_TIMEOUT,
             "retry_count": settings.YOUTUBE_PROXY_RETRY_COUNT,
             "retry_delay": settings.YOUTUBE_PROXY_RETRY_DELAY,
-            "direct_fallback": settings.YOUTUBE_DIRECT_FALLBACK,
+            "direct_fallback": _resolve_youtube_direct_fallback(
+                settings.YOUTUBE_DIRECT_FALLBACK,
+                getattr(settings, "ENVIRONMENT", None),
+            ),
         }
     except Exception:
+        configured_fallback = os.getenv("YOUTUBE_DIRECT_FALLBACK")
         return {
             "proxy_url": os.getenv("YOUTUBE_PROXY_URL"),
             "enabled": False,
             "timeout": 30,
             "retry_count": 3,
             "retry_delay": 1.0,
-            "direct_fallback": True,
+            "direct_fallback": _resolve_youtube_direct_fallback(
+                configured_fallback.lower() == "true" if configured_fallback is not None else None,
+                os.getenv("ENVIRONMENT"),
+            ),
         }
 
 
@@ -563,66 +595,73 @@ class WebConnector(EnhancedConnector, BaseConnector):
         Returns:
             Full transcript text or None if not available
         """
-        self._clear_youtube_error()
-        video_id = self._extract_youtube_video_id(video_url)
-        if not video_id:
-            logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
-            self._set_youtube_error(
-                "youtube_invalid_video_id",
-                "Could not read the YouTube video ID from the submitted URL.",
-                f"invalid_video_id:{video_url}",
-            )
-            return None
+        with connector_fetch_limit("youtube"):
+            self._clear_youtube_error()
+            video_id = self._extract_youtube_video_id(video_url)
+            if not video_id:
+                logger.warning(f"⚠️ [YouTube] Could not extract video ID from: {video_url}")
+                self._set_youtube_error(
+                    "youtube_invalid_video_id",
+                    "Could not read the YouTube video ID from the submitted URL.",
+                    f"invalid_video_id:{video_url}",
+                )
+                return None
 
-        # Load Bright Data configuration
-        bd_config = _get_brightdata_config()
-        retry_count = bd_config["retry_count"]
-        retry_delay = bd_config["retry_delay"]
-        direct_fallback = bd_config["direct_fallback"]
+            # Load Bright Data configuration
+            bd_config = _get_brightdata_config()
+            retry_count = bd_config["retry_count"]
+            retry_delay = bd_config["retry_delay"]
+            direct_fallback = bd_config["direct_fallback"]
 
-        # Attempt 1: Try Bright Data Unlocker API
-        if bd_config.get("api_key"):
-            logger.info(f"🔒 [YouTube] Attempting transcript fetch via Bright Data Unlocker: {video_id}")
-            result = self._fetch_transcript_via_unlocker(video_id, video_url, bd_config)
-            if result is not None:
-                return result
+            # Attempt 1: Try Bright Data Unlocker API
+            if bd_config.get("api_key"):
+                logger.info(f"🔒 [YouTube] Attempting transcript fetch via Bright Data Unlocker: {video_id}")
+                result = self._fetch_transcript_via_unlocker(video_id, video_url, bd_config)
+                if result is not None:
+                    return result
+                if not self._last_youtube_error:
+                    self._set_youtube_error(
+                        "youtube_unlocker_failed",
+                        "The transcript proxy could not fetch the YouTube page.",
+                        f"unlocker_failed:{video_id}",
+                    )
+                logger.warning(f"⚠️ [YouTube] Bright Data Unlocker failed for {video_id}")
+            else:
+                logger.info("ℹ️ [YouTube] Bright Data API key not configured, using direct connection policy")
+
+            # Attempt 2: Direct connection fallback
+            if direct_fallback:
+                logger.info(f"🔄 [YouTube] Attempting direct connection fallback: {video_id}")
+                result = self._fetch_transcript_with_retry(
+                    video_id=video_id,
+                    video_url=video_url,
+                    proxies=None,
+                    retry_count=retry_count,
+                    retry_delay=retry_delay,
+                    attempt_name="direct_fallback",
+                )
+                if result is not None:
+                    return result
+            elif not bd_config.get("api_key") and not self._last_youtube_error:
+                self._set_youtube_error(
+                    "youtube_transcript_fetch_failed",
+                    "Automatic transcript retrieval is currently unavailable for YouTube videos.",
+                    "direct_fallback_disabled_without_provider",
+                )
+
+            # All attempts failed
             if not self._last_youtube_error:
                 self._set_youtube_error(
-                    "youtube_unlocker_failed",
-                    "The transcript proxy could not fetch the YouTube page.",
-                    f"unlocker_failed:{video_id}",
+                    "youtube_transcript_fetch_failed",
+                    "Transcript retrieval failed for this YouTube video.",
+                    f"all_attempts_failed:{video_url}",
                 )
-            logger.warning(f"⚠️ [YouTube] Bright Data Unlocker failed for {video_id}")
-        else:
-            logger.info("ℹ️ [YouTube] Bright Data API key not configured, using direct connection")
-
-        # Attempt 2: Direct connection fallback
-        if direct_fallback:
-            logger.info(f"🔄 [YouTube] Attempting direct connection fallback: {video_id}")
-            result = self._fetch_transcript_with_retry(
-                video_id=video_id,
-                video_url=video_url,
-                proxies=None,
-                retry_count=retry_count,
-                retry_delay=retry_delay,
-                attempt_name="direct_fallback",
+            logger.error(
+                "❌ [YouTube] All transcript fetch attempts failed for %s (%s)",
+                video_url,
+                self._last_youtube_error.get("debug_message") if self._last_youtube_error else "no_detail",
             )
-            if result is not None:
-                return result
-
-        # All attempts failed
-        if not self._last_youtube_error:
-            self._set_youtube_error(
-                "youtube_transcript_fetch_failed",
-                "Transcript retrieval failed for this YouTube video.",
-                f"all_attempts_failed:{video_url}",
-            )
-        logger.error(
-            "❌ [YouTube] All transcript fetch attempts failed for %s (%s)",
-            video_url,
-            self._last_youtube_error.get("debug_message") if self._last_youtube_error else "no_detail",
-        )
-        return None
+            return None
 
     def _fetch_transcript_via_unlocker(
         self,

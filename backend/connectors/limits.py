@@ -32,6 +32,8 @@ def _get_limit(connector_type: str) -> int:
         return settings.CONNECTOR_CONCURRENCY_NOTION
     if normalized == "web":
         return settings.CONNECTOR_CONCURRENCY_WEB
+    if normalized == "youtube":
+        return settings.CONNECTOR_CONCURRENCY_YOUTUBE
     if normalized == "onedrive":
         return settings.CONNECTOR_CONCURRENCY_ONEDRIVE
     if normalized == "sharepoint":

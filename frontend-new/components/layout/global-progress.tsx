@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, XCircle, FileText, ChevronRight, X, Upload, Globe, Database } from "lucide-react";
+import { CheckCircle2, XCircle, FileText, ChevronRight, X, Upload, Globe, Database, Youtube } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
@@ -52,6 +52,7 @@ const COMPLETION_DISPLAY_TIME = 5000;
 const providerIcons: Record<string, typeof FileText> = {
     file_upload: Upload,
     web: Globe,
+    youtube: Youtube,
     google_drive: FileText,
     notion: Database,
 };

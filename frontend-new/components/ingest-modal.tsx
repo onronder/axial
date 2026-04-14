@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useProfile } from "@/hooks/useProfile"
 import { useUsage } from "@/hooks/useUsage"
 import { authFetch, getUploadUrl, ingestFileReference, uploadToStorage } from "@/lib/api"
+import { getUploadMimeType } from "@/lib/file-validation"
 import { extractErrorMessage } from "@/lib/error-handling"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -119,8 +120,9 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
                 if (!file) {
                     return
                 }
-                const uploadUrl = await getUploadUrl(file.name, file.type || "application/octet-stream", file.size)
-                const uploaded = await uploadToStorage(uploadUrl.upload_url, file)
+                const uploadMimeType = getUploadMimeType(file)
+                const uploadUrl = await getUploadUrl(file.name, uploadMimeType, file.size)
+                const uploaded = await uploadToStorage(uploadUrl.upload_url, file, uploadMimeType)
                 if (!uploaded) {
                     throw new Error("Failed to upload file to storage")
                 }

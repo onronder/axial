@@ -149,7 +149,9 @@ limiter = Limiter(key_func=get_remote_address)
 ALLOWED_MIME_TYPES = {
     "application/pdf": [".pdf"],
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-    "text/plain": [".txt"],
+    "text/plain": [".txt", ".srt"],
+    "text/vtt": [".vtt"],
+    "application/x-subrip": [".srt"],
     "text/markdown": [".md"],
     "text/html": [".html", ".htm"],
     "text/csv": [".csv"],

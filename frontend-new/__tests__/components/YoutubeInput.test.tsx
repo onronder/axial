@@ -22,10 +22,12 @@ vi.mock('@/hooks/useIngestionProgress', () => ({
 }));
 
 const mockApiPost = vi.fn();
+const mockIngestYoutubeManualTranscript = vi.fn();
 vi.mock('@/lib/api', () => ({
     api: {
         post: (...args: unknown[]) => mockApiPost(...args),
     },
+    ingestYoutubeManualTranscript: (...args: unknown[]) => mockIngestYoutubeManualTranscript(...args),
     clearAuthCache: vi.fn(),
 }));
 
@@ -52,6 +54,7 @@ describe('YoutubeInput Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockApiPost.mockResolvedValue({ data: { job_id: 'test-job-123' } });
+        mockIngestYoutubeManualTranscript.mockResolvedValue({ status: 'accepted', job_id: 'manual-job-123' });
     });
 
     // =========================================================================
@@ -77,6 +80,12 @@ describe('YoutubeInput Component', () => {
         it('should render help text', () => {
             render(<YoutubeInput source={defaultSource} />);
             expect(screen.getByText(/Paste a YouTube video URL/i)).toBeInTheDocument();
+        });
+
+        it('should render best effort notice', () => {
+            render(<YoutubeInput source={defaultSource} />);
+            expect(screen.getByText('Best Effort')).toBeInTheDocument();
+            expect(screen.getByText(/Automatic transcript fetch runs from our servers/i)).toBeInTheDocument();
         });
 
         it('should render YouTube icon', () => {
@@ -329,6 +338,29 @@ describe('YoutubeInput Component', () => {
 
             // API should not be called because url.trim() is falsy
             expect(mockApiPost).not.toHaveBeenCalled();
+        });
+
+        it('should queue a manual transcript when provided', async () => {
+            const user = userEvent.setup();
+            render(<YoutubeInput source={defaultSource} />);
+
+            const input = screen.getByPlaceholderText('https://youtube.com/watch?v=...');
+            await user.type(input, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+            await user.click(screen.getByRole('button', { name: 'Paste Transcript' }));
+
+            const textarea = screen.getByPlaceholderText('Paste the YouTube transcript here...');
+            await user.type(textarea, 'This is a manually provided transcript.');
+            await user.click(screen.getByRole('button', { name: /queue transcript/i }));
+
+            await waitFor(() => {
+                expect(mockIngestYoutubeManualTranscript).toHaveBeenCalledWith(
+                    expect.stringContaining('youtube.com/watch'),
+                    'This is a manually provided transcript.',
+                    undefined,
+                );
+                expect(mockRegisterJob).toHaveBeenCalledWith('manual-job-123');
+            });
         });
     });
 

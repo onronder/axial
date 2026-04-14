@@ -20,6 +20,7 @@ import {
   MAX_FILE_SIZE,
   MAX_FILE_SIZE_LABEL,
   MIN_FILE_SIZE,
+  getUploadMimeType,
   getDropRejectionMessage,
 } from "@/lib/file-validation";
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages";
@@ -114,9 +115,10 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
 
       // Step 3: Get presigned upload URL (with content hash for stable path)
       setUploadStage("Getting upload URL...");
+      const uploadMimeType = getUploadMimeType(file);
       const urlResponse = await getUploadUrl(
         file.name,
-        file.type || "application/octet-stream",
+        uploadMimeType,
         file.size,
         hash,
         forceOverwrite
@@ -124,7 +126,7 @@ export function FileUploadZone({ source, disabled = false }: FileUploadZoneProps
 
       // Step 4: Upload directly to storage (bypasses our API server)
       setUploadStage("Uploading to storage...");
-      const uploadSuccess = await uploadToStorage(urlResponse.upload_url, file);
+      const uploadSuccess = await uploadToStorage(urlResponse.upload_url, file, uploadMimeType);
 
       if (!uploadSuccess) {
         throw new Error("Failed to upload file to storage");

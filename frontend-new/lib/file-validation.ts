@@ -59,6 +59,7 @@ export const ACCEPTED_FILE_TYPES: Record<string, string[]> = {
   // Text & Code
   "text/plain": [
     ".txt",
+    ".srt",
     ".py",
     ".js",
     ".jsx",
@@ -90,6 +91,8 @@ export const ACCEPTED_FILE_TYPES: Record<string, string[]> = {
     ".dockerfile",
     ".log",
   ],
+  "text/vtt": [".vtt"],
+  "application/x-subrip": [".srt"],
   "text/markdown": [".md", ".markdown"],
   "text/html": [".html", ".htm"],
   "application/json": [".json"],
@@ -183,6 +186,31 @@ export function formatFileSize(bytes: number): string {
 export function getFileExtension(filename: string): string {
   const lastDot = filename.lastIndexOf(".");
   return lastDot !== -1 ? filename.slice(lastDot) : "";
+}
+
+/**
+ * Resolve a safe upload MIME type.
+ * Prefers explicit browser MIME types, but normalizes subtitle uploads and
+ * falls back to extension-derived MIME for empty browser values.
+ */
+export function getUploadMimeType(file: Pick<File, "name" | "type">): string {
+  const extension = getFileExtension(file.name).toLowerCase();
+
+  if (extension === ".srt" || extension === ".vtt") {
+    return "text/plain";
+  }
+
+  if (file.type) {
+    return file.type;
+  }
+
+  for (const [mimeType, extensions] of Object.entries(ACCEPTED_FILE_TYPES)) {
+    if (extensions.includes(extension)) {
+      return mimeType;
+    }
+  }
+
+  return "application/octet-stream";
 }
 
 /**
