@@ -38,6 +38,7 @@ interface IngestionJob {
     provider: string;
     total_files: number;
     processed_files: number;
+    failed_files?: number;
     status: "pending" | "processing" | "completed" | "failed" | "cancelled";
     error_message?: string;
     progress?: number;
@@ -245,6 +246,7 @@ export function GlobalProgress() {
 
                         // Handle terminal statuses immediately (no throttle)
                         if (newJob.status === "completed" && wasNotCompleted) {
+                            pendingJobUpdates.current.delete(newJob.id);
                             // Immediately update job state for terminal status
                             setJobs((prev) =>
                                 prev.map((job) => (job.id === newJob.id ? newJob : job))
@@ -252,11 +254,13 @@ export function GlobalProgress() {
                             showCompletionToast(newJob);
                             handleIngestionComplete();
                         } else if (newJob.status === "failed" && wasNotFailed) {
+                            pendingJobUpdates.current.delete(newJob.id);
                             setJobs((prev) =>
                                 prev.map((job) => (job.id === newJob.id ? newJob : job))
                             );
                             showFailureToast(newJob);
                         } else if (newJob.status === "cancelled" && wasNotCancelled) {
+                            pendingJobUpdates.current.delete(newJob.id);
                             setJobs((prev) =>
                                 prev.map((job) => (job.id === newJob.id ? newJob : job))
                             );
@@ -385,10 +389,12 @@ const JobCard = memo(function JobCard({
             : 0
     );
 
-    const isActive = job.status === "pending" || job.status === "processing";
-    const isComplete = job.status === "completed";
-    const isFailed = job.status === "failed";
+    const terminalByCounts = job.total_files > 0 && job.processed_files >= job.total_files;
+    const hasFailures = (job.failed_files ?? 0) > 0;
     const isCancelled = job.status === "cancelled";
+    const isActive = (job.status === "pending" || job.status === "processing") && !terminalByCounts;
+    const isComplete = job.status === "completed" || (!isCancelled && terminalByCounts && !hasFailures);
+    const isFailed = job.status === "failed" || (!isCancelled && terminalByCounts && hasFailures);
 
     const statusText = job.message ||
         job.status_message ||

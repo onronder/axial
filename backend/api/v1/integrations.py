@@ -6,6 +6,7 @@ Provides dynamic connector discovery, OAuth handling, and integration management
 
 import inspect
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import UUID
@@ -78,11 +79,20 @@ def _get_youtube_ingest_mode() -> str:
     return mode if mode in _YOUTUBE_INGEST_MODES else "best_effort"
 
 
+def _is_youtube_auto_ingest_enabled() -> bool:
+    configured_enabled = os.getenv("YOUTUBE_INGEST_ENABLED")
+    if configured_enabled is not None:
+        return bool(getattr(settings, "YOUTUBE_INGEST_ENABLED", True))
+
+    environment = (getattr(settings, "ENVIRONMENT", None) or os.getenv("ENVIRONMENT") or "development").strip().lower()
+    return environment not in {"production", "prod"}
+
+
 def _assert_youtube_auto_ingest_available(url: str) -> None:
     if not is_youtube_url(url):
         return
 
-    if not getattr(settings, "YOUTUBE_INGEST_ENABLED", True):
+    if not _is_youtube_auto_ingest_enabled():
         raise HTTPException(
             status_code=503,
             detail="Automatic YouTube transcript fetch is currently disabled. Paste the transcript manually or upload subtitle files instead.",

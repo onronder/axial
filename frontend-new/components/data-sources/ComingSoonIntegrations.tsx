@@ -13,12 +13,12 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import * as Sentry from "@sentry/nextjs";
 
-interface ComingSoonIntegration {
+export interface ComingSoonIntegration {
     id: string;
     name: string;
     description: string;
     icon: React.ReactNode;
-    category: "Project & Ops" | "Communication";
+    category: "Web Resources" | "Project & Ops" | "Communication";
     badge: "Coming Soon" | "Waitlist";
 }
 
@@ -67,10 +67,18 @@ const COMING_SOON_INTEGRATIONS: ComingSoonIntegration[] = [
     },
 ];
 
-const CATEGORY_ORDER = ["Project & Ops", "Communication"] as const;
+const CATEGORY_ORDER = ["Web Resources", "Project & Ops", "Communication"] as const;
 
-export function ComingSoonIntegrations() {
+interface ComingSoonIntegrationsProps {
+    extraIntegrations?: ComingSoonIntegration[];
+}
+
+export function ComingSoonIntegrations({
+    extraIntegrations = [],
+}: ComingSoonIntegrationsProps) {
     const { toast } = useToast();
+
+    const integrations = [...extraIntegrations, ...COMING_SOON_INTEGRATIONS];
 
     const handleClick = (integration: ComingSoonIntegration) => {
         // Track interest via Sentry so product can measure demand
@@ -90,7 +98,7 @@ export function ComingSoonIntegrations() {
     };
 
     // Group by category
-    const groupedIntegrations = COMING_SOON_INTEGRATIONS.reduce((acc, integration) => {
+    const groupedIntegrations = integrations.reduce((acc, integration) => {
         if (!acc[integration.category]) {
             acc[integration.category] = [];
         }
@@ -104,14 +112,14 @@ export function ComingSoonIntegrations() {
             <div className="flex items-center gap-3">
                 <Clock className="h-5 w-5 text-muted-foreground" />
                 <h2 className="font-display text-xl font-semibold text-foreground">
-                    Coming Soon — Enterprise Connectors
+                    Coming Soon
                 </h2>
                 <Badge variant="outline" className="text-xs">
                     50+ Platforms
                 </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-                Connect to your entire tech stack. These integrations are in development.
+                These integrations are in development or temporarily unavailable while reliability work is underway.
             </p>
 
             {/* Grid by Category */}

@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { Search, Filter, RefreshCw, Database } from "lucide-react";
+import { Search, Filter, RefreshCw, Database, Youtube } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
 import { SettingsToolbar } from "@/components/settings/SettingsToolbar";
@@ -20,12 +20,13 @@ import { FileBrowser } from "./FileBrowser";
 import { URLCrawlerInput } from "./URLCrawlerInput";
 import { YoutubeInput } from "./YoutubeInput";
 import { FileUploadZone } from "./FileUploadZone";
-import { ComingSoonIntegrations } from "./ComingSoonIntegrations";
+import { ComingSoonIntegrations, type ComingSoonIntegration } from "./ComingSoonIntegrations";
 import { LazySftpConnectModal, LazyS3ConnectModal } from "@/components/lazy";
 import { useDataSources } from "@/hooks/useDataSources";
 import { useProfile } from "@/hooks/useProfile";
 import { useUsage } from "@/hooks/useUsage";
 import { useQuotaStatus } from "@/hooks/useQuotaStatus";
+import { isYoutubeIngestionEnabled } from "@/lib/features";
 import type { DataSourceCategory, MergedDataSource } from "@/types";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -91,6 +92,7 @@ export function DataSourcesGrid() {
   const { canWebCrawl, plan, refresh: refreshUsage } = useUsage();
   const { isProviderQuotaExceeded } = useQuotaStatus();
   const canRunWebCrawl = canWebCrawl && !isViewer;
+  const youtubeIngestionEnabled = isYoutubeIngestionEnabled();
   
   // Wrapper to refresh usage stats after disconnecting
   const handleDisconnect = async (type: string) => {
@@ -132,15 +134,28 @@ export function DataSourcesGrid() {
     lastSyncAt: null,
     integrationId: null,
   };
+
+  const youtubeComingSoon: ComingSoonIntegration = {
+    id: "youtube",
+    name: "YouTube Video",
+    description: "Transcript ingestion is paused in production while reliability improvements are in progress.",
+    icon: <Youtube className="h-6 w-6" />,
+    category: "Web Resources",
+    badge: "Coming Soon",
+  };
   
-  const hasLocalUpload = dataSources.some((source) => LOCAL_UPLOAD_TYPES.has(source.type));
-  const hasYoutubeSource = dataSources.some((source) => source.type === "youtube");
+  const baseSources = youtubeIngestionEnabled
+    ? dataSources
+    : dataSources.filter((source) => source.type !== "youtube");
+
+  const hasLocalUpload = baseSources.some((source) => LOCAL_UPLOAD_TYPES.has(source.type));
+  const hasYoutubeSource = baseSources.some((source) => source.type === "youtube");
   
   // Combine backend sources with virtual sources (if not already present)
   const displaySources = [
-    ...dataSources,
+    ...baseSources,
     ...(hasLocalUpload ? [] : [localUploadSource]),
-    ...(hasYoutubeSource ? [] : [youtubeSource]),
+    ...(youtubeIngestionEnabled && !hasYoutubeSource ? [youtubeSource] : []),
   ];
 
   const handleConnect = (type: string) => {
@@ -385,7 +400,7 @@ export function DataSourcesGrid() {
       </Suspense>
 
       {/* Coming Soon Section */}
-      <ComingSoonIntegrations />
+      <ComingSoonIntegrations extraIntegrations={youtubeIngestionEnabled ? [] : [youtubeComingSoon]} />
     </div>
   );
 }

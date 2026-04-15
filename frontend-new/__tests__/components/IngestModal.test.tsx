@@ -110,6 +110,10 @@ describe('IngestModal', () => {
         mockState.dsLoading = false;
     });
 
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     // =========================================================================
     // Rendering
     // =========================================================================
@@ -151,6 +155,15 @@ describe('IngestModal', () => {
             expect(screen.getByText('YouTube')).toBeInTheDocument();
             expect(screen.getByText('Website')).toBeInTheDocument();
             expect(screen.getByText('Notion')).toBeInTheDocument();
+        });
+
+        it('should hide YouTube tab when the feature flag is disabled', () => {
+            vi.stubEnv('NEXT_PUBLIC_YOUTUBE_INGEST_ENABLED', 'false');
+            render(<IngestModal {...defaultProps} />);
+
+            expect(screen.queryByText('YouTube')).not.toBeInTheDocument();
+            expect(screen.getByText('File')).toBeInTheDocument();
+            expect(screen.getByText('Website')).toBeInTheDocument();
         });
     });
 

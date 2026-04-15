@@ -22,6 +22,7 @@ import {
     normalizeYoutubeUrl, 
     YOUTUBE_ERROR_MESSAGES 
 } from "@/lib/youtube-utils"
+import { isYoutubeIngestionEnabled } from "@/lib/features"
 import { ROLE_TOAST_TITLES, ROLE_MESSAGES } from "@/lib/role-messages"
 
 import { Spinner } from "@/components/ui/spinner";
@@ -34,7 +35,14 @@ interface IngestModalProps {
 }
 
 export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModalProps) {
-    const [activeTab, setActiveTab] = useState<TabType>(initialTab)
+    const youtubeIngestionEnabled = isYoutubeIngestionEnabled()
+    const resolveInitialTab = (tab: TabType): TabType => {
+        if (!youtubeIngestionEnabled && tab === 'youtube') {
+            return 'file'
+        }
+        return tab
+    }
+    const [activeTab, setActiveTab] = useState<TabType>(resolveInitialTab(initialTab))
     const [file, setFile] = useState<File | null>(null)
     const [url, setUrl] = useState<string>("")
 
@@ -61,8 +69,8 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
     // Sync activeTab when initialTab changes
     useEffect(() => {
-        setActiveTab(initialTab)
-    }, [initialTab])
+        setActiveTab(resolveInitialTab(initialTab))
+    }, [initialTab, youtubeIngestionEnabled])
 
     if (!isOpen) return null
 
@@ -233,7 +241,7 @@ export function IngestModal({ isOpen, onClose, initialTab = 'file' }: IngestModa
 
     const tabs = [
         { id: 'file' as const, label: 'File', icon: Upload },
-        { id: 'youtube' as const, label: 'YouTube', icon: Youtube },
+        ...(youtubeIngestionEnabled ? [{ id: 'youtube' as const, label: 'YouTube', icon: Youtube }] : []),
         { id: 'website' as const, label: 'Website', icon: Globe },
         { id: 'notion' as const, label: 'Notion', icon: BookOpen },
     ]

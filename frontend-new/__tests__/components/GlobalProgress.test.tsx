@@ -195,10 +195,11 @@ describe('GlobalProgress Component (Realtime)', () => {
             const providerIcons = {
                 file_upload: 'Upload',
                 web: 'Globe',
+                youtube: 'Youtube',
                 google_drive: 'FileText',
                 notion: 'Database',
             };
-            expect(Object.keys(providerIcons).length).toBe(4);
+            expect(Object.keys(providerIcons).length).toBe(5);
         });
 
         it('shows processing count', () => {
@@ -213,6 +214,17 @@ describe('GlobalProgress Component (Realtime)', () => {
         it('shows Loader2 for active status', () => {
             const isActive = true;
             expect(isActive).toBe(true);
+        });
+
+        it('treats a fully processed failed job as terminal even if status is still processing', () => {
+            const job = { status: 'processing', total_files: 1, processed_files: 1, failed_files: 1 };
+            const terminalByCounts = job.total_files > 0 && job.processed_files >= job.total_files;
+            const hasFailures = job.failed_files > 0;
+            const isActive = (job.status === 'pending' || job.status === 'processing') && !terminalByCounts;
+            const isFailed = job.status === 'failed' || (terminalByCounts && hasFailures);
+
+            expect(isActive).toBe(false);
+            expect(isFailed).toBe(true);
         });
 
         it('shows CheckCircle2 for completed status', () => {
